@@ -99,6 +99,51 @@ export const LOCAL_GROUP_GALAXIES: readonly GalaxyData[] = [
     dataSource: NED_SOURCE,
   },
   {
+    id: 'm32',
+    name: 'Le Gentil (M32)',
+    nameZh: 'M32',
+    morphology: 'elliptical',
+    distanceLy: 2.49e6,
+    diameterLy: 6500,
+    // 紧邻 M31（真实上是 M31 的致密椭圆伴星系）；已归一化：0.46²+0.44²+(−0.77)²≈0.998
+    direction: { x: 0.46, y: 0.44, z: -0.77 },
+    radialVelocityKmS: -200,
+    groupZh: '本星系群（仙女座卫星）',
+    descriptionZh:
+      '仙女座星系的致密椭圆（cE）伴星系，可能是被 M31 潮汐剥离的星系核残骸；渲染位置随 M31 一同移动（示意偏移已登记）',
+    dataSource: NED_SOURCE,
+  },
+  {
+    id: 'm110',
+    name: 'Edward Young Galaxy (M110)',
+    nameZh: 'M110',
+    morphology: 'elliptical',
+    distanceLy: 2.69e6,
+    diameterLy: 17000,
+    // 紧邻 M31 的另一侧；已归一化：0.50²+0.40²+(−0.768)²≈0.9998
+    direction: { x: 0.5, y: 0.4, z: -0.768 },
+    radialVelocityKmS: -241,
+    groupZh: '本星系群（仙女座卫星）',
+    descriptionZh:
+      '仙女座星系的矮椭圆伴星系，与 M32 分列 M31 两侧；渲染位置随 M31 一同移动（示意偏移已登记）',
+    dataSource: NED_SOURCE,
+  },
+  {
+    id: 'sagittarius-dwarf',
+    name: 'Sagittarius Dwarf Spheroidal Galaxy',
+    nameZh: '人马座矮星系',
+    morphology: 'elliptical',
+    distanceLy: 70000,
+    diameterLy: 10000,
+    // 银心另一侧的近距卫星星系；已归一化：0.62²+(−0.55)²+0.56²≈1.0005
+    direction: { x: 0.62, y: -0.55, z: 0.56 },
+    radialVelocityKmS: 140,
+    groupZh: '本星系群（银河系卫星）',
+    descriptionZh:
+      '最靠近银河系的卫星星系之一（距银心约 5 万光年），正被银河系潮汐撕裂，其恒星流（人马座星流）环绕整个银河系',
+    dataSource: NED_SOURCE,
+  },
+  {
     id: 'm87',
     name: 'Virgo A (M87)',
     nameZh: '室女座A（M87）',
@@ -148,6 +193,33 @@ export const LG_CMB_VELOCITY_KM_S = 620;
 export const SATELLITE_GALAXY_ORBITS = {
   lmc: { periodMyr: 1500, phase0Rad: 0.5, inclinationDeg: 35 },
   smc: { periodMyr: 2100, phase0Rad: 2.4, inclinationDeg: 50 },
+} as const;
+
+/**
+ * M31 伴星系（M32 / M110）相对 M31 中心的示意偏移（光年）
+ *
+ * 真实投影间距约 1.6–2.6 万光年；此处放大到可在压缩距离下分辨的
+ * 示意值（视觉夸大已登记），渲染时随 M31 一同接近银河系。
+ */
+export const M31_COMPANION_OFFSETS_LY: Record<'m32' | 'm110', Vec3> = {
+  m32: { x: 30000, y: -18000, z: 12000 },
+  m110: { x: -36000, y: 26000, z: -10000 },
+};
+
+/**
+ * 麦哲伦星流可视化参数（可选需求 3.1.3）
+ *
+ * 真实麦哲伦星流为 LMC/SMC 被银河系潮汐剥离的中性氢气体流，
+ * 横跨南天约 100°（Nidever et al. 2010）。
+ */
+export const MAGELLANIC_STREAM = {
+  nameZh: '麦哲伦星流',
+  /** 采样点数 */
+  pointCount: 90,
+  /** 确定性种子 */
+  seed: 20260725,
+  color: '#7fa8c8',
+  dataSource: 'Nidever et al. (2010), ApJ；GASS 中性氢巡天',
 } as const;
 
 /**

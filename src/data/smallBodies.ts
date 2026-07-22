@@ -38,6 +38,7 @@ export const COMETS: readonly CometData[] = [
     },
     orbitalPeriodYears: 75.32,
     tailActivationAu: 5,
+    massKg: 2.2e14,
     dataSource: JPL_SBDB_SOURCE,
   },
   {
@@ -90,8 +91,96 @@ export const PLUTO: PlanetData = {
   rotation: { siderealPeriodHours: -153.3, axialTiltDeg: 122.53 },
   // 与海王星（164.79 年）构成约 2:3 共振：247.94 / 164.79 ≈ 1.505
   orbitalPeriodYears: 247.94,
+  massKg: 1.303e22,
   dataSource: 'NASA JPL Keplerian Elements / NASA Pluto Fact Sheet',
 };
+
+/**
+ * 其他矮行星（可选需求 3.1.1）：阋神星、鸟神星、妊神星
+ *
+ * 数据来源：NASA JPL Small-Body Database（轨道要素为历元近似值，用于可视化）
+ * - 阋神星质量比冥王星还大（其发现直接导致 2006 年行星重新定义）
+ * - 妊神星自转 3.9 小时（太阳系大天体中最快，被甩成椭球形）
+ */
+export const OTHER_DWARF_PLANETS: readonly PlanetData[] = [
+  {
+    id: 'eris',
+    name: 'Eris',
+    nameZh: '阋神星',
+    classificationZh: '矮行星',
+    radiusKm: 1163,
+    color: '#d8d4cc',
+    orbit: {
+      semiMajorAxisAu: 67.86,
+      // 高离心率：近日点约 38 AU，远日点约 97 AU（离散盘天体）
+      eccentricity: 0.436,
+      // 轨道倾角 44°：远高于冥王星（17°）
+      inclinationDeg: 44.04,
+      longitudeOfAscendingNodeDeg: 35.95,
+      argumentOfPerihelionDeg: 151.64,
+      // 历元相位为近似值，用于可视化
+      meanAnomalyAtEpochDeg: 205.99,
+    },
+    rotation: { siderealPeriodHours: 25.9, axialTiltDeg: 78.3 },
+    orbitalPeriodYears: 559,
+    massKg: 1.66e22,
+    dataSource: JPL_SBDB_SOURCE,
+  },
+  {
+    id: 'makemake',
+    name: 'Makemake',
+    nameZh: '鸟神星',
+    classificationZh: '矮行星',
+    radiusKm: 715,
+    color: '#c9a48a',
+    orbit: {
+      semiMajorAxisAu: 45.43,
+      eccentricity: 0.161,
+      inclinationDeg: 28.98,
+      longitudeOfAscendingNodeDeg: 79.62,
+      argumentOfPerihelionDeg: 294.83,
+      // 历元相位为近似值，用于可视化
+      meanAnomalyAtEpochDeg: 165.5,
+    },
+    rotation: { siderealPeriodHours: 22.83, axialTiltDeg: 29 },
+    orbitalPeriodYears: 306.2,
+    massKg: 3.1e21,
+    dataSource: JPL_SBDB_SOURCE,
+  },
+  {
+    id: 'haumea',
+    name: 'Haumea',
+    nameZh: '妊神星',
+    classificationZh: '矮行星',
+    // 平均半径（实际为约 2322×1704×1026 km 的椭球，因高速自转被甩扁）
+    radiusKm: 816,
+    color: '#e2e2e6',
+    orbit: {
+      semiMajorAxisAu: 43.12,
+      eccentricity: 0.195,
+      inclinationDeg: 28.21,
+      longitudeOfAscendingNodeDeg: 122.16,
+      argumentOfPerihelionDeg: 238.78,
+      // 历元相位为近似值，用于可视化
+      meanAnomalyAtEpochDeg: 218.2,
+    },
+    // 自转周期 3.92 小时：太阳系大型天体中最快
+    rotation: { siderealPeriodHours: 3.915, axialTiltDeg: 126 },
+    orbitalPeriodYears: 283.1,
+    massKg: 4.01e21,
+    dataSource: JPL_SBDB_SOURCE,
+  },
+] as const;
+
+/** 全部矮行星（冥王星 + 阋神星 + 鸟神星 + 妊神星） */
+export const DWARF_PLANETS: readonly PlanetData[] = [PLUTO, ...OTHER_DWARF_PLANETS] as const;
+
+/**
+ * 按 id 查找矮行星
+ */
+export function getDwarfPlanetById(id: string): PlanetData | undefined {
+  return DWARF_PLANETS.find((d) => d.id === id);
+}
 
 /**
  * 小行星带：位于火星（1.52 AU）与木星（5.20 AU）轨道之间

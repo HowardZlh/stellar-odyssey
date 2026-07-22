@@ -4,9 +4,11 @@ import { Canvas } from '@react-three/fiber';
 import { CAMERA_VIEWS } from '@/data/cameraViews';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { AudioController } from '@/components/Audio/AudioController';
+import { SpatialAudio } from '@/components/Audio/SpatialAudio';
 import { CameraController } from '@/components/Camera/CameraController';
 import { ControlPanel } from '@/components/UI/ControlPanel';
 import { HudInfo } from '@/components/UI/HudInfo';
+import { PerformanceMonitor } from '@/components/UI/PerformanceMonitor';
 import { HelpHint } from '@/components/UI/HelpHint';
 import { Galaxy } from '@/components/Scene/Galaxy';
 import { SimulationClock } from '@/components/Scene/SimulationClock';
@@ -45,10 +47,13 @@ export default function SolarSystemApp(): JSX.Element {
         {/* L3 银河系（太阳系绕银心，嵌套一致性）与 L4 宇宙（本星系群/宇宙网） */}
         <Galaxy />
         <Universe />
+        {/* 3D 空间音效（可选需求 3.4.2）：靠近太阳/黑洞时对应音源增强 */}
+        <SpatialAudio />
       </Canvas>
 
       <ControlPanel />
       <HudInfo />
+      <PerformanceMonitor />
       <HelpHint />
       <AudioController />
     </div>

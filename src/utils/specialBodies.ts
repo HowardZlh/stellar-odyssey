@@ -185,3 +185,97 @@ export function jetFlowPhase01(tSec: number, cyclePerSec = 0.5): number {
   const p = (tSec * cyclePerSec) % 1;
   return p < 0 ? p + 1 : p;
 }
+
+// ---------------------------------------------------------------------------
+// 可选项扩展（需求 3.1.5 可选特殊天体的动态效果纯函数）
+// ---------------------------------------------------------------------------
+
+/** 星风粒子外流循环周期（秒，艺术化取值，已登记） */
+export const STELLAR_WIND_CYCLE_SEC = 6;
+
+/**
+ * 星风粒子外流相位（0-1，蓝巨星/沃尔夫-拉叶星强星风，可选需求）
+ *
+ * 每个粒子按各自 seed01 错开相位，沿径向从 0（恒星表面）流动到 1（外缘）
+ * 后循环回收。返回值即归一化径向距离。
+ *
+ * @param seed01 粒子确定性种子（[0,1) 内的初始相位偏移）
+ */
+export function stellarWindPhase01(
+  tSec: number,
+  seed01: number,
+  cycleSec = STELLAR_WIND_CYCLE_SEC,
+): number {
+  if (cycleSec <= 0) {
+    throw new RangeError(`星风循环周期必须为正数，收到 ${cycleSec}`);
+  }
+  const p = (tSec / cycleSec + seed01) % 1;
+  return p < 0 ? p + 1 : p;
+}
+
+/** 造父变星可视化光变周期（秒；造父一真实周期 5.366 天，降频表现已登记） */
+export const CEPHEID_VISUAL_PERIOD_SEC = 8;
+
+/** 造父变星光变幅度（±35%，接近造父一 δ Cep 视星等 3.48–4.37 的幅度感受） */
+export const CEPHEID_BRIGHTNESS_AMPLITUDE = 0.35;
+
+/** 造父变星光变曲线上升段占比（快速上升、缓慢下降的锯齿形特征） */
+export const CEPHEID_RISE_FRACTION = 0.25;
+
+/**
+ * 造父变星周期性光变（原型：造父一 δ Cephei，可选需求）
+ *
+ * 经典造父光变曲线为不对称锯齿形：快速增亮（约 1/4 周期）、
+ * 缓慢变暗（约 3/4 周期）。返回亮度系数（基准 1，1±amplitude）。
+ */
+export function cepheidBrightness(tSec: number, periodSec = CEPHEID_VISUAL_PERIOD_SEC): number {
+  if (periodSec <= 0) {
+    throw new RangeError(`光变周期必须为正数，收到 ${periodSec}`);
+  }
+  let phase = (tSec / periodSec) % 1;
+  if (phase < 0) phase += 1;
+  // 上升段：0 → 1（半余弦平滑）；下降段：1 → 0（半余弦平滑）
+  const level01 =
+    phase < CEPHEID_RISE_FRACTION
+      ? 0.5 - 0.5 * Math.cos((Math.PI * phase) / CEPHEID_RISE_FRACTION)
+      : 0.5 +
+        0.5 *
+          Math.cos(
+            (Math.PI * (phase - CEPHEID_RISE_FRACTION)) / (1 - CEPHEID_RISE_FRACTION),
+          );
+  return 1 - CEPHEID_BRIGHTNESS_AMPLITUDE + 2 * CEPHEID_BRIGHTNESS_AMPLITUDE * level01;
+}
+
+/** 伽马射线暴演示循环周期（秒）：每周期一次短暂爆发（示意降频，已登记） */
+export const GRB_CYCLE_SEC = 45;
+
+/** 伽马射线暴闪光持续时长（秒，长暴量级艺术化取值） */
+export const GRB_FLASH_DURATION_SEC = 3;
+
+/**
+ * 伽马射线暴闪光状态（可选需求 3.1.5 河外对象）
+ *
+ * 每 cycleSec 一次爆发：前 flashSec 内强度从 1 指数衰减到 ~0，其余时间为 0。
+ * 真实 GRB 为一次性事件（此处循环重放为演示示意，已登记）。
+ *
+ * @returns intensity01 当前闪光强度（0-1）；cycleIndex 当前循环序号（确定性变化用）
+ */
+export function grbFlashState(
+  tSec: number,
+  cycleSec = GRB_CYCLE_SEC,
+  flashSec = GRB_FLASH_DURATION_SEC,
+): { intensity01: number; cycleIndex: number } {
+  if (cycleSec <= 0 || flashSec <= 0) {
+    throw new RangeError(`GRB 周期与时长必须为正数，收到 ${cycleSec}, ${flashSec}`);
+  }
+  const cycleIndex = Math.floor(tSec / cycleSec);
+  let inCycle = tSec % cycleSec;
+  if (inCycle < 0) inCycle += cycleSec;
+  if (inCycle >= flashSec) {
+    return { intensity01: 0, cycleIndex };
+  }
+  // 快速上升（前 8%）+ 指数衰减（FRED 光变曲线：Fast Rise, Exponential Decay）
+  const rise = Math.min(1, inCycle / (flashSec * 0.08));
+  const decay = Math.exp((-3 * inCycle) / flashSec);
+  return { intensity01: rise * decay, cycleIndex };
+}

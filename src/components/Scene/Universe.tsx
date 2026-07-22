@@ -10,18 +10,33 @@ import {
   LANIAKEA,
   LG_CMB_VELOCITY_KM_S,
   LOCAL_GROUP_GALAXIES,
+  M31_COMPANION_OFFSETS_LY,
+  MAGELLANIC_STREAM,
   SATELLITE_GALAXY_ORBITS,
 } from '@/data/galaxies';
 import { useSimulationStore } from '@/store';
 import { cosmicDistanceToSceneUnits, lyToSceneUnits, trapezoidWeight } from '@/utils/scale';
 import {
+  OBSERVABLE_UNIVERSE_RADIUS_LY,
   generateCosmicWeb,
+  hubbleScaleFactor,
+  magellanicStreamPointsLy,
+  mergeGlowOpacity01,
   mwM31MergeCountdownMyr,
   mwM31SeparationLy,
   satelliteGalaxyPositionLy,
 } from '@/utils/universe';
-import { createGalaxySpriteCanvas } from '@/components/CelestialBody/proceduralTextures';
-import { M87Jet, Quasar } from '@/components/Scene/ExtragalacticObjects';
+import {
+  createGalaxySpriteCanvas,
+  createGlowSpriteCanvas,
+} from '@/components/CelestialBody/proceduralTextures';
+import {
+  AntennaeGalaxies,
+  GammaRayBurst,
+  LensingArcs,
+  M87Jet,
+  Quasar,
+} from '@/components/Scene/ExtragalacticObjects';
 
 /** 宇宙级内容 LOD 渐变区间（连续层级） */
 const FADE = { start: 3.05, full: 3.6 } as const;
@@ -98,6 +113,18 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
         galaxy.direction.y * d,
         galaxy.direction.z * d,
       );
+    } else if (galaxy.id === 'm32' || galaxy.id === 'm110') {
+      // M31 伴星系（可选需求）：随 M31 一同接近银河系（示意偏移已登记）
+      const m31Data = LOCAL_GROUP_GALAXIES.find((g) => g.id === 'm31');
+      if (m31Data) {
+        const d = cosmicDistanceToSceneUnits(mwM31SeparationLy(simDays));
+        const offset = M31_COMPANION_OFFSETS_LY[galaxy.id];
+        group.position.set(
+          m31Data.direction.x * d + lyToSceneUnits(offset.x),
+          m31Data.direction.y * d + lyToSceneUnits(offset.y),
+          m31Data.direction.z * d + lyToSceneUnits(offset.z),
+        );
+      }
     } else if (galaxy.id === 'lmc' || galaxy.id === 'smc') {
       // 卫星星系绕银河系运动
       const orbit = SATELLITE_GALAXY_ORBITS[galaxy.id];
@@ -174,6 +201,8 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
 export function Universe(): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
   const mergeLabelRef = useRef<HTMLSpanElement>(null);
+  const webRef = useRef<THREE.Points>(null);
+  const mergeGlowRef = useRef<THREE.Sprite>(null);
   const showVelocityVectors = useSimulationStore((s) => s.showVelocityVectors);
   const showLabels = useSimulationStore((s) => s.showLabels);
   // Html 标签不随父级 visible 隐藏，需单独按层级门控
@@ -252,6 +281,62 @@ export function Universe(): JSX.Element {
     [boundaryGeometry, boundaryMaterial],
   );
 
+  // ---------- 可观测宇宙边界示意（可选需求 3.1.3） ----------
+  const observableRadius = cosmicDistanceToSceneUnits(OBSERVABLE_UNIVERSE_RADIUS_LY);
+  const { observableGeometry, observableMaterial } = useMemo(() => {
+    const segments = 160;
+    const positions = new Float32Array((segments + 1) * 3);
+    for (let s = 0; s <= segments; s += 1) {
+      const a = (s / segments) * Math.PI * 2;
+      positions[s * 3] = Math.cos(a) * observableRadius;
+      positions[s * 3 + 1] = 0;
+      positions[s * 3 + 2] = Math.sin(a) * observableRadius;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.LineBasicMaterial({
+      color: '#8a4a5a',
+      transparent: true,
+      opacity: 0,
+    });
+    return { observableGeometry: geo, observableMaterial: mat };
+  }, [observableRadius]);
+  const observableLine = useMemo(() => {
+    const line = new THREE.Line(observableGeometry, observableMaterial);
+    line.frustumCulled = false;
+    return line;
+  }, [observableGeometry, observableMaterial]);
+
+  // ---------- 麦哲伦星流（可选需求 3.1.3） ----------
+  const { streamGeometry, streamMaterial } = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute(
+      'position',
+      new THREE.BufferAttribute(new Float32Array(MAGELLANIC_STREAM.pointCount * 3), 3),
+    );
+    const mat = new THREE.PointsMaterial({
+      color: MAGELLANIC_STREAM.color,
+      size: 90,
+      transparent: true,
+      opacity: 0,
+      sizeAttenuation: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    return { streamGeometry: geo, streamMaterial: mat };
+  }, []);
+  const streamPoints = useMemo(() => {
+    const pts = new THREE.Points(streamGeometry, streamMaterial);
+    pts.frustumCulled = false;
+    return pts;
+  }, [streamGeometry, streamMaterial]);
+
+  // ---------- 银河系—仙女座合并辉光（可选需求 3.1.3 碰撞合并预览） ----------
+  const mergeGlowTexture = useMemo(
+    () => new THREE.CanvasTexture(createGlowSpriteCanvas('#ffe0c0', 128)),
+    [],
+  );
+
   useEffect(() => {
     return () => {
       webGeometry.dispose();
@@ -260,8 +345,13 @@ export function Universe(): JSX.Element {
       approachMaterial.dispose();
       boundaryGeometry.dispose();
       boundaryMaterial.dispose();
+      observableGeometry.dispose();
+      observableMaterial.dispose();
+      streamGeometry.dispose();
+      streamMaterial.dispose();
+      mergeGlowTexture.dispose();
     };
-  }, [webGeometry, webMaterial, approachGeometry, approachMaterial, boundaryGeometry, boundaryMaterial]);
+  }, [webGeometry, webMaterial, approachGeometry, approachMaterial, boundaryGeometry, boundaryMaterial, observableGeometry, observableMaterial, streamGeometry, streamMaterial, mergeGlowTexture]);
 
   useFrame(() => {
     const state = useSimulationStore.getState();
@@ -274,6 +364,41 @@ export function Universe(): JSX.Element {
     webMaterial.opacity = 0.75 * weight;
     boundaryMaterial.opacity = 0.28 * weight;
     approachMaterial.opacity = 0.7 * weight;
+    observableMaterial.opacity = 0.22 * weight;
+    streamMaterial.opacity = 0.5 * weight;
+
+    // 哈勃膨胀示意（可选需求 3.1.3）：宇宙网整体随时间膨胀，
+    // 退行速度自然与距离成正比（v = H·d，哈勃定律）
+    if (webRef.current) {
+      webRef.current.scale.setScalar(hubbleScaleFactor(state.simDays));
+    }
+
+    // 麦哲伦星流：沿 LMC 轨道向后拖尾（每帧更新，跟随 LMC 运动）
+    {
+      const lmcOrbit = SATELLITE_GALAXY_ORBITS.lmc;
+      const lmcData = LOCAL_GROUP_GALAXIES.find((g) => g.id === 'lmc');
+      if (lmcData) {
+        const streamPts = magellanicStreamPointsLy(
+          lmcData.distanceLy,
+          lmcOrbit.periodMyr,
+          lmcOrbit.phase0Rad,
+          lmcOrbit.inclinationDeg,
+          state.simDays,
+          MAGELLANIC_STREAM.pointCount,
+          MAGELLANIC_STREAM.seed,
+        );
+        const pos = streamGeometry.attributes.position as THREE.BufferAttribute;
+        for (let i = 0; i < streamPts.length; i += 1) {
+          pos.setXYZ(
+            i,
+            lyToSceneUnits(streamPts[i].x),
+            lyToSceneUnits(streamPts[i].y),
+            lyToSceneUnits(streamPts[i].z),
+          );
+        }
+        pos.needsUpdate = true;
+      }
+    }
 
     // 接近轨迹线端点更新：M31 当前位置 → 银河系（原点）
     if (m31) {
@@ -293,6 +418,23 @@ export function Universe(): JSX.Element {
             ? `银河系—仙女座相互接近（~110 km/s），约 ${(countdown / 1000).toFixed(1)} 十亿年后碰撞合并`
             : '银河系—仙女座已合并（模拟时间超过预计碰撞时刻）';
       }
+
+      // 合并辉光（可选需求：碰撞合并过程示意）——两星系接近后期
+      // 在两者之间显现并增强的并合辉光
+      if (mergeGlowRef.current) {
+        const glow = mergeGlowOpacity01(separation);
+        mergeGlowRef.current.visible = glow > 0.001;
+        const mid = d * 0.5;
+        mergeGlowRef.current.position.set(
+          m31.direction.x * mid,
+          m31.direction.y * mid,
+          m31.direction.z * mid,
+        );
+        const s = 2600 + 1800 * glow;
+        mergeGlowRef.current.scale.set(s, s, 1);
+        (mergeGlowRef.current.material as THREE.SpriteMaterial).opacity =
+          0.75 * glow * weight;
+      }
     }
     // 本星系群整体本动仅作矢量指示，不移动场景（需求 3.1.3，避免坐标漂移）
   });
@@ -306,9 +448,26 @@ export function Universe(): JSX.Element {
         <GalaxyObject key={galaxy.id} galaxy={galaxy} />
       ))}
 
-      {/* 河外特殊对象（需求 3.1.5，P2）：类星体 3C 273 + M87 单侧喷流 */}
+      {/* 河外特殊对象（需求 3.1.5，P2）：类星体 3C 273 + M87 单侧喷流；
+          可选项：触须星系碰撞现场 + 星系团引力透镜弧 + 伽马射线暴 */}
       <Quasar />
       <M87Jet />
+      <AntennaeGalaxies />
+      <LensingArcs />
+      <GammaRayBurst />
+
+      {/* 麦哲伦星流（可选需求）：LMC/SMC 被潮汐剥离的气体流 */}
+      <primitive object={streamPoints} />
+
+      {/* 银河系—仙女座合并辉光（可选需求：碰撞合并示意，接近后期显现） */}
+      <sprite ref={mergeGlowRef} visible={false}>
+        <spriteMaterial
+          map={mergeGlowTexture}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </sprite>
 
       {/* MW–M31 接近轨迹（虚线） + 碰撞提示 */}
       <primitive object={approachLine} />
@@ -364,11 +523,27 @@ export function Universe(): JSX.Element {
         </group>
       )}
 
-      {/* 宇宙网：星系团（节点）—纤维—空洞（确定性分布） */}
-      <points geometry={webGeometry} material={webMaterial} />
+      {/* 宇宙网：星系团（节点）—纤维—空洞（确定性分布）；
+          整体缩放表达哈勃膨胀（可选需求），远端星系颜色偏红（红移示意） */}
+      <points ref={webRef} geometry={webGeometry} material={webMaterial} />
 
       {/* 拉尼亚凯亚超星系团边界示意 + 巨引源标记 */}
       <primitive object={boundaryLine} />
+
+      {/* 可观测宇宙边界示意（可选需求：约 465 亿光年，距离对数压缩） */}
+      <primitive object={observableLine} />
+      {showLabels && inRange && (
+        <Html
+          position={[observableRadius * 0.7, -900, observableRadius * 0.3]}
+          center
+          distanceFactor={14000}
+          style={{ pointerEvents: 'none' }}
+        >
+          <span className="whitespace-nowrap text-xs text-rose-300/60">
+            可观测宇宙边界示意（半径约 465 亿光年）
+          </span>
+        </Html>
+      )}
       {showLabels && inRange && (
         <Html
           position={[laniakeaRadius * 0.72, 800, 0]}

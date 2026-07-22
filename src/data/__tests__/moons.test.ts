@@ -135,10 +135,10 @@ describe('土星卫星', () => {
 });
 
 describe('getMoonsByParent', () => {
-  it('地球有 3 颗卫星（月球 + ISS + 哈勃）', () => {
+  it('地球有 4 颗卫星（月球 + ISS + 哈勃 + 静止轨道卫星）', () => {
     const earthMoons = getMoonsByParent('earth');
-    expect(earthMoons).toHaveLength(3);
-    expect(earthMoons.map((m) => m.id).sort()).toEqual(['hubble', 'iss', 'moon']);
+    expect(earthMoons).toHaveLength(4);
+    expect(earthMoons.map((m) => m.id).sort()).toEqual(['geo-satellite', 'hubble', 'iss', 'moon']);
   });
 
   it('未知行星返回空数组', () => {
@@ -152,6 +152,6 @@ describe('getMoonById', () => {
   });
 
   it('未知 id 返回 undefined', () => {
-    expect(getMoonById('phobos')).toBeUndefined();
+    expect(getMoonById('vulcan-moon')).toBeUndefined();
   });
 });

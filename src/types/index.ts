@@ -64,6 +64,8 @@ export interface PlanetSurfaceConfig {
   hasAtmosphereGlow?: boolean;
   /** 大气辉光颜色 */
   atmosphereColor?: string;
+  /** 夜半球城市灯光（地球，可选需求 3.1.1） */
+  hasNightLights?: boolean;
 }
 
 /** 行星静态数据 */
@@ -79,6 +81,8 @@ export interface PlanetData {
   rotation: RotationParams;
   /** 公转周期（地球年，用于展示与校验） */
   orbitalPeriodYears: number;
+  /** 质量（kg，信息面板质量字段，需求 3.5.2） */
+  massKg?: number;
   /** 数据来源说明 */
   dataSource: string;
   /** 行星环（土星等） */
@@ -130,6 +134,8 @@ export interface MoonData {
   referencePlane: SatelliteReferencePlane;
   /** 潮汐锁定（始终同一面朝向行星，如月球） */
   tidallyLocked?: boolean;
+  /** 质量（kg，信息面板质量字段，需求 3.5.2） */
+  massKg?: number;
   /** 备注（共振关系、大气特征等） */
   noteZh?: string;
   dataSource: string;
@@ -148,6 +154,8 @@ export interface CometData {
   orbitalPeriodYears: number;
   /** 彗发/彗尾出现的日心距离阈值（AU） */
   tailActivationAu: number;
+  /** 质量（kg，信息面板质量字段，需求 3.5.2） */
+  massKg?: number;
   dataSource: string;
 }
 
@@ -250,7 +258,15 @@ export type SpecialBodyKind =
   | 'emission-nebula'
   | 'planetary-nebula'
   | 'globular-cluster'
-  | 'quasar';
+  | 'quasar'
+  // ---- 可选项扩展（需求 3.1.5 可选特殊天体） ----
+  | 'wolf-rayet'
+  | 'cepheid'
+  | 'open-cluster'
+  | 'dark-nebula'
+  | 'galaxy-collision'
+  | 'lensing-cluster'
+  | 'gamma-ray-burst';
 
 /** 特殊天体位置模式 */
 export type SpecialBodyPositionMode =

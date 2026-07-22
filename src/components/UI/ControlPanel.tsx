@@ -35,6 +35,12 @@ export function ControlPanel(): JSX.Element {
   const setRealScaleMode = useSimulationStore((s) => s.setRealScaleMode);
   const activeSupernova = useSimulationStore((s) => s.activeSupernova);
   const triggerSupernova = useSimulationStore((s) => s.triggerSupernova);
+  const showPerformance = useSimulationStore((s) => s.showPerformance);
+  const setShowPerformance = useSimulationStore((s) => s.setShowPerformance);
+  const mergePreviewActive = useSimulationStore((s) => s.mergePreviewActive);
+  const mergePreviewReturnSimDays = useSimulationStore((s) => s.mergePreviewReturnSimDays);
+  const startMergePreview = useSimulationStore((s) => s.startMergePreview);
+  const restoreFromMergePreview = useSimulationStore((s) => s.restoreFromMergePreview);
 
   const handleSupernovaDemo = (): void => {
     const params = rollSupernovaParams();
@@ -161,13 +167,21 @@ export function ControlPanel(): JSX.Element {
           />
           速度矢量箭头
         </label>
-        <label className="flex items-center gap-2 text-xs">
+        <label className="mb-1 flex items-center gap-2 text-xs">
           <input
             type="checkbox"
             checked={realScaleMode}
             onChange={(e) => setRealScaleMode(e.target.checked)}
           />
           真实比例模式（天体按真实大小）
+        </label>
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={showPerformance}
+            onChange={(e) => setShowPerformance(e.target.checked)}
+          />
+          性能监控（FPS/内存）
         </label>
       </section>
 
@@ -186,6 +200,28 @@ export function ControlPanel(): JSX.Element {
         >
           {activeSupernova ? '💥 超新星爆发进行中…' : '💥 触发超新星演示（旋臂内随机）'}
         </button>
+        {/* 银河系—仙女座碰撞合并快进预览（可选需求 3.1.3） */}
+        <button
+          type="button"
+          onClick={startMergePreview}
+          disabled={mergePreviewActive}
+          className={`mt-2 w-full rounded px-2 py-1.5 text-xs ${
+            mergePreviewActive
+              ? 'cursor-not-allowed bg-white/5 text-gray-500'
+              : 'bg-sky-400/20 text-sky-200 hover:bg-sky-400/30'
+          }`}
+        >
+          {mergePreviewActive ? '⏩ 合并预览进行中…' : '⏩ 预览银河系—仙女座碰撞合并'}
+        </button>
+        {mergePreviewReturnSimDays !== null && !mergePreviewActive && (
+          <button
+            type="button"
+            onClick={restoreFromMergePreview}
+            className="mt-2 w-full rounded bg-white/10 px-2 py-1.5 text-xs text-gray-200 hover:bg-white/20"
+          >
+            ⏪ 恢复预览前时间
+          </button>
+        )}
       </section>
     </div>
   );

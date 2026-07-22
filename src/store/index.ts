@@ -11,6 +11,7 @@ import { daysSinceJ2000 } from '@/utils/physics';
 import { continuousLevelForDistance, discreteLevelFromContinuous } from '@/utils/scale';
 import { SN_MAX_REMNANTS, clampSupernovaDuration } from '@/utils/supernova';
 import { advanceSimTimeContinuous, clampSpeedMultiplier } from '@/utils/time';
+import { MERGE_PREVIEW_DURATION_SEC, mergePreviewSimDays } from '@/utils/universe';
 
 export interface SimulationState {
   /** 模拟时间：J2000 历元起天数（初始为真实当前日期，需求 3.1.1 真实日期模式） */
@@ -61,6 +62,14 @@ export interface SimulationState {
   supernovaNoticeVisible: boolean;
   /** 超新星事件累计计数（生成事件 id） */
   supernovaCounter: number;
+  /** 性能监控面板显示（FPS/内存，可开关，需求 3.5.2 可选项） */
+  showPerformance: boolean;
+  /** 银河系—仙女座碰撞合并快进预览进行中（可选需求 3.1.3） */
+  mergePreviewActive: boolean;
+  /** 合并预览进度（0-1） */
+  mergePreviewProgress01: number;
+  /** 合并预览起点模拟时间（预览取消/结束后可恢复） */
+  mergePreviewReturnSimDays: number | null;
 
   // actions
   tick: (realDeltaSeconds: number) => void;
@@ -111,6 +120,15 @@ export interface SimulationState {
   /** 活跃超新星动画完成：归档为永久遗迹（FIFO 上限） */
   archiveSupernova: () => void;
   dismissSupernovaNotice: () => void;
+  setShowPerformance: (show: boolean) => void;
+  /**
+   * 启动银河系—仙女座碰撞合并快进预览（可选需求 3.1.3）：
+   * 模拟时间在 MERGE_PREVIEW_DURATION_SEC 内平滑快进到合并时刻，
+   * 并切换到宇宙视角（L4）观看
+   */
+  startMergePreview: () => void;
+  /** 取消/结束合并预览并恢复预览前的模拟时间 */
+  restoreFromMergePreview: () => void;
 }
 
 /**
@@ -147,17 +165,39 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   supernovaRemnants: [],
   supernovaNoticeVisible: false,
   supernovaCounter: 0,
+  showPerformance: false,
+  mergePreviewActive: false,
+  mergePreviewProgress01: 0,
+  mergePreviewReturnSimDays: null,
 
   tick: (realDeltaSeconds) =>
-    set((state) => ({
-      simDays: advanceSimTimeContinuous(
-        state.simDays,
-        realDeltaSeconds,
-        state.continuousLevel,
-        state.speedMultiplier,
-        state.paused,
-      ),
-    })),
+    set((state) => {
+      // 合并预览进行中：模拟时间按缓动插值快进到合并时刻（可选需求 3.1.3）
+      if (state.mergePreviewActive) {
+        if (realDeltaSeconds < 0) {
+          throw new RangeError(`时间增量不能为负，收到 ${realDeltaSeconds}`);
+        }
+        const progress = Math.min(
+          1,
+          state.mergePreviewProgress01 + realDeltaSeconds / MERGE_PREVIEW_DURATION_SEC,
+        );
+        return {
+          simDays: mergePreviewSimDays(state.mergePreviewReturnSimDays ?? state.simDays, progress),
+          mergePreviewProgress01: progress,
+          // 到达合并时刻后预览结束（保留 returnSimDays 供恢复）
+          mergePreviewActive: progress < 1,
+        };
+      }
+      return {
+        simDays: advanceSimTimeContinuous(
+          state.simDays,
+          realDeltaSeconds,
+          state.continuousLevel,
+          state.speedMultiplier,
+          state.paused,
+        ),
+      };
+    }),
 
   setPaused: (paused) => set({ paused }),
 
@@ -272,4 +312,33 @@ export const useSimulationStore = create<SimulationState>((set) => ({
     }),
 
   dismissSupernovaNotice: () => set({ supernovaNoticeVisible: false }),
+
+  setShowPerformance: (show) => set({ showPerformance: show }),
+
+  startMergePreview: () =>
+    set((state) => {
+      if (state.mergePreviewActive) return state;
+      return {
+        mergePreviewActive: true,
+        mergePreviewProgress01: 0,
+        mergePreviewReturnSimDays: state.simDays,
+        // 切换到宇宙视角观看（与 setViewLevel 一致的锚点过渡）
+        viewLevel: 'L4',
+        continuousLevel: LEVEL_TO_CONTINUOUS.L4,
+        viewTransitionId: state.viewTransitionId + 1,
+        followBodyId: null,
+        flyToBodyId: null,
+      };
+    }),
+
+  restoreFromMergePreview: () =>
+    set((state) => {
+      if (state.mergePreviewReturnSimDays === null) return state;
+      return {
+        mergePreviewActive: false,
+        mergePreviewProgress01: 0,
+        simDays: state.mergePreviewReturnSimDays,
+        mergePreviewReturnSimDays: null,
+      };
+    }),
 }));

@@ -9,11 +9,18 @@
  * 降级策略（需求 3.4.2）：AudioContext 不可用或初始化失败时静默不报错。
  */
 
-import type { ViewLevel } from '@/types';
+import type { Vec3, ViewLevel } from '@/types';
 import { VIEW_LEVELS } from '@/types';
 import { PROCEDURAL_SOUND_PARAMS } from '@/data/sounds';
+import { SPATIAL_SOURCES } from '@/utils/spatialAudio';
 
 interface LevelNodes {
+  gain: GainNode;
+  sources: AudioScheduledSourceNode[];
+}
+
+interface SpatialNodes {
+  panner: PannerNode;
   gain: GainNode;
   sources: AudioScheduledSourceNode[];
 }
@@ -24,6 +31,8 @@ export class AudioEngine {
   private masterGain: GainNode | null = null;
 
   private levels: Partial<Record<ViewLevel, LevelNodes>> = {};
+
+  private spatial: Map<string, SpatialNodes> = new Map();
 
   /** 是否已成功初始化 */
   get initialized(): boolean {
@@ -59,6 +68,10 @@ export class AudioEngine {
       this.masterGain = master;
       for (const level of VIEW_LEVELS) {
         this.levels[level] = this.buildLevelChain(context, master, level);
+      }
+      // 3D 空间音源（可选需求 3.4.2：PannerNode，靠近太阳/黑洞时增强）
+      for (const config of SPATIAL_SOURCES) {
+        this.spatial.set(config.id, this.buildSpatialChain(context, master, config));
       }
     } catch {
       // 静默降级：无音效但不影响主功能
@@ -133,6 +146,107 @@ export class AudioEngine {
   }
 
   /**
+   * 更新空间音源（可选需求 3.4.2 3D 空间音效）
+   *
+   * @param id 音源 id（utils/spatialAudio.SPATIAL_SOURCES）
+   * @param cameraLocalPosition 相机局部坐标系下的音源位置（音频单位；
+   *   相机局部系下监听者恒位于原点、面向 -z，无需设置 listener 姿态）
+   * @param gain01 层级门控增益（0-1，spatialSourceLevelGain 计算）
+   */
+  setSpatialSource(id: string, cameraLocalPosition: Vec3, gain01: number): void {
+    if (!this.context) return;
+    const nodes = this.spatial.get(id);
+    if (!nodes) return;
+    try {
+      const now = this.context.currentTime;
+      const clamped = Math.min(1, Math.max(0, gain01));
+      nodes.gain.gain.setTargetAtTime(clamped, now, 0.1);
+      if (nodes.panner.positionX) {
+        nodes.panner.positionX.setTargetAtTime(cameraLocalPosition.x, now, 0.05);
+        nodes.panner.positionY.setTargetAtTime(cameraLocalPosition.y, now, 0.05);
+        nodes.panner.positionZ.setTargetAtTime(cameraLocalPosition.z, now, 0.05);
+      } else {
+        // Safari 旧版回退
+        nodes.panner.setPosition(
+          cameraLocalPosition.x,
+          cameraLocalPosition.y,
+          cameraLocalPosition.z,
+        );
+      }
+    } catch {
+      // 静默降级
+    }
+  }
+
+  /**
+   * UI 操作音效（可选需求 3.4.2）：短促点击音（开关/按钮）
+   */
+  playUiClick(volume = 1): void {
+    this.playBlip([880], 0.05, 0.16 * volume);
+  }
+
+  /**
+   * 选择天体音效（可选需求 3.4.2）：双音上行提示
+   */
+  playSelectBlip(volume = 1): void {
+    this.playBlip([660, 990], 0.09, 0.2 * volume);
+  }
+
+  /**
+   * 视角切换音效（可选需求 3.4.2）：滤波噪声下扫"嗖"声
+   */
+  playViewWhoosh(volume = 1): void {
+    if (!this.context || !this.masterGain) return;
+    try {
+      const context = this.context;
+      const now = context.currentTime;
+      const noise = context.createBufferSource();
+      noise.buffer = this.createNoiseBuffer(context);
+      const filter = context.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.Q.value = 1.2;
+      filter.frequency.setValueAtTime(1800, now);
+      filter.frequency.exponentialRampToValueAtTime(220, now + 0.7);
+      const gain = context.createGain();
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.35 * volume, now + 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain);
+      noise.start(now);
+      noise.stop(now + 0.85);
+    } catch {
+      // 静默降级
+    }
+  }
+
+  /** 短音序列（UI 音效共用）：正弦短音 + 指数衰减 */
+  private playBlip(frequencies: number[], noteSec: number, peakGain: number): void {
+    if (!this.context || !this.masterGain) return;
+    try {
+      const context = this.context;
+      let start = context.currentTime;
+      for (const freq of frequencies) {
+        const osc = context.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        const gain = context.createGain();
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(peakGain, start + 0.008);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + noteSec);
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start(start);
+        osc.stop(start + noteSec + 0.02);
+        start += noteSec * 0.7;
+      }
+    } catch {
+      // 静默降级
+    }
+  }
+
+  /**
    * 恢复被浏览器挂起的 AudioContext
    */
   resume(): void {
@@ -158,6 +272,16 @@ export class AudioEngine {
       }
     }
     this.levels = {};
+    for (const nodes of this.spatial.values()) {
+      for (const source of nodes.sources) {
+        try {
+          source.stop();
+        } catch {
+          // 已停止的源重复 stop 会抛错，忽略
+        }
+      }
+    }
+    this.spatial.clear();
     if (this.context) {
       void this.context.close().catch(() => undefined);
     }
@@ -216,6 +340,49 @@ export class AudioEngine {
     return { gain: levelGain, sources };
   }
 
+  /**
+   * 构建 3D 空间音源链（可选需求 3.4.2）：
+   * 振荡器（基频 + 2/4 倍泛音，与 buildLevelChain 同理利用"缺失基频"效应）
+   * → 门控增益（初始 0，由 setSpatialSource 按层级窗口调制）
+   * → PannerNode（equalpower + inverse 距离模型，靠近时自然增强）
+   * → 主增益
+   */
+  private buildSpatialChain(
+    context: AudioContext,
+    destination: GainNode,
+    config: { oscillatorFrequency: number; baseGain: number },
+  ): SpatialNodes {
+    const panner = context.createPanner();
+    panner.panningModel = 'equalpower';
+    panner.distanceModel = 'inverse';
+    panner.refDistance = 1;
+    panner.connect(destination);
+
+    const gate = context.createGain();
+    gate.gain.value = 0;
+    gate.connect(panner);
+
+    const sources: AudioScheduledSourceNode[] = [];
+    const harmonics: Array<{ ratio: number; gain: number }> = [
+      { ratio: 1, gain: 1 },
+      { ratio: 2, gain: 0.5 },
+      { ratio: 4, gain: 0.22 },
+    ];
+    for (const h of harmonics) {
+      const osc = context.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = config.oscillatorFrequency * h.ratio;
+      const oscGain = context.createGain();
+      oscGain.gain.value = config.baseGain * h.gain;
+      osc.connect(oscGain);
+      oscGain.connect(gate);
+      osc.start();
+      sources.push(osc);
+    }
+
+    return { panner, gain: gate, sources };
+  }
+
   private createNoiseBuffer(context: AudioContext): AudioBuffer {
     const seconds = 2;
     const buffer = context.createBuffer(1, context.sampleRate * seconds, context.sampleRate);
@@ -233,4 +400,18 @@ export class AudioEngine {
     }
     return buffer;
   }
+}
+
+let sharedEngine: AudioEngine | null = null;
+
+/**
+ * 共享音效引擎单例：AudioController（音景/UI 音效）与
+ * SpatialAudio（Canvas 内 3D 空间音源）共用同一 AudioContext。
+ * init() 幂等，由用户手势侧（音效开关）触发初始化。
+ */
+export function getSharedAudioEngine(): AudioEngine {
+  if (!sharedEngine) {
+    sharedEngine = new AudioEngine();
+  }
+  return sharedEngine;
 }

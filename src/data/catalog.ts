@@ -8,9 +8,10 @@
 import type { GalaxyData, GalaxyMorphology, MoonData, PlanetData } from '@/types';
 import { PLANETS, SUN } from '@/data/planets';
 import { MOONS } from '@/data/moons';
-import { COMETS, PLUTO } from '@/data/smallBodies';
+import { COMETS, DWARF_PLANETS, PLUTO } from '@/data/smallBodies';
 import { LOCAL_GROUP_GALAXIES, MILKY_WAY } from '@/data/galaxies';
 import { SPECIAL_BODIES } from '@/data/specialBodies';
+import { OORT_INNER_AU, OORT_OUTER_AU } from '@/utils/oort';
 import { SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
 
 /** 信息面板中的一行（标签 + 值） */
@@ -58,16 +59,53 @@ function formatRotation(siderealPeriodHours: number): string {
   return siderealPeriodHours < 0 ? `${base}（逆向）` : base;
 }
 
+/** 上标数字映射（质量科学计数法显示用） */
+const SUPERSCRIPT_DIGITS: Record<string, string> = {
+  '0': '⁰',
+  '1': '¹',
+  '2': '²',
+  '3': '³',
+  '4': '⁴',
+  '5': '⁵',
+  '6': '⁶',
+  '7': '⁷',
+  '8': '⁸',
+  '9': '⁹',
+  '-': '⁻',
+};
+
+/**
+ * 质量格式化（需求 3.5.2 质量字段）：科学计数法，如 5.97×10²⁴ kg
+ */
+export function formatMassKg(massKg: number): string {
+  if (!Number.isFinite(massKg) || massKg <= 0) {
+    throw new RangeError(`质量必须为正有限数，收到 ${massKg}`);
+  }
+  const exponent = Math.floor(Math.log10(massKg));
+  const mantissa = massKg / 10 ** exponent;
+  const supExp = String(exponent)
+    .split('')
+    .map((c) => SUPERSCRIPT_DIGITS[c] ?? c)
+    .join('');
+  return `${mantissa.toFixed(2)}×10${supExp} kg`;
+}
+
 /** 行星 / 矮行星的通用信息行 */
 function planetLines(p: PlanetData): BodyInfoLine[] {
-  return [
+  const lines: BodyInfoLine[] = [
     { label: '半径', value: `${formatNumber(p.radiusKm)} km` },
+  ];
+  if (p.massKg !== undefined) {
+    lines.push({ label: '质量', value: formatMassKg(p.massKg) });
+  }
+  lines.push(
     { label: '轨道半长轴', value: `${p.orbit.semiMajorAxisAu.toFixed(2)} AU` },
     { label: '离心率', value: p.orbit.eccentricity.toFixed(4) },
     { label: '公转周期', value: `${formatNumber(p.orbitalPeriodYears)} 年` },
     { label: '自转周期', value: formatRotation(p.rotation.siderealPeriodHours) },
     { label: '轴倾角', value: `${p.rotation.axialTiltDeg.toFixed(2)}°` },
-  ];
+  );
+  return lines;
 }
 
 /** 卫星周期：不足 1 天转为分钟显示（ISS 约 92.9 分钟） */
@@ -88,10 +126,18 @@ function moonLines(m: MoonData): BodyInfoLine[] {
           ? `${m.radiusKm} km（示意尺寸）`
           : `${formatNumber(m.radiusKm)} km`,
     },
+  ];
+  if (m.massKg !== undefined) {
+    lines.push({ label: '质量', value: formatMassKg(m.massKg) });
+  }
+  lines.push(
     { label: '轨道半长轴', value: `${formatNumber(m.orbit.semiMajorAxisKm)} km` },
     { label: '公转周期', value: formatMoonPeriod(m.orbit.periodDays) },
-    { label: '轨道倾角', value: `${m.orbit.inclinationDeg}°` },
-  ];
+    {
+      label: '轨道倾角',
+      value: m.orbit.inclinationDeg > 90 ? `${m.orbit.inclinationDeg}°（逆行）` : `${m.orbit.inclinationDeg}°`,
+    },
+  );
   if (m.tidallyLocked) {
     lines.push({ label: '潮汐锁定', value: '是' });
   }
@@ -126,7 +172,10 @@ function buildCatalog(): Map<string, BodyInfo> {
     name: SUN.name,
     nameZh: SUN.nameZh,
     typeZh: '恒星',
-    lines: [{ label: '半径', value: `${formatNumber(SUN.radiusKm)} km` }],
+    lines: [
+      { label: '半径', value: `${formatNumber(SUN.radiusKm)} km` },
+      { label: '质量', value: formatMassKg(SUN.massKg) },
+    ],
     dataSource: SUN.dataSource,
   });
 
@@ -142,20 +191,25 @@ function buildCatalog(): Map<string, BodyInfo> {
     });
   }
 
-  // 冥王星（矮行星）：额外标注轨道倾角与海王星共振
-  catalog.set(PLUTO.id, {
-    id: PLUTO.id,
-    name: PLUTO.name,
-    nameZh: PLUTO.nameZh,
-    // PLUTO.classificationZh 固定为 '矮行星'（smallBodies.ts），直接使用
-    typeZh: '矮行星',
-    lines: [
-      ...planetLines(PLUTO),
-      { label: '轨道倾角', value: `${PLUTO.orbit.inclinationDeg.toFixed(1)}°` },
-      { label: '共振', value: '与海王星 2:3' },
-    ],
-    dataSource: PLUTO.dataSource,
-  });
+  // 矮行星（冥王星 + 阋神星/鸟神星/妊神星，可选需求 3.1.1）：
+  // 均标注轨道倾角；冥王星额外标注海王星共振
+  for (const d of DWARF_PLANETS) {
+    const lines: BodyInfoLine[] = [
+      ...planetLines(d),
+      { label: '轨道倾角', value: `${d.orbit.inclinationDeg.toFixed(1)}°` },
+    ];
+    if (d.id === PLUTO.id) {
+      lines.push({ label: '共振', value: '与海王星 2:3' });
+    }
+    catalog.set(d.id, {
+      id: d.id,
+      name: d.name,
+      nameZh: d.nameZh,
+      typeZh: '矮行星',
+      lines,
+      dataSource: d.dataSource,
+    });
+  }
 
   // 卫星（自然 + 人造）
   for (const m of MOONS) {
@@ -172,22 +226,41 @@ function buildCatalog(): Map<string, BodyInfo> {
   // 彗星：倾角 >90° 标注逆行，附近日点/远日点距离
   for (const c of COMETS) {
     const { semiMajorAxisAu: a, eccentricity: e, inclinationDeg: i } = c.orbit;
+    const lines: BodyInfoLine[] = [
+      { label: '轨道半长轴', value: `${a.toFixed(2)} AU` },
+      { label: '离心率', value: e.toFixed(4) },
+      { label: '轨道倾角', value: i > 90 ? `${i}°（逆行）` : `${i}°` },
+      { label: '公转周期', value: `${c.orbitalPeriodYears} 年` },
+      { label: '近日点距离', value: `${(a * (1 - e)).toFixed(1)} AU` },
+      { label: '远日点距离', value: `${(a * (1 + e)).toFixed(1)} AU` },
+    ];
+    if (c.massKg !== undefined) {
+      lines.splice(1, 0, { label: '质量', value: formatMassKg(c.massKg) });
+    }
     catalog.set(c.id, {
       id: c.id,
       name: c.name,
       nameZh: c.nameZh,
       typeZh: '彗星',
-      lines: [
-        { label: '轨道半长轴', value: `${a.toFixed(2)} AU` },
-        { label: '离心率', value: e.toFixed(4) },
-        { label: '轨道倾角', value: i > 90 ? `${i}°（逆行）` : `${i}°` },
-        { label: '公转周期', value: `${c.orbitalPeriodYears} 年` },
-        { label: '近日点距离', value: `${(a * (1 - e)).toFixed(1)} AU` },
-        { label: '远日点距离', value: `${(a * (1 + e)).toFixed(1)} AU` },
-      ],
+      lines,
       dataSource: c.dataSource,
     });
   }
+
+  // 奥尔特云外边界示意（可选需求 3.1.1：L2 与 L3 之间的过渡参照物）
+  catalog.set('oort-cloud', {
+    id: 'oort-cloud',
+    name: 'Oort Cloud (outer boundary, schematic)',
+    nameZh: '奥尔特云外边界（示意）',
+    typeZh: '太阳系外围结构',
+    lines: [
+      { label: '内缘', value: `约 ${formatNumber(OORT_INNER_AU)} AU` },
+      { label: '外缘', value: `约 ${formatNumber(OORT_OUTER_AU)} AU（约 1.58 光年）` },
+      { label: '组成', value: '球壳状长周期彗星库（太阳引力主导范围的边界）' },
+      { label: '示意说明', value: '真实尺度远超场景范围，球壳半径为压缩示意值（已登记）' },
+    ],
+    dataSource: 'NASA Solar System Exploration – Oort Cloud',
+  });
 
   // 本星系群及邻近星系
   for (const g of LOCAL_GROUP_GALAXIES) {

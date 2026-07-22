@@ -700,6 +700,48 @@ export function createCloudTextureCanvas(width: number, seed = 20240601): HTMLCa
 }
 
 /**
+ * 地球夜半球城市灯光纹理（RGBA，可选需求 3.1.1）：
+ * 与 paintEarth 使用同一大陆噪声（同 seed 派生），灯光仅出现在大陆上；
+ * 城市聚集由高频噪声决定，暖黄色点状光斑，海洋与极地无光。
+ * 渲染端 shader 仅在背向太阳的半球显示。
+ */
+export function createNightLightsCanvas(width: number): HTMLCanvasElement {
+  const height = Math.max(2, Math.round(width / 2));
+  const canvas = makeCanvas(width, height);
+  const ctx = getContext2D(canvas);
+  const seed = hashStringToSeed('earth');
+  // 与 paintEarth 完全一致的大陆噪声（保证灯光落在大陆上）
+  const continentNoise = createFbm(seed, 4, 10, 5);
+  const cityNoise = createFbm(seed + 303, 3, 26, 13);
+  const landThreshold = 0.56;
+  const image = ctx.createImageData(width, height);
+  const data = image.data;
+  for (let y = 0; y < height; y += 1) {
+    const v = y / (height - 1);
+    // 高纬度（>65°）人口稀少，灯光淡出
+    const latFade = clamp01((65 - absLatitudeDeg(v)) / 12);
+    for (let x = 0; x < width; x += 1) {
+      const u = x / width;
+      const idx = (y * width + x) * 4;
+      const n = continentNoise(u, v);
+      let alpha = 0;
+      if (n > landThreshold + 0.005 && latFade > 0) {
+        // 城市聚集：高频噪声高值处形成灯光斑块；海岸附近（n 接近阈值）更密
+        const city = cityNoise(u, v);
+        const coastBias = 1 - clamp01((n - landThreshold) / 0.2) * 0.5;
+        alpha = smooth(clamp01((city - 0.58) / 0.14)) * coastBias * latFade;
+      }
+      data[idx] = 255;
+      data[idx + 1] = 208;
+      data[idx + 2] = 132;
+      data[idx + 3] = Math.round(clamp01(alpha) * 255);
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  return canvas;
+}
+
+/**
  * 行星环径向纹理条（width×8 像素横条，x 方向为环内缘→外缘）：
  * - 卡西尼缝：gapCenter01 处 alpha 显著下降（高斯凹陷）；
  * - 多条细密环纹：1D 值噪声 + 若干随机小缝；
