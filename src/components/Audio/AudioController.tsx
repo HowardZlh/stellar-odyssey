@@ -46,6 +46,20 @@ export function AudioController(): null {
     return () => cancelAnimationFrame(frameId);
   }, []);
 
+  // 超新星爆发音效联动（需求 3.1.5）：活跃事件出现时播放低频冲击
+  useEffect(() => {
+    const unsubscribe = useSimulationStore.subscribe((state, prevState) => {
+      if (
+        state.activeSupernova &&
+        state.activeSupernova.id !== prevState.activeSupernova?.id &&
+        state.audioEnabled
+      ) {
+        engineRef.current?.playSupernovaBurst(state.audioVolume);
+      }
+    });
+    return unsubscribe;
+  }, []);
+
   // 卸载时释放音频资源
   useEffect(() => {
     return () => {

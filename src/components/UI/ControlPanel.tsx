@@ -3,9 +3,12 @@
 import { VIEW_LEVELS } from '@/types';
 import { CAMERA_VIEWS } from '@/data/cameraViews';
 import { useSimulationStore } from '@/store';
+import { SN_DEFAULT_DURATION_SEC } from '@/utils/supernova';
+import { rollSupernovaParams } from '@/components/Scene/Supernova';
 
 /**
- * 控制面板（需求 3.5.1）：视角锚点 / 模拟速度 / 音效 / 轨道线与标签开关
+ * 控制面板（需求 3.5.1）：视角锚点 / 模拟速度 / 音效 / 轨道线与标签开关 /
+ * 真实比例模式（P2）/ 超新星手动演示（P2，需求 3.1.5 触发方式）
  */
 export function ControlPanel(): JSX.Element {
   const viewLevel = useSimulationStore((s) => s.viewLevel);
@@ -28,6 +31,15 @@ export function ControlPanel(): JSX.Element {
   const setShowYouAreHere = useSimulationStore((s) => s.setShowYouAreHere);
   const showVelocityVectors = useSimulationStore((s) => s.showVelocityVectors);
   const setShowVelocityVectors = useSimulationStore((s) => s.setShowVelocityVectors);
+  const realScaleMode = useSimulationStore((s) => s.realScaleMode);
+  const setRealScaleMode = useSimulationStore((s) => s.setRealScaleMode);
+  const activeSupernova = useSimulationStore((s) => s.activeSupernova);
+  const triggerSupernova = useSimulationStore((s) => s.triggerSupernova);
+
+  const handleSupernovaDemo = (): void => {
+    const params = rollSupernovaParams();
+    triggerSupernova(params.positionLy, params.massSun, SN_DEFAULT_DURATION_SEC);
+  };
 
   return (
     <div className="absolute left-4 top-4 w-64 select-none rounded-lg bg-space-panel p-4 text-sm backdrop-blur">
@@ -141,7 +153,7 @@ export function ControlPanel(): JSX.Element {
           />
           You are here 标记
         </label>
-        <label className="flex items-center gap-2 text-xs">
+        <label className="mb-1 flex items-center gap-2 text-xs">
           <input
             type="checkbox"
             checked={showVelocityVectors}
@@ -149,6 +161,31 @@ export function ControlPanel(): JSX.Element {
           />
           速度矢量箭头
         </label>
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={realScaleMode}
+            onChange={(e) => setRealScaleMode(e.target.checked)}
+          />
+          真实比例模式（天体按真实大小）
+        </label>
+      </section>
+
+      {/* 特殊天体演示（需求 3.1.5：支持用户在设置中手动触发超新星） */}
+      <section className="mt-4">
+        <h2 className="mb-2 text-xs text-gray-400">动态事件演示</h2>
+        <button
+          type="button"
+          onClick={handleSupernovaDemo}
+          disabled={activeSupernova !== null}
+          className={`w-full rounded px-2 py-1.5 text-xs ${
+            activeSupernova
+              ? 'cursor-not-allowed bg-white/5 text-gray-500'
+              : 'bg-amber-400/20 text-amber-200 hover:bg-amber-400/30'
+          }`}
+        >
+          {activeSupernova ? '💥 超新星爆发进行中…' : '💥 触发超新星演示（旋臂内随机）'}
+        </button>
       </section>
     </div>
   );

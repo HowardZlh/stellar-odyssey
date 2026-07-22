@@ -21,6 +21,7 @@ import {
   satelliteGalaxyPositionLy,
 } from '@/utils/universe';
 import { createGalaxySpriteCanvas } from '@/components/CelestialBody/proceduralTextures';
+import { M87Jet, Quasar } from '@/components/Scene/ExtragalacticObjects';
 
 /** 宇宙级内容 LOD 渐变区间（连续层级） */
 const FADE = { start: 3.05, full: 3.6 } as const;
@@ -304,6 +305,10 @@ export function Universe(): JSX.Element {
       {LOCAL_GROUP_GALAXIES.map((galaxy) => (
         <GalaxyObject key={galaxy.id} galaxy={galaxy} />
       ))}
+
+      {/* 河外特殊对象（需求 3.1.5，P2）：类星体 3C 273 + M87 单侧喷流 */}
+      <Quasar />
+      <M87Jet />
 
       {/* MW–M31 接近轨迹（虚线） + 碰撞提示 */}
       <primitive object={approachLine} />

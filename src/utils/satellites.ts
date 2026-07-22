@@ -17,7 +17,7 @@
  */
 
 import type { SatelliteKind } from '@/types';
-import { RADIUS_LOG_REF_KM, visualBodyRadius } from '@/utils/scale';
+import { RADIUS_LOG_REF_KM, kmToSceneUnits, realBodyRadius, visualBodyRadius } from '@/utils/scale';
 
 /** 自然卫星轨道映射参数 */
 export const NATURAL_ORBIT_BASE_UNITS = 0.6;
@@ -115,4 +115,69 @@ export function visualRingRadii(
  */
 export function tidalLockedRotationAngle(orbitAngleRad: number): number {
   return orbitAngleRad + Math.PI;
+}
+
+// ---------------------------------------------------------------------------
+// 真实比例模式（P2，需求 4.1）：卫星轨道/本体/行星环按真实线性比例映射
+// ---------------------------------------------------------------------------
+
+/**
+ * 卫星轨道半径统一入口：真实比例模式下按真实距离线性映射
+ * （月球 38.4 万 km ≈ 0.0257 场景单位，ISS 高度 400 km 贴近真实地球表面），
+ * 否则用分层缩放策略（视觉夸大已登记于文件头）。
+ */
+export function satelliteOrbitDisplayRadius(
+  kind: SatelliteKind,
+  parentRadiusKm: number,
+  semiMajorAxisKm: number,
+  realScale: boolean,
+): number {
+  if (realScale) {
+    if (semiMajorAxisKm <= parentRadiusKm) {
+      throw new RangeError(
+        `卫星轨道半长轴（${semiMajorAxisKm} km）必须大于行星半径（${parentRadiusKm} km）`,
+      );
+    }
+    return kmToSceneUnits(semiMajorAxisKm);
+  }
+  return visualSatelliteOrbitRadius(kind, parentRadiusKm, semiMajorAxisKm);
+}
+
+/**
+ * 卫星本体半径统一入口：真实比例模式下按真实半径线性映射（人造卫星
+ * 真实尺寸约百米级，线性映射后不可见——真实比例模式如实呈现）。
+ */
+export function satelliteBodyDisplayRadius(
+  kind: SatelliteKind,
+  radiusKm: number,
+  realScale: boolean,
+): number {
+  if (realScale) {
+    if (radiusKm <= 0) {
+      throw new RangeError(`卫星半径必须为正数，收到 ${radiusKm}`);
+    }
+    return realBodyRadius(radiusKm);
+  }
+  return visualSatelliteBodyRadius(kind, radiusKm);
+}
+
+/**
+ * 行星环内外缘半径统一入口：真实比例模式下按真实半径线性映射。
+ */
+export function ringDisplayRadii(
+  parentRadiusKm: number,
+  innerRadiusKm: number,
+  outerRadiusKm: number,
+  realScale: boolean,
+): { innerUnits: number; outerUnits: number } {
+  if (realScale) {
+    if (outerRadiusKm <= innerRadiusKm) {
+      throw new RangeError('环外缘半径必须大于内缘半径');
+    }
+    return {
+      innerUnits: kmToSceneUnits(innerRadiusKm),
+      outerUnits: kmToSceneUnits(outerRadiusKm),
+    };
+  }
+  return visualRingRadii(parentRadiusKm, innerRadiusKm, outerRadiusKm);
 }

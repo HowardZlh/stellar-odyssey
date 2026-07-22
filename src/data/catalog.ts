@@ -10,6 +10,8 @@ import { PLANETS, SUN } from '@/data/planets';
 import { MOONS } from '@/data/moons';
 import { COMETS, PLUTO } from '@/data/smallBodies';
 import { LOCAL_GROUP_GALAXIES, MILKY_WAY } from '@/data/galaxies';
+import { SPECIAL_BODIES } from '@/data/specialBodies';
+import { SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
 
 /** 信息面板中的一行（标签 + 值） */
 export interface BodyInfoLine {
@@ -199,6 +201,23 @@ function buildCatalog(): Map<string, BodyInfo> {
     });
   }
 
+  // 特殊天体（需求 3.1.5 通用要求：真实名称、类型、距离、关键参数、
+  // 动态效果的科学解释、数据来源）
+  for (const b of SPECIAL_BODIES) {
+    catalog.set(b.id, {
+      id: b.id,
+      name: b.name,
+      nameZh: b.nameZh,
+      typeZh: b.typeZh,
+      lines: [
+        { label: '距离', value: formatLightYears(b.realDistanceLy) },
+        ...b.factsZh,
+        { label: '动态效果', value: b.dynamicsZh },
+      ],
+      dataSource: b.dataSource,
+    });
+  }
+
   // 银河系
   catalog.set(MILKY_WAY.id, {
     id: MILKY_WAY.id,
@@ -219,9 +238,28 @@ function buildCatalog(): Map<string, BodyInfo> {
 
 const CATALOG = buildCatalog();
 
+/** 超新星事件/遗迹的通用信息条目（事件为运行时动态生成，id 前缀 sn-） */
+const SUPERNOVA_INFO: Omit<BodyInfo, 'id'> = {
+  name: 'Supernova (Core-collapse)',
+  nameZh: '超新星爆炸',
+  typeZh: '动态事件（核坍缩超新星）',
+  lines: [
+    { label: '阶段', value: '增亮 → 冲击波扩张 → 衰减 → 永久遗迹' },
+    { label: '冲击波', value: 'Sedov-Taylor 相，抛射物减速膨胀（r ∝ t^0.4）' },
+    { label: '遗迹', value: '膨胀星云 + 致密天体（前身星 ≥ 20 M☉ 为黑洞，否则中子星）' },
+    { label: '科学性说明', value: SN_REAL_FREQUENCY_NOTE_ZH },
+  ],
+  dataSource: 'Sedov (1959) 冲击波自相似解；核坍缩超新星理论（Woosley & Janka 2005）',
+};
+
 /**
  * 按 id 查询天体信息（信息面板入口）
+ *
+ * 超新星事件（sn- 前缀）为运行时动态生成，返回通用条目。
  */
 export function getBodyInfoById(id: string): BodyInfo | undefined {
+  if (id.startsWith('sn-')) {
+    return { id, ...SUPERNOVA_INFO };
+  }
   return CATALOG.get(id);
 }

@@ -62,6 +62,37 @@ export function visualBodyRadius(radiusKm: number): number {
   return Math.max(MIN_VISUAL_RADIUS, compressed);
 }
 
+// ---------------------------------------------------------------------------
+// 真实比例模式（P2，需求 4.1：为已登记的视觉夸大提供真实比例开关）
+// ---------------------------------------------------------------------------
+
+/**
+ * 千米 → 场景单位（真实线性映射，1 AU = 10 场景单位）
+ */
+export function kmToSceneUnits(km: number): number {
+  return (km / AU_KM) * SCENE_UNITS_PER_AU;
+}
+
+/**
+ * 天体半径（真实比例模式）：半径按与轨道距离相同的线性比例映射，
+ * 不做任何压缩或下限钳制（地球约 4.3e-4 场景单位——按真实比例行星
+ * 在太阳系视角下接近不可见，这正是真实比例模式要传达的科学事实）。
+ */
+export function realBodyRadius(radiusKm: number): number {
+  if (radiusKm <= 0) {
+    throw new RangeError(`天体半径必须为正数，收到 ${radiusKm}`);
+  }
+  return kmToSceneUnits(radiusKm);
+}
+
+/**
+ * 天体半径统一入口：真实比例模式开启时用线性真实映射，
+ * 否则用对数压缩（视觉夸大已登记于 visualBodyRadius）。
+ */
+export function bodyDisplayRadius(radiusKm: number, realScale: boolean): number {
+  return realScale ? realBodyRadius(radiusKm) : visualBodyRadius(radiusKm);
+}
+
 /**
  * 日心黄道坐标（AU）→ three.js 场景坐标（场景单位，Y 轴向上）
  *
