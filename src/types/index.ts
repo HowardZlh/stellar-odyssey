@@ -235,3 +235,80 @@ export interface SoundscapeConfig {
   /** 基准音量（0-1） */
   baseVolume: number;
 }
+
+// ---------------------------------------------------------------------------
+// P2：特殊天体与动态事件系统（需求 3.1.5）
+// ---------------------------------------------------------------------------
+
+/** 特殊天体类别（恒星类 / 星云类 / 河外对象） */
+export type SpecialBodyKind =
+  | 'red-giant'
+  | 'blue-giant'
+  | 'binary-white-dwarf'
+  | 'pulsar-remnant'
+  | 'black-hole'
+  | 'emission-nebula'
+  | 'planetary-nebula'
+  | 'globular-cluster'
+  | 'quasar';
+
+/** 特殊天体位置模式 */
+export type SpecialBodyPositionMode =
+  /** 相对太阳的银心系偏移（随太阳一起绕银心运动，近似处理已登记） */
+  | 'sun-relative'
+  /** 固定于银心（人马座A*） */
+  | 'galactic-center'
+  /** 河外对象：方向单位矢量 + 距离（宇宙距离压缩） */
+  | 'extragalactic';
+
+/** 信息面板行（特殊天体关键参数用，与 catalog.BodyInfoLine 结构一致） */
+export interface SpecialBodyFact {
+  label: string;
+  value: string;
+}
+
+/** 特殊天体数据（静态形态 + 动态效果定义，基于真实原型，需求 3.1.5） */
+export interface SpecialBodyData {
+  id: string;
+  name: string;
+  nameZh: string;
+  kind: SpecialBodyKind;
+  /** 类型中文名（信息面板显示） */
+  typeZh: string;
+  /** 所属层级：恒星级/星云属 L3，河外对象属 L4 */
+  level: 'L3' | 'L4';
+  positionMode: SpecialBodyPositionMode;
+  /**
+   * sun-relative 模式：相对太阳的银心系视觉偏移（光年）。
+   * 为保证 L3 尺度下可辨识，偏移量为视觉夸大值（已登记），
+   * 真实距离见 realDistanceLy。
+   */
+  offsetLy?: Vec3;
+  /** extragalactic 模式：方向单位矢量（场景坐标近似天区方位） */
+  direction?: Vec3;
+  /** 真实距离（光年，信息面板显示） */
+  realDistanceLy: number;
+  /** 视觉尺寸（光年，L3 场景内的可视半径，视觉夸大已登记） */
+  visualRadiusLy: number;
+  /** 主色 */
+  color: string;
+  /** 关键参数（信息面板行） */
+  factsZh: SpecialBodyFact[];
+  /** 动态效果的科学解释（需求 3.1.5 通用要求） */
+  dynamicsZh: string;
+  dataSource: string;
+}
+
+/** 超新星事件（需求 3.1.5 动态事件） */
+export interface SupernovaEvent {
+  /** 事件 id（sn-<序号>） */
+  id: string;
+  /** 爆发位置（银心系本地坐标，光年；位于旋臂内） */
+  positionLy: Vec3;
+  /** 触发时刻（真实时间毫秒，performance/Date.now） */
+  startedAtMs: number;
+  /** 完整阶段动画总时长（秒，10–30 可配置） */
+  durationSec: number;
+  /** 前身星质量（太阳质量，决定遗迹致密天体类型） */
+  progenitorMassSun: number;
+}

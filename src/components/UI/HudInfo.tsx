@@ -7,6 +7,7 @@ import { getBodyInfoById } from '@/data/catalog';
 import { useSimulationStore } from '@/store';
 import { galacticYearProgress } from '@/utils/galaxy';
 import { formatSceneScaleLabel } from '@/utils/scale';
+import { SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
 import { formatSimDate } from '@/utils/time';
 
 /** 各层级运动参考系说明（需求 3.1.3 参考系定义） */
@@ -26,6 +27,12 @@ export function HudInfo(): JSX.Element {
   const selectedBodyId = useSimulationStore((s) => s.selectedBodyId);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const rateClampNotice = useSimulationStore((s) => s.rateClampNotice);
+  const followBodyId = useSimulationStore((s) => s.followBodyId);
+  const setFollowBody = useSimulationStore((s) => s.setFollowBody);
+  const requestFlyTo = useSimulationStore((s) => s.requestFlyTo);
+  const activeSupernova = useSimulationStore((s) => s.activeSupernova);
+  const supernovaNoticeVisible = useSimulationStore((s) => s.supernovaNoticeVisible);
+  const dismissSupernovaNotice = useSimulationStore((s) => s.dismissSupernovaNotice);
 
   // 模拟时间/标尺以低频率刷新（0.25s），避免每帧渲染 React 组件
   const [simDateText, setSimDateText] = useState('');
@@ -65,7 +72,62 @@ export function HudInfo(): JSX.Element {
         {rateClampNotice && (
           <p className="mt-1 text-amber-300/90">⚠ 快周期卫星运动已减速显示（防闪烁）</p>
         )}
+        {followBodyId && (
+          <p className="mt-1 text-cyan-300/90">
+            🔒 跟随模式：{getBodyInfoById(followBodyId)?.nameZh ?? followBodyId}
+            <button
+              type="button"
+              onClick={() => setFollowBody(null)}
+              className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] hover:bg-white/20"
+            >
+              取消（Esc）
+            </button>
+          </p>
+        )}
       </div>
+
+      {/* 超新星爆发事件通知（需求 3.1.5：UI 提示 + "飞往观看"按钮） */}
+      {supernovaNoticeVisible && activeSupernova && (
+        <div className="absolute left-1/2 top-4 w-96 -translate-x-1/2 rounded-lg border border-amber-400/40 bg-space-panel p-3 text-xs backdrop-blur">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-amber-300">💥 超新星爆发！</p>
+            <button
+              type="button"
+              onClick={dismissSupernovaNotice}
+              className="text-gray-400 hover:text-white"
+              aria-label="关闭超新星通知"
+            >
+              ✕
+            </button>
+          </div>
+          <p className="mt-1 text-gray-300">
+            银河系旋臂内探测到核坍缩超新星（前身星约{' '}
+            {activeSupernova.progenitorMassSun.toFixed(0)} 倍太阳质量）
+          </p>
+          <p className="mt-1 text-[10px] text-gray-500">{SN_REAL_FREQUENCY_NOTE_ZH}</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                requestFlyTo(activeSupernova.id);
+                dismissSupernovaNotice();
+              }}
+              className="rounded bg-amber-400/90 px-2 py-1 text-black hover:bg-amber-300"
+            >
+              🚀 飞往观看
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                selectBody(activeSupernova.id);
+              }}
+              className="rounded bg-white/10 px-2 py-1 hover:bg-white/20"
+            >
+              查看详情
+            </button>
+          </div>
+        </div>
+      )}
 
       {selected && (
         <div className="absolute bottom-4 right-4 w-72 rounded-lg bg-space-panel p-4 text-xs backdrop-blur">
@@ -91,6 +153,29 @@ export function HudInfo(): JSX.Element {
               </div>
             ))}
           </dl>
+          {/* 飞往 / 跟随（需求 3.2.3：点选后可飞往，可锁定任意天体跟随） */}
+          <div className="mt-2 flex gap-2 border-t border-white/10 pt-2">
+            <button
+              type="button"
+              onClick={() => requestFlyTo(selected.id)}
+              className="rounded bg-space-accent/90 px-2 py-1 text-[11px] text-black hover:bg-space-accent"
+            >
+              🚀 飞往（F）
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setFollowBody(followBodyId === selected.id ? null : selected.id)
+              }
+              className={`rounded px-2 py-1 text-[11px] ${
+                followBodyId === selected.id
+                  ? 'bg-cyan-400/90 text-black hover:bg-cyan-300'
+                  : 'bg-white/10 hover:bg-white/20'
+              }`}
+            >
+              {followBodyId === selected.id ? '🔓 取消跟随' : '🔒 跟随'}
+            </button>
+          </div>
           <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-gray-500">
             数据来源：{selected.dataSource}
           </p>

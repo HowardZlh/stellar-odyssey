@@ -14,9 +14,9 @@ import {
   sampleOrbitPoints,
 } from '@/utils/physics';
 import {
+  satelliteBodyDisplayRadius,
+  satelliteOrbitDisplayRadius,
   tidalLockedRotationAngle,
-  visualSatelliteBodyRadius,
-  visualSatelliteOrbitRadius,
 } from '@/utils/satellites';
 import { rateClampFactor, timeCompressionForContinuousLevel } from '@/utils/time';
 import { createBodyTextureCanvas } from '@/components/CelestialBody/proceduralTextures';
@@ -50,15 +50,18 @@ export function Moon({ data, parentRadiusKm }: MoonProps): JSX.Element {
   const showLabels = useSimulationStore((s) => s.showLabels);
   // 卫星标签仅行星视角显示（避免太阳系视角下重叠杂乱）
   const isPlanetView = useSimulationStore((s) => s.viewLevel === 'L1');
+  // 真实比例模式（需求 4.1）：轨道与本体按真实距离/半径线性映射
+  const realScaleMode = useSimulationStore((s) => s.realScaleMode);
 
-  const bodyRadius = visualSatelliteBodyRadius(data.kind, data.radiusKm);
+  const bodyRadius = satelliteBodyDisplayRadius(data.kind, data.radiusKm, realScaleMode);
   // 视觉轨道要素：半长轴替换为分层缩放后的场景单位（登记于 utils/satellites.ts）
   const visualElements = useMemo<OrbitalElements>(
     () => ({
-      semiMajorAxisAu: visualSatelliteOrbitRadius(
+      semiMajorAxisAu: satelliteOrbitDisplayRadius(
         data.kind,
         parentRadiusKm,
         data.orbit.semiMajorAxisKm,
+        realScaleMode,
       ),
       eccentricity: data.orbit.eccentricity,
       inclinationDeg: data.orbit.inclinationDeg,
@@ -66,7 +69,7 @@ export function Moon({ data, parentRadiusKm }: MoonProps): JSX.Element {
       argumentOfPerihelionDeg: data.orbit.argumentOfPeriapsisDeg,
       meanAnomalyAtEpochDeg: data.orbit.meanAnomalyAtEpochDeg,
     }),
-    [data, parentRadiusKm],
+    [data, parentRadiusKm, realScaleMode],
   );
 
   // 渲染循环内复用的可变要素副本（避免每帧创建新对象）

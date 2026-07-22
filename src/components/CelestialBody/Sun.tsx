@@ -4,13 +4,15 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import { SUN } from '@/data/planets';
 import { useSimulationStore } from '@/store';
-import { visualBodyRadius } from '@/utils/scale';
+import { bodyDisplayRadius } from '@/utils/scale';
 
 /**
  * 太阳：发光球体 + 点光源 + 多层光晕（需求 4.1：太阳含光晕和大气发光效果）
  */
 export function Sun(): JSX.Element {
-  const radius = visualBodyRadius(SUN.radiusKm);
+  // 真实比例模式（需求 4.1）：太阳半径按真实线性比例映射（约 0.047 场景单位）
+  const realScaleMode = useSimulationStore((s) => s.realScaleMode);
+  const radius = bodyDisplayRadius(SUN.radiusKm, realScaleMode);
   const selectBody = useSimulationStore((s) => s.selectBody);
 
   const glowSprites = useMemo(() => {

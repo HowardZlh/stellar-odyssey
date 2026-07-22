@@ -83,6 +83,56 @@ export class AudioEngine {
   }
 
   /**
+   * 超新星爆发音效（需求 3.1.5 音效联动）：低频冲击 + 噪声余响
+   *
+   * 程序化合成：低频正弦下扫（70→24 Hz）+ 短噪声爆发，
+   * 经主压缩器输出防爆音；未初始化时静默降级。
+   */
+  playSupernovaBurst(volume = 1): void {
+    if (!this.context || !this.masterGain) return;
+    try {
+      const context = this.context;
+      const now = context.currentTime;
+      const burstGain = context.createGain();
+      burstGain.gain.setValueAtTime(0, now);
+      burstGain.gain.linearRampToValueAtTime(0.9 * volume, now + 0.08);
+      burstGain.gain.exponentialRampToValueAtTime(0.001, now + 4.5);
+      burstGain.connect(this.masterGain);
+
+      // 低频冲击：正弦下扫 + 2 倍泛音（小型扬声器可感知）
+      for (const ratio of [1, 2]) {
+        const osc = context.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(70 * ratio, now);
+        osc.frequency.exponentialRampToValueAtTime(24 * ratio, now + 3.5);
+        const oscGain = context.createGain();
+        oscGain.gain.value = ratio === 1 ? 1 : 0.4;
+        osc.connect(oscGain);
+        oscGain.connect(burstGain);
+        osc.start(now);
+        osc.stop(now + 4.6);
+      }
+
+      // 噪声爆发余响（低通滤波）
+      const noise = context.createBufferSource();
+      noise.buffer = this.createNoiseBuffer(context);
+      const filter = context.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(900, now);
+      filter.frequency.exponentialRampToValueAtTime(120, now + 3);
+      const noiseGain = context.createGain();
+      noiseGain.gain.value = 0.5;
+      noise.connect(filter);
+      filter.connect(noiseGain);
+      noiseGain.connect(burstGain);
+      noise.start(now);
+      noise.stop(now + 4.6);
+    } catch {
+      // 静默降级
+    }
+  }
+
+  /**
    * 恢复被浏览器挂起的 AudioContext
    */
   resume(): void {

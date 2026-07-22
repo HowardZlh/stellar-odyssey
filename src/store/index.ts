@@ -6,9 +6,10 @@
  */
 
 import { create } from 'zustand';
-import type { ViewLevel } from '@/types';
+import type { SupernovaEvent, Vec3, ViewLevel } from '@/types';
 import { daysSinceJ2000 } from '@/utils/physics';
 import { continuousLevelForDistance, discreteLevelFromContinuous } from '@/utils/scale';
+import { SN_MAX_REMNANTS, clampSupernovaDuration } from '@/utils/supernova';
 import { advanceSimTimeContinuous, clampSpeedMultiplier } from '@/utils/time';
 
 export interface SimulationState {
@@ -44,6 +45,22 @@ export interface SimulationState {
   selectedBodyId: string | null;
   /** 速率钳制提示（快周期卫星"运动已减速显示"，需求 3.3） */
   rateClampNotice: boolean;
+  /** 跟随天体 id（相机锁定该天体随其运动，需求 3.2.3；null 为不跟随） */
+  followBodyId: string | null;
+  /** 飞往目标 id（需求 3.2.3 点选后平滑运镜） */
+  flyToBodyId: string | null;
+  /** 飞往请求代次（每次请求 +1，供 CameraController 识别新请求） */
+  flyToRequestId: number;
+  /** 真实比例模式（需求 4.1：视觉夸大的真实比例开关，P2） */
+  realScaleMode: boolean;
+  /** 当前活跃超新星事件（需求 3.1.5 动态事件；同一时刻至多一个） */
+  activeSupernova: SupernovaEvent | null;
+  /** 已完成的超新星遗迹（永久保留，FIFO 上限 SN_MAX_REMNANTS） */
+  supernovaRemnants: SupernovaEvent[];
+  /** 超新星事件通知可见（爆发时 UI 提示 + "飞往观看"按钮） */
+  supernovaNoticeVisible: boolean;
+  /** 超新星事件累计计数（生成事件 id） */
+  supernovaCounter: number;
 
   // actions
   tick: (realDeltaSeconds: number) => void;
@@ -71,6 +88,29 @@ export interface SimulationState {
   selectBody: (id: string | null) => void;
   setRateClampNotice: (active: boolean) => void;
   resetToNow: () => void;
+  /** 设置跟随天体（null 取消跟随） */
+  setFollowBody: (id: string | null) => void;
+  /** 请求飞往天体（平滑运镜，到达后自动进入跟随模式） */
+  requestFlyTo: (id: string) => void;
+  setRealScaleMode: (enabled: boolean) => void;
+  toggleRealScaleMode: () => void;
+  /**
+   * 触发超新星（手动演示或自动触发；已有活跃事件时忽略）
+   *
+   * @param positionLy 爆发位置（银心系本地坐标，光年）
+   * @param progenitorMassSun 前身星质量（决定遗迹致密天体类型）
+   * @param durationSec 动画总时长（钳制到 10–30 秒）
+   * @param nowMs 触发时刻（真实毫秒，便于测试注入）
+   */
+  triggerSupernova: (
+    positionLy: Vec3,
+    progenitorMassSun: number,
+    durationSec?: number,
+    nowMs?: number,
+  ) => void;
+  /** 活跃超新星动画完成：归档为永久遗迹（FIFO 上限） */
+  archiveSupernova: () => void;
+  dismissSupernovaNotice: () => void;
 }
 
 /**
@@ -99,6 +139,14 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   audioVolume: 0.8,
   selectedBodyId: null,
   rateClampNotice: false,
+  followBodyId: null,
+  flyToBodyId: null,
+  flyToRequestId: 0,
+  realScaleMode: false,
+  activeSupernova: null,
+  supernovaRemnants: [],
+  supernovaNoticeVisible: false,
+  supernovaCounter: 0,
 
   tick: (realDeltaSeconds) =>
     set((state) => ({
@@ -125,6 +173,9 @@ export const useSimulationStore = create<SimulationState>((set) => ({
             viewLevel: level,
             continuousLevel: LEVEL_TO_CONTINUOUS[level],
             viewTransitionId: state.viewTransitionId + 1,
+            // 锚点切换取消跟随/飞往（相机回到固定锚点）
+            followBodyId: null,
+            flyToBodyId: null,
           },
     ),
 
@@ -174,4 +225,51 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   setRateClampNotice: (active) => set({ rateClampNotice: active }),
 
   resetToNow: () => set({ simDays: initialSimDays() }),
+
+  setFollowBody: (id) => set({ followBodyId: id }),
+
+  requestFlyTo: (id) =>
+    set((state) => ({
+      flyToBodyId: id,
+      flyToRequestId: state.flyToRequestId + 1,
+      // 飞抵后保持锁定该天体（跟随模式），运镜期间同样按目标跟踪
+      followBodyId: id,
+    })),
+
+  setRealScaleMode: (enabled) => set({ realScaleMode: enabled }),
+
+  toggleRealScaleMode: () => set((state) => ({ realScaleMode: !state.realScaleMode })),
+
+  triggerSupernova: (positionLy, progenitorMassSun, durationSec, nowMs) =>
+    set((state) => {
+      // 同一时刻至多一个活跃事件（避免动画/音效叠加）
+      if (state.activeSupernova) return state;
+      if (progenitorMassSun <= 0) return state;
+      const counter = state.supernovaCounter + 1;
+      const event: SupernovaEvent = {
+        id: `sn-${counter}`,
+        positionLy,
+        startedAtMs: nowMs ?? Date.now(),
+        durationSec: clampSupernovaDuration(durationSec ?? Number.NaN),
+        progenitorMassSun,
+      };
+      return {
+        activeSupernova: event,
+        supernovaCounter: counter,
+        supernovaNoticeVisible: true,
+      };
+    }),
+
+  archiveSupernova: () =>
+    set((state) => {
+      if (!state.activeSupernova) return state;
+      const remnants = [...state.supernovaRemnants, state.activeSupernova];
+      // FIFO：超出上限时移除最早的遗迹（环形缓冲思想，防内存增长）
+      while (remnants.length > SN_MAX_REMNANTS) {
+        remnants.shift();
+      }
+      return { activeSupernova: null, supernovaRemnants: remnants };
+    }),
+
+  dismissSupernovaNotice: () => set({ supernovaNoticeVisible: false }),
 }));

@@ -20,6 +20,8 @@ import {
 } from '@/utils/galaxy';
 import { createTrailBuffer, clearTrail, pushTrailPoint, trailToOrderedArray } from '@/utils/trail';
 import { createGlowSpriteCanvas } from '@/components/CelestialBody/proceduralTextures';
+import { SpecialBodies } from '@/components/Scene/SpecialBodies';
+import { Supernova } from '@/components/Scene/Supernova';
 
 /** 银盘粒子数（附录A：30,000–50,000） */
 const DISK_PARTICLE_COUNT = 40000;
@@ -333,11 +335,12 @@ export function Galaxy(): JSX.Element {
         />
       </sprite>
 
-      {/* 银心：人马座A*（黑洞详细效果为 P2，此处为位置标记） */}
-      <mesh name="sagittarius-a-star">
-        <sphereGeometry args={[6, 24, 24]} />
-        <meshBasicMaterial color="#000000" />
-      </mesh>
+      {/* 特殊天体系统（需求 3.1.5，P2）：黑洞（银心人马座A*）、脉冲星、
+          红巨星/蓝巨星/天狼星双星、星云类——银心系本地坐标，随组变换 */}
+      <SpecialBodies />
+
+      {/* 超新星爆炸动态事件（需求 3.1.5，P2）：自动/手动触发 + 永久遗迹 */}
+      <Supernova />
 
       {/* 太阳系轨迹：历史尾迹（实线渐隐）+ 未来预测线（虚线） */}
       <primitive object={trailLine} />

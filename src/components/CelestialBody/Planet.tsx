@@ -8,8 +8,8 @@ import type { PlanetData } from '@/types';
 import { getMoonsByParent } from '@/data/moons';
 import { useSimulationStore } from '@/store';
 import { DEG_TO_RAD, heliocentricPosition, rotationAngleAtTime } from '@/utils/physics';
-import { eclipticToScene, visualBodyRadius } from '@/utils/scale';
-import { visualRingRadii } from '@/utils/satellites';
+import { bodyDisplayRadius, eclipticToScene } from '@/utils/scale';
+import { ringDisplayRadii } from '@/utils/satellites';
 import { Moon } from '@/components/CelestialBody/Moon';
 import {
   createBodyTextureCanvas,
@@ -48,9 +48,11 @@ export function Planet({ data }: PlanetProps): JSX.Element {
   const selectBody = useSimulationStore((s) => s.selectBody);
   // Html 标签不随父级 visible 隐藏，需单独按层级门控（布尔选择器，变化时才重渲染）
   const frozen = useSimulationStore((s) => s.continuousLevel > FREEZE_LEVEL_THRESHOLD);
+  // 真实比例模式（需求 4.1）：半径按真实线性比例映射（对数压缩的真实开关）
+  const realScaleMode = useSimulationStore((s) => s.realScaleMode);
   const [highRes, setHighRes] = useState(false);
 
-  const radius = visualBodyRadius(data.radiusKm);
+  const radius = bodyDisplayRadius(data.radiusKm, realScaleMode);
   const tiltRad = data.rotation.axialTiltDeg * DEG_TO_RAD;
   const moons = useMemo(() => getMoonsByParent(data.id), [data.id]);
   const equatorialMoons = moons.filter((m) => m.referencePlane === 'planetEquator');
@@ -78,10 +80,11 @@ export function Planet({ data }: PlanetProps): JSX.Element {
 
   const ringAssets = useMemo(() => {
     if (!data.ring) return null;
-    const { innerUnits, outerUnits } = visualRingRadii(
+    const { innerUnits, outerUnits } = ringDisplayRadii(
       data.radiusKm,
       data.ring.innerRadiusKm,
       data.ring.outerRadiusKm,
+      realScaleMode,
     );
     const geometry = new THREE.RingGeometry(innerUnits, outerUnits, 128, 1);
     // UV 重映射为径向坐标（环纹理 x 方向 = 内缘 → 外缘）
@@ -102,7 +105,7 @@ export function Planet({ data }: PlanetProps): JSX.Element {
       depthWrite: false,
     });
     return { geometry, material, texture: tex };
-  }, [data.ring, data.radiusKm]);
+  }, [data.ring, data.radiusKm, realScaleMode]);
 
   useEffect(() => {
     return () => {
