@@ -62,7 +62,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   showOrbits: true,
   showLabels: true,
   audioEnabled: false,
-  audioVolume: 0.6,
+  audioVolume: 0.8,
   selectedBodyId: null,
 
   tick: (realDeltaSeconds) =>

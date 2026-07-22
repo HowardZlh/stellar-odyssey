@@ -42,11 +42,11 @@ export const PROCEDURAL_SOUND_PARAMS: Record<
   { filterFrequency: number; oscillatorFrequency: number; noiseGain: number; oscGain: number }
 > = {
   // L1 行星环境音：类风声（带通噪声为主）
-  L1: { filterFrequency: 400, oscillatorFrequency: 55, noiseGain: 0.8, oscGain: 0.15 },
+  L1: { filterFrequency: 500, oscillatorFrequency: 55, noiseGain: 2.4, oscGain: 0.5 },
   // L2 太阳低频轰鸣：低频振荡为主
-  L2: { filterFrequency: 180, oscillatorFrequency: 40, noiseGain: 0.4, oscGain: 0.5 },
+  L2: { filterFrequency: 240, oscillatorFrequency: 40, noiseGain: 1.4, oscGain: 1.5 },
   // L3 深空音乐：空灵中频
-  L3: { filterFrequency: 220, oscillatorFrequency: 110, noiseGain: 0.25, oscGain: 0.4 },
+  L3: { filterFrequency: 300, oscillatorFrequency: 110, noiseGain: 0.9, oscGain: 1.2 },
   // L4 宇宙背景：极低频铺底
-  L4: { filterFrequency: 90, oscillatorFrequency: 28, noiseGain: 0.3, oscGain: 0.6 },
+  L4: { filterFrequency: 130, oscillatorFrequency: 30, noiseGain: 1.0, oscGain: 1.8 },
 };

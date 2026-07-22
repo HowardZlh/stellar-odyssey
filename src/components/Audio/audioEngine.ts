@@ -46,7 +46,15 @@ export class AudioEngine {
       const context = new Ctor();
       const master = context.createGain();
       master.gain.value = 0;
-      master.connect(context.destination);
+      // 动态压缩器：允许较高的合成增益而不削波爆音
+      const compressor = context.createDynamicsCompressor();
+      compressor.threshold.value = -18;
+      compressor.knee.value = 20;
+      compressor.ratio.value = 6;
+      compressor.attack.value = 0.01;
+      compressor.release.value = 0.3;
+      master.connect(compressor);
+      compressor.connect(context.destination);
       this.context = context;
       this.masterGain = master;
       for (const level of VIEW_LEVELS) {
@@ -135,16 +143,25 @@ export class AudioEngine {
     noise.start();
     sources.push(noise);
 
-    // 低频振荡（太阳轰鸣/宇宙铺底）
-    const osc = context.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = params.oscillatorFrequency;
-    const oscGain = context.createGain();
-    oscGain.gain.value = params.oscGain;
-    osc.connect(oscGain);
-    oscGain.connect(levelGain);
-    osc.start();
-    sources.push(osc);
+    // 低频振荡（太阳轰鸣/宇宙铺底）：
+    // 基频 + 2/4 倍泛音——纯低频正弦（28–55 Hz）在小型扬声器上几乎不可闻，
+    // 叠加泛音利用"缺失基频"心理声学效应，让低音在任何设备上都可感知
+    const harmonics: Array<{ ratio: number; gain: number }> = [
+      { ratio: 1, gain: 1 },
+      { ratio: 2, gain: 0.5 },
+      { ratio: 4, gain: 0.22 },
+    ];
+    for (const h of harmonics) {
+      const osc = context.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = params.oscillatorFrequency * h.ratio;
+      const oscGain = context.createGain();
+      oscGain.gain.value = params.oscGain * h.gain;
+      osc.connect(oscGain);
+      oscGain.connect(levelGain);
+      osc.start();
+      sources.push(osc);
+    }
 
     return { gain: levelGain, sources };
   }
