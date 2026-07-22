@@ -55,6 +55,8 @@ export const PLANETS: readonly PlanetData[] = [
     // 金星逆向自转（负周期），周期约 243 天，是唯一"日出于西"的行星
     rotation: { siderealPeriodHours: -5832.5, axialTiltDeg: 177.36 },
     orbitalPeriodYears: 0.6152,
+    // 浓厚二氧化碳大气的淡黄色辉光
+    surface: { hasAtmosphereGlow: true, atmosphereColor: '#e6d4a8' },
     dataSource: JPL_SOURCE,
   },
   {
@@ -73,6 +75,8 @@ export const PLANETS: readonly PlanetData[] = [
     },
     rotation: { siderealPeriodHours: 23.9345, axialTiltDeg: 23.44 },
     orbitalPeriodYears: 1.0,
+    // 大陆海洋/云层/大气辉光（需求 3.1.1）
+    surface: { hasCloudLayer: true, hasAtmosphereGlow: true, atmosphereColor: '#6ab7ff' },
     dataSource: JPL_SOURCE,
   },
   {
@@ -91,6 +95,8 @@ export const PLANETS: readonly PlanetData[] = [
     },
     rotation: { siderealPeriodHours: 24.6229, axialTiltDeg: 25.19 },
     orbitalPeriodYears: 1.8808,
+    // 稀薄大气的微弱红色辉光
+    surface: { hasAtmosphereGlow: true, atmosphereColor: '#d9a08a' },
     dataSource: JPL_SOURCE,
   },
   {
@@ -128,6 +134,16 @@ export const PLANETS: readonly PlanetData[] = [
     },
     rotation: { siderealPeriodHours: 10.656, axialTiltDeg: 26.73 },
     orbitalPeriodYears: 29.457,
+    // 土星主环：C 环内缘（74,500 km）至 F 环（140,220 km），
+    // 卡西尼缝位于约 117,500 km；来源：NASA Saturn Fact Sheet
+    ring: {
+      innerRadiusKm: 74500,
+      outerRadiusKm: 140220,
+      gapCenter01: 0.65,
+      gapWidth01: 0.05,
+      color: '#d6c49a',
+      opacity: 0.85,
+    },
     dataSource: JPL_SOURCE,
   },
   {

@@ -72,6 +72,88 @@ export function interpolateTimeCompression(from: ViewLevel, to: ViewLevel, t: nu
 }
 
 /**
+ * 连续层级（1.0–4.0）→ 时间压缩比（对数空间插值，需求 3.3）
+ *
+ * 跨层级连续缩放时压缩比平滑过渡，避免速度数量级跳变。
+ */
+export function timeCompressionForContinuousLevel(continuousLevel: number): number {
+  const f = Math.min(4, Math.max(1, continuousLevel));
+  const levels: ViewLevel[] = ['L1', 'L2', 'L3', 'L4'];
+  const lower = Math.min(2, Math.floor(f - 1));
+  const t = f - 1 - lower;
+  // 整数层级直接返回精确值（避免 pow/log 往返的浮点误差）
+  if (t === 0) return TIME_COMPRESSION[levels[lower]];
+  if (t === 1) return TIME_COMPRESSION[levels[lower + 1]];
+  return interpolateTimeCompression(levels[lower], levels[lower + 1], t);
+}
+
+/**
+ * 按连续层级推进模拟时间（连续维度缩放模式下使用，需求 3.2.2 / 3.3）
+ */
+export function advanceSimTimeContinuous(
+  simDays: number,
+  realDeltaSeconds: number,
+  continuousLevel: number,
+  speedMultiplier: number,
+  paused: boolean,
+): number {
+  if (realDeltaSeconds < 0) {
+    throw new RangeError(`时间增量不能为负，收到 ${realDeltaSeconds}`);
+  }
+  if (paused) return simDays;
+  const multiplier = clampSpeedMultiplier(speedMultiplier);
+  const compression = timeCompressionForContinuousLevel(continuousLevel);
+  return simDays + (realDeltaSeconds * compression * multiplier) / 86400;
+}
+
+// ---------------------------------------------------------------------------
+// 快周期天体速率钳制（需求 3.3）
+// ---------------------------------------------------------------------------
+
+/** 视觉角速度阈值：超过 0.5 圈/秒的天体做速率钳制，避免闪烁 */
+export const MAX_VISUAL_REVS_PER_SECOND = 0.5;
+
+/**
+ * 天体在当前时间压缩比下的视觉转速（圈/真实秒）
+ *
+ * @param periodDays 公转周期（天，取绝对值）
+ * @param compressionSimSecondsPerRealSecond 当前压缩比（模拟秒/真实秒）
+ * @param speedMultiplier 全局速度倍率
+ */
+export function visualRevsPerRealSecond(
+  periodDays: number,
+  compressionSimSecondsPerRealSecond: number,
+  speedMultiplier: number,
+): number {
+  if (periodDays === 0) {
+    throw new RangeError('周期不能为 0');
+  }
+  const simDaysPerRealSecond =
+    (compressionSimSecondsPerRealSecond * clampSpeedMultiplier(speedMultiplier)) / 86400;
+  return Math.abs(simDaysPerRealSecond / periodDays);
+}
+
+/**
+ * 速率钳制因子（≤1）：乘在天体平均运动上使视觉转速不超过阈值
+ *
+ * 返回 1 表示无需钳制；<1 表示"运动已减速显示"（UI 需提示，需求 3.3）。
+ */
+export function rateClampFactor(
+  periodDays: number,
+  compressionSimSecondsPerRealSecond: number,
+  speedMultiplier: number,
+  maxRevsPerSecond = MAX_VISUAL_REVS_PER_SECOND,
+): number {
+  const revs = visualRevsPerRealSecond(
+    periodDays,
+    compressionSimSecondsPerRealSecond,
+    speedMultiplier,
+  );
+  if (revs <= maxRevsPerSecond || revs === 0) return 1;
+  return maxRevsPerSecond / revs;
+}
+
+/**
  * 模拟时间（J2000 起天数）→ 日期对象
  */
 export function simDaysToDate(simDays: number): Date {

@@ -8,9 +8,11 @@ import { CameraController } from '@/components/Camera/CameraController';
 import { ControlPanel } from '@/components/UI/ControlPanel';
 import { HudInfo } from '@/components/UI/HudInfo';
 import { HelpHint } from '@/components/UI/HelpHint';
+import { Galaxy } from '@/components/Scene/Galaxy';
 import { SimulationClock } from '@/components/Scene/SimulationClock';
 import { SolarSystem } from '@/components/Scene/SolarSystem';
 import { Starfield } from '@/components/Scene/Starfield';
+import { Universe } from '@/components/Scene/Universe';
 
 /**
  * 应用根组件：3D Canvas + UI 面板 + 音效控制
@@ -31,7 +33,7 @@ export default function SolarSystemApp(): JSX.Element {
           ],
           fov: CAMERA_VIEWS.L2.fov,
           near: 0.1,
-          far: 100000,
+          far: 200000,
         }}
       >
         <SimulationClock />
@@ -40,6 +42,9 @@ export default function SolarSystemApp(): JSX.Element {
         <ambientLight intensity={0.5} />
         <Starfield />
         <SolarSystem />
+        {/* L3 银河系（太阳系绕银心，嵌套一致性）与 L4 宇宙（本星系群/宇宙网） */}
+        <Galaxy />
+        <Universe />
       </Canvas>
 
       <ControlPanel />

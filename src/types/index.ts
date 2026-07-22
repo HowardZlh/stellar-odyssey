@@ -42,6 +42,30 @@ export interface RotationParams {
   axialTiltDeg: number;
 }
 
+/** 行星环配置（土星环等，需求 3.1.1） */
+export interface PlanetRingConfig {
+  /** 环内缘真实半径（km） */
+  innerRadiusKm: number;
+  /** 环外缘真实半径（km） */
+  outerRadiusKm: number;
+  /** 卡西尼缝中心（占环宽比例 0-1） */
+  gapCenter01: number;
+  /** 卡西尼缝宽度（占环宽比例 0-1） */
+  gapWidth01: number;
+  color: string;
+  opacity: number;
+}
+
+/** 行星表面视觉特征（行星视角 L1 细节，需求 3.1.1） */
+export interface PlanetSurfaceConfig {
+  /** 是否有独立旋转的云层（地球） */
+  hasCloudLayer?: boolean;
+  /** 是否有大气边缘辉光 */
+  hasAtmosphereGlow?: boolean;
+  /** 大气辉光颜色 */
+  atmosphereColor?: string;
+}
+
 /** 行星静态数据 */
 export interface PlanetData {
   id: string;
@@ -56,6 +80,125 @@ export interface PlanetData {
   /** 公转周期（地球年，用于展示与校验） */
   orbitalPeriodYears: number;
   /** 数据来源说明 */
+  dataSource: string;
+  /** 行星环（土星等） */
+  ring?: PlanetRingConfig;
+  /** 表面视觉特征 */
+  surface?: PlanetSurfaceConfig;
+  /** 天体分类展示（默认行星；冥王星为矮行星） */
+  classificationZh?: string;
+}
+
+/** 卫星类别：自然卫星 / 人造卫星 */
+export type SatelliteKind = 'natural' | 'artificial';
+
+/**
+ * 卫星轨道参考平面（需求 3.1.1）：
+ * 统一为所属行星赤道面（planetEquator）；月球例外，相对黄道面约 5.1°（ecliptic）
+ */
+export type SatelliteReferencePlane = 'planetEquator' | 'ecliptic';
+
+/** 卫星轨道参数（相对所属行星；周期直接给出，因中心天体质量各异） */
+export interface SatelliteOrbit {
+  /** 半长轴（km，相对行星中心） */
+  semiMajorAxisKm: number;
+  eccentricity: number;
+  /** 倾角（度，相对参考平面） */
+  inclinationDeg: number;
+  /** 升交点经度（度） */
+  longitudeOfAscendingNodeDeg: number;
+  /** 近点幅角（度） */
+  argumentOfPeriapsisDeg: number;
+  /** J2000 历元平近点角（度） */
+  meanAnomalyAtEpochDeg: number;
+  /** 公转周期（天） */
+  periodDays: number;
+}
+
+/** 卫星数据（自然卫星与人造卫星统一结构） */
+export interface MoonData {
+  id: string;
+  name: string;
+  nameZh: string;
+  /** 所属行星 id */
+  parentId: string;
+  kind: SatelliteKind;
+  /** 真实半径（km；人造卫星用等效尺寸） */
+  radiusKm: number;
+  color: string;
+  orbit: SatelliteOrbit;
+  referencePlane: SatelliteReferencePlane;
+  /** 潮汐锁定（始终同一面朝向行星，如月球） */
+  tidallyLocked?: boolean;
+  /** 备注（共振关系、大气特征等） */
+  noteZh?: string;
+  dataSource: string;
+}
+
+/** 彗星数据（需求 3.1.1 小天体） */
+export interface CometData {
+  id: string;
+  name: string;
+  nameZh: string;
+  /** 彗核半径（km） */
+  nucleusRadiusKm: number;
+  color: string;
+  /** 高离心率椭圆轨道；倾角 >90° 表示逆行（哈雷约 162°） */
+  orbit: OrbitalElements;
+  orbitalPeriodYears: number;
+  /** 彗发/彗尾出现的日心距离阈值（AU） */
+  tailActivationAu: number;
+  dataSource: string;
+}
+
+/** 粒子带配置（小行星带 / 柯伊伯带，需求 3.1.1） */
+export interface BeltConfig {
+  id: string;
+  nameZh: string;
+  /** 内缘半长轴（AU） */
+  innerAu: number;
+  /** 外缘半长轴（AU） */
+  outerAu: number;
+  /** 粒子数 */
+  count: number;
+  /** 最大离心率 */
+  maxEccentricity: number;
+  /** 最大倾角（度） */
+  maxInclinationDeg: number;
+  /** 基准颜色 */
+  color: string;
+  /** 颜色随机变化幅度（0-1） */
+  colorVariation: number;
+  /** 粒子渲染尺寸（场景单位） */
+  particleSize: number;
+  /** 确定性种子 */
+  seed: number;
+  dataSource: string;
+}
+
+/** 星系形态（需求 3.1.3：四类形态可辨识） */
+export type GalaxyMorphology = 'spiral' | 'barred-spiral' | 'elliptical' | 'irregular';
+
+/** 河外星系 / 星系团成员数据（需求 3.1.3） */
+export interface GalaxyData {
+  id: string;
+  name: string;
+  nameZh: string;
+  morphology: GalaxyMorphology;
+  /** 距银河系距离（光年） */
+  distanceLy: number;
+  /** 直径（光年） */
+  diameterLy: number;
+  /**
+   * 方向单位矢量（场景坐标，近似真实天区方位的示意方向；
+   * 精确的三维位置重建超出可视化需要，已在注释登记为近似处理）
+   */
+  direction: Vec3;
+  /** 视向速度（km/s，负值表示接近） */
+  radialVelocityKmS: number;
+  /** 所属结构（本星系群 / 室女座星系团等） */
+  groupZh: string;
+  descriptionZh: string;
   dataSource: string;
 }
 

@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
 import { SUN } from '@/data/planets';
+import { useSimulationStore } from '@/store';
 import { visualBodyRadius } from '@/utils/scale';
 
 /**
@@ -10,6 +11,7 @@ import { visualBodyRadius } from '@/utils/scale';
  */
 export function Sun(): JSX.Element {
   const radius = visualBodyRadius(SUN.radiusKm);
+  const selectBody = useSimulationStore((s) => s.selectBody);
 
   const glowSprites = useMemo(() => {
     // 简单多层光晕：径向渐变贴图 sprite
@@ -31,7 +33,12 @@ export function Sun(): JSX.Element {
 
   return (
     <group name="sun">
-      <mesh>
+      <mesh
+        onClick={(e) => {
+          e.stopPropagation();
+          selectBody(SUN.id);
+        }}
+      >
         <sphereGeometry args={[radius, 64, 64]} />
         <meshBasicMaterial color={SUN.color} />
       </mesh>
