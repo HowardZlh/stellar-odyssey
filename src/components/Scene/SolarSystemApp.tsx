@@ -1,0 +1,51 @@
+'use client';
+
+import { Canvas } from '@react-three/fiber';
+import { CAMERA_VIEWS } from '@/data/cameraViews';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { AudioController } from '@/components/Audio/AudioController';
+import { CameraController } from '@/components/Camera/CameraController';
+import { ControlPanel } from '@/components/UI/ControlPanel';
+import { HudInfo } from '@/components/UI/HudInfo';
+import { HelpHint } from '@/components/UI/HelpHint';
+import { SimulationClock } from '@/components/Scene/SimulationClock';
+import { SolarSystem } from '@/components/Scene/SolarSystem';
+import { Starfield } from '@/components/Scene/Starfield';
+
+/**
+ * 应用根组件：3D Canvas + UI 面板 + 音效控制
+ */
+export default function SolarSystemApp(): JSX.Element {
+  useKeyboardShortcuts();
+
+  return (
+    <div className="relative h-screen w-screen">
+      <Canvas
+        // 对数深度缓冲：尺度管理方案的一部分，避免大尺度 z-fighting（需求 5.1）
+        gl={{ logarithmicDepthBuffer: true, antialias: true }}
+        camera={{
+          position: [
+            CAMERA_VIEWS.L2.position.x,
+            CAMERA_VIEWS.L2.position.y,
+            CAMERA_VIEWS.L2.position.z,
+          ],
+          fov: CAMERA_VIEWS.L2.fov,
+          near: 0.1,
+          far: 100000,
+        }}
+      >
+        <SimulationClock />
+        <CameraController />
+        {/* 附录A：环境光 0.5 */}
+        <ambientLight intensity={0.5} />
+        <Starfield />
+        <SolarSystem />
+      </Canvas>
+
+      <ControlPanel />
+      <HudInfo />
+      <HelpHint />
+      <AudioController />
+    </div>
+  );
+}
