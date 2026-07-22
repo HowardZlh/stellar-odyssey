@@ -191,6 +191,46 @@ export function sampleOrbitPoints(elements: OrbitalElements, segments = 512): Ve
 }
 
 /**
+ * 广义开普勒轨道位置：中心天体不限于太阳（卫星绕行星等），
+ * 公转周期由数据直接给出（不同中心天体质量下 T²=a³ 的太阳版不适用）。
+ *
+ * 距离单位与 elements.semiMajorAxisAu 字段的单位一致（可为 km 或场景单位），
+ * 角度要素含义不变。周期为负表示逆行（返回角度随时间反向推进）。
+ *
+ * @param periodDays 公转周期（天），非零
+ */
+export function orbitPositionWithPeriod(
+  elements: OrbitalElements,
+  periodDays: number,
+  daysFromEpoch: number,
+): Vec3 {
+  if (periodDays === 0) {
+    throw new RangeError('公转周期不能为 0');
+  }
+  const M0 = elements.meanAnomalyAtEpochDeg * DEG_TO_RAD;
+  const n = (Math.PI * 2) / periodDays;
+  const M = normalizeAngle(M0 + n * daysFromEpoch);
+  const E = solveKeplerEquation(M, elements.eccentricity);
+  const nu = trueAnomalyFromEccentric(E, elements.eccentricity);
+  return positionFromTrueAnomaly(elements, nu);
+}
+
+/**
+ * 广义轨道当前相位角（平近点角，弧度）——用于潮汐锁定自转对齐等
+ */
+export function orbitMeanAnomalyWithPeriod(
+  meanAnomalyAtEpochDeg: number,
+  periodDays: number,
+  daysFromEpoch: number,
+): number {
+  if (periodDays === 0) {
+    throw new RangeError('公转周期不能为 0');
+  }
+  const M0 = meanAnomalyAtEpochDeg * DEG_TO_RAD;
+  return normalizeAngle(M0 + ((Math.PI * 2) / periodDays) * daysFromEpoch);
+}
+
+/**
  * 自转角度（弧度）：给定 J2000 历元后天数与自转周期
  *
  * 负周期表示逆向自转（金星 −5832.5h、天王星 −17.24h），

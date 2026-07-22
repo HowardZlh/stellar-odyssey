@@ -77,6 +77,35 @@ export function advanceCrossfade(
   return { ...state, progress };
 }
 
+/**
+ * 连续缩放音景混合（需求 3.4.2：音景随尺度比例实时混合，跟随维度而非仅切换事件）
+ *
+ * 各层级权重取三角窗（相邻两层线性互补），再开方保持等功率过渡：
+ * 连续层级 2.5 时 L2/L3 各占 sqrt(0.5)，与离散交叉淡化中点一致。
+ *
+ * @param continuousLevel 连续层级（1.0–4.0）
+ */
+export function computeContinuousSoundscapeGains(
+  continuousLevel: number,
+  masterVolume: number,
+  muted: boolean,
+): Record<ViewLevel, number> {
+  const volume = clamp01(masterVolume);
+  const gains = {} as Record<ViewLevel, number>;
+  for (const level of VIEW_LEVELS) {
+    gains[level] = 0;
+  }
+  if (muted || volume === 0) {
+    return gains;
+  }
+  const f = Math.min(4, Math.max(1, continuousLevel));
+  for (let i = 0; i < VIEW_LEVELS.length; i += 1) {
+    const weight = Math.max(0, 1 - Math.abs(f - (i + 1)));
+    gains[VIEW_LEVELS[i]] = Math.sqrt(weight) * volume;
+  }
+  return gains;
+}
+
 export function clamp01(value: number): number {
   if (Number.isNaN(value)) return 0;
   return Math.min(1, Math.max(0, value));

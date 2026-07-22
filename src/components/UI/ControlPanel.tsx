@@ -22,6 +22,12 @@ export function ControlPanel(): JSX.Element {
   const setShowOrbits = useSimulationStore((s) => s.setShowOrbits);
   const showLabels = useSimulationStore((s) => s.showLabels);
   const setShowLabels = useSimulationStore((s) => s.setShowLabels);
+  const showSatelliteOrbits = useSimulationStore((s) => s.showSatelliteOrbits);
+  const setShowSatelliteOrbits = useSimulationStore((s) => s.setShowSatelliteOrbits);
+  const showYouAreHere = useSimulationStore((s) => s.showYouAreHere);
+  const setShowYouAreHere = useSimulationStore((s) => s.setShowYouAreHere);
+  const showVelocityVectors = useSimulationStore((s) => s.showVelocityVectors);
+  const setShowVelocityVectors = useSimulationStore((s) => s.setShowVelocityVectors);
 
   return (
     <div className="absolute left-4 top-4 w-64 select-none rounded-lg bg-space-panel p-4 text-sm backdrop-blur">
@@ -111,13 +117,37 @@ export function ControlPanel(): JSX.Element {
           />
           轨道线（O）
         </label>
-        <label className="flex items-center gap-2 text-xs">
+        <label className="mb-1 flex items-center gap-2 text-xs">
           <input
             type="checkbox"
             checked={showLabels}
             onChange={(e) => setShowLabels(e.target.checked)}
           />
           天体标签（L）
+        </label>
+        <label className="mb-1 flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={showSatelliteOrbits}
+            onChange={(e) => setShowSatelliteOrbits(e.target.checked)}
+          />
+          卫星轨道线
+        </label>
+        <label className="mb-1 flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={showYouAreHere}
+            onChange={(e) => setShowYouAreHere(e.target.checked)}
+          />
+          You are here 标记
+        </label>
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={showVelocityVectors}
+            onChange={(e) => setShowVelocityVectors(e.target.checked)}
+          />
+          速度矢量箭头
         </label>
       </section>
     </div>
