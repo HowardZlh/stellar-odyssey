@@ -1,10 +1,11 @@
 'use client';
 
 import { PLANETS } from '@/data/planets';
-import { ASTEROID_BELT, COMETS, KUIPER_BELT, PLUTO } from '@/data/smallBodies';
+import { ASTEROID_BELT, COMETS, DWARF_PLANETS, KUIPER_BELT } from '@/data/smallBodies';
 import { useSimulationStore } from '@/store';
 import { OrbitLine } from '@/components/Scene/OrbitLine';
 import { Belt } from '@/components/Scene/Belt';
+import { OortCloud } from '@/components/Scene/OortCloud';
 import { Comet } from '@/components/CelestialBody/Comet';
 import { Planet } from '@/components/CelestialBody/Planet';
 import { Sun } from '@/components/CelestialBody/Sun';
@@ -31,11 +32,13 @@ export function SolarSystem(): JSX.Element {
         </group>
       ))}
 
-      {/* 矮行星冥王星（柯伊伯带成员，与海王星 2:3 共振） */}
-      <group>
-        {showOrbits && <OrbitLine elements={PLUTO.orbit} color="#aa99cc" opacity={0.45} />}
-        <Planet data={PLUTO} />
-      </group>
+      {/* 矮行星：冥王星（与海王星 2:3 共振）+ 阋神星/鸟神星/妊神星（可选需求） */}
+      {DWARF_PLANETS.map((dwarf) => (
+        <group key={dwarf.id}>
+          {showOrbits && <OrbitLine elements={dwarf.orbit} color="#aa99cc" opacity={0.45} />}
+          <Planet data={dwarf} />
+        </group>
+      ))}
 
       {/* 彗星（哈雷为逆行轨道，彗尾始终背向太阳） */}
       {COMETS.map((comet) => (
@@ -48,6 +51,9 @@ export function SolarSystem(): JSX.Element {
       {/* 小行星带（2.2–3.2 AU）与柯伊伯带（30–50 AU），开普勒剪切公转 */}
       <Belt config={ASTEROID_BELT} />
       <Belt config={KUIPER_BELT} />
+
+      {/* 奥尔特云外边界示意（可选需求：L2 ↔ L3 过渡参照物） */}
+      <OortCloud />
     </group>
   );
 }

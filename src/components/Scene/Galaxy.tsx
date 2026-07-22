@@ -9,6 +9,8 @@ import { useSimulationStore } from '@/store';
 import { DEG_TO_RAD } from '@/utils/physics';
 import { SCENE_UNITS_PER_LY, trapezoidWeight } from '@/utils/scale';
 import {
+  ARM_PATTERN_SPEED_RAD_PER_MYR,
+  DENSITY_WAVE_CONTRAST,
   ECLIPTIC_GALACTIC_TILT_DEG,
   GALACTIC_BULGE_RADIUS_LY,
   GALACTIC_DISK_RADIUS_LY,
@@ -86,6 +88,9 @@ export function Galaxy(): JSX.Element {
         uMyr: { value: 0 },
         uOpacity: { value: 0 },
         uUnitsPerLy: { value: SCENE_UNITS_PER_LY },
+        // 旋臂密度波（可选需求 3.1.2）：图案角速度与恒星公转角速度不同
+        uPatternSpeed: { value: ARM_PATTERN_SPEED_RAD_PER_MYR },
+        uWaveContrast: { value: DENSITY_WAVE_CONTRAST },
       },
       vertexShader: /* glsl */ `
         attribute float aRadiusLy;
@@ -95,7 +100,10 @@ export function Galaxy(): JSX.Element {
         attribute float aSize;
         uniform float uMyr;
         uniform float uUnitsPerLy;
+        uniform float uPatternSpeed;
+        uniform float uWaveContrast;
         varying vec3 vColor;
+        varying float vWave;
 
         void main() {
           // 较差自转：平坦旋转曲线 v=220km/s → ω = v/r（内圈快、外圈慢）
@@ -107,6 +115,11 @@ export function Galaxy(): JSX.Element {
             -aRadiusLy * sin(angle)
           ) * uUnitsPerLy;
           vColor = aColor;
+          // 旋臂密度波（与 utils/galaxy.densityWaveBrightness 公式一致）：
+          // 对数螺旋图案以恒定角速度 uPatternSpeed 刚性旋转，
+          // 恒星以 ω(r) 较差公转 → 恒星周期性穿越旋臂（增亮）
+          float patternPhase = uPatternSpeed * uMyr + 1.2 * log(1.0 + aRadiusLy / 8000.0);
+          vWave = 1.0 + uWaveContrast * cos(4.0 * (angle - patternPhase));
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
           // 远距离（L4）下限 1.2px，保证银河系整体形态仍可辨识
           gl_PointSize = clamp(aSize * (2600.0 / -mvPosition.z), 1.2, 6.0);
@@ -116,14 +129,15 @@ export function Galaxy(): JSX.Element {
       fragmentShader: /* glsl */ `
         uniform float uOpacity;
         varying vec3 vColor;
+        varying float vWave;
 
         void main() {
           vec2 c = gl_PointCoord - vec2(0.5);
           float d2 = dot(c, c);
           if (d2 > 0.25) discard;
-          // 柔和圆点（中心亮边缘淡）
+          // 柔和圆点（中心亮边缘淡）；密度波调制亮度（vWave ∈ [1−c, 1+c]）
           float falloff = 1.0 - smoothstep(0.05, 0.25, d2);
-          gl_FragColor = vec4(vColor, uOpacity * (0.35 + 0.65 * falloff));
+          gl_FragColor = vec4(vColor * vWave, uOpacity * (0.35 + 0.65 * falloff));
         }
       `,
     });

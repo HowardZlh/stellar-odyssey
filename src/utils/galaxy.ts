@@ -131,6 +131,66 @@ export function diskParticleAngle(
   return initialPhaseRad + diskAngularSpeedRadPerMyr(radiusLy) * simDaysToMyr(simDays);
 }
 
+// ---------------------------------------------------------------------------
+// 旋臂密度波（可选需求 3.1.2 高级项）
+// ---------------------------------------------------------------------------
+
+/**
+ * 旋臂图案角速度（弧度/百万年）
+ *
+ * 密度波理论：旋臂图案以恒定角速度 Ω_p 刚性旋转，与恒星较差自转不同。
+ * 取 Ω_p ≈ 0.020 rad/Myr（对应共转半径约 3.7 万光年，在太阳轨道之外），
+ * 太阳附近恒星角速度 ω(26000 ly) ≈ 0.0282 rad/Myr > Ω_p，
+ * 因此太阳系约每 2 亿年相对旋臂图案前移一个旋臂间隔（周期性穿越旋臂）。
+ * 来源：Lin & Shu (1964) 密度波理论；共转半径取值为示意近似（已登记）。
+ */
+export const ARM_PATTERN_SPEED_RAD_PER_MYR = 0.02;
+
+/** 密度波亮度对比度（旋臂内粒子相对臂间的增亮幅度） */
+export const DENSITY_WAVE_CONTRAST = 0.55;
+
+/** 密度波参数 */
+export interface DensityWaveParams {
+  /** 旋臂数（4） */
+  armCount: number;
+  /** 图案角速度（弧度/百万年） */
+  patternSpeedRadPerMyr: number;
+  /** 螺旋紧密度（与银盘粒子生成一致） */
+  spiralTightness: number;
+  /** 核球半径（光年，对数螺旋参考半径） */
+  bulgeRadiusLy: number;
+  /** 亮度对比度（0-1） */
+  contrast: number;
+}
+
+/**
+ * 旋臂密度波亮度因子（可选需求：旋臂图案转速与恒星公转速度不同）
+ *
+ * 粒子当前方位角 θ 与"以 Ω_p 刚性旋转的对数螺旋图案"的相位差决定亮度：
+ * factor = 1 + contrast·cos(m·(θ − Ω_p·t − tightness·ln(1 + r/r_bulge)))
+ * 归一化到 [1 − contrast, 1 + contrast]。
+ * 恒星以 ω(r) 公转、图案以 Ω_p 旋转 → 恒星周期性穿越旋臂（太阳系亦然）。
+ *
+ * 与渲染端顶点着色器公式一致的 CPU 参考实现（保证可测试性）。
+ */
+export function densityWaveBrightness(
+  thetaRad: number,
+  radiusLy: number,
+  tMyr: number,
+  params: DensityWaveParams,
+): number {
+  if (radiusLy <= 0) {
+    throw new RangeError(`半径必须为正数，收到 ${radiusLy}`);
+  }
+  if (params.contrast < 0 || params.contrast > 1) {
+    throw new RangeError(`对比度必须在 [0, 1] 内，收到 ${params.contrast}`);
+  }
+  const patternPhase =
+    params.patternSpeedRadPerMyr * tMyr +
+    params.spiralTightness * Math.log(1 + radiusLy / params.bulgeRadiusLy);
+  return 1 + params.contrast * Math.cos(params.armCount * (thetaRad - patternPhase));
+}
+
 /** 银盘粒子生成参数 */
 export interface GalaxyDiskParams {
   /** 粒子数 */

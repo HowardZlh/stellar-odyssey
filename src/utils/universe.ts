@@ -15,7 +15,8 @@
  */
 
 import type { Vec3 } from '@/types';
-import { KM_S_TO_LY_PER_MYR, simDaysToMyr } from '@/utils/galaxy';
+import { easeInOutCubic } from '@/utils/animation';
+import { DAYS_PER_MYR, KM_S_TO_LY_PER_MYR, simDaysToMyr } from '@/utils/galaxy';
 import { createSeededRandom } from '@/utils/random';
 
 /** MW–M31 当前距离（光年）：约 250 万光年 */
@@ -129,6 +130,129 @@ export function satelliteGalaxyPositionLy(
     z: z * Math.cos(incl),
   };
 }
+
+// ---------------------------------------------------------------------------
+// 银河系—仙女座碰撞合并快进预览（可选需求 3.1.3）
+// ---------------------------------------------------------------------------
+
+/** 合并预览动画时长（真实秒） */
+export const MERGE_PREVIEW_DURATION_SEC = 12;
+
+/** 合并时刻的模拟时间（J2000 起天数）：4500 Myr × 365.25e6 天/Myr */
+export const MERGE_TARGET_SIM_DAYS = MW_M31_MERGE_MYR * DAYS_PER_MYR;
+
+/**
+ * 合并预览的模拟时间插值（可选需求：时间快进预览碰撞合并）
+ *
+ * 从当前模拟时间平滑快进到合并时刻（easeInOutCubic 缓动），
+ * progress01 = 1 时精确到达 MERGE_TARGET_SIM_DAYS。
+ */
+export function mergePreviewSimDays(startSimDays: number, progress01: number): number {
+  const p = Math.min(1, Math.max(0, progress01));
+  return startSimDays + (MERGE_TARGET_SIM_DAYS - startSimDays) * easeInOutCubic(p);
+}
+
+/** 合并辉光起始距离（光年）：两星系相距该距离内开始显现合并辉光 */
+export const MERGE_GLOW_ONSET_LY = 5e5;
+
+/**
+ * 合并辉光不透明度（0-1）：距离越近越亮，separation=0 时为 1
+ *
+ * 两星系接近至 MERGE_GLOW_ONSET_LY 内时线性增强（碰撞合并过程示意）。
+ */
+export function mergeGlowOpacity01(separationLy: number): number {
+  if (separationLy < 0 || !Number.isFinite(separationLy)) {
+    throw new RangeError(`距离必须为非负有限数，收到 ${separationLy}`);
+  }
+  return Math.min(1, Math.max(0, 1 - separationLy / MERGE_GLOW_ONSET_LY));
+}
+
+// ---------------------------------------------------------------------------
+// 哈勃膨胀示意（可选需求 3.1.3：遥远星系红移退行）
+// ---------------------------------------------------------------------------
+
+/**
+ * 哈勃常数（1/Myr）：H₀ ≈ 70 km/s/Mpc ≈ 7.16e-5 /Myr
+ * 推导：70 km/s/Mpc × 3.2408e-20 /km·Mpc × 3.1557e13 s/Myr ≈ 7.16e-5
+ * 来源：Planck 2018 / SH0ES 折中取值
+ */
+export const HUBBLE_H0_PER_MYR = 7.16e-5;
+
+/** 哈勃缩放因子上限（避免长时间快进后宇宙网粒子飞出可视范围） */
+export const HUBBLE_MAX_SCALE = 2.5;
+
+/**
+ * 哈勃膨胀缩放因子（线性一阶近似，示意已登记）
+ *
+ * a(t) = 1 + H₀·t：以整体缩放宇宙网实现"退行速度与距离成正比"
+ * （v = H·d，哈勃定律的几何本质）。t < 0（回溯）时收缩，下限 0.2。
+ */
+export function hubbleScaleFactor(simDays: number, h0PerMyr = HUBBLE_H0_PER_MYR): number {
+  if (h0PerMyr < 0) {
+    throw new RangeError(`哈勃常数不能为负，收到 ${h0PerMyr}`);
+  }
+  const scale = 1 + h0PerMyr * simDaysToMyr(simDays);
+  return Math.min(HUBBLE_MAX_SCALE, Math.max(0.2, scale));
+}
+
+// ---------------------------------------------------------------------------
+// 麦哲伦星流（可选需求 3.1.3：LMC/SMC 拖曳的气体流）
+// ---------------------------------------------------------------------------
+
+/** 麦哲伦星流回溯时长（百万年）：气体流沿卫星星系轨道拖尾的示意长度 */
+export const MAGELLANIC_STREAM_TRAIL_MYR = 600;
+
+/**
+ * 麦哲伦星流采样点（光年，银河系中心系）
+ *
+ * 真实麦哲伦星流为 LMC/SMC 受银河系潮汐剥离的中性氢气体流，
+ * 横跨南天约 100°。此处沿卫星星系轨道向后回溯采样（拖尾示意，已登记），
+ * 每个点加确定性横向抖动模拟气体弥散。
+ *
+ * @param count 采样点数（≥ 2）
+ */
+export function magellanicStreamPointsLy(
+  distanceLy: number,
+  periodMyr: number,
+  phase0Rad: number,
+  inclinationDeg: number,
+  simDays: number,
+  count: number,
+  seed = 20260725,
+): Vec3[] {
+  if (count < 2 || !Number.isInteger(count)) {
+    throw new RangeError(`采样点数必须为 ≥ 2 的整数，收到 ${count}`);
+  }
+  const rand = createSeededRandom(seed);
+  const points: Vec3[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const t01 = i / (count - 1);
+    // 回溯时间：0（当前位置）→ MAGELLANIC_STREAM_TRAIL_MYR（尾端）
+    const backDays = t01 * MAGELLANIC_STREAM_TRAIL_MYR * DAYS_PER_MYR;
+    const p = satelliteGalaxyPositionLy(
+      distanceLy,
+      periodMyr,
+      phase0Rad,
+      inclinationDeg,
+      simDays - backDays,
+    );
+    // 气体弥散：尾端抖动更大（潮汐剥离越久越弥散）
+    const jitter = distanceLy * 0.04 * (0.3 + t01);
+    points.push({
+      x: p.x + (rand() * 2 - 1) * jitter,
+      y: p.y + (rand() * 2 - 1) * jitter,
+      z: p.z + (rand() * 2 - 1) * jitter,
+    });
+  }
+  return points;
+}
+
+// ---------------------------------------------------------------------------
+// 可观测宇宙边界（可选需求 3.1.3）
+// ---------------------------------------------------------------------------
+
+/** 可观测宇宙半径（光年）：约 465 亿光年（共动距离，Planck 2018） */
+export const OBSERVABLE_UNIVERSE_RADIUS_LY = 4.65e10;
 
 /** 宇宙网生成配置（场景单位） */
 export interface CosmicWebConfig {
@@ -255,9 +379,18 @@ export function generateCosmicWeb(config: CosmicWebConfig): CosmicWeb {
     galaxyPositions[cursor * 3 + 2] = z;
     const base = WEB_PALETTE[Math.floor(rand() * WEB_PALETTE.length)];
     const brightness = 0.3 + 0.5 * rand();
+    // 红移示意（可选需求 3.1.3 哈勃膨胀）：越远的星系颜色越偏红、越暗
+    // （红移退行的视觉示意，已登记；真实红移为光谱移动而非简单变红）
+    // 通过压低 G/B 通道实现色调偏红 + 整体变暗，保持"昏暗"亮度上限不变
+    const redshift01 = Math.min(
+      1,
+      Math.hypot(x, y, z) / Math.max(config.maxRadiusUnits, 1e-6),
+    );
+    const gShift = 1 - 0.3 * redshift01;
+    const bShift = 1 - 0.5 * redshift01;
     galaxyColors[cursor * 3] = base.r * brightness;
-    galaxyColors[cursor * 3 + 1] = base.g * brightness;
-    galaxyColors[cursor * 3 + 2] = base.b * brightness;
+    galaxyColors[cursor * 3 + 1] = base.g * brightness * gShift;
+    galaxyColors[cursor * 3 + 2] = base.b * brightness * bShift;
     cursor += 1;
   };
 

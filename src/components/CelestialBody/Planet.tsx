@@ -14,6 +14,7 @@ import { Moon } from '@/components/CelestialBody/Moon';
 import {
   createBodyTextureCanvas,
   createCloudTextureCanvas,
+  createNightLightsCanvas,
   createRingTextureCanvas,
 } from '@/components/CelestialBody/proceduralTextures';
 
@@ -44,6 +45,7 @@ export function Planet({ data }: PlanetProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
   const bodyRef = useRef<THREE.Mesh>(null);
   const cloudRef = useRef<THREE.Mesh>(null);
+  const nightRef = useRef<THREE.Mesh>(null);
   const showLabels = useSimulationStore((s) => s.showLabels);
   const selectBody = useSimulationStore((s) => s.selectBody);
   // Html 标签不随父级 visible 隐藏，需单独按层级门控（布尔选择器，变化时才重渲染）
@@ -76,6 +78,46 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
+  }, [data.surface, highRes]);
+
+  // 夜半球城市灯光（可选需求 3.1.1）：仅背向太阳的半球显示暖黄灯光
+  const nightMaterial = useMemo(() => {
+    if (!data.surface?.hasNightLights) return null;
+    const tex = new THREE.CanvasTexture(createNightLightsCanvas(highRes ? 1024 : 512));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uMap: { value: tex } },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        varying vec3 vNormalW;
+        varying vec3 vPosW;
+        void main() {
+          vUv = uv;
+          vNormalW = normalize(mat3(modelMatrix) * normal);
+          vec4 world = modelMatrix * vec4(position, 1.0);
+          vPosW = world.xyz;
+          gl_Position = projectionMatrix * viewMatrix * world;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D uMap;
+        varying vec2 vUv;
+        varying vec3 vNormalW;
+        varying vec3 vPosW;
+        void main() {
+          // 太阳位于场景原点：日照方向 = 表面点指向原点
+          vec3 sunDir = normalize(-vPosW);
+          float ndl = dot(normalize(vNormalW), sunDir);
+          // 仅夜半球显示（晨昏线附近平滑过渡）
+          float night = smoothstep(0.08, -0.18, ndl);
+          vec4 tex = texture2D(uMap, vUv);
+          gl_FragColor = vec4(tex.rgb, tex.a * night);
+        }
+      `,
+    });
   }, [data.surface, highRes]);
 
   const ringAssets = useMemo(() => {
@@ -121,6 +163,15 @@ export function Planet({ data }: PlanetProps): JSX.Element {
 
   useEffect(() => {
     return () => {
+      if (nightMaterial) {
+        (nightMaterial.uniforms.uMap.value as THREE.Texture).dispose();
+        nightMaterial.dispose();
+      }
+    };
+  }, [nightMaterial]);
+
+  useEffect(() => {
+    return () => {
       if (ringAssets) {
         ringAssets.geometry.dispose();
         ringAssets.material.dispose();
@@ -160,6 +211,10 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     if (cloudRef.current) {
       cloudRef.current.rotation.y = rotation * 1.12;
     }
+    // 夜灯层与地表同步旋转（灯光固定在大陆上）
+    if (nightRef.current) {
+      nightRef.current.rotation.y = rotation;
+    }
   });
 
   return (
@@ -176,6 +231,13 @@ export function Planet({ data }: PlanetProps): JSX.Element {
           <sphereGeometry args={[radius, 48, 48]} />
           <meshStandardMaterial map={texture} roughness={0.85} metalness={0.05} />
         </mesh>
+
+        {/* 夜半球城市灯光（可选需求 3.1.1：背向太阳的半球显示） */}
+        {nightMaterial && (
+          <mesh ref={nightRef} material={nightMaterial}>
+            <sphereGeometry args={[radius * 1.005, 48, 48]} />
+          </mesh>
+        )}
 
         {/* 云层（独立旋转，需求 3.1.1 地球） */}
         {cloudTexture && (

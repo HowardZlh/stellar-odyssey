@@ -36,6 +36,7 @@ export const PLANETS: readonly PlanetData[] = [
     },
     rotation: { siderealPeriodHours: 1407.6, axialTiltDeg: 0.034 },
     orbitalPeriodYears: 0.2408,
+    massKg: 3.301e23,
     dataSource: JPL_SOURCE,
   },
   {
@@ -55,6 +56,7 @@ export const PLANETS: readonly PlanetData[] = [
     // 金星逆向自转（负周期），周期约 243 天，是唯一"日出于西"的行星
     rotation: { siderealPeriodHours: -5832.5, axialTiltDeg: 177.36 },
     orbitalPeriodYears: 0.6152,
+    massKg: 4.867e24,
     // 浓厚二氧化碳大气的淡黄色辉光
     surface: { hasAtmosphereGlow: true, atmosphereColor: '#e6d4a8' },
     dataSource: JPL_SOURCE,
@@ -75,8 +77,14 @@ export const PLANETS: readonly PlanetData[] = [
     },
     rotation: { siderealPeriodHours: 23.9345, axialTiltDeg: 23.44 },
     orbitalPeriodYears: 1.0,
-    // 大陆海洋/云层/大气辉光（需求 3.1.1）
-    surface: { hasCloudLayer: true, hasAtmosphereGlow: true, atmosphereColor: '#6ab7ff' },
+    massKg: 5.972e24,
+    // 大陆海洋/云层/大气辉光 + 夜半球城市灯光（需求 3.1.1，含可选项夜灯）
+    surface: {
+      hasCloudLayer: true,
+      hasAtmosphereGlow: true,
+      atmosphereColor: '#6ab7ff',
+      hasNightLights: true,
+    },
     dataSource: JPL_SOURCE,
   },
   {
@@ -95,6 +103,7 @@ export const PLANETS: readonly PlanetData[] = [
     },
     rotation: { siderealPeriodHours: 24.6229, axialTiltDeg: 25.19 },
     orbitalPeriodYears: 1.8808,
+    massKg: 6.417e23,
     // 稀薄大气的微弱红色辉光
     surface: { hasAtmosphereGlow: true, atmosphereColor: '#d9a08a' },
     dataSource: JPL_SOURCE,
@@ -116,6 +125,7 @@ export const PLANETS: readonly PlanetData[] = [
     // 木星自转最快：约 9.925 小时
     rotation: { siderealPeriodHours: 9.925, axialTiltDeg: 3.13 },
     orbitalPeriodYears: 11.862,
+    massKg: 1.898e27,
     dataSource: JPL_SOURCE,
   },
   {
@@ -134,6 +144,7 @@ export const PLANETS: readonly PlanetData[] = [
     },
     rotation: { siderealPeriodHours: 10.656, axialTiltDeg: 26.73 },
     orbitalPeriodYears: 29.457,
+    massKg: 5.683e26,
     // 土星主环：C 环内缘（74,500 km）至 F 环（140,220 km），
     // 卡西尼缝位于约 117,500 km；来源：NASA Saturn Fact Sheet
     ring: {
@@ -163,6 +174,7 @@ export const PLANETS: readonly PlanetData[] = [
     // 天王星侧躺（轴倾角 97.77°）且逆向自转
     rotation: { siderealPeriodHours: -17.24, axialTiltDeg: 97.77 },
     orbitalPeriodYears: 84.011,
+    massKg: 8.681e25,
     dataSource: JPL_SOURCE,
   },
   {
@@ -181,6 +193,7 @@ export const PLANETS: readonly PlanetData[] = [
     },
     rotation: { siderealPeriodHours: 16.11, axialTiltDeg: 28.32 },
     orbitalPeriodYears: 164.79,
+    massKg: 1.024e26,
     dataSource: JPL_SOURCE,
   },
 ] as const;
@@ -191,6 +204,7 @@ export const SUN = {
   name: 'Sun',
   nameZh: '太阳',
   radiusKm: 695700,
+  massKg: 1.989e30,
   color: '#ffcc55',
   dataSource: 'NASA Sun Fact Sheet, https://nssdc.gsfc.nasa.gov/planetary/factsheet/sunfact.html',
 } as const;

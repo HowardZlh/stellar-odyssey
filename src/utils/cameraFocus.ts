@@ -15,8 +15,12 @@
 import type { MoonData, SpecialBodyData, SupernovaEvent, Vec3 } from '@/types';
 import { PLANETS, SUN, getPlanetById } from '@/data/planets';
 import { MOONS } from '@/data/moons';
-import { COMETS, PLUTO } from '@/data/smallBodies';
-import { LOCAL_GROUP_GALAXIES, SATELLITE_GALAXY_ORBITS } from '@/data/galaxies';
+import { COMETS, PLUTO, getDwarfPlanetById } from '@/data/smallBodies';
+import {
+  LOCAL_GROUP_GALAXIES,
+  M31_COMPANION_OFFSETS_LY,
+  SATELLITE_GALAXY_ORBITS,
+} from '@/data/galaxies';
 import { SPECIAL_BODIES } from '@/data/specialBodies';
 import { DEG_TO_RAD, heliocentricPosition, orbitPositionWithPeriod } from '@/utils/physics';
 import {
@@ -70,7 +74,7 @@ export function galacticPointToSceneUnits(pLy: Vec3, simDays: number): Vec3 {
 
 /** 卫星当前场景位置（父行星位置 + 参考平面内的局部偏移） */
 function moonScenePosition(moon: MoonData, simDays: number, realScale: boolean): Vec3 | null {
-  const parent = getPlanetById(moon.parentId) ?? (moon.parentId === PLUTO.id ? PLUTO : undefined);
+  const parent = getPlanetById(moon.parentId) ?? getDwarfPlanetById(moon.parentId);
   if (!parent) return null;
   const parentScene = eclipticToScene(heliocentricPosition(parent.orbit, simDays));
   const p = orbitPositionWithPeriod(
@@ -113,6 +117,18 @@ function galaxyScenePosition(galaxyId: string, simDays: number): Vec3 | null {
   if (galaxy.id === 'm31') {
     const d = cosmicDistanceToSceneUnits(mwM31SeparationLy(simDays));
     return { x: galaxy.direction.x * d, y: galaxy.direction.y * d, z: galaxy.direction.z * d };
+  }
+  if (galaxy.id === 'm32' || galaxy.id === 'm110') {
+    // M31 伴星系：随 M31 一同移动（示意偏移已登记于 data/galaxies.ts）
+    const m31 = LOCAL_GROUP_GALAXIES.find((g) => g.id === 'm31');
+    if (!m31) return null;
+    const d = cosmicDistanceToSceneUnits(mwM31SeparationLy(simDays));
+    const offset = M31_COMPANION_OFFSETS_LY[galaxy.id];
+    return {
+      x: m31.direction.x * d + lyToSceneUnits(offset.x),
+      y: m31.direction.y * d + lyToSceneUnits(offset.y),
+      z: m31.direction.z * d + lyToSceneUnits(offset.z),
+    };
   }
   if (galaxy.id === 'lmc' || galaxy.id === 'smc') {
     const orbit = SATELLITE_GALAXY_ORBITS[galaxy.id];
@@ -190,7 +206,7 @@ export function resolveFocusTarget(
     };
   }
 
-  const planet = getPlanetById(bodyId) ?? (bodyId === PLUTO.id ? PLUTO : undefined);
+  const planet = getPlanetById(bodyId) ?? getDwarfPlanetById(bodyId);
   if (planet) {
     return {
       position: eclipticToScene(heliocentricPosition(planet.orbit, simDays)),
@@ -204,7 +220,7 @@ export function resolveFocusTarget(
     if (!position) return null;
     const orbitRadius = satelliteOrbitDisplayRadius(
       moon.kind,
-      (getPlanetById(moon.parentId) ?? PLUTO).radiusKm,
+      (getPlanetById(moon.parentId) ?? getDwarfPlanetById(moon.parentId) ?? PLUTO).radiusKm,
       moon.orbit.semiMajorAxisKm,
       realScale,
     );

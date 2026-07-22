@@ -19,10 +19,12 @@ import {
   accretionDiskAngularSpeed,
   binaryStarPositions,
   blueGiantFlicker,
+  cepheidBrightness,
   nebulaExpansionScale,
   pulsarBeamAngle,
   pulsarPulseIntensity,
   redGiantPulsation,
+  stellarWindPhase01,
 } from '@/utils/specialBodies';
 import { createGlowSpriteCanvas } from '@/components/CelestialBody/proceduralTextures';
 
@@ -164,8 +166,96 @@ function RedGiant({ body }: BodyProps): JSX.Element {
   );
 }
 
+interface StellarWindProps {
+  /** 恒星视觉半径（场景单位） */
+  sizeUnits: number;
+  color: string;
+  /** 粒子数 */
+  count: number;
+  /** 外流最大半径（相对恒星半径倍数） */
+  maxRadiusFactor: number;
+  /** 外流循环周期（秒） */
+  cycleSec: number;
+  /** 确定性种子 */
+  seed: number;
+}
+
 /**
- * 蓝巨星（参宿七）：蓝白色 + 强光晕，高频微闪烁（需求 3.1.5）
+ * 强星风粒子外流（可选需求 3.1.5：蓝巨星/沃尔夫-拉叶星）
+ *
+ * 粒子沿确定性随机方向从恒星表面径向外流（stellarWindPhase01 驱动），
+ * 越远越暗（加色混合下用顶点色衰减表达），到达外缘后循环回收。
+ */
+function StellarWind({
+  sizeUnits,
+  color,
+  count,
+  maxRadiusFactor,
+  cycleSec,
+  seed,
+}: StellarWindProps): JSX.Element {
+  const { geometry, material, directions, seeds, baseColor } = useMemo(() => {
+    const rand = createSeededRandom(seed);
+    const dirs = new Float32Array(count * 3);
+    const seedArr = new Float32Array(count);
+    for (let i = 0; i < count; i += 1) {
+      const cosPolar = rand() * 2 - 1;
+      const azimuth = Math.PI * 2 * rand();
+      const sinPolar = Math.sqrt(1 - cosPolar * cosPolar);
+      dirs[i * 3] = sinPolar * Math.cos(azimuth);
+      dirs[i * 3 + 1] = cosPolar;
+      dirs[i * 3 + 2] = sinPolar * Math.sin(azimuth);
+      seedArr[i] = rand();
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+    geo.boundingSphere = new THREE.Sphere(
+      new THREE.Vector3(0, 0, 0),
+      sizeUnits * maxRadiusFactor * 1.2,
+    );
+    const mat = new THREE.PointsMaterial({
+      size: sizeUnits * 0.14,
+      vertexColors: true,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: true,
+    });
+    const c = new THREE.Color(color);
+    return { geometry: geo, material: mat, directions: dirs, seeds: seedArr, baseColor: c };
+  }, [sizeUnits, color, count, maxRadiusFactor, seed]);
+
+  useEffect(
+    () => () => {
+      geometry.dispose();
+      material.dispose();
+    },
+    [geometry, material],
+  );
+
+  useFrame(({ clock }) => {
+    const weight = specialFadeWeight(useSimulationStore.getState().continuousLevel);
+    const pos = geometry.attributes.position as THREE.BufferAttribute;
+    const col = geometry.attributes.color as THREE.BufferAttribute;
+    for (let i = 0; i < seeds.length; i += 1) {
+      const phase = stellarWindPhase01(clock.elapsedTime, seeds[i], cycleSec);
+      const r = sizeUnits * (1 + phase * (maxRadiusFactor - 1));
+      pos.setXYZ(i, directions[i * 3] * r, directions[i * 3 + 1] * r, directions[i * 3 + 2] * r);
+      // 越远越暗（加色混合下颜色变暗即透明度下降）
+      const fade = (1 - phase) * weight;
+      col.setXYZ(i, baseColor.r * fade, baseColor.g * fade, baseColor.b * fade);
+    }
+    pos.needsUpdate = true;
+    col.needsUpdate = true;
+  });
+
+  return <points geometry={geometry} material={material} />;
+}
+
+/**
+ * 蓝巨星（参宿七）：蓝白色 + 强光晕，高频微闪烁 + 强星风粒子外流
+ * （需求 3.1.5，含可选项星风）
  */
 function BlueGiant({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
@@ -209,6 +299,337 @@ function BlueGiant({ body }: BodyProps): JSX.Element {
           blending={THREE.AdditiveBlending}
         />
       </sprite>
+      {/* 强星风粒子外流（可选需求 3.1.5） */}
+      <StellarWind
+        sizeUnits={size}
+        color={body.color}
+        count={36}
+        maxRadiusFactor={3.2}
+        cycleSec={6}
+        seed={20260731}
+      />
+      <BodyLabel body={body} sizeUnits={size} />
+    </group>
+  );
+}
+
+/**
+ * 沃尔夫-拉叶星（WR 124，可选需求 3.1.5）：炽热蓝白核心 + 强星风外流
+ * + M1-67 抛射星云壳（缓慢膨胀）
+ */
+function WolfRayet({ body }: BodyProps): JSX.Element {
+  const groupRef = useRef<THREE.Group>(null);
+  const glowRef = useRef<THREE.Sprite>(null);
+  const shellRef = useRef<THREE.Mesh>(null);
+  const selectBody = useSimulationStore((s) => s.selectBody);
+  const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
+
+  const glowTexture = useMemo(
+    () => new THREE.CanvasTexture(createGlowSpriteCanvas(body.color, 128)),
+    [body.color],
+  );
+  useEffect(() => () => glowTexture.dispose(), [glowTexture]);
+
+  useGalacticPlacement(body, groupRef);
+  useFrame(({ clock }) => {
+    const group = groupRef.current;
+    if (!group || !group.visible) return;
+    const weight = specialFadeWeight(useSimulationStore.getState().continuousLevel);
+    if (glowRef.current) {
+      (glowRef.current.material as THREE.SpriteMaterial).opacity =
+        0.85 * blueGiantFlicker(clock.elapsedTime * 1.4) * weight;
+    }
+    if (shellRef.current) {
+      // M1-67 抛射星云壳：缓慢膨胀（艺术化加速，已登记）
+      shellRef.current.scale.setScalar(nebulaExpansionScale(clock.elapsedTime, 80, 0.14));
+      (shellRef.current.material as THREE.MeshBasicMaterial).opacity = 0.14 * weight;
+    }
+  });
+
+  return (
+    <group ref={groupRef} name={body.id}>
+      {/* 炽热核心（约 44,000 K，蓝白色） */}
+      <mesh
+        onClick={(e) => {
+          e.stopPropagation();
+          selectBody(body.id);
+        }}
+      >
+        <sphereGeometry args={[size * 0.6, 20, 20]} />
+        <meshBasicMaterial color="#e8f0ff" />
+      </mesh>
+      <sprite ref={glowRef} scale={[size * 4, size * 4, 1]}>
+        <spriteMaterial
+          map={glowTexture}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </sprite>
+      {/* M1-67 抛射星云壳 */}
+      <mesh ref={shellRef}>
+        <sphereGeometry args={[size * 1.9, 20, 20]} />
+        <meshBasicMaterial
+          color="#c8a8d8"
+          transparent
+          side={THREE.BackSide}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+      {/* 数千 km/s 强星风（比蓝巨星更快的循环周期） */}
+      <StellarWind
+        sizeUnits={size * 0.6}
+        color="#cfe0ff"
+        count={52}
+        maxRadiusFactor={5}
+        cycleSec={3.2}
+        seed={20260732}
+      />
+      <BodyLabel body={body} sizeUnits={size} />
+    </group>
+  );
+}
+
+/**
+ * 造父变星（造父一，可选需求 3.1.5）：周期性脉动光变
+ * （快速增亮、缓慢变暗的锯齿曲线，"量天尺"科普说明见信息面板）
+ */
+function Cepheid({ body }: BodyProps): JSX.Element {
+  const groupRef = useRef<THREE.Group>(null);
+  const coreRef = useRef<THREE.Mesh>(null);
+  const glowRef = useRef<THREE.Sprite>(null);
+  const selectBody = useSimulationStore((s) => s.selectBody);
+  const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
+
+  const glowTexture = useMemo(
+    () => new THREE.CanvasTexture(createGlowSpriteCanvas(body.color, 128)),
+    [body.color],
+  );
+  useEffect(() => () => glowTexture.dispose(), [glowTexture]);
+
+  useGalacticPlacement(body, groupRef);
+  useFrame(({ clock }) => {
+    const group = groupRef.current;
+    if (!group || !group.visible) return;
+    const weight = specialFadeWeight(useSimulationStore.getState().continuousLevel);
+    const brightness = cepheidBrightness(clock.elapsedTime);
+    // 脉动：亮度与尺寸同步变化（κ 机制的外层膨胀收缩）
+    if (coreRef.current) {
+      coreRef.current.scale.setScalar(0.9 + 0.15 * (brightness - 0.65));
+    }
+    if (glowRef.current) {
+      const s = size * 3.6 * (0.8 + 0.35 * brightness);
+      glowRef.current.scale.set(s, s, 1);
+      (glowRef.current.material as THREE.SpriteMaterial).opacity =
+        0.75 * brightness * weight;
+    }
+  });
+
+  return (
+    <group ref={groupRef} name={body.id}>
+      <mesh
+        ref={coreRef}
+        onClick={(e) => {
+          e.stopPropagation();
+          selectBody(body.id);
+        }}
+      >
+        <sphereGeometry args={[size * 0.5, 20, 20]} />
+        <meshBasicMaterial color={body.color} />
+      </mesh>
+      <sprite ref={glowRef}>
+        <spriteMaterial
+          map={glowTexture}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </sprite>
+      <BodyLabel body={body} sizeUnits={size} />
+    </group>
+  );
+}
+
+/**
+ * 疏散星团（昴星团，可选需求 3.1.5）：松散分布的年轻热蓝星
+ * + 蓝色反射星云（与球状星团的致密老年恒星形成对比）
+ */
+function OpenCluster({ body }: BodyProps): JSX.Element {
+  const groupRef = useRef<THREE.Group>(null);
+  const selectBody = useSimulationStore((s) => s.selectBody);
+  const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
+
+  const nebulaTexture = useMemo(
+    () => new THREE.CanvasTexture(createGlowSpriteCanvas(body.color, 128)),
+    [body.color],
+  );
+  useEffect(() => () => nebulaTexture.dispose(), [nebulaTexture]);
+  const nebulaRef = useRef<THREE.Sprite>(null);
+
+  const { geometry, material } = useMemo(() => {
+    const rand = createSeededRandom(20260733);
+    const count = 120;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i += 1) {
+      // 疏散分布：半径接近均匀（无强中心聚集，与球状星团的 rand² 相对）
+      const r = size * Math.sqrt(rand());
+      const cosPolar = rand() * 2 - 1;
+      const azimuth = Math.PI * 2 * rand();
+      const sinPolar = Math.sqrt(1 - cosPolar * cosPolar);
+      positions[i * 3] = r * sinPolar * Math.cos(azimuth);
+      positions[i * 3 + 1] = r * cosPolar * 0.7;
+      positions[i * 3 + 2] = r * sinPolar * Math.sin(azimuth);
+      // 年轻热蓝星（B 型为主）+ 少量白色
+      const blue = 0.85 + 0.15 * rand();
+      const brightness = 0.6 + 0.4 * rand();
+      colors[i * 3] = 0.7 * brightness;
+      colors[i * 3 + 1] = 0.82 * brightness;
+      colors[i * 3 + 2] = blue * brightness;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      size: size * 0.09,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: true,
+    });
+    return { geometry: geo, material: mat };
+  }, [size]);
+
+  useEffect(
+    () => () => {
+      geometry.dispose();
+      material.dispose();
+    },
+    [geometry, material],
+  );
+
+  useGalacticPlacement(body, groupRef);
+  useFrame(({ clock }) => {
+    const group = groupRef.current;
+    if (!group || !group.visible) return;
+    const weight = specialFadeWeight(useSimulationStore.getState().continuousLevel);
+    material.opacity = 0.95 * weight;
+    if (nebulaRef.current) {
+      // 反射星云微闪烁（星光散射）
+      (nebulaRef.current.material as THREE.SpriteMaterial).opacity =
+        0.28 * blueGiantFlicker(clock.elapsedTime * 0.5) * weight;
+    }
+  });
+
+  return (
+    <group ref={groupRef} name={body.id}>
+      {/* 蓝色反射星云（星光被尘埃散射，非电离发光） */}
+      <sprite ref={nebulaRef} scale={[size * 2.6, size * 2, 1]}>
+        <spriteMaterial
+          map={nebulaTexture}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </sprite>
+      <points geometry={geometry} material={material} />
+      {/* 点选热区 */}
+      <mesh
+        onClick={(e) => {
+          e.stopPropagation();
+          selectBody(body.id);
+        }}
+      >
+        <sphereGeometry args={[size * 0.7, 12, 12]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+      <BodyLabel body={body} sizeUnits={size} />
+    </group>
+  );
+}
+
+/**
+ * 暗星云（马头星云，可选需求 3.1.5）：剪影遮挡效果——
+ * 前景冷分子云（不发光、普通混合的暗色块）遮挡背景发射星云 IC 434 的红光
+ */
+function DarkNebula({ body }: BodyProps): JSX.Element {
+  const groupRef = useRef<THREE.Group>(null);
+  const selectBody = useSimulationStore((s) => s.selectBody);
+  const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
+
+  const textures = useMemo(
+    () => ({
+      emission: new THREE.CanvasTexture(createGlowSpriteCanvas('#ff8898', 128)),
+      dark: new THREE.CanvasTexture(createGlowSpriteCanvas('#050308', 128)),
+    }),
+    [],
+  );
+  useEffect(
+    () => () => {
+      textures.emission.dispose();
+      textures.dark.dispose();
+    },
+    [textures],
+  );
+
+  useGalacticPlacement(body, groupRef);
+  useFrame(() => {
+    const group = groupRef.current;
+    if (!group || !group.visible) return;
+    const weight = specialFadeWeight(useSimulationStore.getState().continuousLevel);
+    group.traverse((obj) => {
+      if (obj instanceof THREE.Sprite) {
+        obj.material.opacity = (obj.userData.baseOpacity as number) * weight;
+      }
+    });
+  });
+
+  // 马头剪影示意：垂直"颈部" + 顶部"头部"偏移暗块（前景，普通混合遮光）
+  const silhouette = [
+    { x: 0, y: -size * 0.25, scale: 0.55, opacity: 0.92 },
+    { x: 0, y: size * 0.12, scale: 0.42, opacity: 0.95 },
+    { x: size * 0.18, y: size * 0.34, scale: 0.3, opacity: 0.95 },
+  ];
+
+  return (
+    <group ref={groupRef} name={body.id}>
+      {/* 背景发射星云 IC 434（氢α红光，加色混合） */}
+      <sprite
+        position={[0, 0, -size * 0.5]}
+        scale={[size * 2.8, size * 2.2, 1]}
+        userData={{ baseOpacity: 0.4 }}
+        onClick={(e) => {
+          e.stopPropagation();
+          selectBody(body.id);
+        }}
+      >
+        <spriteMaterial
+          map={textures.emission}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </sprite>
+      {/* 前景暗分子云剪影（普通混合遮挡背景红光） */}
+      {silhouette.map((s, i) => (
+        <sprite
+          key={i}
+          position={[s.x, s.y, size * 0.3]}
+          scale={[size * s.scale, size * s.scale * 1.3, 1]}
+          userData={{ baseOpacity: s.opacity }}
+          renderOrder={10}
+        >
+          <spriteMaterial
+            map={textures.dark}
+            transparent
+            depthWrite={false}
+            blending={THREE.NormalBlending}
+          />
+        </sprite>
+      ))}
       <BodyLabel body={body} sizeUnits={size} />
     </group>
   );
@@ -772,6 +1193,14 @@ export function SpecialBodies(): JSX.Element {
             return <PlanetaryNebula key={body.id} body={body} />;
           case 'globular-cluster':
             return <GlobularCluster key={body.id} body={body} />;
+          case 'wolf-rayet':
+            return <WolfRayet key={body.id} body={body} />;
+          case 'cepheid':
+            return <Cepheid key={body.id} body={body} />;
+          case 'open-cluster':
+            return <OpenCluster key={body.id} body={body} />;
+          case 'dark-nebula':
+            return <DarkNebula key={body.id} body={body} />;
           default:
             return null;
         }

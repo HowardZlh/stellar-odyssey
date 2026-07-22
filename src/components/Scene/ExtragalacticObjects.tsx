@@ -8,8 +8,11 @@ import { getGalaxyById } from '@/data/galaxies';
 import { getSpecialBodyById } from '@/data/specialBodies';
 import { useSimulationStore } from '@/store';
 import { cosmicDistanceToSceneUnits, trapezoidWeight } from '@/utils/scale';
-import { jetFlowPhase01, quasarFlicker } from '@/utils/specialBodies';
-import { createGlowSpriteCanvas } from '@/components/CelestialBody/proceduralTextures';
+import { grbFlashState, jetFlowPhase01, quasarFlicker } from '@/utils/specialBodies';
+import {
+  createGalaxySpriteCanvas,
+  createGlowSpriteCanvas,
+} from '@/components/CelestialBody/proceduralTextures';
 
 /** 与 Universe.tsx 一致的宇宙级 LOD 渐变区间 */
 function fadeWeight(continuousLevel: number): number {
@@ -184,6 +187,326 @@ export function Quasar(): JSX.Element | null {
         <Html position={[0, 700, 0]} center distanceFactor={12000} style={{ pointerEvents: 'none' }}>
           <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-sky-200">
             {body.nameZh}（约 24 亿光年）
+          </span>
+        </Html>
+      )}
+    </group>
+  );
+}
+
+/**
+ * 触须星系（NGC 4038/4039，可选需求 3.1.5）：星系碰撞现场——
+ * 两个相互扭曲的旋涡星系盘 + 两条潮汐尾（"触须"）+ 星暴区亮斑
+ */
+export function AntennaeGalaxies(): JSX.Element | null {
+  const body = getSpecialBodyById('antennae-galaxies');
+  const groupRef = useRef<THREE.Group>(null);
+  const selectBody = useSimulationStore((s) => s.selectBody);
+  const showLabels = useSimulationStore((s) => s.showLabels);
+  const inRange = useSimulationStore((s) => s.continuousLevel > 3.05);
+
+  const textures = useMemo(
+    () => ({
+      diskA: new THREE.CanvasTexture(createGalaxySpriteCanvas('spiral', '#ffd8c8', 128, 40381)),
+      diskB: new THREE.CanvasTexture(createGalaxySpriteCanvas('spiral', '#cfd8ff', 128, 40391)),
+      burst: new THREE.CanvasTexture(createGlowSpriteCanvas('#ffb8d8', 64)),
+    }),
+    [],
+  );
+  useEffect(
+    () => () => {
+      textures.diskA.dispose();
+      textures.diskB.dispose();
+      textures.burst.dispose();
+    },
+    [textures],
+  );
+
+  // 潮汐尾曲线（确定性弧线，Toomre & Toomre 型潮汐尾示意）
+  const tails = useMemo(() => {
+    const makeTail = (sign: number): THREE.Line => {
+      const segments = 40;
+      const positions = new Float32Array((segments + 1) * 3);
+      for (let s = 0; s <= segments; s += 1) {
+        const t = s / segments;
+        // 从星系盘甩出的弧线：半径增大 + 角度回卷
+        const angle = sign * (0.4 + t * 2.2);
+        const r = 220 + t * 1400;
+        positions[s * 3] = Math.cos(angle) * r * sign;
+        positions[s * 3 + 1] = Math.sin(angle) * r + sign * t * 300;
+        positions[s * 3 + 2] = t * 180 * sign;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const mat = new THREE.LineBasicMaterial({
+        color: sign > 0 ? '#ffd8c8' : '#cfd8ff',
+        transparent: true,
+        opacity: 0,
+      });
+      const line = new THREE.Line(geo, mat);
+      line.frustumCulled = false;
+      return line;
+    };
+    return [makeTail(1), makeTail(-1)];
+  }, []);
+
+  useEffect(
+    () => () => {
+      for (const tail of tails) {
+        tail.geometry.dispose();
+        (tail.material as THREE.Material).dispose();
+      }
+    },
+    [tails],
+  );
+
+  useFrame(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
+    group.visible = weight > 0.001;
+    if (!group.visible) return;
+    group.traverse((obj) => {
+      if (obj instanceof THREE.Mesh || obj instanceof THREE.Sprite) {
+        const mat = obj.material as THREE.Material & { opacity: number };
+        mat.opacity = ((obj.userData.baseOpacity as number | undefined) ?? 0.85) * weight;
+      }
+      if (obj instanceof THREE.Line) {
+        (obj.material as THREE.LineBasicMaterial).opacity = 0.55 * weight;
+      }
+    });
+  });
+
+  if (!body || !body.direction) return null;
+  const d = cosmicDistanceToSceneUnits(body.realDistanceLy);
+
+  return (
+    <group
+      ref={groupRef}
+      position={[body.direction.x * d, body.direction.y * d, body.direction.z * d]}
+      name={body.id}
+    >
+      {/* 两个相互扭曲、部分重叠的星系盘 */}
+      <mesh
+        position={[-160, 60, 0]}
+        rotation={[0.9, 0.3, 0.4]}
+        userData={{ baseOpacity: 0.9 }}
+        onClick={(e) => {
+          e.stopPropagation();
+          selectBody(body.id);
+        }}
+      >
+        <planeGeometry args={[760, 760]} />
+        <meshBasicMaterial
+          map={textures.diskA}
+          transparent
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      <mesh
+        position={[170, -70, 40]}
+        rotation={[1.3, -0.2, -0.6]}
+        userData={{ baseOpacity: 0.9 }}
+        onClick={(e) => {
+          e.stopPropagation();
+          selectBody(body.id);
+        }}
+      >
+        <planeGeometry args={[700, 700]} />
+        <meshBasicMaterial
+          map={textures.diskB}
+          transparent
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      {/* 碰撞界面的星暴区（气体压缩触发剧烈恒星形成） */}
+      <sprite scale={[420, 420, 1]} position={[10, 0, 20]} userData={{ baseOpacity: 0.55 }}>
+        <spriteMaterial
+          map={textures.burst}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </sprite>
+      {/* 两条潮汐尾（"触须"） */}
+      {tails.map((tail, i) => (
+        <primitive key={i} object={tail} />
+      ))}
+      {showLabels && inRange && (
+        <Html position={[0, 900, 0]} center distanceFactor={12000} style={{ pointerEvents: 'none' }}>
+          <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-orange-200">
+            {body.nameZh}（星系碰撞现场，约 4500 万光年）
+          </span>
+        </Html>
+      )}
+    </group>
+  );
+}
+
+/**
+ * 星系团引力透镜弧（可选需求 3.1.5）：围绕星系团中心的蓝色弧状
+ * 背景星系拉伸虚像（示意置于室女座星系团位置，原型 Abell 370，已登记）
+ */
+export function LensingArcs(): JSX.Element | null {
+  const body = getSpecialBodyById('cluster-lensing');
+  const groupRef = useRef<THREE.Group>(null);
+  const selectBody = useSimulationStore((s) => s.selectBody);
+  const showLabels = useSimulationStore((s) => s.showLabels);
+  const inRange = useSimulationStore((s) => s.continuousLevel > 3.05);
+
+  // 弧参数：围绕团中心不同半径/方位角/弧长的拉伸光弧（确定性）
+  const arcs = useMemo(
+    () => [
+      { radius: 950, start: 0.3, length: 1.1, tilt: 0.2 },
+      { radius: 1250, start: 2.4, length: 0.8, tilt: -0.35 },
+      { radius: 1100, start: 4.2, length: 1.4, tilt: 0.5 },
+    ],
+    [],
+  );
+
+  useFrame(({ camera }) => {
+    const group = groupRef.current;
+    if (!group) return;
+    const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
+    group.visible = weight > 0.001;
+    if (!group.visible) return;
+    // 弧面朝向相机（透镜像沿视线方向观察）
+    group.quaternion.copy(camera.quaternion);
+    group.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        (obj.material as THREE.MeshBasicMaterial).opacity = 0.6 * weight;
+      }
+    });
+  });
+
+  if (!body || !body.direction) return null;
+  const d = cosmicDistanceToSceneUnits(body.realDistanceLy);
+
+  return (
+    <group
+      ref={groupRef}
+      position={[body.direction.x * d, body.direction.y * d, body.direction.z * d]}
+      name={body.id}
+    >
+      {arcs.map((arc, i) => (
+        <mesh
+          key={i}
+          rotation={[0, 0, arc.tilt]}
+          onClick={(e) => {
+            e.stopPropagation();
+            selectBody(body.id);
+          }}
+        >
+          {/* 细环弧段：背景星系被拉伸成的弧状虚像 */}
+          <ringGeometry args={[arc.radius - 28, arc.radius + 28, 48, 1, arc.start, arc.length]} />
+          <meshBasicMaterial
+            color="#a8d4ff"
+            transparent
+            side={THREE.DoubleSide}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+          />
+        </mesh>
+      ))}
+      {showLabels && inRange && (
+        <Html position={[0, 1550, 0]} center distanceFactor={12000} style={{ pointerEvents: 'none' }}>
+          <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-sky-200">
+            星系团引力透镜弧（示意，原型 Abell 370）
+          </span>
+        </Html>
+      )}
+    </group>
+  );
+}
+
+/**
+ * 伽马射线暴（GRB 221009A，可选需求 3.1.5）：周期性重放的
+ * 极亮闪光 + 双向窄喷流（真实为一次性事件，演示示意已登记）
+ */
+export function GammaRayBurst(): JSX.Element | null {
+  const body = getSpecialBodyById('grb-221009a');
+  const groupRef = useRef<THREE.Group>(null);
+  const flashRef = useRef<THREE.Sprite>(null);
+  const beamsRef = useRef<THREE.Group>(null);
+  const selectBody = useSimulationStore((s) => s.selectBody);
+  const showLabels = useSimulationStore((s) => s.showLabels);
+  const inRange = useSimulationStore((s) => s.continuousLevel > 3.05);
+
+  const texture = useMemo(
+    () => new THREE.CanvasTexture(createGlowSpriteCanvas('#eef6ff', 128)),
+    [],
+  );
+  useEffect(() => () => texture.dispose(), [texture]);
+
+  useFrame(({ clock }) => {
+    const group = groupRef.current;
+    if (!group) return;
+    const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
+    group.visible = weight > 0.001;
+    if (!group.visible) return;
+    const { intensity01 } = grbFlashState(clock.elapsedTime);
+    if (flashRef.current) {
+      const s = 500 + 1800 * intensity01;
+      flashRef.current.scale.set(s, s, 1);
+      (flashRef.current.material as THREE.SpriteMaterial).opacity = intensity01 * weight;
+    }
+    if (beamsRef.current) {
+      beamsRef.current.visible = intensity01 > 0.02;
+      beamsRef.current.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          (obj.material as THREE.MeshBasicMaterial).opacity = 0.5 * intensity01 * weight;
+        }
+      });
+    }
+  });
+
+  if (!body || !body.direction) return null;
+  const d = cosmicDistanceToSceneUnits(body.realDistanceLy);
+
+  return (
+    <group
+      ref={groupRef}
+      position={[body.direction.x * d, body.direction.y * d, body.direction.z * d]}
+      name={body.id}
+    >
+      {/* 极亮伽马闪光（FRED 光变曲线驱动） */}
+      <sprite
+        ref={flashRef}
+        onClick={(e) => {
+          e.stopPropagation();
+          selectBody(body.id);
+        }}
+      >
+        <spriteMaterial
+          map={texture}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </sprite>
+      {/* 双向窄相对论喷流（核坍缩喷流示意） */}
+      <group ref={beamsRef} rotation={[0.4, 0, 0.9]}>
+        {[1, -1].map((dir) => (
+          <mesh key={dir} position={[0, dir * 900, 0]} rotation={[dir < 0 ? Math.PI : 0, 0, 0]}>
+            <coneGeometry args={[70, 1800, 10, 1, true]} />
+            <meshBasicMaterial
+              color="#cfe8ff"
+              transparent
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        ))}
+      </group>
+      {showLabels && inRange && (
+        <Html position={[0, 800, 0]} center distanceFactor={12000} style={{ pointerEvents: 'none' }}>
+          <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-violet-200">
+            {body.nameZh}（演示重放，约 20 亿光年）
           </span>
         </Html>
       )}
