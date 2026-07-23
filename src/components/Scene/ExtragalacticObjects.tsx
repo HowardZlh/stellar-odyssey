@@ -8,6 +8,7 @@ import { getGalaxyById } from '@/data/galaxies';
 import { getSpecialBodyById } from '@/data/specialBodies';
 import { useSimulationStore } from '@/store';
 import { cosmicDistanceToSceneUnits, trapezoidWeight } from '@/utils/scale';
+import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import { grbFlashState, jetFlowPhase01, quasarFlicker } from '@/utils/specialBodies';
 import {
   createGalaxySpriteCanvas,
@@ -18,6 +19,9 @@ import {
 function fadeWeight(continuousLevel: number): number {
   return trapezoidWeight(continuousLevel, 3.05, 3.6, 4.5, 5);
 }
+
+/** 可交互阈值：淡入权重低于该值时禁用 raycast（隐形对象不拦截点击） */
+const INTERACTIVE_WEIGHT = 0.05;
 
 /** 喷流流动粒子节数（沿喷流方向循环流动，需求 3.1.5 流动动画） */
 const JET_SEGMENTS = 5;
@@ -141,6 +145,7 @@ export function Quasar(): JSX.Element | null {
     if (!group) return;
     const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
     group.visible = weight > 0.001;
+    setObjectTreeRaycastEnabled(group, weight > INTERACTIVE_WEIGHT);
     if (!group.visible) return;
     if (coreRef.current) {
       // 光变闪烁（不规则光变，需求 3.1.5）
@@ -265,6 +270,7 @@ export function AntennaeGalaxies(): JSX.Element | null {
     if (!group) return;
     const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
     group.visible = weight > 0.001;
+    setObjectTreeRaycastEnabled(group, weight > INTERACTIVE_WEIGHT);
     if (!group.visible) return;
     group.traverse((obj) => {
       if (obj instanceof THREE.Mesh || obj instanceof THREE.Sprite) {
@@ -373,6 +379,7 @@ export function LensingArcs(): JSX.Element | null {
     if (!group) return;
     const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
     group.visible = weight > 0.001;
+    setObjectTreeRaycastEnabled(group, weight > INTERACTIVE_WEIGHT);
     if (!group.visible) return;
     // 弧面朝向相机（透镜像沿视线方向观察）
     group.quaternion.copy(camera.quaternion);
@@ -447,6 +454,7 @@ export function GammaRayBurst(): JSX.Element | null {
     if (!group) return;
     const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
     group.visible = weight > 0.001;
+    setObjectTreeRaycastEnabled(group, weight > INTERACTIVE_WEIGHT);
     if (!group.visible) return;
     const { intensity01 } = grbFlashState(clock.elapsedTime);
     if (flashRef.current) {

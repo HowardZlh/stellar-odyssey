@@ -49,8 +49,8 @@ export function Galaxy(): JSX.Element {
   const markerRef = useRef<THREE.Group>(null);
   const arrowRef = useRef<THREE.ArrowHelper>(null);
   const showYouAreHere = useSimulationStore((s) => s.showYouAreHere);
-  // Html 标签不随父级 visible 隐藏，需单独按层级门控（银河系内容 L2 末端起可见）
-  const inGalaxyRange = useSimulationStore((s) => s.continuousLevel > 2.35);
+  // Html 标签不随父级 visible 隐藏，需单独按层级门控（银河系内容 L2/L3 边界起可见）
+  const inGalaxyRange = useSimulationStore((s) => s.continuousLevel > 2.5);
 
   const tiltRad = ECLIPTIC_GALACTIC_TILT_DEG * DEG_TO_RAD;
 
@@ -241,9 +241,11 @@ export function Galaxy(): JSX.Element {
     const group = groupRef.current;
     if (!group) return;
 
-    // LOD：L2 末端淡入，L3/L4 完整可见（L4 下银河系自旋仍可辨识；
-    // 连续层级上限为 4，平台区延伸至 4 以上保证 L4 不淡出）
-    const weight = trapezoidWeight(continuousLevel, 2.05, 2.6, 4.5, 5);
+    // LOD：越过 L2/L3 边界（2.5，与视角标签一致）后淡入，L3/L4 完整可见
+    // （L4 下银河系自旋仍可辨识；连续层级上限为 4，平台区延伸至 4 以上保证
+    // L4 不淡出）。起点不得低于 2.5：否则太阳系视角下太阳邻域的银河粒子
+    // 会贴着太阳显示，被误认为"柯伊伯带跑错位置"（bug 修复）
+    const weight = trapezoidWeight(continuousLevel, 2.5, 2.9, 4.5, 5);
     group.visible = weight > 0.001;
     diskMaterial.uniforms.uOpacity.value = weight;
     if (!group.visible) return;
@@ -327,7 +329,8 @@ export function Galaxy(): JSX.Element {
   const diskRadiusUnits = GALACTIC_DISK_RADIUS_LY * SCENE_UNITS_PER_LY;
 
   return (
-    <group ref={groupRef}>
+    // 初始不可见：首帧 useFrame 前不渲染银河系内容（消除 L1/L2 下的闪现竞态）
+    <group ref={groupRef} visible={false}>
       {/* 银盘粒子（棒旋结构 + 较差自转） */}
       <points geometry={diskGeometry} material={diskMaterial} />
 
