@@ -17,6 +17,7 @@ import {
 import { useSimulationStore } from '@/store';
 import { cosmicDistanceToSceneUnits, lyToSceneUnits, trapezoidWeight } from '@/utils/scale';
 import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
+import { getSoftPointTexture } from '@/components/CelestialBody/sharedTextures';
 import {
   OBSERVABLE_UNIVERSE_RADIUS_LY,
   generateCosmicWeb,
@@ -75,16 +76,20 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
   const inRange = useSimulationStore((s) => s.continuousLevel > FADE.start);
 
   const texture = useMemo(() => {
+    // M31/M33 专属形态（P6 §3.4，与通用旋涡星系区分）
+    const variant =
+      galaxy.id === 'm31' ? 'm31' : galaxy.id === 'm33' ? 'm33' : undefined;
     const canvas = createGalaxySpriteCanvas(
       galaxy.morphology,
       galaxy.morphology === 'elliptical' ? '#ffe2b8' : '#cfd8ff',
       256,
       20260722,
+      variant,
     );
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
-  }, [galaxy.morphology]);
+  }, [galaxy.morphology, galaxy.id]);
 
   useEffect(() => {
     return () => {
@@ -229,6 +234,7 @@ export function Universe(): JSX.Element {
     geo.setAttribute('color', new THREE.BufferAttribute(web.galaxyColors, 3));
     const mat = new THREE.PointsMaterial({
       size: 55,
+      map: getSoftPointTexture(),
       vertexColors: true,
       transparent: true,
       opacity: 0,
@@ -320,6 +326,7 @@ export function Universe(): JSX.Element {
     const mat = new THREE.PointsMaterial({
       color: MAGELLANIC_STREAM.color,
       size: 90,
+      map: getSoftPointTexture(),
       transparent: true,
       opacity: 0,
       sizeAttenuation: true,

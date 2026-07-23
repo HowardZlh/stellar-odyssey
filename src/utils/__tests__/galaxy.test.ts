@@ -41,9 +41,25 @@ const BASE_PARAMS: GalaxyDiskParams = {
 };
 
 describe('常量科学性（数据来源范围断言）', () => {
-  it('银河年约 2.3 亿年，太阳距银心约 2.6 万光年', () => {
+  it('银河年约 2.3 亿年', () => {
     expect(GALACTIC_YEAR_MYR).toBe(230);
-    expect(SUN_GALACTIC_RADIUS_LY).toBe(26000);
+  });
+
+  it('太阳距银心约 2.6–2.7 万光年（自洽修正后 ≈8.24 kpc，落在 IAU 8.0–8.3 kpc 内）', () => {
+    // P6 数据自洽：R 由 v·T/(2π) 反推，不再硬编码 26000
+    expect(SUN_GALACTIC_RADIUS_LY).toBeGreaterThan(26000);
+    expect(SUN_GALACTIC_RADIUS_LY).toBeLessThan(27500);
+    // 8.0–8.3 kpc（1 kpc = 3261.56 ly）
+    const kpc = SUN_GALACTIC_RADIUS_LY / 3261.56;
+    expect(kpc).toBeGreaterThanOrEqual(8.0);
+    expect(kpc).toBeLessThanOrEqual(8.3);
+  });
+
+  it('数据自洽：ω(R_sun) 精确等于银河年角速度 2π/T（P6 §3.1.2，消除 3% 偏差）', () => {
+    expect(diskAngularSpeedRadPerMyr(SUN_GALACTIC_RADIUS_LY)).toBeCloseTo(
+      (Math.PI * 2) / GALACTIC_YEAR_MYR,
+      10,
+    );
   });
 
   it('银盘直径约 10 万光年、厚约 1 千光年、核球约 8 千光年', () => {

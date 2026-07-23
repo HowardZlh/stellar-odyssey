@@ -44,6 +44,50 @@ function RelativisticJet({ direction, lengthUnits, color, bilateral, baseOpacity
   const texture = useMemo(() => new THREE.CanvasTexture(createGlowSpriteCanvas(color, 64)), [color]);
   useEffect(() => () => texture.dispose(), [texture]);
 
+  // 喷流 shader（P6 §3.4）：沿轴湍流噪声 + 亮节点（knots，M87 HST-1 观测特征）
+  // 替换纯色 cone。uv.y 沿轴、uv.x 环向。
+  const jetMaterial = useMemo(() => {
+    const c = new THREE.Color(color);
+    return new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      uniforms: {
+        uTime: { value: 0 },
+        uOpacity: { value: baseOpacity * 0.4 },
+        uColor: { value: new THREE.Vector3(c.r, c.g, c.b) },
+      },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uTime;
+        uniform float uOpacity;
+        uniform vec3 uColor;
+        varying vec2 vUv;
+        float hash(float n){ return fract(sin(n)*43758.5453); }
+        float noise(float x){ float i=floor(x); float f=fract(x); return mix(hash(i),hash(i+1.0),f*f*(3.0-2.0*f)); }
+        void main() {
+          // 环向径向渐变（中心线亮）
+          float radial = pow(clamp(1.0 - abs(vUv.x - 0.5)*2.0, 0.0, 1.0), 1.4);
+          // 沿轴湍流 + 亮节点（周期性 knots，随时间沿轴流动）
+          float turb = 0.6 + 0.4 * noise(vUv.y * 10.0 - uTime * 0.6);
+          float knots = smoothstep(0.75, 1.0, sin(vUv.y * 22.0 - uTime * 1.2) * 0.5 + 0.5);
+          float axial = smoothstep(1.0, 0.05, vUv.y);
+          float a = radial * axial * (turb + knots * 0.8) * uOpacity;
+          gl_FragColor = vec4(uColor * (1.0 + knots), a);
+        }
+      `,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [color, baseOpacity]);
+  useEffect(() => () => jetMaterial.dispose(), [jetMaterial]);
+
   const sides = bilateral ? [1, -1] : [1];
 
   // 锥体朝向：+Y 对齐 direction
@@ -55,6 +99,8 @@ function RelativisticJet({ direction, lengthUnits, color, bilateral, baseOpacity
 
   useFrame(({ clock }) => {
     const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
+    jetMaterial.uniforms.uTime.value = clock.elapsedTime;
+    jetMaterial.uniforms.uOpacity.value = baseOpacity * 0.5 * weight;
     const nodes = nodesRef.current;
     if (!nodes) return;
     nodes.visible = weight > 0.001;
@@ -90,16 +136,9 @@ function RelativisticJet({ direction, lengthUnits, color, bilateral, baseOpacity
             (direction.y * lengthUnits * side) / 2,
             (direction.z * lengthUnits * side) / 2,
           ]}
+          material={jetMaterial}
         >
-          <coneGeometry args={[lengthUnits * 0.03, lengthUnits, 10, 1, true]} />
-          <meshBasicMaterial
-            color={color}
-            transparent
-            opacity={baseOpacity * 0.4}
-            blending={THREE.AdditiveBlending}
-            depthWrite={false}
-            side={THREE.DoubleSide}
-          />
+          <coneGeometry args={[lengthUnits * 0.035, lengthUnits, 16, 1, true]} />
         </mesh>
       ))}
       {/* 流动节点 */}

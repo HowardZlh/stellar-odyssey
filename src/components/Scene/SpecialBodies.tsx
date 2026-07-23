@@ -27,7 +27,13 @@ import {
   redGiantPulsation,
   stellarWindPhase01,
 } from '@/utils/specialBodies';
-import { createGlowSpriteCanvas } from '@/components/CelestialBody/proceduralTextures';
+import {
+  createDiffractionSpikeCanvas,
+  createGlowSpriteCanvas,
+} from '@/components/CelestialBody/proceduralTextures';
+import { getSoftPointTexture } from '@/components/CelestialBody/sharedTextures';
+import { getNebulaTexture } from '@/components/CelestialBody/nebulaTextures';
+import { stellarSphereSegments } from '@/utils/stellarSurface';
 
 /**
  * 特殊天体 LOD 淡入淡出（需求 3.1.5 通用要求）：
@@ -52,6 +58,142 @@ function specialFadeWeight(continuousLevel: number): number {
 
 interface BodyProps {
   body: SpecialBodyData;
+}
+
+/**
+ * 恒星表面 shader（P6 §3.2）：对流颗粒 fBm（缓慢演化）+ 边缘昏暗（limb
+ * darkening）+ 色温梯度（边缘偏暗红）。GLSL 与 utils/stellarSurface.ts 纯函数
+ * 镜像一致（valueNoise/limbDarkening/色温梯度公式），单测覆盖 CPU 侧。
+ *
+ * 视觉夸大登记：对流演化速率加速、色温梯度为简化 RGB 近似（见 stellarSurface 文件头）。
+ * 门控：仅 L3 可见时推进 uTime（uniform），L1/L2/L4 零开销。
+ */
+interface StellarSurfaceProps {
+  radius: number;
+  segments: number;
+  color: string;
+  /** 边缘昏暗系数（红巨星大、蓝巨星小） */
+  limbU: number;
+  /** 对流胞尺度（红巨星小 → 大胞；蓝巨星大 → 细） */
+  cellScale: number;
+  /** 对流对比强度 ∈ [0,1] */
+  convection: number;
+  /** 色温梯度边缘偏红强度 ∈ [0,1] */
+  rednessStrength: number;
+  onClick?: (e: { stopPropagation: () => void }) => void;
+}
+
+function StellarSurface({
+  radius,
+  segments,
+  color,
+  limbU,
+  cellScale,
+  convection,
+  rednessStrength,
+  onClick,
+}: StellarSurfaceProps): JSX.Element {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const material = useMemo(() => {
+    const c = new THREE.Color(color);
+    return new THREE.ShaderMaterial({
+      transparent: true,
+      uniforms: {
+        uTime: { value: 0 },
+        uOpacity: { value: 1 },
+        uColor: { value: new THREE.Vector3(c.r, c.g, c.b) },
+        uLimbU: { value: limbU },
+        uCellScale: { value: cellScale },
+        uConvection: { value: convection },
+        uRedness: { value: rednessStrength },
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vNormal;
+        varying vec3 vViewDir;
+        varying vec3 vObjPos;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          vObjPos = normalize(position);
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          vViewDir = normalize(-mv.xyz);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uTime;
+        uniform float uOpacity;
+        uniform vec3 uColor;
+        uniform float uLimbU;
+        uniform float uCellScale;
+        uniform float uConvection;
+        uniform float uRedness;
+        varying vec3 vNormal;
+        varying vec3 vViewDir;
+        varying vec3 vObjPos;
+
+        // 与 utils/stellarSurface.ts hash2/valueNoise2D 镜像一致
+        float hash2(float x, float y) {
+          return fract(sin(x * 127.1 + y * 311.7) * 43758.5453);
+        }
+        float smooth01(float t) { t = clamp(t, 0.0, 1.0); return t*t*(3.0-2.0*t); }
+        float valueNoise(vec2 p) {
+          float xi = floor(p.x); float yi = floor(p.y);
+          float xf = p.x - xi; float yf = p.y - yi;
+          float v00 = hash2(xi, yi);
+          float v10 = hash2(xi+1.0, yi);
+          float v01 = hash2(xi, yi+1.0);
+          float v11 = hash2(xi+1.0, yi+1.0);
+          float tx = smooth01(xf); float ty = smooth01(yf);
+          float a = mix(v00, v10, tx);
+          float b = mix(v01, v11, tx);
+          return mix(a, b, ty);
+        }
+        float fbm(vec2 p, float t) {
+          float sum = 0.0; float amp = 1.0; float total = 0.0; float freq = uCellScale;
+          for (int o = 0; o < 4; o++) {
+            float drift = t * (0.05 + float(o) * 0.02);
+            sum += valueNoise(vec2(p.x*freq + drift, p.y*freq - drift)) * amp;
+            total += amp; amp *= 0.5; freq *= 2.0;
+          }
+          return sum / total;
+        }
+
+        void main() {
+          // 球面参数化坐标（对流颗粒采样）
+          vec2 uv = vec2(atan(vObjPos.z, vObjPos.x) / 6.2831853 + 0.5, vObjPos.y * 0.5 + 0.5);
+          float cells = fbm(uv * 3.0, uTime);
+          // 边缘昏暗 μ = N·V
+          float mu = clamp(dot(normalize(vNormal), normalize(vViewDir)), 0.0, 1.0);
+          float limb = 1.0 - uLimbU * (1.0 - mu);
+          // 对流亮度调制
+          float bright = limb * (1.0 - uConvection * 0.5 + uConvection * cells);
+          // 色温梯度：边缘偏暗红
+          float edge = pow(1.0 - mu, 1.5) * uRedness;
+          vec3 col = uColor * vec3(1.0 - 0.15*edge, 1.0 - 0.55*edge, 1.0 - 0.75*edge);
+          gl_FragColor = vec4(col * bright, uOpacity);
+        }
+      `,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [color, limbU, cellScale, convection, rednessStrength]);
+
+  useEffect(() => () => material.dispose(), [material]);
+
+  useFrame(({ clock }) => {
+    const group = meshRef.current;
+    if (!group) return;
+    const weight = specialFadeWeight(useSimulationStore.getState().continuousLevel);
+    // 门控：不可见时跳过 uniform 更新（L1/L2/L4 零开销）
+    if (weight <= 0.001) return;
+    material.uniforms.uTime.value = clock.elapsedTime;
+    material.uniforms.uOpacity.value = weight;
+  });
+
+  return (
+    <mesh ref={meshRef} material={material} onClick={onClick}>
+      <sphereGeometry args={[radius, segments, segments]} />
+    </mesh>
+  );
 }
 
 /** 共用：把 sun-relative / galactic-center 天体定位到银心系本地坐标（场景单位） */
@@ -117,10 +259,11 @@ function BodyLabel({ body, sizeUnits }: { body: SpecialBodyData; sizeUnits: numb
  */
 function RedGiant({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
-  const coreRef = useRef<THREE.Mesh>(null);
+  const coreRef = useRef<THREE.Group>(null);
   const glowRef = useRef<THREE.Sprite>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
+  const segments = stellarSphereSegments(size);
 
   const glowTexture = useMemo(
     () => new THREE.CanvasTexture(createGlowSpriteCanvas(body.color, 128)),
@@ -136,7 +279,6 @@ function RedGiant({ body }: BodyProps): JSX.Element {
     const { scale, brightness } = redGiantPulsation(clock.elapsedTime);
     if (coreRef.current) {
       coreRef.current.scale.setScalar(scale);
-      (coreRef.current.material as THREE.MeshBasicMaterial).opacity = weight;
     }
     if (glowRef.current) {
       const s = size * 3.4 * scale;
@@ -148,16 +290,23 @@ function RedGiant({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
-      <mesh
-        ref={coreRef}
-        onClick={(e) => {
-          e.stopPropagation();
-          selectBody(body.id);
-        }}
-      >
-        <sphereGeometry args={[size, 24, 24]} />
-        <meshBasicMaterial color={body.color} transparent />
-      </mesh>
+      {/* 恒星表面（对流颗粒 + 边缘昏暗 + 色温梯度，P6 §3.2）；
+          红巨星：大对流胞（cellScale 小）、强边缘昏暗、显著边缘偏红 */}
+      <group ref={coreRef}>
+        <StellarSurface
+          radius={size}
+          segments={segments}
+          color={body.color}
+          limbU={0.75}
+          cellScale={2.2}
+          convection={0.7}
+          rednessStrength={0.6}
+          onClick={(e) => {
+            e.stopPropagation();
+            selectBody(body.id);
+          }}
+        />
+      </group>
       {/* 外层弥散气体壳 */}
       <mesh>
         <sphereGeometry args={[size * 1.5, 16, 16]} />
@@ -233,6 +382,7 @@ function StellarWind({
     );
     const mat = new THREE.PointsMaterial({
       size: sizeUnits * 0.14,
+      map: getSoftPointTexture(),
       vertexColors: true,
       transparent: true,
       depthWrite: false,
@@ -299,15 +449,20 @@ function BlueGiant({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
-      <mesh
+      {/* 蓝巨星表面：细对流颗粒、弱边缘昏暗、无边缘偏红（高温） */}
+      <StellarSurface
+        radius={size}
+        segments={stellarSphereSegments(size)}
+        color="#cfe0ff"
+        limbU={0.3}
+        cellScale={9}
+        convection={0.35}
+        rednessStrength={0}
         onClick={(e) => {
           e.stopPropagation();
           selectBody(body.id);
         }}
-      >
-        <sphereGeometry args={[size, 24, 24]} />
-        <meshBasicMaterial color="#eaf2ff" />
-      </mesh>
+      />
       <sprite ref={glowRef} scale={[size * 5, size * 5, 1]}>
         <spriteMaterial
           map={glowTexture}
@@ -365,16 +520,20 @@ function WolfRayet({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 炽热核心（约 44,000 K，蓝白色） */}
-      <mesh
+      {/* 炽热核心（约 44,000 K，蓝白色）：极细对流颗粒 + 强湍流 */}
+      <StellarSurface
+        radius={size * 0.6}
+        segments={stellarSphereSegments(size * 0.6)}
+        color="#e8f0ff"
+        limbU={0.25}
+        cellScale={12}
+        convection={0.45}
+        rednessStrength={0}
         onClick={(e) => {
           e.stopPropagation();
           selectBody(body.id);
         }}
-      >
-        <sphereGeometry args={[size * 0.6, 20, 20]} />
-        <meshBasicMaterial color="#e8f0ff" />
-      </mesh>
+      />
       <sprite ref={glowRef} scale={[size * 4, size * 4, 1]}>
         <spriteMaterial
           map={glowTexture}
@@ -414,7 +573,7 @@ function WolfRayet({ body }: BodyProps): JSX.Element {
  */
 function Cepheid({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
-  const coreRef = useRef<THREE.Mesh>(null);
+  const coreRef = useRef<THREE.Group>(null);
   const glowRef = useRef<THREE.Sprite>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
@@ -445,16 +604,22 @@ function Cepheid({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
-      <mesh
-        ref={coreRef}
-        onClick={(e) => {
-          e.stopPropagation();
-          selectBody(body.id);
-        }}
-      >
-        <sphereGeometry args={[size * 0.5, 20, 20]} />
-        <meshBasicMaterial color={body.color} />
-      </mesh>
+      {/* 造父变星表面：中等对流颗粒（黄超巨星） */}
+      <group ref={coreRef}>
+        <StellarSurface
+          radius={size * 0.5}
+          segments={stellarSphereSegments(size * 0.5)}
+          color={body.color}
+          limbU={0.55}
+          cellScale={5}
+          convection={0.5}
+          rednessStrength={0.3}
+          onClick={(e) => {
+            e.stopPropagation();
+            selectBody(body.id);
+          }}
+        />
+      </group>
       <sprite ref={glowRef}>
         <spriteMaterial
           map={glowTexture}
@@ -477,11 +642,21 @@ function OpenCluster({ body }: BodyProps): JSX.Element {
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
 
+  // 昴星团蓝色反射星云：不规则云状 + 丝缕感（包裹亮星，P6 §3.2）
   const nebulaTexture = useMemo(
-    () => new THREE.CanvasTexture(createGlowSpriteCanvas(body.color, 128)),
-    [body.color],
+    () =>
+      getNebulaTexture({
+        size: 256,
+        seed: 45,
+        innerColor: '#bcd4ff',
+        outerColor: '#5a78c8',
+        filamentStrength: 0.6,
+        irregularity: 0.75,
+        octaves: 5,
+        shape: 'cloud',
+      }),
+    [],
   );
-  useEffect(() => () => nebulaTexture.dispose(), [nebulaTexture]);
   const nebulaRef = useRef<THREE.Sprite>(null);
 
   const { geometry, material } = useMemo(() => {
@@ -510,6 +685,7 @@ function OpenCluster({ body }: BodyProps): JSX.Element {
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     const mat = new THREE.PointsMaterial({
       size: size * 0.09,
+      map: getSoftPointTexture(),
       vertexColors: true,
       transparent: true,
       opacity: 0.95,
@@ -577,19 +753,34 @@ function DarkNebula({ body }: BodyProps): JSX.Element {
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
 
-  const textures = useMemo(
-    () => ({
-      emission: new THREE.CanvasTexture(createGlowSpriteCanvas('#ff8898', 128)),
-      dark: new THREE.CanvasTexture(createGlowSpriteCanvas('#050308', 128)),
-    }),
+  // 背景 IC 434 红光（发射星云不规则云）+ 前景暗云柱剪影（噪声侵蚀边缘）
+  const emissionTexture = useMemo(
+    () =>
+      getNebulaTexture({
+        size: 256,
+        seed: 434,
+        innerColor: '#ff8898',
+        outerColor: '#a03848',
+        filamentStrength: 0.5,
+        irregularity: 0.6,
+        octaves: 5,
+        shape: 'cloud',
+      }),
     [],
   );
-  useEffect(
-    () => () => {
-      textures.emission.dispose();
-      textures.dark.dispose();
-    },
-    [textures],
+  const darkTexture = useMemo(
+    () =>
+      getNebulaTexture({
+        size: 256,
+        seed: 4340,
+        innerColor: '#0a0608',
+        outerColor: '#050308',
+        filamentStrength: 0.7,
+        irregularity: 0.85,
+        octaves: 5,
+        shape: 'cloud',
+      }),
+    [],
   );
 
   useGalacticPlacement(body, groupRef);
@@ -598,54 +789,60 @@ function DarkNebula({ body }: BodyProps): JSX.Element {
     if (!group || !group.visible) return;
     const weight = specialFadeWeight(useSimulationStore.getState().continuousLevel);
     group.traverse((obj) => {
+      const base = obj.userData.baseOpacity as number | undefined;
+      if (base === undefined) return;
       if (obj instanceof THREE.Sprite) {
-        obj.material.opacity = (obj.userData.baseOpacity as number) * weight;
+        obj.material.opacity = base * weight;
+      } else if (obj instanceof THREE.Mesh) {
+        (obj.material as THREE.Material & { opacity: number }).opacity = base * weight;
       }
     });
   });
 
-  // 马头剪影示意：垂直"颈部" + 顶部"头部"偏移暗块（前景，普通混合遮光）
+  // 暗云柱剪影块（前景，普通混合遮光）：垂直"颈部" + 顶部"头部"偏移
   const silhouette = [
-    { x: 0, y: -size * 0.25, scale: 0.55, opacity: 0.92 },
-    { x: 0, y: size * 0.12, scale: 0.42, opacity: 0.95 },
-    { x: size * 0.18, y: size * 0.34, scale: 0.3, opacity: 0.95 },
+    { x: 0, y: -size * 0.25, scale: 0.7, opacity: 0.92 },
+    { x: 0, y: size * 0.12, scale: 0.5, opacity: 0.95 },
+    { x: size * 0.2, y: size * 0.36, scale: 0.36, opacity: 0.95 },
   ];
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 背景发射星云 IC 434（氢α红光，加色混合） */}
-      <sprite
+      {/* 背景发射星云 IC 434（氢α红光不规则云，加色混合） */}
+      <mesh
         position={[0, 0, -size * 0.5]}
-        scale={[size * 2.8, size * 2.2, 1]}
-        userData={{ baseOpacity: 0.4 }}
+        userData={{ baseOpacity: 0.45 }}
         onClick={(e) => {
           e.stopPropagation();
           selectBody(body.id);
         }}
       >
-        <spriteMaterial
-          map={textures.emission}
+        <planeGeometry args={[size * 3.0, size * 2.4]} />
+        <meshBasicMaterial
+          map={emissionTexture}
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}
+          side={THREE.DoubleSide}
         />
-      </sprite>
-      {/* 前景暗分子云剪影（普通混合遮挡背景红光） */}
+      </mesh>
+      {/* 前景暗分子云柱剪影（噪声侵蚀边缘的暗云形态，普通混合遮挡背景红光） */}
       {silhouette.map((s, i) => (
-        <sprite
+        <mesh
           key={i}
           position={[s.x, s.y, size * 0.3]}
-          scale={[size * s.scale, size * s.scale * 1.3, 1]}
           userData={{ baseOpacity: s.opacity }}
           renderOrder={10}
         >
-          <spriteMaterial
-            map={textures.dark}
+          <planeGeometry args={[size * s.scale, size * s.scale * 1.4]} />
+          <meshBasicMaterial
+            map={darkTexture}
             transparent
             depthWrite={false}
             blending={THREE.NormalBlending}
+            side={THREE.DoubleSide}
           />
-        </sprite>
+        </mesh>
       ))}
       <BodyLabel body={body} sizeUnits={size} />
     </group>
@@ -668,7 +865,13 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
     () => new THREE.CanvasTexture(createGlowSpriteCanvas('#eef4ff', 128)),
     [],
   );
+  // 白矮星衍射芒线（P6 §3.2）：致密高亮点星的观测质感
+  const spikeTexture = useMemo(
+    () => new THREE.CanvasTexture(createDiffractionSpikeCanvas('#eaf0ff', 128)),
+    [],
+  );
   useEffect(() => () => glowTexture.dispose(), [glowTexture]);
+  useEffect(() => () => spikeTexture.dispose(), [spikeTexture]);
 
   useGalacticPlacement(body, groupRef);
   useFrame(({ clock }) => {
@@ -703,7 +906,7 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
           />
         </sprite>
       </group>
-      {/* 天狼星B：白矮星（极小、白色，高密度在信息面板强调） */}
+      {/* 天狼星B：白矮星（极小、白蓝色致密高亮点 + 衍射芒线，高密度在信息面板强调） */}
       <group ref={secondaryRef}>
         <mesh
           onClick={(e) => {
@@ -711,9 +914,18 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
             selectBody(body.id);
           }}
         >
-          <sphereGeometry args={[size * 0.1, 12, 12]} />
-          <meshBasicMaterial color="#ffffff" />
+          <sphereGeometry args={[size * 0.1, 20, 20]} />
+          <meshBasicMaterial color="#eaf2ff" />
         </mesh>
+        <sprite scale={[size * 1.6, size * 1.6, 1]}>
+          <spriteMaterial
+            map={spikeTexture}
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            opacity={0.9}
+          />
+        </sprite>
       </group>
       <BodyLabel body={body} sizeUnits={size} />
     </group>
@@ -732,20 +944,67 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
 
-  const textures = useMemo(
-    () => ({
-      nebula: new THREE.CanvasTexture(createGlowSpriteCanvas('#8fb8ff', 128)),
-      flash: new THREE.CanvasTexture(createGlowSpriteCanvas('#dff2ff', 128)),
-    }),
+  // 蟹状星云：丝状遗迹壳（红色氢丝网络，与超新星遗迹共用生成路径，P6 §3.2）
+  const nebulaTexture = useMemo(
+    () =>
+      getNebulaTexture({
+        size: 256,
+        seed: 1054, // 蟹状星云 SN 1054
+        innerColor: '#ffdca0',
+        outerColor: '#ff5545',
+        filamentStrength: 0.85,
+        irregularity: 0.55,
+        octaves: 5,
+        shape: 'shell',
+      }),
     [],
   );
-  useEffect(
-    () => () => {
-      textures.nebula.dispose();
-      textures.flash.dispose();
-    },
-    [textures],
+  const flashTexture = useMemo(
+    () => new THREE.CanvasTexture(createGlowSpriteCanvas('#dff2ff', 128)),
+    [],
   );
+  useEffect(() => () => flashTexture.dispose(), [flashTexture]);
+
+  // 射束 shader（P6 §3.2）：径向渐变（轴心亮边缘淡）+ 沿轴噪声扰动，
+  // 替换纯色 cone。锥体侧面 uv.y 为沿轴归一化坐标、uv.x 为环向
+  const beamMaterial = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        uniforms: { uTime: { value: 0 }, uOpacity: { value: 0.5 } },
+        vertexShader: /* glsl */ `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          uniform float uTime;
+          uniform float uOpacity;
+          varying vec2 vUv;
+          float hash(float x){ return fract(sin(x*127.1)*43758.5453); }
+          void main() {
+            // 沿轴：根部（uv.y≈0）亮，尖端淡出
+            float axial = smoothstep(1.0, 0.0, vUv.y);
+            // 环向径向渐变：中心线亮、边缘淡
+            float radial = 1.0 - abs(vUv.x - 0.5) * 2.0;
+            radial = pow(clamp(radial, 0.0, 1.0), 1.5);
+            // 噪声扰动（沿轴流动的等离子体团块）
+            float n = hash(floor(vUv.y * 12.0) + floor(uTime * 3.0));
+            float flow = 0.7 + 0.3 * n;
+            vec3 col = vec3(0.75, 0.9, 1.0);
+            float a = axial * radial * flow * uOpacity;
+            gl_FragColor = vec4(col, a);
+          }
+        `,
+      }),
+    [],
+  );
+  useEffect(() => () => beamMaterial.dispose(), [beamMaterial]);
 
   useGalacticPlacement(body, groupRef);
   useFrame(({ clock }) => {
@@ -753,6 +1012,8 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
     if (!group || !group.visible) return;
     const weight = specialFadeWeight(useSimulationStore.getState().continuousLevel);
     const t = clock.elapsedTime;
+    beamMaterial.uniforms.uTime.value = t;
+    beamMaterial.uniforms.uOpacity.value = 0.5 * weight;
     // 射束旋转扫描（可视化降频周期，已登记）
     if (beamsRef.current) {
       beamsRef.current.rotation.y = pulsarBeamAngle(t, PULSAR_VISUAL_SPIN_PERIOD_SEC);
@@ -772,10 +1033,10 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 超新星遗迹：丝状膨胀星云（蟹状星云） */}
+      {/* 超新星遗迹：丝状膨胀星云（蟹状星云红色氢丝网络） */}
       <sprite ref={nebulaRef}>
         <spriteMaterial
-          map={textures.nebula}
+          map={nebulaTexture}
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}
@@ -795,16 +1056,13 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
       <group ref={beamsRef}>
         <group rotation={[0, 0, 0.7]}>
           {[1, -1].map((dir) => (
-            <mesh key={dir} position={[0, dir * size * 0.9, 0]} rotation={[dir < 0 ? Math.PI : 0, 0, 0]}>
-              <coneGeometry args={[size * 0.22, size * 1.8, 12, 1, true]} />
-              <meshBasicMaterial
-                color="#bfe4ff"
-                transparent
-                opacity={0.5}
-                blending={THREE.AdditiveBlending}
-                depthWrite={false}
-                side={THREE.DoubleSide}
-              />
+            <mesh
+              key={dir}
+              position={[0, dir * size * 0.9, 0]}
+              rotation={[dir < 0 ? Math.PI : 0, 0, 0]}
+              material={beamMaterial}
+            >
+              <coneGeometry args={[size * 0.22, size * 1.8, 20, 1, true]} />
             </mesh>
           ))}
         </group>
@@ -812,7 +1070,7 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
       {/* 脉冲闪烁（射束扫过视线时增亮） */}
       <sprite ref={flashRef} scale={[size * 1.8, size * 1.8, 1]}>
         <spriteMaterial
-          map={textures.flash}
+          map={flashTexture}
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}
@@ -986,29 +1244,67 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
 
-  const textures = useMemo(
-    () => ({
-      pink: new THREE.CanvasTexture(createGlowSpriteCanvas(body.color, 128)),
-      star: new THREE.CanvasTexture(createGlowSpriteCanvas('#eef6ff', 64)),
-    }),
-    [body.color],
+  // 星点贴图（内部年轻恒星）；星云云层用程序化多层不规则纹理（P6 §3.2）
+  const starTexture = useMemo(
+    () => new THREE.CanvasTexture(createGlowSpriteCanvas('#eef6ff', 64)),
+    [],
   );
-  useEffect(
-    () => () => {
-      textures.pink.dispose();
-      textures.star.dispose();
-    },
-    [textures],
+  useEffect(() => () => starTexture.dispose(), [starTexture]);
+
+  // 猎户座多层不规则云状纹理（3 层不同噪声种子，形成视差与不规则形态）
+  const cloudLayers = useMemo(
+    () => [
+      getNebulaTexture({
+        size: 256,
+        seed: 4201,
+        innerColor: '#ff9bb5',
+        outerColor: '#7a4a8a',
+        filamentStrength: 0.55,
+        irregularity: 0.7,
+        octaves: 5,
+        shape: 'cloud',
+      }),
+      getNebulaTexture({
+        size: 256,
+        seed: 4202,
+        innerColor: '#ffd0b0',
+        outerColor: '#a05070',
+        filamentStrength: 0.65,
+        irregularity: 0.8,
+        octaves: 5,
+        shape: 'cloud',
+      }),
+      getNebulaTexture({
+        size: 256,
+        seed: 4203,
+        innerColor: '#c8d8ff',
+        outerColor: '#5a3a7a',
+        filamentStrength: 0.5,
+        irregularity: 0.85,
+        octaves: 4,
+        shape: 'cloud',
+      }),
+    ],
+    [],
   );
 
-  // 内部年轻恒星（确定性位置）
+  // 内部年轻恒星（确定性位置）；含中心四边形聚星（Trapezium）示意
   const youngStars = useMemo(() => {
     const rand = createSeededRandom(42);
-    return Array.from({ length: 5 }, () => ({
+    const scattered = Array.from({ length: 5 }, () => ({
       x: (rand() - 0.5) * size * 0.9,
       y: (rand() - 0.5) * size * 0.5,
       z: (rand() - 0.5) * size * 0.9,
+      s: 0.3,
     }));
+    // Trapezium 四边形聚星（中心紧密四星，形态参考哈勃影像）
+    const trap = [
+      { x: -size * 0.06, y: size * 0.05, z: 0, s: 0.22 },
+      { x: size * 0.07, y: size * 0.04, z: 0, s: 0.2 },
+      { x: -size * 0.02, y: -size * 0.06, z: 0, s: 0.24 },
+      { x: size * 0.05, y: -size * 0.03, z: 0, s: 0.18 },
+    ];
+    return [...scattered, ...trap];
   }, [size]);
 
   useGalacticPlacement(body, groupRef);
@@ -1017,42 +1313,49 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
     if (!group || !group.visible) return;
     const weight = specialFadeWeight(useSimulationStore.getState().continuousLevel);
     group.traverse((obj) => {
+      const base = obj.userData.baseOpacity as number | undefined;
+      if (base === undefined) return;
       if (obj instanceof THREE.Sprite) {
-        obj.material.opacity = (obj.userData.baseOpacity as number) * weight;
+        obj.material.opacity = base * weight;
+      } else if (obj instanceof THREE.Mesh) {
+        (obj.material as THREE.Material & { opacity: number }).opacity = base * weight;
       }
     });
   });
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 雾状气体层（多层叠加体积感） */}
+      {/* 多层不规则云状气体（程序化 fBm/域扭曲纹理，替换同心圆光斑）：
+          不同种子 + 不同缩放/旋转形成视差与不规则形态（P6 §3.2） */}
       {[
-        { scale: 2.8, opacity: 0.35 },
-        { scale: 1.9, opacity: 0.45 },
-        { scale: 1.1, opacity: 0.5 },
+        { scale: 2.9, opacity: 0.4, rot: 0.2 },
+        { scale: 2.0, opacity: 0.5, rot: -0.6 },
+        { scale: 1.3, opacity: 0.55, rot: 1.1 },
       ].map((layer, i) => (
-        <sprite
+        <mesh
           key={i}
-          scale={[size * layer.scale, size * layer.scale * 0.8, 1]}
+          rotation={[0, 0, layer.rot]}
           userData={{ baseOpacity: layer.opacity }}
           onClick={(e) => {
             e.stopPropagation();
             selectBody(body.id);
           }}
         >
-          <spriteMaterial
-            map={textures.pink}
+          <planeGeometry args={[size * layer.scale, size * layer.scale * 0.85]} />
+          <meshBasicMaterial
+            map={cloudLayers[i]}
             transparent
             depthWrite={false}
             blending={THREE.AdditiveBlending}
+            side={THREE.DoubleSide}
           />
-        </sprite>
+        </mesh>
       ))}
-      {/* 内部年轻恒星（点亮局部） */}
+      {/* 内部年轻恒星 + Trapezium 聚星（点亮局部） */}
       {youngStars.map((p, i) => (
-        <sprite key={i} position={[p.x, p.y, p.z]} scale={[size * 0.3, size * 0.3, 1]} userData={{ baseOpacity: 0.9 }}>
+        <sprite key={i} position={[p.x, p.y, p.z]} scale={[size * p.s, size * p.s, 1]} userData={{ baseOpacity: 0.9 }}>
           <spriteMaterial
-            map={textures.star}
+            map={starTexture}
             transparent
             depthWrite={false}
             blending={THREE.AdditiveBlending}
@@ -1073,6 +1376,22 @@ function PlanetaryNebula({ body }: BodyProps): JSX.Element {
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
 
+  // 环状星云 M57：环壳纹理（内缘 OIII 蓝绿 / 外缘 Hα 红的真实色层，P6 §3.2）
+  const ringTexture = useMemo(
+    () =>
+      getNebulaTexture({
+        size: 256,
+        seed: 57,
+        innerColor: '#7fffcf', // 内缘 OIII 蓝绿
+        outerColor: '#ff5a55', // 外缘 Hα 红
+        filamentStrength: 0.5,
+        irregularity: 0.4,
+        octaves: 5,
+        shape: 'ring',
+      }),
+    [],
+  );
+
   useGalacticPlacement(body, groupRef);
   useFrame(({ clock }) => {
     const group = groupRef.current;
@@ -1081,13 +1400,13 @@ function PlanetaryNebula({ body }: BodyProps): JSX.Element {
     if (shellRef.current) {
       // 缓慢膨胀（真实约 20–30 km/s，动画为艺术化加速，已登记）
       shellRef.current.scale.setScalar(nebulaExpansionScale(clock.elapsedTime, 75, 0.12));
-      (shellRef.current.material as THREE.MeshBasicMaterial).opacity = 0.4 * weight;
+      (shellRef.current.material as THREE.MeshBasicMaterial).opacity = 0.85 * weight;
     }
   });
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 环壳（环面示意抛射气体壳层） */}
+      {/* 环壳（带径向色层与噪声扰动的环纹理，替换硬边 torus，倾斜呈现椭圆环） */}
       <mesh
         ref={shellRef}
         rotation={[Math.PI / 3, 0.4, 0]}
@@ -1096,12 +1415,14 @@ function PlanetaryNebula({ body }: BodyProps): JSX.Element {
           selectBody(body.id);
         }}
       >
-        <torusGeometry args={[size, size * 0.34, 12, 48]} />
+        <planeGeometry args={[size * 2.6, size * 2.6]} />
         <meshBasicMaterial
+          map={ringTexture}
           color={body.color}
           transparent
           blending={THREE.AdditiveBlending}
           depthWrite={false}
+          side={THREE.DoubleSide}
         />
       </mesh>
       {/* 中心白矮星 */}
@@ -1126,6 +1447,15 @@ function GlobularCluster({ body }: BodyProps): JSX.Element {
     const rand = createSeededRandom(20260722);
     const count = 420;
     const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    // M13 星族色板（P6 §3.2）：老年星族以红黄为主 + 少量蓝离散星
+    // （HST 测光；蓝离散星为并合/物质转移形成的偏蓝恒星）
+    const old = [
+      [1.0, 0.82, 0.55], // 橙黄（K/G 巨星，老年星族主体）
+      [1.0, 0.7, 0.42], // 橙红
+      [1.0, 0.9, 0.72], // 黄白
+    ];
+    const blueStraggler = [0.72, 0.82, 1.0];
     for (let i = 0; i < count; i += 1) {
       // 中心致密的球状分布（半径取 rand² 使中心更密）
       const r = size * rand() * rand();
@@ -1135,11 +1465,20 @@ function GlobularCluster({ body }: BodyProps): JSX.Element {
       positions[i * 3] = r * sinPolar * Math.cos(azimuth);
       positions[i * 3 + 1] = r * cosPolar;
       positions[i * 3 + 2] = r * sinPolar * Math.sin(azimuth);
+      // 约 8% 蓝离散星，其余老年红黄星族
+      const isBlue = rand() < 0.08;
+      const c = isBlue ? blueStraggler : old[Math.floor(rand() * old.length)];
+      const brightness = 0.6 + 0.4 * rand();
+      colors[i * 3] = c[0] * brightness;
+      colors[i * 3 + 1] = c[1] * brightness;
+      colors[i * 3 + 2] = c[2] * brightness;
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     const mat = new THREE.PointsMaterial({
-      color: body.color,
+      map: getSoftPointTexture(),
+      vertexColors: true,
       size: size * 0.06,
       transparent: true,
       opacity: 0.9,
@@ -1148,7 +1487,7 @@ function GlobularCluster({ body }: BodyProps): JSX.Element {
       sizeAttenuation: true,
     });
     return { geometry: geo, material: mat };
-  }, [size, body.color]);
+  }, [size]);
 
   useEffect(
     () => () => {

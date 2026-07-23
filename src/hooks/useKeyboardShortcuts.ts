@@ -17,7 +17,8 @@ const LEVEL_KEYS: Record<string, ViewLevel> = {
  * 键盘快捷键（需求 3.5.3）：
  * 1-4 视角切换 / 空格 暂停 / M 静音 / O 轨道线 / L 标签 /
  * F 飞往选中天体 / R 真实比例模式 / Esc 取消跟随（P2）/
- * [ ] 行星视角上一颗/下一颗天体（P4，需求 3.2.4，仅 L1 语境生效）
+ * [ ] 行星视角上一颗/下一颗天体（P4，需求 3.2.4，仅 L1 语境生效）/
+ * G 银河系视角参考系切换（跟随太阳系 ↔ 银心固定，P6，需求 3.1.1，仅 L3 生效）
  */
 export function useKeyboardShortcuts(): void {
   useEffect(() => {
@@ -59,6 +60,13 @@ export function useKeyboardShortcuts(): void {
         case 'r':
         case 'R':
           state.toggleRealScaleMode();
+          break;
+        case 'g':
+        case 'G':
+          // 银河系视角参考系切换（P6，需求 3.1.1；仅 L3 语境生效）
+          if (state.viewLevel === 'L3') {
+            state.toggleGalacticFrameMode();
+          }
           break;
         case '[':
           // 行星视角上一颗（P4，需求 3.2.4；仅 L1 语境生效）
