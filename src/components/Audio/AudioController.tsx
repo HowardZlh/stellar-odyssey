@@ -1,9 +1,21 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useSimulationStore } from '@/store';
-import { computeContinuousSoundscapeGains } from '@/utils/audioMixer';
+import { PROCEDURAL_SOUND_PARAMS, planetSoundParams } from '@/data/sounds';
+import type { PlanetAmbienceTransition, SoundParams } from '@/utils/audioMixer';
+import {
+  advancePlanetAmbienceTransition,
+  computeContinuousSoundscapeGains,
+  mixSoundParams,
+  startPlanetAmbienceTransition,
+} from '@/utils/audioMixer';
 import { getSharedAudioEngine } from '@/components/Audio/audioEngine';
+
+/** 行星音景参数解析：null（未跟随/无差异化定义）回退地球基准（L1 现状） */
+function ambienceParamsFor(bodyId: string | null): SoundParams {
+  return planetSoundParams(bodyId) ?? PROCEDURAL_SOUND_PARAMS.L1;
+}
 
 /** UI 布尔开关键（翻转时播放点击音，可选需求 3.4.2 操作音效） */
 const UI_TOGGLE_KEYS = [
@@ -15,6 +27,7 @@ const UI_TOGGLE_KEYS = [
   'showVelocityVectors',
   'realScaleMode',
   'showPerformance',
+  'bloomEnabled',
 ] as const;
 
 /**
@@ -31,6 +44,9 @@ const UI_TOGGLE_KEYS = [
  */
 export function AudioController(): null {
   const audioEnabled = useSimulationStore((s) => s.audioEnabled);
+  // 行星差异化音景过渡状态（P3-6）：纯逻辑推进见 utils/audioMixer.ts
+  const ambienceRef = useRef<PlanetAmbienceTransition>({ fromId: null, toId: null, progress: 1 });
+  const lastFrameMsRef = useRef<number | null>(null);
 
   // 音效开启时初始化引擎（开关点击即用户手势，满足自动播放策略）
   useEffect(() => {
@@ -41,21 +57,41 @@ export function AudioController(): null {
     }
   }, [audioEnabled]);
 
-  // 增益更新循环：按连续层级实时混合
+  // 增益更新循环：按连续层级实时混合 + L1 行星差异化音景过渡（P3-6）
   useEffect(() => {
     let frameId = 0;
 
-    const update = (): void => {
-      const {
-        audioEnabled: enabled,
-        audioVolume,
-        continuousLevel,
-      } = useSimulationStore.getState();
+    const update = (timestampMs: number): void => {
+      const state = useSimulationStore.getState();
+      const { audioEnabled: enabled, audioVolume, continuousLevel } = state;
       const gains = computeContinuousSoundscapeGains(continuousLevel, audioVolume, !enabled);
       const engine = getSharedAudioEngine();
       if (engine.initialized) {
         engine.applyGains(gains, enabled ? 1 : 0);
+
+        // 行星音景（需求 3.4.1）：L1 且跟随/聚焦某行星时切到该行星参数，
+        // 1–3 秒平滑过渡（mixSoundParams 频率对数插值 + 增益线性插值）
+        const deltaSec =
+          lastFrameMsRef.current === null
+            ? 0
+            : Math.max(0, (timestampMs - lastFrameMsRef.current) / 1000);
+        const focusId = state.followBodyId ?? state.selectedBodyId;
+        const targetId =
+          state.viewLevel === 'L1' && planetSoundParams(focusId) ? focusId : null;
+        ambienceRef.current = advancePlanetAmbienceTransition(
+          startPlanetAmbienceTransition(ambienceRef.current, targetId),
+          deltaSec,
+        );
+        const transition = ambienceRef.current;
+        engine.setPlanetAmbience(
+          mixSoundParams(
+            ambienceParamsFor(transition.fromId),
+            ambienceParamsFor(transition.toId),
+            transition.progress,
+          ),
+        );
       }
+      lastFrameMsRef.current = timestampMs;
       frameId = requestAnimationFrame(update);
     };
     frameId = requestAnimationFrame(update);

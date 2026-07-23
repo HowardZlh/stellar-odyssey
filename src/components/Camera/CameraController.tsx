@@ -59,10 +59,10 @@ export function CameraController(): JSX.Element {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const scene = useThree((s) => s.scene);
 
-  const viewTransitionId = useSimulationStore((s) => s.viewTransitionId);
-  const flyToRequestId = useSimulationStore((s) => s.flyToRequestId);
-
   const transitionRef = useRef<TransitionState | null>(null);
+  /** 已处理的切换/飞往请求代次（在 useFrame 内捕获，避免与层级同步竞态） */
+  const handledViewTransitionIdRef = useRef(0);
+  const handledFlyToRequestIdRef = useRef(0);
   /** 跟随模式：上一帧目标位置（id 变化时重置） */
   const followRef = useRef<{ id: string; position: Vec3 } | null>(null);
 
@@ -99,10 +99,16 @@ export function CameraController(): JSX.Element {
     };
   };
 
-  // 视角锚点切换：记录过渡起止状态（仅由切换代次触发，目标层级在触发时刻捕获）
-  useEffect(() => {
-    if (viewTransitionId === 0) return;
-    const view = CAMERA_VIEWS[useSimulationStore.getState().viewLevel];
+  /**
+   * 视角锚点切换：记录过渡起止状态（目标层级在触发时刻捕获）。
+   *
+   * 在 useFrame 内检测切换代次（而非 useEffect）：保证捕获发生在同帧的
+   * syncCameraDistance 之前——否则点击切换后、React 副作用执行前的渲染帧
+   * 会按当前相机距离把 viewLevel 回写为旧层级，导致过渡目标被改写
+   * （P3-7 自查修复：视角切换在部分时序下失效）。
+   */
+  const captureViewTransition = (store: SimulationState): void => {
+    const view = CAMERA_VIEWS[store.viewLevel];
     transitionRef.current = {
       from: captureFrom(),
       to: { position: view.position, target: view.target, fov: view.fov },
@@ -113,16 +119,13 @@ export function CameraController(): JSX.Element {
       viewDistance: 0,
     };
     followRef.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewTransitionId, camera]);
+  };
 
-  // 飞往天体：以当前相机→天体方向进场，运镜期间每帧重解析目标位置
-  useEffect(() => {
-    if (flyToRequestId === 0) return;
-    const state = useSimulationStore.getState();
-    const id = state.flyToBodyId;
+  /** 飞往天体：以当前相机→天体方向进场，运镜期间每帧重解析目标位置 */
+  const captureFlyToTransition = (store: SimulationState): void => {
+    const id = store.flyToBodyId;
     if (!id) return;
-    const target = resolveTargetById(id, state);
+    const target = resolveTargetById(id, store);
     if (!target) return;
 
     const dx = camera.position.x - target.position.x;
@@ -153,13 +156,22 @@ export function CameraController(): JSX.Element {
       viewDistance: d,
     };
     followRef.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flyToRequestId, camera]);
+  };
 
   useFrame((_, delta) => {
     const controls = controlsRef.current;
-    const transition = transitionRef.current;
     const store = useSimulationStore.getState();
+
+    // 新的锚点切换/飞往请求：本帧内先捕获过渡，再做层级同步（防竞态）
+    if (store.viewTransitionId !== handledViewTransitionIdRef.current) {
+      handledViewTransitionIdRef.current = store.viewTransitionId;
+      captureViewTransition(store);
+    }
+    if (store.flyToRequestId !== handledFlyToRequestIdRef.current) {
+      handledFlyToRequestIdRef.current = store.flyToRequestId;
+      captureFlyToTransition(store);
+    }
+    const transition = transitionRef.current;
 
     // 锚点切换 / 飞往运镜动画
     if (transition && transition.active) {

@@ -37,6 +37,8 @@ export function ControlPanel(): JSX.Element {
   const triggerSupernova = useSimulationStore((s) => s.triggerSupernova);
   const showPerformance = useSimulationStore((s) => s.showPerformance);
   const setShowPerformance = useSimulationStore((s) => s.setShowPerformance);
+  const bloomEnabled = useSimulationStore((s) => s.bloomEnabled);
+  const setBloomEnabled = useSimulationStore((s) => s.setBloomEnabled);
   const mergePreviewActive = useSimulationStore((s) => s.mergePreviewActive);
   const mergePreviewReturnSimDays = useSimulationStore((s) => s.mergePreviewReturnSimDays);
   const startMergePreview = useSimulationStore((s) => s.startMergePreview);
@@ -174,6 +176,14 @@ export function ControlPanel(): JSX.Element {
             onChange={(e) => setRealScaleMode(e.target.checked)}
           />
           真实比例模式（天体按真实大小）
+        </label>
+        <label className="mb-1 flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={bloomEnabled}
+            onChange={(e) => setBloomEnabled(e.target.checked)}
+          />
+          泛光效果（Bloom，低性能设备可关闭）
         </label>
         <label className="flex items-center gap-2 text-xs">
           <input

@@ -19,6 +19,8 @@ import {
   tidalLockedRotationAngle,
 } from '@/utils/satellites';
 import { rateClampFactor, timeCompressionForContinuousLevel } from '@/utils/time';
+import { textureUrl } from '@/data/textures';
+import { useBitmapTexture } from '@/hooks/useBitmapTexture';
 import { createBodyTextureCanvas } from '@/components/CelestialBody/proceduralTextures';
 
 interface MoonProps {
@@ -75,19 +77,25 @@ export function Moon({ data, parentRadiusKm }: MoonProps): JSX.Element {
   // 渲染循环内复用的可变要素副本（避免每帧创建新对象）
   const frameElements = useMemo<OrbitalElements>(() => ({ ...visualElements }), [visualElements]);
 
-  const texture = useMemo(() => {
-    if (data.kind === 'artificial') return null;
+  // 真实位图纹理（P3-1，月球）：行星视角才懒加载；失败/未就绪时程序化降级
+  const bitmapTexture = useBitmapTexture(textureUrl(data.id, 'surface'), 2, isPlanetView);
+
+  const proceduralTexture = useMemo(() => {
+    if (data.kind === 'artificial' || bitmapTexture) return null;
     const canvas = createBodyTextureCanvas(data.id, data.color, 256);
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
-  }, [data.id, data.color, data.kind]);
+  }, [data.id, data.color, data.kind, bitmapTexture]);
+
+  const texture = data.kind === 'artificial' ? null : (bitmapTexture ?? proceduralTexture);
 
   useEffect(() => {
     return () => {
-      texture?.dispose();
+      // 位图纹理由 TextureManager 统一持有与释放，仅释放自建 canvas 纹理
+      proceduralTexture?.dispose();
     };
-  }, [texture]);
+  }, [proceduralTexture]);
 
   useFrame(() => {
     const state = useSimulationStore.getState();

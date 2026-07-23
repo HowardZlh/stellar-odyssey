@@ -19,6 +19,13 @@ interface LevelNodes {
   sources: AudioScheduledSourceNode[];
 }
 
+/** L1 行星环境音的可调合成节点（P3-6 行星差异化音景） */
+interface AmbienceTuning {
+  filter: BiquadFilterNode;
+  noiseGain: GainNode;
+  harmonics: Array<{ osc: OscillatorNode; gain: GainNode; ratio: number; gainRatio: number }>;
+}
+
 interface SpatialNodes {
   panner: PannerNode;
   gain: GainNode;
@@ -33,6 +40,9 @@ export class AudioEngine {
   private levels: Partial<Record<ViewLevel, LevelNodes>> = {};
 
   private spatial: Map<string, SpatialNodes> = new Map();
+
+  /** L1 环境音可调节点（行星差异化音景，P3-6） */
+  private l1Tuning: AmbienceTuning | null = null;
 
   /** 是否已成功初始化 */
   get initialized(): boolean {
@@ -92,6 +102,34 @@ export class AudioEngine {
       if (nodes) {
         nodes.gain.gain.setTargetAtTime(gains[level], now, 0.1);
       }
+    }
+  }
+
+  /**
+   * 应用 L1 行星差异化音景参数（P3-6，需求 §3.4.1）
+   *
+   * 1–3 秒的平滑过渡节奏由调用方按帧推进的混合参数驱动
+   * （utils/audioMixer.mixSoundParams），此处仅做短时定值平滑防爆音。
+   * 未初始化时静默降级。
+   */
+  setPlanetAmbience(params: {
+    filterFrequency: number;
+    oscillatorFrequency: number;
+    noiseGain: number;
+    oscGain: number;
+  }): void {
+    if (!this.context || !this.l1Tuning) return;
+    try {
+      const now = this.context.currentTime;
+      const tc = 0.12;
+      this.l1Tuning.filter.frequency.setTargetAtTime(params.filterFrequency, now, tc);
+      this.l1Tuning.noiseGain.gain.setTargetAtTime(params.noiseGain, now, tc);
+      for (const h of this.l1Tuning.harmonics) {
+        h.osc.frequency.setTargetAtTime(params.oscillatorFrequency * h.ratio, now, tc);
+        h.gain.gain.setTargetAtTime(params.oscGain * h.gainRatio, now, tc);
+      }
+    } catch {
+      // 静默降级
     }
   }
 
@@ -282,6 +320,7 @@ export class AudioEngine {
       }
     }
     this.spatial.clear();
+    this.l1Tuning = null;
     if (this.context) {
       void this.context.close().catch(() => undefined);
     }
@@ -325,6 +364,7 @@ export class AudioEngine {
       { ratio: 2, gain: 0.5 },
       { ratio: 4, gain: 0.22 },
     ];
+    const harmonicNodes: AmbienceTuning['harmonics'] = [];
     for (const h of harmonics) {
       const osc = context.createOscillator();
       osc.type = 'sine';
@@ -335,6 +375,12 @@ export class AudioEngine {
       oscGain.connect(levelGain);
       osc.start();
       sources.push(osc);
+      harmonicNodes.push({ osc, gain: oscGain, ratio: h.ratio, gainRatio: h.gain });
+    }
+
+    // L1 链保留可调引用（行星差异化音景，P3-6）
+    if (level === 'L1') {
+      this.l1Tuning = { filter, noiseGain, harmonics: harmonicNodes };
     }
 
     return { gain: levelGain, sources };

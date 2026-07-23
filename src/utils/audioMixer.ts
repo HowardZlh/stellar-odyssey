@@ -110,3 +110,77 @@ export function clamp01(value: number): number {
   if (Number.isNaN(value)) return 0;
   return Math.min(1, Math.max(0, value));
 }
+
+// ---------------------------------------------------------------------------
+// L1 行星差异化音景混合（P3-6，需求 §3.4.1 登记差异消除）
+// ---------------------------------------------------------------------------
+
+/** 程序化环境音合成参数（与 data/sounds.ProceduralSoundParams 结构一致） */
+export interface SoundParams {
+  filterFrequency: number;
+  oscillatorFrequency: number;
+  noiseGain: number;
+  oscGain: number;
+}
+
+/** 行星音景切换过渡时长（秒），需求 §3.4.1：平滑过渡 1–3 秒 */
+export const PLANET_AMBIENCE_FADE_SECONDS = 2;
+
+/** 行星音景过渡状态（fromId/toId 为行星 id，null = 地球基准音景） */
+export interface PlanetAmbienceTransition {
+  fromId: string | null;
+  toId: string | null;
+  /** 过渡进度 [0, 1]，1 表示完成 */
+  progress: number;
+}
+
+/**
+ * 混合两组合成参数（纯函数）：
+ * 频率按对数插值（听感线性，避免滑音突兀），增益线性插值。
+ */
+export function mixSoundParams(from: SoundParams, to: SoundParams, t01: number): SoundParams {
+  const t = clamp01(t01);
+  // 端点精确返回（避免对数插值的浮点残差）
+  if (t === 0) return { ...from };
+  if (t === 1) return { ...to };
+  const logLerp = (a: number, b: number): number => {
+    if (a <= 0 || b <= 0) {
+      throw new RangeError(`频率必须为正数，收到 ${a}, ${b}`);
+    }
+    return Math.exp(Math.log(a) + (Math.log(b) - Math.log(a)) * t);
+  };
+  return {
+    filterFrequency: logLerp(from.filterFrequency, to.filterFrequency),
+    oscillatorFrequency: logLerp(from.oscillatorFrequency, to.oscillatorFrequency),
+    noiseGain: from.noiseGain + (to.noiseGain - from.noiseGain) * t,
+    oscGain: from.oscGain + (to.oscGain - from.oscGain) * t,
+  };
+}
+
+/**
+ * 开始行星音景过渡（纯函数）：目标不变时维持原状态；
+ * 过渡中途切换时以当前淡入目标作为新的淡出起点。
+ */
+export function startPlanetAmbienceTransition(
+  state: PlanetAmbienceTransition,
+  targetId: string | null,
+): PlanetAmbienceTransition {
+  if (targetId === state.toId) {
+    return state;
+  }
+  return { fromId: state.toId, toId: targetId, progress: 0 };
+}
+
+/**
+ * 推进行星音景过渡进度（纯函数）
+ */
+export function advancePlanetAmbienceTransition(
+  state: PlanetAmbienceTransition,
+  deltaSeconds: number,
+  durationSeconds = PLANET_AMBIENCE_FADE_SECONDS,
+): PlanetAmbienceTransition {
+  if (state.progress >= 1) return state;
+  const progress =
+    durationSeconds <= 0 ? 1 : Math.min(1, state.progress + deltaSeconds / durationSeconds);
+  return { ...state, progress };
+}
