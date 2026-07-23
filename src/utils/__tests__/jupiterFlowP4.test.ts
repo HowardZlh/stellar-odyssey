@@ -4,8 +4,10 @@
 
 import {
   EQUATORIAL_JET_RATE,
+  FLOW_PHASE_WRAP_RAD,
   FLOW_VISUAL_GAIN,
   TEMPERATE_JET_RATE,
+  flowShaderPhase,
   jovianDriftRate,
   jovianFlowUvOffset,
   latitudeFromV,
@@ -80,5 +82,44 @@ describe('纬度换算与视觉增益', () => {
   it('视觉增益为有限正数（艺术化登记：剖面结构真实、相位放大便于观察）', () => {
     expect(FLOW_VISUAL_GAIN).toBeGreaterThan(1);
     expect(FLOW_VISUAL_GAIN).toBeLessThanOrEqual(10);
+  });
+});
+
+describe('flowShaderPhase（流动相位回卷，float32 uniform 精度保护）', () => {
+  it('常规行星视角时间尺度（< 回卷窗口，约 4096 个自转）恒等返回', () => {
+    expect(flowShaderPhase(0)).toBe(0);
+    expect(flowShaderPhase(Math.PI * 2 * 100)).toBeCloseTo(Math.PI * 2 * 100, 12);
+    expect(flowShaderPhase(FLOW_PHASE_WRAP_RAD - 1)).toBe(FLOW_PHASE_WRAP_RAD - 1);
+  });
+
+  it('银河系/宇宙视角时间压缩后（10¹⁰⁺ 弧度）回卷到 [0, 窗口)', () => {
+    // 回归背景：simDays 达 10⁹⁺ 天时木星累计自转角 ~10¹⁰ 弧度，
+    // ×视觉增益后 float32 uniform 精度失效，近观云层流动帧间跳变
+    for (const phase of [4.76e10 * FLOW_VISUAL_GAIN, 1e12, FLOW_PHASE_WRAP_RAD * 3.3]) {
+      const t = flowShaderPhase(phase);
+      expect(t).toBeGreaterThanOrEqual(0);
+      expect(t).toBeLessThan(FLOW_PHASE_WRAP_RAD);
+    }
+  });
+
+  it('回卷窗口为 2π 整数倍：基础自转对齐不受回卷影响', () => {
+    expect(FLOW_PHASE_WRAP_RAD / (Math.PI * 2)).toBeCloseTo(1536, 9);
+    // 回卷前后相位在模 2π 意义下一致（中等量级下偏差可忽略）
+    const raw = 1e8;
+    const diff = raw - flowShaderPhase(raw);
+    const residual = diff % (Math.PI * 2);
+    const dist = Math.min(residual, Math.PI * 2 - residual);
+    expect(dist).toBeLessThan(1e-3);
+  });
+
+  it('时间倒退（负相位）同样回卷到 [0, 窗口)', () => {
+    const t = flowShaderPhase(-Math.PI);
+    expect(t).toBeGreaterThanOrEqual(0);
+    expect(t).toBeLessThan(FLOW_PHASE_WRAP_RAD);
+  });
+
+  it('非有限输入抛错', () => {
+    expect(() => flowShaderPhase(Number.NaN)).toThrow(RangeError);
+    expect(() => flowShaderPhase(Number.POSITIVE_INFINITY)).toThrow(RangeError);
   });
 });

@@ -17,7 +17,7 @@ import {
   isDwarfPlanetClassification,
 } from '@/utils/dwarfPlanets';
 import { ringDisplayRadii } from '@/utils/satellites';
-import { FLOW_VISUAL_GAIN } from '@/utils/jupiterFlow';
+import { FLOW_VISUAL_GAIN, flowShaderPhase } from '@/utils/jupiterFlow';
 import { detailGateUpdate, detailStrength01 } from '@/utils/planetDetail';
 import {
   RING_SHADOW_STRENGTH,
@@ -712,7 +712,9 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     if (surfaceMaterial && data.id === 'jupiter') {
       surfaceMaterial.uniforms.uFlowEnabled.value = gate.active ? 1 : 0;
       if (gate.active) {
-        surfaceMaterial.uniforms.uFlowPhase.value = rotation * FLOW_VISUAL_GAIN;
+        // 相位回卷（bug 防护）：银河系/宇宙视角时间压缩后累计自转角 ~10¹⁰ 弧度，
+        // float32 uniform 精度失效致流动错乱（统计近似登记于 utils/jupiterFlow.ts）
+        surfaceMaterial.uniforms.uFlowPhase.value = flowShaderPhase(rotation * FLOW_VISUAL_GAIN);
       }
     }
     // 云层独立旋转（比地表略快，体现大气环流）
