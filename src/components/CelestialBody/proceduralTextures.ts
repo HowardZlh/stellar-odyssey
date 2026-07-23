@@ -804,6 +804,54 @@ export function createRingTextureCanvas(
 }
 
 /**
+ * 彗核岩石纹理（P4，需求 §4.7 彗核岩石质感）：
+ * 深灰基底 + 多倍频噪声凹凸 + 陨坑暗斑（确定性种子随机，可复现）。
+ * 彗核为太阳系反照率最低的天体之一（哈雷 ~0.04，ESA Giotto 观测），
+ * 故整体基调偏暗。
+ */
+export function createCometNucleusTextureCanvas(seed: number, size = 256): HTMLCanvasElement {
+  const canvas = makeCanvas(size, size / 2);
+  const ctx = getContext2D(canvas);
+  const rand = createSeededRandom(seed);
+  const h = size / 2;
+  // 深灰基底
+  ctx.fillStyle = '#3a3835';
+  ctx.fillRect(0, 0, size, h);
+  // 多倍频噪声斑块（岩石凹凸明暗）
+  const image = ctx.getImageData(0, 0, size, h);
+  const d = image.data;
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const n =
+        Math.sin(x * 0.11 + seed) * Math.sin(y * 0.13 - seed * 0.7) * 10 +
+        Math.sin(x * 0.31 + y * 0.23 + seed * 1.3) * 6 +
+        (rand() - 0.5) * 14;
+      const i = (y * size + x) * 4;
+      d[i] = Math.max(0, Math.min(255, d[i] + n));
+      d[i + 1] = Math.max(0, Math.min(255, d[i + 1] + n));
+      d[i + 2] = Math.max(0, Math.min(255, d[i + 2] + n * 0.9));
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  // 陨坑暗斑（边缘略亮模拟坑缘受光）
+  const craterCount = 26;
+  for (let i = 0; i < craterCount; i += 1) {
+    const cx = rand() * size;
+    const cy = rand() * h;
+    const r = 2 + rand() * 9;
+    const dark = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    dark.addColorStop(0, 'rgba(12, 11, 10, 0.55)');
+    dark.addColorStop(0.75, 'rgba(20, 19, 17, 0.28)');
+    dark.addColorStop(1, 'rgba(90, 86, 80, 0.16)');
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return canvas;
+}
+
+/**
  * 径向渐变光晕精灵（中心亮 → 边缘透明）：
  * 用于彗发、银河核球、标记光点等（与 Sun.tsx 光晕同风格）。
  */

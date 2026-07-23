@@ -14,8 +14,8 @@ export function HelpHint(): JSX.Element | null {
     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-space-panel px-5 py-3 text-xs text-gray-300 backdrop-blur">
       <div className="flex items-center gap-4">
         <p>
-          🖱 拖动旋转 · 滚轮缩放 · 右键平移 &nbsp;|&nbsp; ⌨ 1-4 切换视角 · 空格暂停 · M 音效 · O
-          轨道线 &nbsp;|&nbsp; 点击行星查看信息
+          🖱 拖动旋转 · 滚轮缩放 · 右键平移 &nbsp;|&nbsp; ⌨ 1-4 切换视角 · [ / ]
+          行星视角切换天体 · 空格暂停 · M 音效 · O 轨道线 &nbsp;|&nbsp; 点击行星查看信息
           <br />
           <span className="text-gray-500">
             ✦ 恒星闪烁仅行星视角呈现（真空中恒星不闪烁，闪烁源于大气湍流，此为艺术化处理）；

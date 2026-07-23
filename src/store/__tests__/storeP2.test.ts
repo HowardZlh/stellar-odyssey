@@ -60,10 +60,16 @@ describe('天体跟随/飞往（需求 3.2.3）', () => {
     expect(state.flyToBodyId).toBeNull();
   });
 
-  it('切换到相同视角不清除跟随（状态未变化）', () => {
+  it('跟随中点击相同层级锚点也取消跟随（P4 §3.2.4 行为变更：跟随远距天体时层级读数可能已是目标层级，仍需回到固定锚点）', () => {
     useSimulationStore.getState().setFollowBody('earth');
     useSimulationStore.getState().setViewLevel('L2');
-    expect(useSimulationStore.getState().followBodyId).toBe('earth');
+    expect(useSimulationStore.getState().followBodyId).toBeNull();
+  });
+
+  it('无跟随时切换相同层级为空操作（不触发过渡）', () => {
+    const before = useSimulationStore.getState().viewTransitionId;
+    useSimulationStore.getState().setViewLevel('L2');
+    expect(useSimulationStore.getState().viewTransitionId).toBe(before);
   });
 });
 
