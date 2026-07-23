@@ -14,9 +14,11 @@ import {
   SUN_GALACTIC_RADIUS_LY,
   SUN_VERTICAL_AMPLITUDE_LY,
   SUN_VERTICAL_PERIOD_MYR,
+  GALAXY_SHADER_MYR_WRAP,
   diskAngularSpeedRadPerMyr,
   diskParticleAngle,
   galacticYearProgress,
+  galaxyShaderMyr,
   generateGalaxyDiskParticles,
   simDaysToMyr,
   sunGalacticPositionLy,
@@ -289,5 +291,47 @@ describe('generateGalaxyDiskParticles', () => {
     expect(() => generateGalaxyDiskParticles({ ...BASE_PARAMS, bulgeFraction: -0.1 })).toThrow(
       RangeError,
     );
+  });
+});
+
+describe('galaxyShaderMyr（银盘 shader 时间回卷，float32/GPU 精度保护）', () => {
+  it('常规银河系时间尺度（< 回卷窗口）恒等返回，行为与未回卷一致', () => {
+    expect(galaxyShaderMyr(0)).toBe(0);
+    expect(galaxyShaderMyr(230)).toBe(230);
+    expect(galaxyShaderMyr(GALAXY_SHADER_MYR_WRAP - 1)).toBe(GALAXY_SHADER_MYR_WRAP - 1);
+  });
+
+  it('宇宙视角长时间驻留（10⁴⁺ Myr）回卷到 [0, 窗口)', () => {
+    for (const myr of [1e4, 1e5, GALAXY_SHADER_MYR_WRAP, GALAXY_SHADER_MYR_WRAP * 13.7]) {
+      const t = galaxyShaderMyr(myr);
+      expect(t).toBeGreaterThanOrEqual(0);
+      expect(t).toBeLessThan(GALAXY_SHADER_MYR_WRAP);
+    }
+  });
+
+  it('时间倒退（负值）同样回卷到 [0, 窗口)', () => {
+    const t = galaxyShaderMyr(-100);
+    expect(t).toBeGreaterThanOrEqual(0);
+    expect(t).toBeLessThan(GALAXY_SHADER_MYR_WRAP);
+    expect(t).toBeCloseTo(GALAXY_SHADER_MYR_WRAP - 100, 9);
+  });
+
+  it('回卷幅度上界：最内圈粒子（着色器钳制半径 500 光年）ω·t 处于 float32 可靠范围', () => {
+    const omegaMax = (GALACTIC_ROTATION_KM_S * KM_S_TO_LY_PER_MYR) / 500;
+    expect(omegaMax * GALAXY_SHADER_MYR_WRAP).toBeLessThan(3100);
+  });
+
+  it('回卷时间下较差自转保持（内圈角速度仍大于外圈）', () => {
+    const hugeMyr = 1e5;
+    const t = galaxyShaderMyr(hugeMyr);
+    const inner = diskParticleAngle(0, 5000, t * DAYS_PER_MYR) % (Math.PI * 2);
+    const outer = diskParticleAngle(0, 40000, t * DAYS_PER_MYR) % (Math.PI * 2);
+    // 同窗口时间下内外圈角度不同（开普勒式剪切依然存在，防刚性旋转）
+    expect(inner).not.toBeCloseTo(outer, 3);
+  });
+
+  it('非有限输入抛错', () => {
+    expect(() => galaxyShaderMyr(Number.NaN)).toThrow(RangeError);
+    expect(() => galaxyShaderMyr(Number.POSITIVE_INFINITY)).toThrow(RangeError);
   });
 });

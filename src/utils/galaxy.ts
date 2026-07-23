@@ -131,6 +131,35 @@ export function diskParticleAngle(
   return initialPhaseRad + diskAngularSpeedRadPerMyr(radiusLy) * simDaysToMyr(simDays);
 }
 
+/**
+ * 银盘 shader 时间回卷窗口（Myr）：2048 百万年。
+ *
+ * 背景（与 utils/belts.ts BELT_TIME_WRAP_DAYS 同类的 bug 防护）：
+ * 银盘顶点着色器以 float32 计算 angle = phase + ω·t，ω 上限约
+ * 220·3.3357/500 ≈ 1.47 rad/Myr（着色器内圈钳制半径 500 光年）。
+ * 宇宙视角长时间驻留可使 t 达 10⁵ Myr 量级，ω·t 超出 float32 与
+ * GPU sin/cos 距离归约的可靠范围，银盘粒子会坍缩/抖动。
+ *
+ * 处理（已登记的统计近似）：传给 shader 的时间按本窗口取模，
+ * ω·t ≤ 约 3006 弧度。银盘是统计粒子环（不追踪具体恒星），窗口跨越时
+ * 粒子沿各自圆轨道相位一次性重排，较差自转（内快外慢）与密度波调制
+ * 结构保持，重排前后外观分布一致，无可感知影响。
+ */
+export const GALAXY_SHADER_MYR_WRAP = 2048;
+
+/**
+ * 银盘 shader 时间（Myr）：按 GALAXY_SHADER_MYR_WRAP 回卷到 [0, W)
+ *
+ * t < W（约 8.9 个银河年内）时恒等返回，行为与未回卷完全一致。
+ */
+export function galaxyShaderMyr(myr: number): number {
+  if (!Number.isFinite(myr)) {
+    throw new RangeError(`模拟时间必须为有限数，收到 ${myr}`);
+  }
+  const wrapped = myr % GALAXY_SHADER_MYR_WRAP;
+  return wrapped < 0 ? wrapped + GALAXY_SHADER_MYR_WRAP : wrapped;
+}
+
 // ---------------------------------------------------------------------------
 // 旋臂密度波（可选需求 3.1.2 高级项）
 // ---------------------------------------------------------------------------

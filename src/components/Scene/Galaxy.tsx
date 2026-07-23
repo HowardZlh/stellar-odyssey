@@ -16,6 +16,7 @@ import {
   GALACTIC_DISK_RADIUS_LY,
   GALACTIC_DISK_THICKNESS_LY,
   GALACTIC_YEAR_MYR,
+  galaxyShaderMyr,
   generateGalaxyDiskParticles,
   simDaysToMyr,
   sunGalacticPositionLy,
@@ -251,7 +252,9 @@ export function Galaxy(): JSX.Element {
     if (!group.visible) return;
 
     const myr = simDaysToMyr(simDays);
-    diskMaterial.uniforms.uMyr.value = myr;
+    // 时间回卷（bug 防护）：宇宙视角长时间驻留后 ω·t 会超出 float32 与
+    // GPU sin/cos 可靠范围导致银盘粒子坍缩（统计近似登记于 utils/galaxy.ts）
+    diskMaterial.uniforms.uMyr.value = galaxyShaderMyr(myr);
 
     // 太阳系银心系位置（光年 → 场景单位）
     const sunLy = sunGalacticPositionLy(simDays);

@@ -57,6 +57,38 @@ export function jovianFlowUvOffset(latRad: number, rotationAngleRad: number): nu
   return (-jovianDriftRate(latRad) * rotationAngleRad) / (Math.PI * 2);
 }
 
+/**
+ * 流动相位回卷窗口（弧度）：4096 × 2π。
+ *
+ * 背景（与 utils/belts.ts BELT_TIME_WRAP_DAYS 同类的 bug 防护）：
+ * uFlowPhase 是 float32 uniform，而自转角随模拟时间无界累计——银河系/
+ * 宇宙视角的时间压缩可使 simDays 达 10⁹⁺ 天，木星累计自转角 ~10¹⁰ 弧度，
+ * ×视觉增益后 float32 绝对误差达 10⁴ 弧度量级，行星视角近观木星时
+ * 云层流动完全错乱（帧间跳变）。
+ *
+ * 处理（已登记的统计近似）：相位按本窗口（2π 的整数倍）取模——基础自转
+ * 对齐不受影响；各纬度带的 U 偏移在窗口跨越时按 drift·W/2π 的小数部分
+ * 一次性重排（云带条纹为统计性表面纹理，重排不可感知）。
+ *
+ * 窗口取 1536×2π ≈ 9650 弧度：远低于 float32 精度上限，且连续差速剖面
+ * 固有的逐纬度剪切条纹（striae，物理上真实存在的剪切现象）不超过
+ * 当前日期基线观感对应的相位量级——任意模拟时刻观感一致。
+ */
+export const FLOW_PHASE_WRAP_RAD = 1536 * Math.PI * 2;
+
+/**
+ * 木星流动 shader 相位：按 FLOW_PHASE_WRAP_RAD 回卷到 [0, W)
+ *
+ * 相位 < W（约 1536 个自转周期内）时恒等返回，行为与未回卷完全一致。
+ */
+export function flowShaderPhase(flowPhaseRad: number): number {
+  if (!Number.isFinite(flowPhaseRad)) {
+    throw new RangeError(`流动相位必须为有限数，收到 ${flowPhaseRad}`);
+  }
+  const wrapped = flowPhaseRad % FLOW_PHASE_WRAP_RAD;
+  return wrapped < 0 ? wrapped + FLOW_PHASE_WRAP_RAD : wrapped;
+}
+
 /** UV.y（0-1，南极→北极）→ 纬度（弧度） */
 export function latitudeFromV(v01: number): number {
   const v = Math.min(1, Math.max(0, v01));
