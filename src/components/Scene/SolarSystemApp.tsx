@@ -8,6 +8,7 @@ import { AudioController } from '@/components/Audio/AudioController';
 import { SpatialAudio } from '@/components/Audio/SpatialAudio';
 import { CameraController } from '@/components/Camera/CameraController';
 import { getTextureManager } from '@/components/CelestialBody/textureManager';
+import { getSatelliteModelManager } from '@/components/CelestialBody/modelManager';
 import { BodyCycleSwitcher } from '@/components/UI/BodyCycleSwitcher';
 import { ControlPanel } from '@/components/UI/ControlPanel';
 import { HudInfo } from '@/components/UI/HudInfo';
@@ -27,10 +28,11 @@ import { Universe } from '@/components/Scene/Universe';
 export default function SolarSystemApp(): JSX.Element {
   useKeyboardShortcuts();
 
-  // 应用卸载时释放全部位图纹理（AGENTS.md 内存管理）
+  // 应用卸载时释放全部位图纹理与 glTF 模型（AGENTS.md 内存管理）
   useEffect(() => {
     return () => {
       getTextureManager().disposeAll();
+      getSatelliteModelManager().disposeAll();
     };
   }, []);
 

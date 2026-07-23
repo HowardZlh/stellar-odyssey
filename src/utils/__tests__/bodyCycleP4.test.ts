@@ -1,5 +1,6 @@
 /**
- * 行星视角天体切换序列测试（P4，需求 §3.2.4；P5 §3.3 扩展至 16 天体）
+ * 行星视角天体切换序列测试（P4，需求 §3.2.4；P5 §3.3 扩展至 16 天体；
+ * P7 §3.4 纳入人造卫星扩展至 20 天体）
  */
 
 import {
@@ -14,12 +15,16 @@ import {
 import { DWARF_PLANETS } from '@/data/smallBodies';
 
 describe('切换序列定义（需求 3.2.4 / P5 §3.3）', () => {
-  it('序列为固定 16 天体：八大行星 + 月球 + 5 矮行星（按日心距离插入）+ 两彗星（末尾）', () => {
+  it('序列为固定 20 天体：八大行星 + 月球 + 4 人造卫星（P7）+ 5 矮行星 + 两彗星（末尾）', () => {
     expect(BODY_CYCLE_SEQUENCE).toEqual([
       'mercury',
       'venus',
       'earth',
       'moon',
+      'iss',
+      'tiangong',
+      'hubble',
+      'geo-satellite',
       'mars',
       'ceres',
       'jupiter',
@@ -59,6 +64,12 @@ describe('切换序列定义（需求 3.2.4 / P5 §3.3）', () => {
     expect(isCycleBody(DEFAULT_ANCHOR_BODY_ID)).toBe(true);
   });
 
+  it('4 颗人造卫星全部纳入序列（P7 核心痛点：可直达近观）', () => {
+    for (const id of ['iss', 'tiangong', 'hubble', 'geo-satellite']) {
+      expect(isCycleBody(id)).toBe(true);
+    }
+  });
+
   it('isCycleBody 识别序列内外天体', () => {
     expect(isCycleBody('halley')).toBe(true);
     expect(isCycleBody('pluto')).toBe(true);
@@ -71,7 +82,12 @@ describe('循环切换（需求 3.2.4）', () => {
   it('下一颗沿序列前进', () => {
     expect(cycleBodyId('mercury', 1)).toBe('venus');
     expect(cycleBodyId('earth', 1)).toBe('moon');
-    expect(cycleBodyId('moon', 1)).toBe('mars');
+    // P7 §3.4：月球之后插入人造卫星段
+    expect(cycleBodyId('moon', 1)).toBe('iss');
+    expect(cycleBodyId('iss', 1)).toBe('tiangong');
+    expect(cycleBodyId('tiangong', 1)).toBe('hubble');
+    expect(cycleBodyId('hubble', 1)).toBe('geo-satellite');
+    expect(cycleBodyId('geo-satellite', 1)).toBe('mars');
     expect(cycleBodyId('mars', 1)).toBe('ceres');
     expect(cycleBodyId('neptune', 1)).toBe('pluto');
     expect(cycleBodyId('eris', 1)).toBe('halley');
@@ -88,13 +104,13 @@ describe('循环切换（需求 3.2.4）', () => {
     expect(cycleBodyId('mercury', -1)).toBe('encke');
   });
 
-  it('遍历一整圈（16 步）回到起点', () => {
+  it('遍历一整圈（20 步）回到起点', () => {
     let id = 'earth';
     for (let i = 0; i < BODY_CYCLE_SEQUENCE.length; i += 1) {
       id = cycleBodyId(id, 1);
     }
     expect(id).toBe('earth');
-    expect(BODY_CYCLE_SEQUENCE).toHaveLength(16);
+    expect(BODY_CYCLE_SEQUENCE).toHaveLength(20);
   });
 
   it('序列外 id 回落到默认天体', () => {
@@ -103,18 +119,25 @@ describe('循环切换（需求 3.2.4）', () => {
   });
 });
 
-describe('序列位置标签（需求 3.2.4 HUD；P5："冥王星 11/16"）', () => {
-  it('地球为 3/16', () => {
-    expect(bodyCyclePositionLabel('earth')).toBe('3/16');
+describe('序列位置标签（需求 3.2.4 HUD；P7："冥王星 15/20"）', () => {
+  it('地球为 3/20', () => {
+    expect(bodyCyclePositionLabel('earth')).toBe('3/20');
   });
 
-  it('冥王星为 11/16（P5 §3.3 HUD 计数更新）', () => {
-    expect(bodyCyclePositionLabel('pluto')).toBe('11/16');
+  it('冥王星为 15/20（P7 §3.4 HUD 计数更新）', () => {
+    expect(bodyCyclePositionLabel('pluto')).toBe('15/20');
+  });
+
+  it('人造卫星位置正确（P7：月球之后 5-8 位）', () => {
+    expect(bodyCyclePositionLabel('iss')).toBe('5/20');
+    expect(bodyCyclePositionLabel('tiangong')).toBe('6/20');
+    expect(bodyCyclePositionLabel('hubble')).toBe('7/20');
+    expect(bodyCyclePositionLabel('geo-satellite')).toBe('8/20');
   });
 
   it('首尾位置正确', () => {
-    expect(bodyCyclePositionLabel('mercury')).toBe('1/16');
-    expect(bodyCyclePositionLabel('encke')).toBe('16/16');
+    expect(bodyCyclePositionLabel('mercury')).toBe('1/20');
+    expect(bodyCyclePositionLabel('encke')).toBe('20/20');
   });
 
   it('序列外返回 null', () => {
@@ -135,6 +158,7 @@ describe('切换控件可见性（需求 3.2.4：仅 L1 显示）', () => {
 
   it('跟随序列内天体时保持可见（外行星/矮行星跟随层级读数为 L2 的语义补充）', () => {
     expect(cycleControlVisible('L2', 'neptune')).toBe(true);
+    expect(cycleControlVisible('L2', 'iss')).toBe(true);
     expect(cycleControlVisible('L2', 'halley')).toBe(true);
     expect(cycleControlVisible('L2', 'eris')).toBe(true);
   });

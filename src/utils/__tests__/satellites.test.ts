@@ -5,8 +5,9 @@
 import {
   ARTIFICIAL_BODY_VISUAL_RADIUS,
   ARTIFICIAL_ORBIT_BASE_UNITS,
+  ARTIFICIAL_ORBIT_LEO_MIN_KM,
+  ARTIFICIAL_ORBIT_LEO_SLOPE_PER_KM,
   ARTIFICIAL_ORBIT_LOG_UNITS,
-  ARTIFICIAL_ORBIT_REF_ALTITUDE_KM,
   MIN_MOON_VISUAL_RADIUS,
   NATURAL_ORBIT_BASE_UNITS,
   NATURAL_ORBIT_LOG_UNITS,
@@ -29,8 +30,10 @@ describe('分层缩放参数（登记的视觉夸大）', () => {
     expect(NATURAL_ORBIT_LOG_UNITS).toBe(1.2);
     expect(NATURAL_ORBIT_REF_KM).toBe(100000);
     expect(ARTIFICIAL_ORBIT_BASE_UNITS).toBe(0.15);
-    expect(ARTIFICIAL_ORBIT_LOG_UNITS).toBe(0.35);
-    expect(ARTIFICIAL_ORBIT_REF_ALTITUDE_KM).toBe(200);
+    // P7 分段映射：近地段线性斜率 + 600 km 以上对数压缩（登记于文件头）
+    expect(ARTIFICIAL_ORBIT_LEO_SLOPE_PER_KM).toBe(0.0025);
+    expect(ARTIFICIAL_ORBIT_LEO_MIN_KM).toBe(200);
+    expect(ARTIFICIAL_ORBIT_LOG_UNITS).toBe(0.1);
     expect(RING_WIDTH_SPREAD).toBe(2);
     // 自然卫星基础偏移大于人造卫星（分层策略）
     expect(NATURAL_ORBIT_BASE_UNITS).toBeGreaterThan(ARTIFICIAL_ORBIT_BASE_UNITS);
@@ -69,7 +72,7 @@ describe('visualSatelliteOrbitRadius', () => {
 });
 
 describe('visualSatelliteBodyRadius', () => {
-  it('人造卫星使用固定示意尺寸', () => {
+  it('人造卫星缺省 spanMeters 时使用固定示意尺寸（兜底）', () => {
     expect(visualSatelliteBodyRadius('artificial', 0.055)).toBe(ARTIFICIAL_BODY_VISUAL_RADIUS);
   });
 

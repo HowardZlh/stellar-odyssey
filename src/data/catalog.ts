@@ -127,6 +127,10 @@ function moonLines(m: MoonData): BodyInfoLine[] {
           : `${formatNumber(m.radiusKm)} km`,
     },
   ];
+  // 人造卫星真实特征尺寸对照（P7 §3.2：示意尺寸与真实尺寸对照展示）
+  if (m.kind === 'artificial' && m.spanMeters !== undefined) {
+    lines.push({ label: '真实特征尺寸', value: `约 ${m.spanMeters} m（最大跨度）` });
+  }
   if (m.massKg !== undefined) {
     lines.push({ label: '质量', value: formatMassKg(m.massKg) });
   }

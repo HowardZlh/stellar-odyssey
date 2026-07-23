@@ -5,15 +5,20 @@
  * - 自然卫星轨道/半径/周期：NASA Planetary Satellite Fact Sheet,
  *   https://nssdc.gsfc.nasa.gov/planetary/factsheet/（各行星卫星分表）
  * - ISS / 哈勃轨道参数：NASA Spot the Station / STScI 公开轨道数据
+ * - 天宫空间站轨道参数：中国载人航天工程办公室（CMSA）公开数据 / CelesTrak TLE
+ *   （轨道高度约 390 km、倾角 41.5°、周期约 92.2 分钟，三舱组合体约 100 t）
  *
  * 约定：
  * - meanAnomalyAtEpochDeg / 升交点经度 / 近点幅角为近似值，
  *   仅用于可视化的初始相位分布（历元相位为近似值，用于可视化）。
  * - 参考平面统一为行星赤道面（planetEquator）；月球例外（见下）。
+ * - 人造卫星 spanMeters 为真实特征尺寸（米），用于 P7 差异化视觉尺寸映射
+ *   （ISS 109 m > 天宫约 55 m > TDRS 帆板翼展约 21 m > 哈勃 13.2 m）。
  *
  * 关键事实校验点：
  * - 月球轨道相对黄道面倾角约 5.145°（不是相对地球赤道！）
  * - ISS 轨道高度约 400 km，周期约 92 分钟，倾角 51.6°
+ * - 天宫轨道高度约 390 km（略低于 ISS），倾角 41.5°（低于 ISS 的 51.6°）
  * - 伽利略卫星 io:europa:ganymede 轨道共振 1:2:4
  */
 
@@ -72,8 +77,36 @@ export const MOONS: readonly MoonData[] = [
     },
     referencePlane: 'planetEquator',
     massKg: 4.5e5,
-    noteZh: '轨道高度约 400 km，绕地球一圈约 92 分钟',
+    spanMeters: 109,
+    noteZh: '轨道高度约 400 km，绕地球一圈约 92 分钟；主桁架长 109 m，装有 8 组太阳能帆板',
     dataSource: 'NASA Spot the Station（轨道高度约 400 km，倾角 51.6°）',
+  },
+  {
+    id: 'tiangong',
+    name: 'Tiangong Space Station',
+    nameZh: '天宫空间站',
+    parentId: 'earth',
+    kind: 'artificial',
+    // 实际最大跨度约 55 m（三舱 T 字构型 + 柔性太阳翼），此处为可视化示意尺寸
+    radiusKm: 0.0275,
+    color: '#d9d4c8',
+    orbit: {
+      // 地球半径 6371 km + 轨道高度约 390 km（略低于 ISS 的 417 km）
+      semiMajorAxisKm: 6371 + 390,
+      eccentricity: 0.0003,
+      inclinationDeg: 41.5,
+      // 历元相位为近似值，用于可视化（与 ISS 错开初始相位便于区分）
+      longitudeOfAscendingNodeDeg: 200,
+      argumentOfPeriapsisDeg: 0,
+      meanAnomalyAtEpochDeg: 90,
+      periodDays: 0.06403, // 约 92.2 分钟
+    },
+    referencePlane: 'planetEquator',
+    massKg: 1.0e5,
+    spanMeters: 55,
+    noteZh:
+      '中国载人空间站，2022 年三舱构型建成：天和核心舱 + 问天/梦天实验舱组成 T 字构型，配柔性太阳翼',
+    dataSource: '中国载人航天工程办公室（CMSA）公开数据 / CelesTrak TLE（高度约 390 km，倾角 41.5°）',
   },
   {
     id: 'hubble',
@@ -97,7 +130,8 @@ export const MOONS: readonly MoonData[] = [
     },
     referencePlane: 'planetEquator',
     massKg: 1.11e4,
-    noteZh: '轨道高度约 540 km，1990 年发射的光学空间望远镜',
+    spanMeters: 13.2,
+    noteZh: '轨道高度约 540 km，1990 年发射的光学空间望远镜；镜筒长 13.2 m，主镜口径 2.4 m',
     dataSource: 'STScI / NASA Hubble 公开轨道数据（高度约 540 km，倾角 28.5°）',
   },
   {
@@ -123,8 +157,10 @@ export const MOONS: readonly MoonData[] = [
     },
     referencePlane: 'planetEquator',
     massKg: 3.5e3,
-    noteZh: '轨道周期与地球自转周期相同（恒星日），相对地面静止；通信/气象卫星典型轨道（示意）',
-    dataSource: 'ITU / NASA 静止轨道定义（半径 42,164 km，周期 23.934 小时）',
+    spanMeters: 21,
+    noteZh:
+      '轨道周期与地球自转周期相同（恒星日），相对地面静止；以 NASA TDRS（跟踪与数据中继卫星，帆板翼展约 21 m、抛物面天线）为原型的静止轨道通信卫星示意',
+    dataSource: 'ITU / NASA TDRS 静止轨道定义（半径 42,164 km，周期 23.934 小时）',
   },
   // ---- 火星卫星（可选需求 3.1.1） ----
   {

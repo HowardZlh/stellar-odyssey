@@ -6,8 +6,9 @@
  * "跟随"（锁定天体随其运动）。
  *
  * 说明：
- * - 卫星按精确相位求值（速率钳制期间渲染相位与精确相位有微小偏差，
- *   已在 3.3 钳制策略下接受）；
+ * - 卫星优先按"渲染相位注册表"（utils/satellitePhase，P7）求值：
+ *   速率钳制期间渲染相位与精确相位存在偏差，近观 glTF 模型下相机
+ *   必须与渲染位置一致；未注册（组件未挂载/测试）时回落精确相位；
  * - L3 特殊天体/超新星位于银河系组内，需经"银河系组变换"
  *   （黄道-银道倾斜 + 太阳系锚定原点的反向平移）换算到场景坐标。
  */
@@ -22,7 +23,12 @@ import {
   SATELLITE_GALAXY_ORBITS,
 } from '@/data/galaxies';
 import { SPECIAL_BODIES } from '@/data/specialBodies';
-import { DEG_TO_RAD, heliocentricPosition, orbitPositionWithPeriod } from '@/utils/physics';
+import {
+  DEG_TO_RAD,
+  RAD_TO_DEG,
+  heliocentricPosition,
+  orbitPositionWithPeriod,
+} from '@/utils/physics';
 import {
   SCENE_UNITS_PER_LY,
   bodyDisplayRadius,
@@ -30,7 +36,8 @@ import {
   eclipticToScene,
   lyToSceneUnits,
 } from '@/utils/scale';
-import { satelliteOrbitDisplayRadius } from '@/utils/satellites';
+import { satelliteBodyDisplayRadius, satelliteOrbitDisplayRadius } from '@/utils/satellites';
+import { renderedSatellitePhaseRad } from '@/utils/satellitePhase';
 import { dwarfDisplayRadius, isDwarfPlanetClassification } from '@/utils/dwarfPlanets';
 import { ECLIPTIC_GALACTIC_TILT_DEG, sunGalacticPositionLy } from '@/utils/galaxy';
 import { mwM31SeparationLy, satelliteGalaxyPositionLy } from '@/utils/universe';
@@ -44,6 +51,15 @@ export interface FocusTarget {
 /** 观察距离范围（场景单位） */
 export const MIN_VIEW_DISTANCE_UNITS = 2.2;
 export const MAX_VIEW_DISTANCE_UNITS = 30000;
+
+/**
+ * 人造卫星近观观察距离（场景单位，P7 §3.4）：
+ * 本体示意尺寸仅 ~0.04–0.07 单位，按"轨道半径×0.8"或全局下限 2.2
+ * 观察时模型过小。取略高于遨游模式最近距离（OrbitControls minDistance 1.5）
+ * 的固定近观距离，配合近观放大系数（utils/satellites.satelliteNearMagnification）
+ * 使模型充满合理视野并触发 glTF 细节层加载。
+ */
+export const SATELLITE_VIEW_DISTANCE_UNITS = 1.6;
 
 /**
  * 按天体显示半径推荐观察距离（半径的 6 倍，钳制在可用范围内）
@@ -78,6 +94,9 @@ function moonScenePosition(moon: MoonData, simDays: number, realScale: boolean):
   const parent = getPlanetById(moon.parentId) ?? getDwarfPlanetById(moon.parentId);
   if (!parent) return null;
   const parentScene = eclipticToScene(heliocentricPosition(parent.orbit, simDays));
+  // P7：优先使用渲染相位（速率钳制期间与渲染位置保持一致，登记于文件头）；
+  // 注册相位已含历元项与时间推进，评估时刻取 0
+  const renderedPhase = renderedSatellitePhaseRad(moon.id);
   const p = orbitPositionWithPeriod(
     {
       semiMajorAxisAu: satelliteOrbitDisplayRadius(
@@ -90,10 +109,11 @@ function moonScenePosition(moon: MoonData, simDays: number, realScale: boolean):
       inclinationDeg: moon.orbit.inclinationDeg,
       longitudeOfAscendingNodeDeg: moon.orbit.longitudeOfAscendingNodeDeg,
       argumentOfPerihelionDeg: moon.orbit.argumentOfPeriapsisDeg,
-      meanAnomalyAtEpochDeg: moon.orbit.meanAnomalyAtEpochDeg,
+      meanAnomalyAtEpochDeg:
+        renderedPhase !== null ? renderedPhase * RAD_TO_DEG : moon.orbit.meanAnomalyAtEpochDeg,
     },
     moon.orbit.periodDays,
-    simDays,
+    renderedPhase !== null ? 0 : simDays,
   );
   // 参考平面局部坐标 → three.js（与 Moon.tsx 一致：x-y → x-(-z)，z → y）
   let local: Vec3 = { x: p.x, y: p.z, z: -p.y };
@@ -224,6 +244,21 @@ export function resolveFocusTarget(
   if (moon) {
     const position = moonScenePosition(moon, simDays, realScale);
     if (!position) return null;
+    // 人造卫星（P7 §3.4）：观察距离按本体近观体验适配（而非轨道半径），
+    // 飞抵后模型充满合理视野并触发 glTF/细节层加载；真实比例模式下
+    // 卫星本体不可见（科学事实），维持同一距离观察其轨道位置
+    if (moon.kind === 'artificial') {
+      const bodyRadius = satelliteBodyDisplayRadius(
+        moon.kind,
+        moon.radiusKm,
+        realScale,
+        moon.spanMeters,
+      );
+      return {
+        position,
+        viewDistanceUnits: Math.max(SATELLITE_VIEW_DISTANCE_UNITS, bodyRadius * 8),
+      };
+    }
     const orbitRadius = satelliteOrbitDisplayRadius(
       moon.kind,
       (getPlanetById(moon.parentId) ?? getDwarfPlanetById(moon.parentId) ?? PLUTO).radiusKm,

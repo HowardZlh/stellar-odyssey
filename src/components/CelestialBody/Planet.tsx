@@ -309,6 +309,10 @@ export function Planet({ data }: PlanetProps): JSX.Element {
   // P4 近观细节门控（需求 4.7）：相机-天体距离进入近观阈值时激活
   // 4K/法线细节层（滞回状态机纯逻辑 utils/planetDetail.detailGateUpdate）
   const [detailActive, setDetailActive] = useState(false);
+  // P7 标签避让：相机贴近行星（如卫星近观语境）时隐藏行星标签——
+  // Html distanceFactor 在近距离下会将标签放大到遮挡画面
+  const [labelHidden, setLabelHidden] = useState(false);
+  const labelHiddenRef = useRef(false);
   const detailActiveRef = useRef(false);
 
   // 矮行星（P5 §3.2）：默认模式最小可见半径提升至可辨识水平（夸大登记于
@@ -651,6 +655,12 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     const dy = camera.position.y - scene.y;
     const dz = camera.position.z - scene.z;
     const distToBody = Math.hypot(dx, dy, dz);
+    // P7 标签避让：相机贴近（距离 < 半径×4，如人造卫星近观）时隐藏标签
+    const hideLabel = distToBody < radius * 4;
+    if (hideLabel !== labelHiddenRef.current) {
+      labelHiddenRef.current = hideLabel;
+      setLabelHidden(hideLabel);
+    }
     const gate = detailGateUpdate(detailActiveRef.current, distToBody, radius, continuousLevel);
     if (gate.active !== detailActiveRef.current) {
       detailActiveRef.current = gate.active;
@@ -782,7 +792,7 @@ export function Planet({ data }: PlanetProps): JSX.Element {
         <Moon key={moon.id} data={moon} parentRadiusKm={data.radiusKm} />
       ))}
 
-      {showLabels && !frozen && (
+      {showLabels && !frozen && !labelHidden && (
         <Html
           position={[0, radius + 0.6, 0]}
           center
