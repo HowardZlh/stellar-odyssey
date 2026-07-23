@@ -32,6 +32,20 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
     Ceres_Dawn_FC_HAMO_DTM_DLR_Global_60ppd_Oct2016（公有领域，467 MB 源数据本地转换）；
   - 阋神星/鸟神星/妊神星无探测器实拍表面图，使用基于观测特征（反照率/颜色/光谱）的
     程序化增强纹理，艺术化推测部分登记于 `proceduralTextures.ts` 文件头。
+- 人造卫星 glTF 精细模型（P7，`public/models/`，清单与登记见 `src/data/models.ts`）：
+  - `iss.glb`：NASA 3D Resources
+    ["International Space Station (ISS) (B)"](https://github.com/nasa/NASA-3D-Resources)
+    （公有领域），本地经 gltf-transform 优化（weld/simplify + meshopt 压缩，190 KB / 3.2 万三角形）；
+    源模型材质为统一灰色，运行时按网格形态启发式着色（帆板深蓝/桁架银灰/舱体白色，
+    基于真实 ISS 外观的艺术化增强，登记于 `satelliteGeometry.ts` 文件头）；
+  - `hubble.glb`：NASA 3D Resources "Hubble Space Telescope (A)"（公有领域），
+    同上优化（168 KB / 5 千三角形）；
+  - `geo-satellite.glb`：NASA 3D Resources "Tracking and Data Relay Satellites (TDRS) (B)"
+    （公有领域，以 TDRS 为原型的静止轨道通信卫星示意），同上优化（305 KB / 1.6 万三角形）；
+  - 天宫空间站：无 NASA 公版模型且未找到开放许可（CC0/CC BY）社区模型，
+    按需求降级为程序化几何组合（T 字三舱构型 + 柔性太阳翼，
+    `src/components/CelestialBody/satelliteGeometry.ts`）；
+  - 全部模型仅近观懒加载（首屏无模型网络请求），加载失败静默降级为程序化几何组合。
 
 ## Getting Started
 

@@ -136,10 +136,16 @@ describe('土星卫星', () => {
 });
 
 describe('getMoonsByParent', () => {
-  it('地球有 4 颗卫星（月球 + ISS + 哈勃 + 静止轨道卫星）', () => {
+  it('地球有 5 颗卫星（月球 + ISS + 天宫 + 哈勃 + 静止轨道卫星，P7）', () => {
     const earthMoons = getMoonsByParent('earth');
-    expect(earthMoons).toHaveLength(4);
-    expect(earthMoons.map((m) => m.id).sort()).toEqual(['geo-satellite', 'hubble', 'iss', 'moon']);
+    expect(earthMoons).toHaveLength(5);
+    expect(earthMoons.map((m) => m.id).sort()).toEqual([
+      'geo-satellite',
+      'hubble',
+      'iss',
+      'moon',
+      'tiangong',
+    ]);
   });
 
   it('未知行星返回空数组', () => {

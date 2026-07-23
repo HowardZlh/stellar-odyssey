@@ -136,6 +136,12 @@ export interface MoonData {
   tidallyLocked?: boolean;
   /** 质量（kg，信息面板质量字段，需求 3.5.2） */
   massKg?: number;
+  /**
+   * 真实特征尺寸（米，人造卫星专用，P7 §3.2）：
+   * 取航天器最大跨度（ISS 桁架 109 m / 天宫约 55 m / TDRS 帆板翼展约 21 m /
+   * 哈勃镜筒 13.2 m），用于差异化视觉尺寸映射与信息面板对照展示
+   */
+  spanMeters?: number;
   /** 备注（共振关系、大气特征等） */
   noteZh?: string;
   dataSource: string;

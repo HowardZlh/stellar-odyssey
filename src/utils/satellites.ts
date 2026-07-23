@@ -7,11 +7,23 @@
  *
  * - 自然卫星轨道：r = R_p + 0.6 + 1.2·log10(1 + a_km / 100000)
  *   保持"轨道更远的卫星画得更远"的排序与共振可视化（木卫 1:2:4 间距递增）
- * - 人造卫星轨道：r = R_p + 0.15 + 0.35·log10(1 + h_km / 200)（h 为轨道高度）
- *   保证 ISS（400km）、哈勃（540km）贴近行星表面且相互可分辨，
- *   同时与月球轨道保持明显分层（月球 ≈ R_p + 1.42，ISS ≈ R_p + 0.32）
+ * - 人造卫星轨道（P7 §3.2 调整登记）：分段映射——
+ *   近地轨道段（高度 200–600 km）线性放大 r = R_p + 0.15 + (h − 200)·0.0025，
+ *   600 km 以上对数压缩 r = R_p + 1.15 + 0.1·log10(1 + (h − 600) / 3000)。
+ *   差异登记：原纯对数公式下天宫（390 km）与 ISS（417 km）轨道仅差
+ *   ~0.005 场景单位不可分辨，近地段改线性以保证两者分层可辨
+ *   （天宫 ≈ R_p+0.63，ISS ≈ R_p+0.69，哈勃 ≈ R_p+1.0，
+ *   静止轨道 ≈ R_p+1.26，仍明显低于月球 ≈ R_p+1.42 的外层）
+ * - 人造卫星本体（P7 §3.2）：按真实特征尺寸 spanMeters 对数分级映射
+ *   r = 0.024 + 0.036·log10(1 + span_m / 8)，保证视觉层次
+ *   ISS（109 m）> 天宫（55 m）> TDRS（21 m）> 哈勃（13.2 m）；
+ *   真实尺寸（百米级）在场景尺度下不可见，统一放大数千倍为示意尺寸（登记）
  * - 行星环：内外缘均按自然卫星轨道公式映射后绕中心扩展 2 倍宽度，
  *   保证环与卫星轨道（如土卫二在环外）的相对顺序正确
+ *
+ * 真实比例模式（P7 §3.2 策略登记）：人造卫星与自然卫星同规则按真实尺寸
+ * 线性映射——真实尺寸下人造卫星不可见属科学事实（与矮行星原则一致），
+ * 帮助信息中说明。
  *
  * 真实轨道参数保留在数据层（MoonData.orbit），仅渲染半径做视觉映射。
  */
@@ -24,15 +36,25 @@ export const NATURAL_ORBIT_BASE_UNITS = 0.6;
 export const NATURAL_ORBIT_LOG_UNITS = 1.2;
 export const NATURAL_ORBIT_REF_KM = 100000;
 
-/** 人造卫星轨道映射参数（以轨道高度为输入） */
+/** 人造卫星轨道映射参数（P7 分段映射，以轨道高度为输入，登记于文件头） */
 export const ARTIFICIAL_ORBIT_BASE_UNITS = 0.15;
-export const ARTIFICIAL_ORBIT_LOG_UNITS = 0.35;
-export const ARTIFICIAL_ORBIT_REF_ALTITUDE_KM = 200;
+/** 近地段（200–600 km）线性斜率（场景单位/km）：保证天宫与 ISS 分层可辨 */
+export const ARTIFICIAL_ORBIT_LEO_SLOPE_PER_KM = 0.0025;
+/** 近地段起点/终点高度（km） */
+export const ARTIFICIAL_ORBIT_LEO_MIN_KM = 200;
+export const ARTIFICIAL_ORBIT_LEO_MAX_KM = 600;
+/** 600 km 以上对数压缩参数 */
+export const ARTIFICIAL_ORBIT_LOG_UNITS = 0.1;
+export const ARTIFICIAL_ORBIT_LOG_REF_KM = 3000;
 
 /** 卫星本体最小视觉半径（场景单位） */
 export const MIN_MOON_VISUAL_RADIUS = 0.1;
-/** 人造卫星固定视觉尺寸（真实尺寸约百米级，不可见，登记为示意尺寸） */
+/** 人造卫星缺省视觉尺寸（无 spanMeters 数据时的兜底示意尺寸，登记） */
 export const ARTIFICIAL_BODY_VISUAL_RADIUS = 0.06;
+/** 人造卫星差异化尺寸映射参数（P7 §3.2，以真实特征尺寸 spanMeters 为输入） */
+export const ARTIFICIAL_BODY_BASE_UNITS = 0.024;
+export const ARTIFICIAL_BODY_LOG_UNITS = 0.036;
+export const ARTIFICIAL_BODY_REF_SPAN_M = 8;
 
 /** 行星环视觉宽度扩展倍数（登记的视觉夸大） */
 export const RING_WIDTH_SPREAD = 2;
@@ -57,12 +79,22 @@ export function visualSatelliteOrbitRadius(
   const parentVisual = visualBodyRadius(parentRadiusKm);
   if (kind === 'artificial') {
     const altitudeKm = semiMajorAxisKm - parentRadiusKm;
-    return (
+    // P7 分段映射（登记于文件头）：近地段线性放大保证天宫/ISS 分层可辨，
+    // 600 km 以上对数压缩保证静止轨道仍低于月球轨道层
+    const leoKm = Math.min(
+      Math.max(altitudeKm, ARTIFICIAL_ORBIT_LEO_MIN_KM),
+      ARTIFICIAL_ORBIT_LEO_MAX_KM,
+    );
+    let r =
       parentVisual +
       ARTIFICIAL_ORBIT_BASE_UNITS +
-      ARTIFICIAL_ORBIT_LOG_UNITS *
-        Math.log10(1 + altitudeKm / ARTIFICIAL_ORBIT_REF_ALTITUDE_KM)
-    );
+      (leoKm - ARTIFICIAL_ORBIT_LEO_MIN_KM) * ARTIFICIAL_ORBIT_LEO_SLOPE_PER_KM;
+    if (altitudeKm > ARTIFICIAL_ORBIT_LEO_MAX_KM) {
+      r +=
+        ARTIFICIAL_ORBIT_LOG_UNITS *
+        Math.log10(1 + (altitudeKm - ARTIFICIAL_ORBIT_LEO_MAX_KM) / ARTIFICIAL_ORBIT_LOG_REF_KM);
+    }
+    return r;
   }
   return (
     parentVisual +
@@ -73,9 +105,25 @@ export function visualSatelliteOrbitRadius(
 
 /**
  * 卫星本体的视觉半径（场景单位）
+ *
+ * @param spanMeters 人造卫星真实特征尺寸（米，P7 差异化尺寸映射；
+ *   缺省时回落固定示意尺寸 ARTIFICIAL_BODY_VISUAL_RADIUS）
  */
-export function visualSatelliteBodyRadius(kind: SatelliteKind, radiusKm: number): number {
+export function visualSatelliteBodyRadius(
+  kind: SatelliteKind,
+  radiusKm: number,
+  spanMeters?: number,
+): number {
   if (kind === 'artificial') {
+    if (spanMeters !== undefined) {
+      if (!(spanMeters > 0) || !Number.isFinite(spanMeters)) {
+        throw new RangeError(`人造卫星特征尺寸必须为正有限数，收到 ${spanMeters}`);
+      }
+      return (
+        ARTIFICIAL_BODY_BASE_UNITS +
+        ARTIFICIAL_BODY_LOG_UNITS * Math.log10(1 + spanMeters / ARTIFICIAL_BODY_REF_SPAN_M)
+      );
+    }
     return ARTIFICIAL_BODY_VISUAL_RADIUS;
   }
   if (radiusKm <= 0) {
@@ -118,6 +166,36 @@ export function tidalLockedRotationAngle(orbitAngleRad: number): number {
 }
 
 // ---------------------------------------------------------------------------
+// P7 §3.1 人造卫星近观放大（登记的视觉夸大）
+// ---------------------------------------------------------------------------
+
+/** 近观最大放大倍数：相机贴近时模型平滑放大，保证结构细节充满合理视野 */
+export const SATELLITE_NEAR_MAGNIFICATION = 3;
+/** 放大全强度距离（≈ 飞抵观察距离）与放大消失距离（≈ 近观门控进入阈值） */
+export const SATELLITE_MAG_FULL_DISTANCE = 2.2;
+export const SATELLITE_MAG_NONE_DISTANCE = 6;
+
+/**
+ * 人造卫星近观放大系数（P7，登记于本文件头）：
+ * 远观（≥6 单位）保持 1（与现有轻量表示尺寸连续，无 LOD 突变），
+ * 相机贴近（≤2.2 单位）平滑升至 SATELLITE_NEAR_MAGNIFICATION——
+ * 示意尺寸本体过小（~0.04–0.07 单位），需近观放大结构细节才可辨识。
+ * smoothstep 插值保证缩放连续无跳变。
+ */
+export function satelliteNearMagnification(distanceUnits: number): number {
+  if (!Number.isFinite(distanceUnits) || distanceUnits < 0) {
+    throw new RangeError(`相机距离必须为非负有限数，收到 ${distanceUnits}`);
+  }
+  if (distanceUnits >= SATELLITE_MAG_NONE_DISTANCE) return 1;
+  if (distanceUnits <= SATELLITE_MAG_FULL_DISTANCE) return SATELLITE_NEAR_MAGNIFICATION;
+  const t =
+    (SATELLITE_MAG_NONE_DISTANCE - distanceUnits) /
+    (SATELLITE_MAG_NONE_DISTANCE - SATELLITE_MAG_FULL_DISTANCE);
+  const s = t * t * (3 - 2 * t);
+  return 1 + (SATELLITE_NEAR_MAGNIFICATION - 1) * s;
+}
+
+// ---------------------------------------------------------------------------
 // 真实比例模式（P2，需求 4.1）：卫星轨道/本体/行星环按真实线性比例映射
 // ---------------------------------------------------------------------------
 
@@ -145,12 +223,14 @@ export function satelliteOrbitDisplayRadius(
 
 /**
  * 卫星本体半径统一入口：真实比例模式下按真实半径线性映射（人造卫星
- * 真实尺寸约百米级，线性映射后不可见——真实比例模式如实呈现）。
+ * 真实尺寸约百米级，线性映射后不可见——真实比例模式如实呈现，
+ * P7 §3.2 策略登记于文件头）。
  */
 export function satelliteBodyDisplayRadius(
   kind: SatelliteKind,
   radiusKm: number,
   realScale: boolean,
+  spanMeters?: number,
 ): number {
   if (realScale) {
     if (radiusKm <= 0) {
@@ -158,7 +238,7 @@ export function satelliteBodyDisplayRadius(
     }
     return realBodyRadius(radiusKm);
   }
-  return visualSatelliteBodyRadius(kind, radiusKm);
+  return visualSatelliteBodyRadius(kind, radiusKm, spanMeters);
 }
 
 /**
