@@ -177,6 +177,12 @@ export function ControlPanel(): JSX.Element {
           />
           真实比例模式（天体按真实大小）
         </label>
+        {realScaleMode && (
+          <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
+            真实比例下行星/矮行星极小（矮行星过小不可见属科学事实），
+            可飞往/跟随后近距离观察
+          </p>
+        )}
         <label className="mb-1 flex items-center gap-2 text-xs">
           <input
             type="checkbox"

@@ -203,6 +203,13 @@ export function CameraController(): JSX.Element {
       }
       if (transition.progress >= 1) {
         transition.active = false;
+        // 飞往运镜完成（P5 自查修复）：立即以落点位置播种跟随基准。
+        // 否则下一帧跟随分支仅初始化 followRef 而不平移，该帧目标天体的
+        // 位移被永久丢失——高时间压缩下（如 L2 跟随冥王星，单帧位移可达
+        // 数个场景单位）天体会永久偏出近观视野（矮行星观察距离仅 ~2.5 单位）
+        if (transition.flyToId && store.followBodyId === transition.flyToId) {
+          followRef.current = { id: transition.flyToId, position: transition.to.target };
+        }
       }
     } else if (store.followBodyId) {
       // 天体跟随模式（需求 3.2.3）：按目标位移平移相机与观察点，

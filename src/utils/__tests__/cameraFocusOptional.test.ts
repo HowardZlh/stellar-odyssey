@@ -5,16 +5,17 @@
 
 import { M31_COMPANION_OFFSETS_LY, getGalaxyById } from '@/data/galaxies';
 import { getDwarfPlanetById } from '@/data/smallBodies';
-import { resolveFocusTarget } from '@/utils/cameraFocus';
+import { MIN_VIEW_DISTANCE_UNITS, resolveFocusTarget } from '@/utils/cameraFocus';
+import { dwarfDisplayRadius } from '@/utils/dwarfPlanets';
 import { heliocentricPosition } from '@/utils/physics';
 import { cosmicDistanceToSceneUnits, eclipticToScene, lyToSceneUnits } from '@/utils/scale';
 import { mwM31SeparationLy } from '@/utils/universe';
 
 const SIM_DAYS = 8000;
 
-describe('矮行星目标解析（可选需求 3.1.1）', () => {
-  it('阋神星/鸟神星/妊神星均可解析且位置与开普勒轨道一致', () => {
-    for (const id of ['eris', 'makemake', 'haumea']) {
+describe('矮行星目标解析（可选需求 3.1.1 / P5 §3.3）', () => {
+  it('5 颗矮行星均可解析且位置与开普勒轨道一致', () => {
+    for (const id of ['ceres', 'pluto', 'eris', 'makemake', 'haumea']) {
       const target = resolveFocusTarget(id, SIM_DAYS);
       expect(target).not.toBeNull();
       const expected = eclipticToScene(
@@ -25,6 +26,21 @@ describe('矮行星目标解析（可选需求 3.1.1）', () => {
       expect(target!.position.z).toBeCloseTo(expected.z, 6);
       expect(target!.viewDistanceUnits).toBeGreaterThan(0);
     }
+  });
+
+  it('聚焦距离适配（P5 §3.3）：默认模式观察距离与钳制后显示半径匹配（半径×6）', () => {
+    for (const id of ['ceres', 'pluto', 'eris', 'makemake', 'haumea']) {
+      const target = resolveFocusTarget(id, SIM_DAYS)!;
+      expect(target.viewDistanceUnits).toBeCloseTo(
+        dwarfDisplayRadius(getDwarfPlanetById(id)!.radiusKm, false) * 6,
+        10,
+      );
+    }
+  });
+
+  it('真实比例模式：观察距离按真实半径推荐并钳制到最小距离', () => {
+    const target = resolveFocusTarget('ceres', SIM_DAYS, true)!;
+    expect(target.viewDistanceUnits).toBe(MIN_VIEW_DISTANCE_UNITS);
   });
 });
 

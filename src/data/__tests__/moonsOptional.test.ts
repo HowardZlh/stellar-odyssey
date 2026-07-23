@@ -77,6 +77,27 @@ describe('海卫一（逆行轨道，可选需求 3.1.1）', () => {
   });
 });
 
+describe('冥卫一卡戎（P5 §3.4 可选项，New Horizons）', () => {
+  const charon = getMoonById('charon')!;
+
+  it('属冥王星（矮行星卫星）、半径 606 km、公转 6.39 天', () => {
+    expect(charon.parentId).toBe('pluto');
+    expect(charon.kind).toBe('natural');
+    expect(charon.radiusKm).toBe(606);
+    expect(charon.orbit.periodDays).toBeCloseTo(6.387, 2);
+  });
+
+  it('双向潮汐锁定：公转周期 = 冥王星自转周期（153.3 小时）', () => {
+    expect(charon.tidallyLocked).toBe(true);
+    expect(charon.orbit.periodDays * 24).toBeCloseTo(153.3, 0);
+    expect(charon.noteZh).toContain('双向潮汐锁定');
+  });
+
+  it('getMoonsByParent 可按冥王星查到卡戎', () => {
+    expect(getMoonsByParent('pluto').map((m) => m.id)).toEqual(['charon']);
+  });
+});
+
 describe('新增卫星质量字段（需求 3.5.2 信息面板）', () => {
   it('全部新增卫星 massKg 为正', () => {
     for (const id of ['geo-satellite', 'phobos', 'deimos', 'mimas', 'rhea', 'triton']) {

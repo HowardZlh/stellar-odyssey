@@ -4,6 +4,7 @@
 
 import { MOONS, getMoonsByParent, getMoonById } from '@/data/moons';
 import { getPlanetById } from '@/data/planets';
+import { getDwarfPlanetById } from '@/data/smallBodies';
 
 describe('卫星数据完整性', () => {
   it('id 唯一', () => {
@@ -30,9 +31,9 @@ describe('卫星数据完整性', () => {
     }
   });
 
-  it('parentId 均指向 PLANETS 中的行星', () => {
+  it('parentId 均指向行星或矮行星（P5：冥卫一挂在冥王星下）', () => {
     for (const m of MOONS) {
-      expect(getPlanetById(m.parentId)).toBeDefined();
+      expect(getPlanetById(m.parentId) ?? getDwarfPlanetById(m.parentId)).toBeDefined();
     }
   });
 

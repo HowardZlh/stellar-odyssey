@@ -29,6 +29,17 @@ describe('4K 细节层清单（§4.7）', () => {
     expect(detailTextureUrl('saturn', 'ring')).toBeNull();
   });
 
+  it('矮行星 4K 近观层（P5 §3.4 可选项）：冥王星/谷神星有、其余三颗无', () => {
+    expect(detailTextureUrl('pluto', 'surface')).toBe('/textures/4k_pluto.jpg');
+    expect(detailTextureUrl('ceres', 'surface')).toBe('/textures/4k_ceres.jpg');
+    expect(detailTextureUrl('eris', 'surface')).toBeNull();
+    expect(detailTextureUrl('makemake', 'surface')).toBeNull();
+    expect(detailTextureUrl('haumea', 'surface')).toBeNull();
+    // 法线贴图无轻量公有领域 DEM 源，顺延登记
+    expect(normalMapUrl('pluto')).toBeNull();
+    expect(normalMapUrl('ceres')).toBeNull();
+  });
+
   it('细节层 URL 均为 4k_ 前缀且与 2K 底图不同', () => {
     for (const entry of BODY_DETAIL_TEXTURES) {
       expect(entry.url).toMatch(/^\/textures\/4k_/);

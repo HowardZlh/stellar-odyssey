@@ -252,6 +252,34 @@ export const MOONS: readonly MoonData[] = [
     noteZh: '太阳系唯一逆行公转的大型卫星（倾角 156.9°），可能是被俘获的柯伊伯带天体；表面有氮冰间歇泉',
     dataSource: NASA_SATELLITE_SOURCE,
   },
+  // ---- 冥王星卫星（P5 §3.4 可选项：冥卫一卡戎） ----
+  {
+    id: 'charon',
+    name: 'Charon',
+    nameZh: '冥卫一（卡戎）',
+    parentId: 'pluto',
+    kind: 'natural',
+    radiusKm: 606,
+    color: '#b3a89c',
+    orbit: {
+      semiMajorAxisKm: 19591,
+      eccentricity: 0.0002,
+      // 相对冥王星赤道面近共面（冥王星-卡戎系统高度规整）
+      inclinationDeg: 0.08,
+      // 历元相位为近似值，用于可视化
+      longitudeOfAscendingNodeDeg: 0,
+      argumentOfPeriapsisDeg: 0,
+      meanAnomalyAtEpochDeg: 0,
+      // 公转周期 6.387 天 = 冥王星自转周期（双向潮汐锁定）
+      periodDays: 6.3872,
+    },
+    referencePlane: 'planetEquator',
+    massKg: 1.586e21,
+    tidallyLocked: true,
+    noteZh:
+      '冥王星-卡戎双矮行星系统：双向潮汐锁定（冥王星也始终以同一面朝向卡戎），共同质心位于冥王星体外',
+    dataSource: 'NASA New Horizons / NASA Planetary Satellite Fact Sheet（半径 606 km，公转 6.39 天）',
+  },
   // ---- 伽利略四卫星（木星）：io:europa:ganymede 轨道共振 1:2:4 ----
   {
     id: 'io',

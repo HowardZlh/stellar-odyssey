@@ -98,12 +98,12 @@ describe('cycleAnchorBody 循环切换（需求 3.2.4）', () => {
     expect(useSimulationStore.getState().anchorBodyId).toBe('mercury');
   });
 
-  it('连续切换沿序列累进且每次递增飞往代次', () => {
+  it('连续切换沿序列累进且每次递增飞往代次（P5：火星后为谷神星）', () => {
     useSimulationStore.getState().cycleAnchorBody(1); // moon
     useSimulationStore.getState().cycleAnchorBody(1); // mars
-    useSimulationStore.getState().cycleAnchorBody(1); // jupiter
+    useSimulationStore.getState().cycleAnchorBody(1); // ceres
     const s = useSimulationStore.getState();
-    expect(s.anchorBodyId).toBe('jupiter');
+    expect(s.anchorBodyId).toBe('ceres');
     expect(s.flyToRequestId).toBe(3);
   });
 });
