@@ -29,6 +29,12 @@
  *     ——近观可辨识欧卡托撞击坑亮斑（碳酸钠沉积）
  *   · 阋神星/鸟神星/妊神星无真实表面图（观测数据有限），维持程序化增强纹理
  *     （proceduralTextures.ts，基于观测特征的艺术化呈现，差异已登记）
+ * - 矮行星法线贴图（P5 §3.4 可选项，本仓库由公开高程数据转换生成）：
+ *   · 冥王星：USGS Pluto_NewHorizons_Global_DEM_300m_Jul2017（公有领域）转换；
+ *     未测绘半球置平（法线正 Z，与彩色贴图黑色未测绘区一致）；测绘区边缘为
+ *     立体像对低质量区，噪声已做模糊+梯度钳制抑制（残余粗糙感属源数据不确定度）
+ *   · 谷神星：USGS Ceres_Dawn_FC_HAMO_DTM_DLR_Global_60ppd_Oct2016（公有领域）转换，
+ *     全球覆盖，撞击坑立体起伏与 FC 彩色底图地貌对齐
  *
  * 加载策略（P3-2 懒加载 + P4 分级门控）：
  * - 2K 位图按层级优先级懒加载：接近/进入 L1 行星视角时才请求（见
@@ -105,7 +111,7 @@ export const BODY_DETAIL_TEXTURES: readonly BodyTextureEntry[] = [
   { bodyId: 'saturn', kind: 'surface', url: '/textures/4k_saturn.jpg' },
   { bodyId: 'moon', kind: 'surface', url: '/textures/4k_moon.jpg' },
   // 矮行星 4K 近观层（P5 §3.4 可选项）：与 2K 同源（NASA 源图分辨率足够），
-  // 接入 P4 近观门控与 LRU；法线贴图无轻量公有领域 DEM 源，顺延（登记）
+  // 接入 P4 近观门控与 LRU；法线贴图见 BODY_NORMAL_MAPS（DEM/DTM 转换，文件头登记）
   { bodyId: 'pluto', kind: 'surface', url: '/textures/4k_pluto.jpg' },
   { bodyId: 'ceres', kind: 'surface', url: '/textures/4k_ceres.jpg' },
 ];
@@ -125,6 +131,9 @@ export const BODY_NORMAL_MAPS: readonly { bodyId: string; url: string }[] = [
   { bodyId: 'earth', url: '/textures/4k_earth_normal.jpg' },
   { bodyId: 'mars', url: '/textures/4k_mars_normal.jpg' },
   { bodyId: 'moon', url: '/textures/4k_moon_normal.jpg' },
+  // 矮行星法线（P5 §3.4 可选项）：New Horizons DEM / Dawn HAMO DTM 转换（见文件头）
+  { bodyId: 'pluto', url: '/textures/4k_pluto_normal.jpg' },
+  { bodyId: 'ceres', url: '/textures/4k_ceres_normal.jpg' },
 ];
 
 /** 查询法线贴图 URL；无法线数据的天体返回 null */

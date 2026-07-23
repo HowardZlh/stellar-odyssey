@@ -24,7 +24,12 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
   - `2k_ceres.jpg` / `4k_ceres.jpg`：NASA Dawn FC 全球拼接图（USGS Astrogeology
     Ceres_Dawn_FC_DLR_global_20ppd_Oct2015，https://planetarymaps.usgs.gov/mosaic/ 托管，
     NASA / JPL-Caltech / UCLA / MPS / DLR / IDA，公有领域）；
-  - 冥王星/谷神星法线贴图无轻量公有领域 DEM 源（全分辨率 DEM 数百 MB），顺延（登记）；
+  - `4k_pluto_normal.jpg`：USGS Astrogeology
+    Pluto_NewHorizons_Global_DEM_300m_Jul2017（公有领域，620 MB 源数据本地转换）；
+    未测绘半球置平（与彩色贴图黑色未测绘区一致），测绘区边缘噪声经模糊 +
+    梯度钳制抑制（残余粗糙感属源 DEM 立体像对不确定度）；
+  - `4k_ceres_normal.jpg`：USGS Astrogeology
+    Ceres_Dawn_FC_HAMO_DTM_DLR_Global_60ppd_Oct2016（公有领域，467 MB 源数据本地转换）；
   - 阋神星/鸟神星/妊神星无探测器实拍表面图，使用基于观测特征（反照率/颜色/光谱）的
     程序化增强纹理，艺术化推测部分登记于 `proceduralTextures.ts` 文件头。
 

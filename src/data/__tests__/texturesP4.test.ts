@@ -2,6 +2,8 @@
  * P4 纹理清单测试：4K 近观细节层与法线贴图（需求 §4.7）
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   BODY_DETAIL_TEXTURES,
   BODY_NORMAL_MAPS,
@@ -35,9 +37,15 @@ describe('4K 细节层清单（§4.7）', () => {
     expect(detailTextureUrl('eris', 'surface')).toBeNull();
     expect(detailTextureUrl('makemake', 'surface')).toBeNull();
     expect(detailTextureUrl('haumea', 'surface')).toBeNull();
-    // 法线贴图无轻量公有领域 DEM 源，顺延登记
-    expect(normalMapUrl('pluto')).toBeNull();
-    expect(normalMapUrl('ceres')).toBeNull();
+  });
+
+  it('矮行星法线贴图（P5 §3.4 可选项）：冥王星/谷神星由 DEM/DTM 转换生成', () => {
+    expect(normalMapUrl('pluto')).toBe('/textures/4k_pluto_normal.jpg');
+    expect(normalMapUrl('ceres')).toBe('/textures/4k_ceres_normal.jpg');
+    // 其余三颗无高程数据，无法线贴图
+    expect(normalMapUrl('eris')).toBeNull();
+    expect(normalMapUrl('makemake')).toBeNull();
+    expect(normalMapUrl('haumea')).toBeNull();
   });
 
   it('细节层 URL 均为 4k_ 前缀且与 2K 底图不同', () => {
@@ -72,6 +80,13 @@ describe('法线贴图清单（§4.7 近观立体细节）', () => {
   it('法线贴图 URL 含 "_normal"（textureManager 据此按线性色彩空间加载）', () => {
     for (const entry of BODY_NORMAL_MAPS) {
       expect(entry.url).toContain('_normal');
+    }
+  });
+
+  it('4K 细节层与法线贴图文件真实存在于 public/ 目录', () => {
+    for (const entry of [...BODY_DETAIL_TEXTURES, ...BODY_NORMAL_MAPS]) {
+      const filePath = path.join(process.cwd(), 'public', entry.url);
+      expect(fs.existsSync(filePath)).toBe(true);
     }
   });
 });
