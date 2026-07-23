@@ -7,6 +7,7 @@
 
 import { create } from 'zustand';
 import type { SupernovaEvent, Vec3, ViewLevel } from '@/types';
+import { DEFAULT_ANCHOR_BODY_ID, cycleBodyId, isCycleBody } from '@/utils/bodyCycle';
 import { daysSinceJ2000 } from '@/utils/physics';
 import { continuousLevelForDistance, discreteLevelFromContinuous } from '@/utils/scale';
 import { SN_MAX_REMNANTS, clampSupernovaDuration } from '@/utils/supernova';
@@ -52,6 +53,11 @@ export interface SimulationState {
   flyToBodyId: string | null;
   /** 飞往请求代次（每次请求 +1，供 CameraController 识别新请求） */
   flyToRequestId: number;
+  /**
+   * L1 行星视角锚定天体（P4，需求 3.2.4）：
+   * 进入 L1 时飞往并跟随该天体（默认地球），会话内记忆上次锚定天体
+   */
+  anchorBodyId: string;
   /** 真实比例模式（需求 4.1：视觉夸大的真实比例开关，P2） */
   realScaleMode: boolean;
   /** 当前活跃超新星事件（需求 3.1.5 动态事件；同一时刻至多一个） */
@@ -103,6 +109,11 @@ export interface SimulationState {
   setFollowBody: (id: string | null) => void;
   /** 请求飞往天体（平滑运镜，到达后自动进入跟随模式） */
   requestFlyTo: (id: string) => void;
+  /**
+   * 行星视角天体循环切换（P4，需求 3.2.4）：
+   * 沿固定序列切换上一颗（-1）/下一颗（+1），飞往并跟随新天体
+   */
+  cycleAnchorBody: (direction: 1 | -1) => void;
   setRealScaleMode: (enabled: boolean) => void;
   toggleRealScaleMode: () => void;
   /**
@@ -164,6 +175,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   followBodyId: null,
   flyToBodyId: null,
   flyToRequestId: 0,
+  anchorBodyId: DEFAULT_ANCHOR_BODY_ID,
   realScaleMode: false,
   activeSupernova: null,
   supernovaRemnants: [],
@@ -211,18 +223,31 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   setSpeedMultiplier: (multiplier) => set({ speedMultiplier: clampSpeedMultiplier(multiplier) }),
 
   setViewLevel: (level) =>
-    set((state) =>
-      state.viewLevel === level
-        ? state
-        : {
-            viewLevel: level,
-            continuousLevel: LEVEL_TO_CONTINUOUS[level],
-            viewTransitionId: state.viewTransitionId + 1,
-            // 锚点切换取消跟随/飞往（相机回到固定锚点）
-            followBodyId: null,
-            flyToBodyId: null,
-          },
-    ),
+    set((state) => {
+      // P4（需求 3.2.4）L1 锚点行为变更：不再飞向固定坐标，
+      // 改为飞往并跟随序列当前锚定天体（默认地球，会话内记忆）；
+      // 已在 L1 时再次触发同样重新对准锚定天体
+      if (level === 'L1') {
+        return {
+          viewLevel: level,
+          continuousLevel: LEVEL_TO_CONTINUOUS[level],
+          flyToBodyId: state.anchorBodyId,
+          flyToRequestId: state.flyToRequestId + 1,
+          followBodyId: state.anchorBodyId,
+        };
+      }
+      // 层级未变且无跟随/飞往时无事可做；跟随远距天体（如哈雷彗星 ~20 AU）
+      // 时层级读数可能已是目标层级，此时仍需取消跟随并回到固定锚点（P4 修复）
+      if (state.viewLevel === level && !state.followBodyId && !state.flyToBodyId) return state;
+      return {
+        viewLevel: level,
+        continuousLevel: LEVEL_TO_CONTINUOUS[level],
+        viewTransitionId: state.viewTransitionId + 1,
+        // 锚点切换取消跟随/飞往（相机回到固定锚点，需求 3.2.4：L2-L4 取消跟随）
+        followBodyId: null,
+        flyToBodyId: null,
+      };
+    }),
 
   syncZoomLevel: (continuousLevel) =>
     set((state) => {
@@ -279,7 +304,20 @@ export const useSimulationStore = create<SimulationState>((set) => ({
       flyToRequestId: state.flyToRequestId + 1,
       // 飞抵后保持锁定该天体（跟随模式），运镜期间同样按目标跟踪
       followBodyId: id,
+      // 序列内天体记为 L1 锚定天体（会话内记忆，需求 3.2.4）
+      anchorBodyId: isCycleBody(id) ? id : state.anchorBodyId,
     })),
+
+  cycleAnchorBody: (direction) =>
+    set((state) => {
+      const next = cycleBodyId(state.anchorBodyId, direction);
+      return {
+        anchorBodyId: next,
+        flyToBodyId: next,
+        flyToRequestId: state.flyToRequestId + 1,
+        followBodyId: next,
+      };
+    }),
 
   setRealScaleMode: (enabled) => set({ realScaleMode: enabled }),
 

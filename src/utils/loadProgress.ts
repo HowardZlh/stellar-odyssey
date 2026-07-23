@@ -84,6 +84,16 @@ export function markLoadStatus(
 }
 
 /**
+ * 移除加载项（不可变更新，P4 细节层释放）：
+ * 被移除的项可在之后重新注册加载（LRU 淘汰后再次进入近观时重新请求）
+ */
+export function removeLoadItems(items: readonly LoadItem[], ids: readonly string[]): LoadItem[] {
+  if (ids.length === 0) return [...items];
+  const remove = new Set(ids);
+  return items.filter((item) => !remove.has(item.id));
+}
+
+/**
  * 汇总进度：loaded + failed 计入已完成；无任务时 percent01 = 1、active = false
  */
 export function computeLoadProgress(items: readonly LoadItem[]): LoadProgress {

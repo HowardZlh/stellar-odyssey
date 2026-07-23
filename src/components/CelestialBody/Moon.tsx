@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { MoonData, OrbitalElements } from '@/types';
 import { useSimulationStore } from '@/store';
+import { detailGateUpdate } from '@/utils/planetDetail';
 import {
   DEG_TO_RAD,
   RAD_TO_DEG,
@@ -19,9 +20,10 @@ import {
   tidalLockedRotationAngle,
 } from '@/utils/satellites';
 import { rateClampFactor, timeCompressionForContinuousLevel } from '@/utils/time';
-import { textureUrl } from '@/data/textures';
+import { detailTextureUrl, normalMapUrl, textureUrl } from '@/data/textures';
 import { useBitmapTexture } from '@/hooks/useBitmapTexture';
 import { createBodyTextureCanvas } from '@/components/CelestialBody/proceduralTextures';
+import { getTextureManager } from '@/components/CelestialBody/textureManager';
 
 interface MoonProps {
   data: MoonData;
@@ -80,6 +82,25 @@ export function Moon({ data, parentRadiusKm }: MoonProps): JSX.Element {
   // 真实位图纹理（P3-1，月球）：行星视角才懒加载；失败/未就绪时程序化降级
   const bitmapTexture = useBitmapTexture(textureUrl(data.id, 'surface'), 2, isPlanetView);
 
+  // P4 近观细节层（需求 4.7，月球）：4K 底图 + LOLA 法线贴图，
+  // 相机-卫星距离进入近观阈值时激活（滞回状态机，与行星一致）
+  const camera = useThree((s) => s.camera);
+  const [detailActive, setDetailActive] = useState(false);
+  const detailActiveRef = useRef(false);
+  const worldPos = useMemo(() => new THREE.Vector3(), []);
+  const detailSurfaceUrl = detailTextureUrl(data.id, 'surface');
+  const detailNormalUrl = normalMapUrl(data.id);
+  const hasDetail = detailSurfaceUrl !== null || detailNormalUrl !== null;
+  const detailSurfaceBitmap = useBitmapTexture(detailSurfaceUrl, 0, detailActive);
+  const detailNormalBitmap = useBitmapTexture(detailNormalUrl, 0, detailActive);
+  useEffect(() => {
+    if (!hasDetail) return undefined;
+    const bodyId = data.id;
+    return () => {
+      getTextureManager().releaseDetail(bodyId);
+    };
+  }, [data.id, hasDetail]);
+
   const proceduralTexture = useMemo(() => {
     if (data.kind === 'artificial' || bitmapTexture) return null;
     const canvas = createBodyTextureCanvas(data.id, data.color, 256);
@@ -88,7 +109,12 @@ export function Moon({ data, parentRadiusKm }: MoonProps): JSX.Element {
     return tex;
   }, [data.id, data.color, data.kind, bitmapTexture]);
 
-  const texture = data.kind === 'artificial' ? null : (bitmapTexture ?? proceduralTexture);
+  // 纹理分级（P4）：4K 细节层 → 2K 位图 → 程序化降级
+  const texture =
+    data.kind === 'artificial'
+      ? null
+      : ((detailActive ? detailSurfaceBitmap : null) ?? bitmapTexture ?? proceduralTexture);
+  const normalTexture = detailActive ? detailNormalBitmap : null;
 
   useEffect(() => {
     return () => {
@@ -146,6 +172,31 @@ export function Moon({ data, parentRadiusKm }: MoonProps): JSX.Element {
       // 潮汐锁定：自转角 = 轨道相位角 + π（始终同一面朝向行星）
       bodyRef.current.rotation.y = tidalLockedRotationAngle(phase);
     }
+
+    // P4 近观细节门控（需求 4.7，月球）：相机-卫星距离滞回状态机
+    if (hasDetail && groupRef.current) {
+      groupRef.current.getWorldPosition(worldPos);
+      const distToBody = camera.position.distanceTo(worldPos);
+      const gate = detailGateUpdate(
+        detailActiveRef.current,
+        distToBody,
+        bodyRadius,
+        continuousLevel,
+      );
+      if (gate.active !== detailActiveRef.current) {
+        detailActiveRef.current = gate.active;
+        setDetailActive(gate.active);
+        if (gate.active) {
+          const urls = [detailSurfaceUrl, detailNormalUrl].filter(
+            (u): u is string => u !== null,
+          );
+          getTextureManager().retainDetail(data.id, urls);
+        }
+      }
+      if (gate.releaseNow) {
+        getTextureManager().releaseDetail(data.id);
+      }
+    }
   });
 
   // 卸载时清除钳制提示
@@ -194,7 +245,13 @@ export function Moon({ data, parentRadiusKm }: MoonProps): JSX.Element {
             <sphereGeometry args={[bodyRadius, 32, 32]} />
           )}
           {texture ? (
-            <meshStandardMaterial map={texture} roughness={0.9} metalness={0.02} />
+            // P4：近观激活时叠加法线贴图（月球环形山立体细节，LOLA 高程转换）
+            <meshStandardMaterial
+              map={texture}
+              normalMap={normalTexture ?? undefined}
+              roughness={0.9}
+              metalness={0.02}
+            />
           ) : (
             <meshStandardMaterial
               color={data.color}

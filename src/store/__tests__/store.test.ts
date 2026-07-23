@@ -80,9 +80,15 @@ describe('视角切换', () => {
     expect(useSimulationStore.getState().viewTransitionId).toBe(0);
   });
 
-  it('连续切换代次持续递增', () => {
+  it('连续切换代次持续递增（P4 行为变更：L1 走飞往运镜，不占用锚点过渡代次）', () => {
     useSimulationStore.getState().setViewLevel('L1');
+    // L1（需求 3.2.4）：飞往并跟随锚定天体，viewTransitionId 不递增
+    expect(useSimulationStore.getState().viewTransitionId).toBe(0);
+    expect(useSimulationStore.getState().flyToBodyId).toBe(
+      useSimulationStore.getState().anchorBodyId,
+    );
     useSimulationStore.getState().setViewLevel('L4');
+    useSimulationStore.getState().setViewLevel('L3');
     expect(useSimulationStore.getState().viewTransitionId).toBe(2);
   });
 });

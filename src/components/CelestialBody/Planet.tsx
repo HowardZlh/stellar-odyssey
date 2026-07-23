@@ -1,23 +1,26 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { PlanetData } from '@/types';
 import { getMoonsByParent } from '@/data/moons';
-import { textureUrl } from '@/data/textures';
+import { detailTextureUrl, normalMapUrl, textureUrl } from '@/data/textures';
 import { useSimulationStore } from '@/store';
 import { useBitmapTexture } from '@/hooks/useBitmapTexture';
 import { DEG_TO_RAD, heliocentricPosition, rotationAngleAtTime } from '@/utils/physics';
 import { bodyDisplayRadius, eclipticToScene } from '@/utils/scale';
 import { ringDisplayRadii } from '@/utils/satellites';
+import { FLOW_VISUAL_GAIN } from '@/utils/jupiterFlow';
+import { detailGateUpdate, detailStrength01 } from '@/utils/planetDetail';
 import {
   RING_SHADOW_STRENGTH,
   TERMINATOR_SOFTNESS,
   axialTiltNormal,
 } from '@/utils/planetShading';
 import { Moon } from '@/components/CelestialBody/Moon';
+import { getTextureManager } from '@/components/CelestialBody/textureManager';
 import {
   createBodyTextureCanvas,
   createCloudTextureCanvas,
@@ -64,9 +67,17 @@ const SURFACE_VERTEX_SHADER = /* glsl */ `
   varying vec2 vUv;
   varying vec3 vNormalW;
   varying vec3 vPosW;
+  varying vec3 vTangentW;
+  varying vec3 vBitangentW;
   void main() {
     vUv = uv;
     vNormalW = normalize(mat3(modelMatrix) * normal);
+    // 球面 UV 切线基（P4 法线贴图）：dPos/du ∝ (n.z, 0, -n.x)（对象空间，
+    // 极点退化时长度 ~0，钳制后扰动自然消失；utils/planetDetail.sphereTangent 镜像）
+    vec3 tObj = vec3(normal.z, 0.0, -normal.x);
+    vec3 tSafe = tObj / max(length(tObj), 1e-5);
+    vTangentW = normalize(mat3(modelMatrix) * tSafe);
+    vBitangentW = normalize(cross(vNormalW, vTangentW));
     vec4 world = modelMatrix * vec4(position, 1.0);
     vPosW = world.xyz;
     gl_Position = projectionMatrix * viewMatrix * world;
@@ -88,17 +99,39 @@ const SURFACE_FRAGMENT_SHADER = /* glsl */ `
   uniform float uRingShadowStrength;
   uniform vec3 uPlanetCenterW;
   uniform vec3 uRingNormalW;
+  // P4 近观细节（需求 4.7）：法线贴图 / 海洋高光 / 木星差速流动 / 2K 细节增强
+  uniform sampler2D uNormalMap;
+  uniform float uHasNormalMap;
+  uniform float uDetailStrength;
+  uniform float uSpecularStrength;
+  uniform float uFlowEnabled;
+  uniform float uFlowPhase;
+  uniform float uDetailBoost;
   varying vec2 vUv;
   varying vec3 vNormalW;
   varying vec3 vPosW;
+  varying vec3 vTangentW;
+  varying vec3 vBitangentW;
   void main() {
     #include <logdepthbuf_fragment>
     // 光照方向统一：太阳位于场景原点（需求 4.6）
     vec3 sunDir = normalize(-vPosW);
-    float ndl = dot(normalize(vNormalW), sunDir);
-    // 昼夜明暗界线柔和过渡（terminator）
-    float day = smoothstep(-uTerminatorSoftness, uTerminatorSoftness, ndl);
-    vec3 base = texture2D(uMap, vUv).rgb;
+    vec3 geoN = normalize(vNormalW);
+    // 木星云层差速流动（P4）：按纬度对 U 附加漂移相位
+    // （剖面与 utils/jupiterFlow.jovianDriftRate 镜像一致）
+    vec2 uv = vUv;
+    if (uFlowEnabled > 0.5) {
+      float lat = (vUv.y - 0.5) * 3.14159265;
+      float absLat = abs(lat);
+      float drift = 0.008 * exp(-pow(lat / 0.21, 2.0))
+        - 0.0035 * exp(-pow((absLat - 0.42) / 0.13, 2.0))
+        + 0.00245 * exp(-pow((absLat - 0.73) / 0.15, 2.0));
+      uv.x = fract(uv.x - drift * uFlowPhase / 6.2831853);
+    }
+    float geoNdl = dot(geoN, sunDir);
+    // 昼夜明暗界线柔和过渡（terminator，几何法线主导——不被法线细节破坏）
+    float day = smoothstep(-uTerminatorSoftness, uTerminatorSoftness, geoNdl);
+    vec3 base = texture2D(uMap, uv).rgb;
     // 土星环投影：朝太阳的射线与环平面解析求交（utils/planetShading.ts 镜像）
     float shadow = 1.0;
     if (uHasRing > 0.5) {
@@ -117,7 +150,33 @@ const SURFACE_FRAGMENT_SHADER = /* glsl */ `
       }
     }
     float light = uAmbient + (1.0 - uAmbient) * day * shadow;
+    // P4 法线贴图立体细节：昼侧按扰动法线兰伯特比率调制亮度
+    // （utils/planetDetail.reliefFactor 镜像；不改变 terminator 位置）
+    float detail = uDetailStrength * uHasNormalMap;
+    if (detail > 0.001) {
+      vec3 mapN = texture2D(uNormalMap, uv).xyz * 2.0 - 1.0;
+      vec3 pertN = normalize(vTangentW * mapN.x + vBitangentW * mapN.y + geoN * mapN.z);
+      float pertNdl = dot(pertN, sunDir);
+      if (geoNdl > 0.0) {
+        float ratio = clamp(max(pertNdl, 0.0) / max(geoNdl, 0.05), 0.0, 1.5);
+        light *= 1.0 + (ratio - 1.0) * detail;
+      }
+      // 地球海洋高光（P4：海面反光、陆地不反光；utils/planetDetail.waterMask 镜像）
+      if (uSpecularStrength > 0.001) {
+        float water = smoothstep(0.05, 0.25, base.b - max(base.r, base.g));
+        vec3 viewDir = normalize(cameraPosition - vPosW);
+        vec3 halfDir = normalize(viewDir + sunDir);
+        float spec = pow(max(dot(pertN, halfDir), 0.0), 80.0);
+        base += vec3(1.0, 0.98, 0.92) * spec * water * uSpecularStrength * detail * day * shadow;
+      }
+    }
     vec3 color = base * light;
+    // 2K 源图近观程序化细节增强（天王星/海王星差异登记，
+    // utils/planetDetail.bandDetailBoost 镜像）
+    if (uDetailBoost > 0.001) {
+      float band = sin(vUv.y * 900.0) * sin(vUv.y * 173.0);
+      color *= 1.0 + band * 0.015 * uDetailBoost * uDetailStrength;
+    }
     // 明暗界线暖色带（气态行星云带色温渐变，utils/planetShading.terminatorWarmBand 镜像）
     float warmBand = smoothstep(0.02, 0.3, day) * (1.0 - smoothstep(0.3, 0.75, day));
     color *= mix(vec3(1.0), vec3(1.1, 0.95, 0.8), warmBand * uWarmth);
@@ -222,18 +281,30 @@ export function Planet({ data }: PlanetProps): JSX.Element {
   const bodyRef = useRef<THREE.Mesh>(null);
   const cloudRef = useRef<THREE.Mesh>(null);
   const nightRef = useRef<THREE.Mesh>(null);
+  const camera = useThree((s) => s.camera);
   const showLabels = useSimulationStore((s) => s.showLabels);
   const selectBody = useSimulationStore((s) => s.selectBody);
   // Html 标签不随父级 visible 隐藏，需单独按层级门控（布尔选择器，变化时才重渲染）
   const frozen = useSimulationStore((s) => s.continuousLevel > FREEZE_LEVEL_THRESHOLD);
   // 真实比例模式（需求 4.1）：半径按真实线性比例映射（对数压缩的真实开关）
   const realScaleMode = useSimulationStore((s) => s.realScaleMode);
-  // 位图纹理懒加载门控（P3-2）：接近行星视角才请求；聚焦/跟随的行星优先
-  const nearPlanetView = useSimulationStore((s) => s.continuousLevel < BITMAP_LEVEL_THRESHOLD);
+  // 位图纹理懒加载门控（P3-2）：接近行星视角才请求；聚焦/跟随的行星优先。
+  // P4 补充：跟随/飞往外行星时相机距原点较远（层级读数 L2），
+  // 但语义上是行星近观——跟随目标同样启用位图加载
+  const nearPlanetView = useSimulationStore(
+    (s) =>
+      s.continuousLevel < BITMAP_LEVEL_THRESHOLD ||
+      s.followBodyId === data.id ||
+      s.flyToBodyId === data.id,
+  );
   const isFocused = useSimulationStore(
     (s) => s.followBodyId === data.id || s.selectedBodyId === data.id,
   );
   const [highRes, setHighRes] = useState(false);
+  // P4 近观细节门控（需求 4.7）：相机-天体距离进入近观阈值时激活
+  // 4K/法线细节层（滞回状态机纯逻辑 utils/planetDetail.detailGateUpdate）
+  const [detailActive, setDetailActive] = useState(false);
+  const detailActiveRef = useRef(false);
 
   const radius = bodyDisplayRadius(data.radiusKm, realScaleMode);
   const tiltRad = data.rotation.axialTiltDeg * DEG_TO_RAD;
@@ -257,6 +328,29 @@ export function Planet({ data }: PlanetProps): JSX.Element {
   );
   const ringBitmap = useBitmapTexture(textureUrl(data.id, 'ring'), surfacePriority, nearPlanetView);
 
+  // P4 近观细节层（需求 4.7）：4K 底图 + 法线贴图，仅门控激活时请求
+  // （优先级 0/1 最高；2K 底图先显示防空窗，textureManager LRU 管显存）
+  const detailUrls = useMemo(
+    () => ({
+      surface: detailTextureUrl(data.id, 'surface'),
+      night: detailTextureUrl(data.id, 'night'),
+      clouds: detailTextureUrl(data.id, 'clouds'),
+      normal: normalMapUrl(data.id),
+    }),
+    [data.id],
+  );
+  const detailSurfaceBitmap = useBitmapTexture(detailUrls.surface, 0, detailActive);
+  const detailNightBitmap = useBitmapTexture(detailUrls.night, 1, detailActive);
+  const detailCloudsBitmap = useBitmapTexture(detailUrls.clouds, 1, detailActive);
+  const normalBitmap = useBitmapTexture(detailUrls.normal, 0, detailActive);
+  // 卸载时释放本天体细节层（AGENTS.md 内存管理）
+  useEffect(() => {
+    const bodyId = data.id;
+    return () => {
+      getTextureManager().releaseDetail(bodyId);
+    };
+  }, [data.id]);
+
   // 程序化表面纹理（降级路径，确定性生成；位图就绪后不再生成）
   const proceduralTexture = useMemo(() => {
     if (surfaceBitmap) return null;
@@ -270,7 +364,10 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     return tex;
   }, [data.id, data.color, highRes, surfaceBitmap]);
 
-  const surfaceTexture = surfaceBitmap ?? proceduralTexture;
+  // 表面纹理分级：4K 细节层（近观激活且就绪）→ 2K 位图 → 程序化降级
+  const surfaceTexture =
+    (detailActive ? detailSurfaceBitmap : null) ?? surfaceBitmap ?? proceduralTexture;
+  const normalTexture = detailActive ? normalBitmap : null;
 
   // 环平面法线（世界系）：轴倾角绕 Z 旋转后的 +Y（utils/planetShading.axialTiltNormal）
   const ringNormal = useMemo(() => {
@@ -297,7 +394,8 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     return { texture: tex, owned: true };
   }, [data.ring, ringBitmap]);
 
-  // 表面材质：自定义光照 shader（terminator + 环投影，P3-4）
+  // 表面材质：自定义光照 shader（terminator + 环投影，P3-4；
+  // P4 新增法线细节/海洋高光/木星流动/2K 细节增强 uniform）
   const surfaceMaterial = useMemo(() => {
     if (!surfaceTexture) return null;
     return new THREE.ShaderMaterial({
@@ -314,20 +412,31 @@ export function Planet({ data }: PlanetProps): JSX.Element {
         uRingShadowStrength: { value: RING_SHADOW_STRENGTH },
         uPlanetCenterW: { value: new THREE.Vector3() },
         uRingNormalW: { value: ringNormal.clone() },
+        // P4 近观细节（需求 4.7）：无法线数据时用表面纹理占位 sampler
+        uNormalMap: { value: normalTexture ?? surfaceTexture },
+        uHasNormalMap: { value: normalTexture ? 1 : 0 },
+        uDetailStrength: { value: 0 },
+        uSpecularStrength: { value: data.id === 'earth' ? 0.9 : 0 },
+        uFlowEnabled: { value: 0 },
+        uFlowPhase: { value: 0 },
+        // 2K 源图程序化细节增强（天王星/海王星，§4.7 差异登记）
+        uDetailBoost: { value: data.id === 'uranus' || data.id === 'neptune' ? 1 : 0 },
       },
       vertexShader: SURFACE_VERTEX_SHADER,
       fragmentShader: SURFACE_FRAGMENT_SHADER,
     });
-  }, [surfaceTexture, data.id, ringRadii, ringTextureAssets, ringNormal]);
+  }, [surfaceTexture, normalTexture, data.id, ringRadii, ringTextureAssets, ringNormal]);
 
+  // 云层纹理分级（P4）：4K 细节层 → 2K 位图 → 程序化
+  const cloudsBestBitmap = (detailActive ? detailCloudsBitmap : null) ?? cloudsBitmap;
   const cloudAssets = useMemo(() => {
     if (!data.surface?.hasCloudLayer) return null;
     // 真实云图（灰度 JPG，亮度作 alpha）优先；降级为程序化 RGBA 云图
     let texture: THREE.Texture;
     let owned: boolean;
     let useAlphaMap: number;
-    if (cloudsBitmap) {
-      texture = cloudsBitmap;
+    if (cloudsBestBitmap) {
+      texture = cloudsBestBitmap;
       owned = false;
       useAlphaMap = 1;
     } else {
@@ -351,17 +460,19 @@ export function Planet({ data }: PlanetProps): JSX.Element {
       fragmentShader: CLOUD_FRAGMENT_SHADER,
     });
     return { material, texture, owned };
-  }, [data.surface, highRes, cloudsBitmap]);
+  }, [data.surface, highRes, cloudsBestBitmap]);
 
   // 夜半球城市灯光（可选需求 3.1.1）：仅背向太阳的半球显示暖黄灯光；
   // P3-1：真实城市灯光贴图（SSS night 贴图，亮度作 alpha）与真实大陆对齐
+  // P4 夜灯纹理分级：4K 细节层 → 2K 位图 → 程序化
+  const nightBestBitmap = (detailActive ? detailNightBitmap : null) ?? nightBitmap;
   const nightAssets = useMemo(() => {
     if (!data.surface?.hasNightLights) return null;
     let texture: THREE.Texture;
     let owned: boolean;
     let alphaFromLuminance: number;
-    if (nightBitmap) {
-      texture = nightBitmap;
+    if (nightBestBitmap) {
+      texture = nightBestBitmap;
       owned = false;
       alphaFromLuminance = 1;
     } else {
@@ -417,7 +528,7 @@ export function Planet({ data }: PlanetProps): JSX.Element {
       `,
     });
     return { material, texture, owned };
-  }, [data.surface, highRes, nightBitmap]);
+  }, [data.surface, highRes, nightBestBitmap]);
 
   // 环材质与几何（P3-4：行星在环面上的阴影 shader）
   const ringAssets = useMemo(() => {
@@ -522,6 +633,33 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     if (groupRef.current) {
       groupRef.current.position.set(scene.x, scene.y, scene.z);
     }
+    // P4 近观细节门控（需求 4.7）：相机-天体距离滞回状态机 + LRU 保留
+    const dx = camera.position.x - scene.x;
+    const dy = camera.position.y - scene.y;
+    const dz = camera.position.z - scene.z;
+    const distToBody = Math.hypot(dx, dy, dz);
+    const gate = detailGateUpdate(detailActiveRef.current, distToBody, radius, continuousLevel);
+    if (gate.active !== detailActiveRef.current) {
+      detailActiveRef.current = gate.active;
+      setDetailActive(gate.active);
+      if (gate.active) {
+        // 登记细节纹理组并触达 LRU（超容量时释放最久未用天体的显存）
+        const urls = [
+          detailUrls.surface,
+          detailUrls.night,
+          detailUrls.clouds,
+          detailUrls.normal,
+        ].filter((u): u is string => u !== null);
+        if (urls.length > 0) {
+          getTextureManager().retainDetail(data.id, urls);
+        }
+      }
+    }
+    if (gate.releaseNow) {
+      // 离开 L1 语境：立即释放本天体细节层显存（需求 4.7 硬性门控）
+      getTextureManager().releaseDetail(data.id);
+    }
+
     // 光影 uniform 更新（可见时才更新，按可见性门控）：行星中心世界坐标
     if (surfaceMaterial) {
       (surfaceMaterial.uniforms.uPlanetCenterW.value as THREE.Vector3).set(
@@ -529,6 +667,10 @@ export function Planet({ data }: PlanetProps): JSX.Element {
         scene.y,
         scene.z,
       );
+      // P4 细节强度随距离平滑淡入淡出（4K/2K 切换无突变）
+      surfaceMaterial.uniforms.uDetailStrength.value = gate.active
+        ? detailStrength01(distToBody, radius)
+        : 0;
     }
     if (ringAssets) {
       (ringAssets.material.uniforms.uPlanetCenterW.value as THREE.Vector3).set(
@@ -541,6 +683,14 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     const rotation = rotationAngleAtTime(Math.abs(data.rotation.siderealPeriodHours), simDays);
     if (bodyRef.current) {
       bodyRef.current.rotation.y = rotation;
+    }
+    // P4 木星云层差速流动（需求 4.7）：仅近观激活时演算，
+    // 漂移相位与自转共用模拟时间轴（暂停/加速全局生效）
+    if (surfaceMaterial && data.id === 'jupiter') {
+      surfaceMaterial.uniforms.uFlowEnabled.value = gate.active ? 1 : 0;
+      if (gate.active) {
+        surfaceMaterial.uniforms.uFlowPhase.value = rotation * FLOW_VISUAL_GAIN;
+      }
     }
     // 云层独立旋转（比地表略快，体现大气环流）
     if (cloudRef.current) {

@@ -8,6 +8,7 @@ import { AudioController } from '@/components/Audio/AudioController';
 import { SpatialAudio } from '@/components/Audio/SpatialAudio';
 import { CameraController } from '@/components/Camera/CameraController';
 import { getTextureManager } from '@/components/CelestialBody/textureManager';
+import { BodyCycleSwitcher } from '@/components/UI/BodyCycleSwitcher';
 import { ControlPanel } from '@/components/UI/ControlPanel';
 import { HudInfo } from '@/components/UI/HudInfo';
 import { LoadingProgress } from '@/components/UI/LoadingProgress';
@@ -66,6 +67,8 @@ export default function SolarSystemApp(): JSX.Element {
 
       <ControlPanel />
       <HudInfo />
+      {/* 行星视角天体切换（P4，需求 3.2.4：仅 L1 语境显示） */}
+      <BodyCycleSwitcher />
       <LoadingProgress />
       <PerformanceMonitor />
       <HelpHint />
