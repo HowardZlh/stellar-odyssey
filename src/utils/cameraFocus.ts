@@ -31,6 +31,7 @@ import {
   lyToSceneUnits,
 } from '@/utils/scale';
 import { satelliteOrbitDisplayRadius } from '@/utils/satellites';
+import { dwarfDisplayRadius, isDwarfPlanetClassification } from '@/utils/dwarfPlanets';
 import { ECLIPTIC_GALACTIC_TILT_DEG, sunGalacticPositionLy } from '@/utils/galaxy';
 import { mwM31SeparationLy, satelliteGalaxyPositionLy } from '@/utils/universe';
 
@@ -208,9 +209,14 @@ export function resolveFocusTarget(
 
   const planet = getPlanetById(bodyId) ?? getDwarfPlanetById(bodyId);
   if (planet) {
+    // 矮行星（P5 §3.3 聚焦距离适配）：观察距离按与渲染一致的显示半径推荐
+    // （默认模式含最小可见钳制），保证近观时天体充满合理视野比例
+    const displayRadius = isDwarfPlanetClassification(planet.classificationZh)
+      ? dwarfDisplayRadius(planet.radiusKm, realScale)
+      : bodyDisplayRadius(planet.radiusKm, realScale);
     return {
       position: eclipticToScene(heliocentricPosition(planet.orbit, simDays)),
-      viewDistanceUnits: viewDistanceForRadius(bodyDisplayRadius(planet.radiusKm, realScale)),
+      viewDistanceUnits: viewDistanceForRadius(displayRadius),
     };
   }
 

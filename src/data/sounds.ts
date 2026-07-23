@@ -133,10 +133,46 @@ export const PLANET_SOUND_PARAMS: Readonly<Record<string, PlanetSoundParams>> = 
 };
 
 /**
- * 查询行星音景参数：未定义差异化音景的天体（卫星/矮行星等）
- * 返回 null（调用方回退地球基准）。
+ * 矮行星近真空音景（P5 §3.5）：5 颗矮行星均无有效大气
+ * （冥王星仅约 1 Pa 量级稀薄氮气，其余更稀薄/无大气），
+ * 复用"水星近真空几乎静音"参数，不新增音景类型。
+ */
+const DWARF_PLANET_VACUUM_SOUND: Omit<PlanetSoundParams, 'noteZh'> = {
+  filterFrequency: 900,
+  oscillatorFrequency: 66,
+  noiseGain: 0.06,
+  oscGain: 0.03,
+};
+
+/** 矮行星音景映射（P5 §3.5：与 data/smallBodies.ts DWARF_PLANETS 的 id 一致） */
+export const DWARF_PLANET_SOUND_PARAMS: Readonly<Record<string, PlanetSoundParams>> = {
+  ceres: {
+    ...DWARF_PLANET_VACUUM_SOUND,
+    noteZh: '谷神星无大气（仅瞬态水汽外逸），近真空几乎静音（复用水星音景参数）',
+  },
+  pluto: {
+    ...DWARF_PLANET_VACUUM_SOUND,
+    noteZh: '冥王星大气仅约 1 Pa 量级（氮气，地表气压不足地球十万分之一），近真空几乎静音（复用水星音景参数）',
+  },
+  haumea: {
+    ...DWARF_PLANET_VACUUM_SOUND,
+    noteZh: '妊神星无大气，近真空几乎静音（复用水星音景参数）',
+  },
+  makemake: {
+    ...DWARF_PLANET_VACUUM_SOUND,
+    noteZh: '鸟神星无有效大气（掩星观测未探测到全球性大气），近真空几乎静音（复用水星音景参数）',
+  },
+  eris: {
+    ...DWARF_PLANET_VACUUM_SOUND,
+    noteZh: '阋神星远日处大气冻结为冰霜，近真空几乎静音（复用水星音景参数）',
+  },
+};
+
+/**
+ * 查询行星音景参数：八大行星差异化音景优先，矮行星按近真空映射（P5 §3.5）；
+ * 其余未定义天体（卫星等）返回 null（调用方回退地球基准）。
  */
 export function planetSoundParams(bodyId: string | null): PlanetSoundParams | null {
   if (!bodyId) return null;
-  return PLANET_SOUND_PARAMS[bodyId] ?? null;
+  return PLANET_SOUND_PARAMS[bodyId] ?? DWARF_PLANET_SOUND_PARAMS[bodyId] ?? null;
 }

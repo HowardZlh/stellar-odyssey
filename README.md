@@ -16,6 +16,17 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
   - `4k_mars_normal.jpg`：降级路径——无可获取的轻量 MOLA DEM（USGS 全分辨率 11 GB），
     由火星 4K 色彩贴图亮度推导生成（登记于 REQUIREMENTS.md §4.7）。
 - 彗核形状参数（哈雷 15×8 km 花生形）依据 ESA Giotto 任务观测数据（`src/utils/cometNucleus.ts` 登记）。
+- 矮行星真实贴图（P5，公有领域，本地降采样至 2K 底图 2048×1024 + 4K 近观层 4096×2048）：
+  - `2k_pluto.jpg` / `4k_pluto.jpg`：NASA New Horizons LORRI/MVIC
+    [全球拼接彩色地图](https://www.nasa.gov/image-feature/pluto-global-color-map)
+    （NASA / Johns Hopkins University APL / Southwest Research Institute，公有领域）；
+    南纬约 30° 以南为黑色未测绘区（飞掠时处于极夜，科学事实）；
+  - `2k_ceres.jpg` / `4k_ceres.jpg`：NASA Dawn FC 全球拼接图（USGS Astrogeology
+    Ceres_Dawn_FC_DLR_global_20ppd_Oct2015，https://planetarymaps.usgs.gov/mosaic/ 托管，
+    NASA / JPL-Caltech / UCLA / MPS / DLR / IDA，公有领域）；
+  - 冥王星/谷神星法线贴图无轻量公有领域 DEM 源（全分辨率 DEM 数百 MB），顺延（登记）；
+  - 阋神星/鸟神星/妊神星无探测器实拍表面图，使用基于观测特征（反照率/颜色/光谱）的
+    程序化增强纹理，艺术化推测部分登记于 `proceduralTextures.ts` 文件头。
 
 ## Getting Started
 

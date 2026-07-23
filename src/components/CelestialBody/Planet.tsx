@@ -11,6 +11,11 @@ import { useSimulationStore } from '@/store';
 import { useBitmapTexture } from '@/hooks/useBitmapTexture';
 import { DEG_TO_RAD, heliocentricPosition, rotationAngleAtTime } from '@/utils/physics';
 import { bodyDisplayRadius, eclipticToScene } from '@/utils/scale';
+import {
+  dwarfDisplayRadius,
+  haumeaEllipsoidScale,
+  isDwarfPlanetClassification,
+} from '@/utils/dwarfPlanets';
 import { ringDisplayRadii } from '@/utils/satellites';
 import { FLOW_VISUAL_GAIN } from '@/utils/jupiterFlow';
 import { detailGateUpdate, detailStrength01 } from '@/utils/planetDetail';
@@ -306,7 +311,15 @@ export function Planet({ data }: PlanetProps): JSX.Element {
   const [detailActive, setDetailActive] = useState(false);
   const detailActiveRef = useRef(false);
 
-  const radius = bodyDisplayRadius(data.radiusKm, realScaleMode);
+  // 矮行星（P5 §3.2）：默认模式最小可见半径提升至可辨识水平（夸大登记于
+  // utils/dwarfPlanets.ts）；真实比例模式与八大行星同规则线性映射
+  const isDwarf = isDwarfPlanetClassification(data.classificationZh);
+  const radius = isDwarf
+    ? dwarfDisplayRadius(data.radiusKm, realScaleMode)
+    : bodyDisplayRadius(data.radiusKm, realScaleMode);
+  // 妊神星三轴椭球（P5 §3.4）：按真实轴比缩放球体网格（短轴 = 自转轴 Y），
+  // 绕 Y 自转时长轴翻滚可见；真实比例/默认模式均生效
+  const ellipsoidScale = data.id === 'haumea' ? haumeaEllipsoidScale(data.radiusKm) : null;
   const tiltRad = data.rotation.axialTiltDeg * DEG_TO_RAD;
   const moons = useMemo(() => getMoonsByParent(data.id), [data.id]);
   const equatorialMoons = moons.filter((m) => m.referencePlane === 'planetEquator');
@@ -710,6 +723,7 @@ export function Planet({ data }: PlanetProps): JSX.Element {
           <mesh
             ref={bodyRef}
             material={surfaceMaterial}
+            scale={ellipsoidScale ?? undefined}
             onClick={(e) => {
               e.stopPropagation();
               selectBody(data.id);

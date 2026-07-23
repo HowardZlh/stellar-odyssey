@@ -4,7 +4,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { BODY_TEXTURES, TEXTURE_LICENSE, textureUrl } from '@/data/textures';
+import { BODY_TEXTURES, DWARF_TEXTURE_LICENSE, TEXTURE_LICENSE, textureUrl } from '@/data/textures';
 import { PLANETS } from '@/data/planets';
 
 describe('纹理清单完整性', () => {
@@ -30,8 +30,15 @@ describe('纹理清单完整性', () => {
     expect(url).toMatch(/\.png$/);
   });
 
+  it('冥王星/谷神星有真实表面位图纹理（P5 §3.4，NASA 公有领域）', () => {
+    expect(textureUrl('pluto', 'surface')).toBe('/textures/2k_pluto.jpg');
+    expect(textureUrl('ceres', 'surface')).toBe('/textures/2k_ceres.jpg');
+  });
+
   it('无位图纹理的天体返回 null（走程序化降级路径）', () => {
-    expect(textureUrl('pluto', 'surface')).toBeNull();
+    expect(textureUrl('eris', 'surface')).toBeNull();
+    expect(textureUrl('makemake', 'surface')).toBeNull();
+    expect(textureUrl('haumea', 'surface')).toBeNull();
     expect(textureUrl('earth', 'ring')).toBeNull();
     expect(textureUrl('io', 'surface')).toBeNull();
   });
@@ -59,5 +66,11 @@ describe('许可登记（附录B）', () => {
   it('登记 CC BY 4.0 许可与 Solar System Scope 来源', () => {
     expect(TEXTURE_LICENSE).toContain('CC BY 4.0');
     expect(TEXTURE_LICENSE).toContain('solarsystemscope.com');
+  });
+
+  it('矮行星贴图登记 NASA 公有领域来源（P5 §3.4）', () => {
+    expect(DWARF_TEXTURE_LICENSE).toContain('New Horizons');
+    expect(DWARF_TEXTURE_LICENSE).toContain('Dawn');
+    expect(DWARF_TEXTURE_LICENSE).toContain('公有领域');
   });
 });

@@ -1,5 +1,5 @@
 /**
- * 小天体数据：彗星、矮行星（冥王星）、小行星带、柯伊伯带（需求 3.1.1）
+ * 小天体数据：彗星、矮行星（IAU 官方 5 颗）、小行星带、柯伊伯带（需求 3.1.1 / P5 §3.1）
  *
  * 数据来源：
  * - 彗星轨道要素：NASA JPL Small-Body Database, https://ssd.jpl.nasa.gov/tools/sbdb_lookup.html
@@ -96,6 +96,38 @@ export const PLUTO: PlanetData = {
 };
 
 /**
+ * 矮行星谷神星（Ceres，P5 §3.1 新增）：IAU 认定的第 5 颗矮行星，
+ * 也是唯一位于小行星带内（2.2–3.2 AU）的矮行星、带内最大天体。
+ *
+ * 数据来源：NASA JPL Small-Body Database / NASA Dawn 任务
+ * （Dawn 探测器 2015 年入轨环绕探测，测得半径 469.7 km、自转 9.07 h）
+ * 轨道要素为 J2000 历元近似值（历元相位近似，用于可视化，与既有条目一致）。
+ */
+export const CERES: PlanetData = {
+  id: 'ceres',
+  name: 'Ceres',
+  nameZh: '谷神星',
+  classificationZh: '矮行星',
+  radiusKm: 469.7,
+  color: '#9a9187',
+  orbit: {
+    // 半长轴 2.77 AU：位于小行星带（2.2–3.2 AU）内
+    semiMajorAxisAu: 2.7666,
+    eccentricity: 0.0785,
+    // 轨道倾角 10.59°：高于全部八大行星（最高的水星 7°）
+    inclinationDeg: 10.59,
+    longitudeOfAscendingNodeDeg: 80.27,
+    argumentOfPerihelionDeg: 73.6,
+    // 历元相位为近似值，用于可视化
+    meanAnomalyAtEpochDeg: 77.37,
+  },
+  rotation: { siderealPeriodHours: 9.074, axialTiltDeg: 4 },
+  orbitalPeriodYears: 4.6,
+  massKg: 9.38e20,
+  dataSource: `${JPL_SBDB_SOURCE} / NASA Dawn 任务（2015 年环绕探测）`,
+};
+
+/**
  * 其他矮行星（可选需求 3.1.1）：阋神星、鸟神星、妊神星
  *
  * 数据来源：NASA JPL Small-Body Database（轨道要素为历元近似值，用于可视化）
@@ -172,8 +204,13 @@ export const OTHER_DWARF_PLANETS: readonly PlanetData[] = [
   },
 ] as const;
 
-/** 全部矮行星（冥王星 + 阋神星 + 鸟神星 + 妊神星） */
-export const DWARF_PLANETS: readonly PlanetData[] = [PLUTO, ...OTHER_DWARF_PLANETS] as const;
+/**
+ * 全部矮行星（IAU 官方 5 颗，P5 §3.1），按半长轴升序：
+ * 谷神星 2.77 → 冥王星 39.5 → 妊神星 43.1 → 鸟神星 45.4 → 阋神星 67.9 AU
+ */
+export const DWARF_PLANETS: readonly PlanetData[] = [CERES, PLUTO, ...OTHER_DWARF_PLANETS]
+  .slice()
+  .sort((a, b) => a.orbit.semiMajorAxisAu - b.orbit.semiMajorAxisAu);
 
 /**
  * 按 id 查找矮行星

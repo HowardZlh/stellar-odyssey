@@ -8,6 +8,19 @@
  * - 确定性生成：所有随机均来自 createSeededRandom（seed 由 bodyId 哈希派生），
  *   同一输入必得同一纹理（需求 4.5）。
  *
+ * 矮行星程序化增强登记（P5 §3.4，艺术化推测部分）：
+ * 阋神星/鸟神星/妊神星无探测器实拍表面图，纹理仅颜色/反照率/光谱特征
+ * 基于真实观测，斑块/纹路的具体形态与位置均为艺术化推测——
+ * - 阋神星：高反照率 0.96（Sicardy et al. 2011 掩星测量，太阳系反照率最高
+ *   天体之一）亮白基调 + 甲烷冰霜低对比斑驳（斑块形态为推测）
+ * - 鸟神星：表面甲烷/乙烷冰，观测色指数偏红 → 红棕基调 + 低对比度斑块
+ *   （斑块位置为推测）
+ * - 妊神星：高反照率结晶水冰亮面 + "暗红斑"（观测到的表面特征，
+ *   Lacerda et al. 2008 光变曲线；斑的具体位置/形状为推测）
+ * - 谷神星/冥王星：真实 NASA 贴图为首选（data/textures.ts），此处程序化
+ *   版本仅为加载失败降级路径（谷神星欧卡托亮斑/冥王星心形汤博区按
+ *   真实地貌大致经纬示意）
+ *
  * 目标：行星视角（L1）下可辨识各行星的真实表面特征（需求 3.1.1）；
  * 星系精灵图四类形态视觉差异明显、不共用同一贴图（需求 3.1.3）。
  */
@@ -582,6 +595,78 @@ function paintPluto(ctx: CanvasRenderingContext2D, width: number, height: number
   drawSoftEllipse(ctx, width * 0.12, height * 0.5, width * 0.05, height * 0.09, 0, dark, 0.45, 0.4);
 }
 
+/**
+ * 谷神星（P5，真实贴图加载失败的降级路径）：灰色多坑表面 +
+ * 欧卡托撞击坑亮斑（碳酸钠沉积，约 20°N / 240°E → u≈0.665、v≈0.39）
+ */
+function paintCeres(ctx: CanvasRenderingContext2D, width: number, height: number, seed: number): void {
+  const fbm = createFbm(seed, 4, 12, 6);
+  const base = hexToRgb('#8f8579');
+  paintBase(ctx, width, height, (u: number, v: number): Rgb => scaleRgb(base, 0.84 + fbm(u, v) * 0.3));
+  drawCraters(ctx, createSeededRandom(seed + 410), 70, width, height, 0.004, 0.025);
+  // 欧卡托亮斑：暗坑底 + 中心亮白沉积（Cerealia Facula）+ 次级亮斑
+  const ox = width * 0.665;
+  const oy = height * 0.39;
+  drawSoftEllipse(ctx, ox, oy, width * 0.022, height * 0.04, 0, hexToRgb('#4d463d'), 0.6, 0.4);
+  drawSoftEllipse(ctx, ox, oy, width * 0.007, height * 0.013, 0, hexToRgb('#f5f2ea'), 0.95, 0.5);
+  drawSoftEllipse(ctx, ox + width * 0.009, oy + height * 0.008, width * 0.003, height * 0.006, 0, hexToRgb('#e8e4da'), 0.8, 0.5);
+}
+
+/**
+ * 阋神星（P5 程序化增强，艺术化推测已登记于文件头）：
+ * 反照率 0.96 的亮白甲烷冰霜表面——高亮基调 + 低对比冰霜斑驳 + 极少陨坑
+ * （冰霜持续更新覆盖表面，观测推断表面非常均匀）
+ */
+function paintEris(ctx: CanvasRenderingContext2D, width: number, height: number, seed: number): void {
+  const frost = createFbm(seed, 4, 10, 5);
+  const patch = createFbm(seed + 41, 3, 5, 3);
+  const bright = hexToRgb('#f7f7f3');
+  const dim = hexToRgb('#dcdad2');
+  paintBase(ctx, width, height, (u: number, v: number): Rgb => {
+    // 大尺度极淡斑块 + 细尺度冰霜颗粒感，整体保持高反照率
+    const p = smooth(clamp01((patch(u, v) - 0.35) * 1.6));
+    const c = mixRgb(dim, bright, p);
+    return scaleRgb(c, 0.96 + frost(u, v) * 0.06);
+  });
+  // 极少量浅坑（冰霜覆盖下依稀可辨）
+  drawCraters(ctx, createSeededRandom(seed + 420), 6, width, height, 0.004, 0.012);
+}
+
+/**
+ * 鸟神星（P5 程序化增强，艺术化推测已登记于文件头）：
+ * 表面甲烷/乙烷冰、色指数偏红——红棕基调 + 低对比度托林斑块
+ */
+function paintMakemake(ctx: CanvasRenderingContext2D, width: number, height: number, seed: number): void {
+  const fbm = createFbm(seed, 4, 8, 4);
+  const tholin = createFbm(seed + 61, 3, 6, 3);
+  const red = hexToRgb('#b0714e');
+  const dark = hexToRgb('#8a5138');
+  const pale = hexToRgb('#c9a284');
+  paintBase(ctx, width, height, (u: number, v: number): Rgb => {
+    const t = smooth(clamp01((tholin(u, v) - 0.3) * 1.8));
+    const c = mixRgb(mixRgb(dark, red, t), pale, smooth(clamp01((fbm(u, v) - 0.55) * 2)) * 0.35);
+    return scaleRgb(c, 0.9 + fbm(u, v) * 0.18);
+  });
+}
+
+/**
+ * 妊神星（P5 程序化增强，艺术化推测已登记于文件头）：
+ * 高反照率结晶水冰亮面 + 观测到的"暗红斑"（位置/形状为推测）
+ */
+function paintHaumea(ctx: CanvasRenderingContext2D, width: number, height: number, seed: number): void {
+  const ice = createFbm(seed, 4, 10, 5);
+  const bright = hexToRgb('#f2f4f8');
+  const cool = hexToRgb('#dde2ea');
+  paintBase(ctx, width, height, (u: number, v: number): Rgb => {
+    const n = ice(u, v);
+    return scaleRgb(mixRgb(cool, bright, n), 0.94 + n * 0.08);
+  });
+  // 暗红斑（Dark Red Spot）：中纬单个低对比暗红区域
+  const spot = hexToRgb('#9c6250');
+  drawSoftEllipse(ctx, width * 0.32, height * 0.45, width * 0.07, height * 0.12, 0.3, spot, 0.4, 0.35);
+  drawSoftEllipse(ctx, width * 0.32, height * 0.45, width * 0.035, height * 0.06, 0.3, spot, 0.35, 0.4);
+}
+
 /** 未知天体：baseColor + fBm 明暗 + 少量陨石坑（通用岩石纹理） */
 function paintGenericRock(
   ctx: CanvasRenderingContext2D,
@@ -662,6 +747,18 @@ export function createBodyTextureCanvas(
       break;
     case 'pluto':
       paintPluto(ctx, width, height, seed);
+      break;
+    case 'ceres':
+      paintCeres(ctx, width, height, seed);
+      break;
+    case 'eris':
+      paintEris(ctx, width, height, seed);
+      break;
+    case 'makemake':
+      paintMakemake(ctx, width, height, seed);
+      break;
+    case 'haumea':
+      paintHaumea(ctx, width, height, seed);
       break;
     default:
       paintGenericRock(ctx, width, height, seed, baseColor);

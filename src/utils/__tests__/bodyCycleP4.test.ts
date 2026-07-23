@@ -1,5 +1,5 @@
 /**
- * 行星视角天体切换序列测试（P4，需求 §3.2.4）
+ * 行星视角天体切换序列测试（P4，需求 §3.2.4；P5 §3.3 扩展至 16 天体）
  */
 
 import {
@@ -11,22 +11,47 @@ import {
   cycleControlVisible,
   isCycleBody,
 } from '@/utils/bodyCycle';
+import { DWARF_PLANETS } from '@/data/smallBodies';
 
-describe('切换序列定义（需求 3.2.4）', () => {
-  it('序列为固定 11 天体：八大行星 + 月球（地球后）+ 两彗星（末尾）', () => {
+describe('切换序列定义（需求 3.2.4 / P5 §3.3）', () => {
+  it('序列为固定 16 天体：八大行星 + 月球 + 5 矮行星（按日心距离插入）+ 两彗星（末尾）', () => {
     expect(BODY_CYCLE_SEQUENCE).toEqual([
       'mercury',
       'venus',
       'earth',
       'moon',
       'mars',
+      'ceres',
       'jupiter',
       'saturn',
       'uranus',
       'neptune',
+      'pluto',
+      'haumea',
+      'makemake',
+      'eris',
       'halley',
       'encke',
     ]);
+  });
+
+  it('5 颗矮行星全部纳入序列（P5 核心痛点：可直达）', () => {
+    for (const d of DWARF_PLANETS) {
+      expect(isCycleBody(d.id)).toBe(true);
+    }
+  });
+
+  it('谷神星插于火星与木星之间（2.77 AU 位于小行星带）', () => {
+    expect(bodyCycleIndex('ceres')).toBe(bodyCycleIndex('mars') + 1);
+    expect(bodyCycleIndex('jupiter')).toBe(bodyCycleIndex('ceres') + 1);
+  });
+
+  it('柯伊伯带四颗按半长轴排于海王星后：冥王星→妊神星→鸟神星→阋神星', () => {
+    expect(bodyCycleIndex('pluto')).toBe(bodyCycleIndex('neptune') + 1);
+    expect(bodyCycleIndex('haumea')).toBe(bodyCycleIndex('pluto') + 1);
+    expect(bodyCycleIndex('makemake')).toBe(bodyCycleIndex('haumea') + 1);
+    expect(bodyCycleIndex('eris')).toBe(bodyCycleIndex('makemake') + 1);
+    expect(bodyCycleIndex('halley')).toBe(bodyCycleIndex('eris') + 1);
   });
 
   it('默认锚定天体为地球', () => {
@@ -36,8 +61,9 @@ describe('切换序列定义（需求 3.2.4）', () => {
 
   it('isCycleBody 识别序列内外天体', () => {
     expect(isCycleBody('halley')).toBe(true);
+    expect(isCycleBody('pluto')).toBe(true);
     expect(isCycleBody('sun')).toBe(false);
-    expect(isCycleBody('pluto')).toBe(false);
+    expect(isCycleBody('charon')).toBe(false);
   });
 });
 
@@ -46,12 +72,15 @@ describe('循环切换（需求 3.2.4）', () => {
     expect(cycleBodyId('mercury', 1)).toBe('venus');
     expect(cycleBodyId('earth', 1)).toBe('moon');
     expect(cycleBodyId('moon', 1)).toBe('mars');
-    expect(cycleBodyId('neptune', 1)).toBe('halley');
+    expect(cycleBodyId('mars', 1)).toBe('ceres');
+    expect(cycleBodyId('neptune', 1)).toBe('pluto');
+    expect(cycleBodyId('eris', 1)).toBe('halley');
   });
 
   it('上一颗沿序列后退', () => {
     expect(cycleBodyId('venus', -1)).toBe('mercury');
-    expect(cycleBodyId('mars', -1)).toBe('moon');
+    expect(cycleBodyId('jupiter', -1)).toBe('ceres');
+    expect(cycleBodyId('pluto', -1)).toBe('neptune');
   });
 
   it('循环边界：恩克彗星下一颗回到水星，水星上一颗为恩克彗星', () => {
@@ -59,12 +88,13 @@ describe('循环切换（需求 3.2.4）', () => {
     expect(cycleBodyId('mercury', -1)).toBe('encke');
   });
 
-  it('遍历一整圈回到起点', () => {
+  it('遍历一整圈（16 步）回到起点', () => {
     let id = 'earth';
     for (let i = 0; i < BODY_CYCLE_SEQUENCE.length; i += 1) {
       id = cycleBodyId(id, 1);
     }
     expect(id).toBe('earth');
+    expect(BODY_CYCLE_SEQUENCE).toHaveLength(16);
   });
 
   it('序列外 id 回落到默认天体', () => {
@@ -73,14 +103,18 @@ describe('循环切换（需求 3.2.4）', () => {
   });
 });
 
-describe('序列位置标签（需求 3.2.4 HUD："地球 3/11"）', () => {
-  it('地球为 3/11', () => {
-    expect(bodyCyclePositionLabel('earth')).toBe('3/11');
+describe('序列位置标签（需求 3.2.4 HUD；P5："冥王星 11/16"）', () => {
+  it('地球为 3/16', () => {
+    expect(bodyCyclePositionLabel('earth')).toBe('3/16');
+  });
+
+  it('冥王星为 11/16（P5 §3.3 HUD 计数更新）', () => {
+    expect(bodyCyclePositionLabel('pluto')).toBe('11/16');
   });
 
   it('首尾位置正确', () => {
-    expect(bodyCyclePositionLabel('mercury')).toBe('1/11');
-    expect(bodyCyclePositionLabel('encke')).toBe('11/11');
+    expect(bodyCyclePositionLabel('mercury')).toBe('1/16');
+    expect(bodyCyclePositionLabel('encke')).toBe('16/16');
   });
 
   it('序列外返回 null', () => {
@@ -99,9 +133,10 @@ describe('切换控件可见性（需求 3.2.4：仅 L1 显示）', () => {
     expect(cycleControlVisible('L1', 'earth')).toBe(true);
   });
 
-  it('跟随序列内天体时保持可见（外行星跟随层级读数为 L2 的语义补充）', () => {
+  it('跟随序列内天体时保持可见（外行星/矮行星跟随层级读数为 L2 的语义补充）', () => {
     expect(cycleControlVisible('L2', 'neptune')).toBe(true);
     expect(cycleControlVisible('L2', 'halley')).toBe(true);
+    expect(cycleControlVisible('L2', 'eris')).toBe(true);
   });
 
   it('L2-L4 未跟随序列天体时隐藏', () => {

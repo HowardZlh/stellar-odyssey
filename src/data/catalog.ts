@@ -191,8 +191,9 @@ function buildCatalog(): Map<string, BodyInfo> {
     });
   }
 
-  // 矮行星（冥王星 + 阋神星/鸟神星/妊神星，可选需求 3.1.1）：
-  // 均标注轨道倾角；冥王星额外标注海王星共振
+  // 矮行星（IAU 官方 5 颗：谷神星/冥王星/妊神星/鸟神星/阋神星，需求 3.1.1 / P5 §3.1）：
+  // 均标注轨道倾角；冥王星额外标注海王星共振；谷神星附注小行星带与 Dawn 探测；
+  // 无探测器实拍图的三颗（阋神星/鸟神星/妊神星）注明表面为艺术化呈现（P5 §3.4 登记）
   for (const d of DWARF_PLANETS) {
     const lines: BodyInfoLine[] = [
       ...planetLines(d),
@@ -200,6 +201,18 @@ function buildCatalog(): Map<string, BodyInfo> {
     ];
     if (d.id === PLUTO.id) {
       lines.push({ label: '共振', value: '与海王星 2:3' });
+    }
+    if (d.id === 'ceres') {
+      lines.push({ label: '备注', value: '小行星带中最大天体，Dawn 探测器 2015 年环绕探测' });
+    }
+    if (d.id === 'haumea') {
+      lines.push({ label: '形状', value: '三轴椭球 2100×1680×1074 km（3.9 小时快速自转甩扁）' });
+    }
+    if (d.id === 'eris' || d.id === 'makemake' || d.id === 'haumea') {
+      lines.push({
+        label: '备注',
+        value: '表面细节为基于观测数据的艺术化呈现（无探测器实拍图）',
+      });
     }
     catalog.set(d.id, {
       id: d.id,

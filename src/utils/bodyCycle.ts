@@ -1,27 +1,34 @@
 /**
- * 行星视角天体切换序列（P4，需求 §3.2.4）
+ * 行星视角天体切换序列（P4，需求 §3.2.4；P5 §3.3 扩展至 16 天体）
  *
  * 纯逻辑模块（供单元测试）：
  * - 固定循环序列：八大行星（水星→海王星）+ 月球（插于地球之后）+
+ *   5 颗矮行星（按半长轴排序插入：谷神星 2.77 AU 位于火星与木星之间；
+ *   冥王星 39.5 / 妊神星 43.1 / 鸟神星 45.8 / 阋神星 67.9 AU 排于海王星后）+
  *   两颗彗星（置于序列末尾，便于观察彗尾角度变化）
- * - 上一颗/下一颗循环切换、序列位置标签（"3/11"）
+ * - 上一颗/下一颗循环切换、序列位置标签（"3/16"）
  * - L1 锚点行为（需求变更）：进入 L1 = 飞往并跟随序列当前天体
  *   （默认地球，会话内记忆上次锚定天体）
  */
 
 import type { ViewLevel } from '@/types';
 
-/** 切换序列（固定循环，需求 §3.2.4） */
+/** 切换序列（固定循环，需求 §3.2.4 / P5 §3.3：按日心距离排序的 16 天体） */
 export const BODY_CYCLE_SEQUENCE: readonly string[] = [
   'mercury',
   'venus',
   'earth',
   'moon',
   'mars',
+  'ceres',
   'jupiter',
   'saturn',
   'uranus',
   'neptune',
+  'pluto',
+  'haumea',
+  'makemake',
+  'eris',
   'halley',
   'encke',
 ];
@@ -51,7 +58,7 @@ export function cycleBodyId(currentId: string, direction: 1 | -1): string {
 }
 
 /**
- * 序列位置标签（HUD 显示，如"3/11"）；不在序列内返回 null
+ * 序列位置标签（HUD 显示，如"11/16"）；不在序列内返回 null
  */
 export function bodyCyclePositionLabel(bodyId: string): string | null {
   const idx = bodyCycleIndex(bodyId);
