@@ -4,7 +4,12 @@
  */
 
 import type { BeltConfig } from '@/types';
-import { beltParticlePositionAu, generateBeltParticles } from '@/utils/belts';
+import {
+  BELT_TIME_WRAP_DAYS,
+  beltParticlePositionAu,
+  beltShaderTimeDays,
+  generateBeltParticles,
+} from '@/utils/belts';
 import { meanMotionRadPerDay } from '@/utils/physics';
 
 const TEST_BELT: BeltConfig = {
@@ -124,5 +129,55 @@ describe('beltParticlePositionAu', () => {
     const arrays = generateBeltParticles(TEST_BELT);
     expect(() => beltParticlePositionAu(arrays, -1, 0)).toThrow(RangeError);
     expect(() => beltParticlePositionAu(arrays, 500, 0)).toThrow(RangeError);
+  });
+});
+
+describe('beltShaderTimeDays（shader 时间回卷，float32/GPU 精度保护）', () => {
+  it('常规太阳系时间尺度（< 回卷窗口）恒等返回，行为与未回卷一致', () => {
+    expect(beltShaderTimeDays(0)).toBe(0);
+    expect(beltShaderTimeDays(365.25)).toBe(365.25);
+    expect(beltShaderTimeDays(BELT_TIME_WRAP_DAYS - 1)).toBe(BELT_TIME_WRAP_DAYS - 1);
+  });
+
+  it('银河系/宇宙视角时间尺度（10⁹⁺ 天）回卷到 [0, 窗口)', () => {
+    // 回归背景：从 L3/L4 切回 L2 后 simDays 可达数百万年，float32 下
+    // n·t ~ 10⁷ 弧度使 GPU sin/cos 失效，粒子带坍缩成贴日团块
+    for (const days of [3.13e9, 3.5e10, BELT_TIME_WRAP_DAYS, BELT_TIME_WRAP_DAYS * 7.3]) {
+      const t = beltShaderTimeDays(days);
+      expect(t).toBeGreaterThanOrEqual(0);
+      expect(t).toBeLessThan(BELT_TIME_WRAP_DAYS);
+    }
+  });
+
+  it('时间倒退（负值）同样回卷到 [0, 窗口)', () => {
+    const t = beltShaderTimeDays(-1000);
+    expect(t).toBeGreaterThanOrEqual(0);
+    expect(t).toBeLessThan(BELT_TIME_WRAP_DAYS);
+    expect(t).toBeCloseTo(BELT_TIME_WRAP_DAYS - 1000, 9);
+  });
+
+  it('回卷幅度上界：最快粒子（内缘 2.2 AU）的 |M| 处于 float32 可靠范围', () => {
+    const nMax = meanMotionRadPerDay(2.2);
+    const mMax = Math.PI * 2 + nMax * BELT_TIME_WRAP_DAYS;
+    // float32 在 ~3000 弧度量级的绝对误差约 2⁻²³·2¹² ≈ 5×10⁻⁴ 弧度，视觉不可辨
+    expect(mMax).toBeLessThan(3000);
+  });
+
+  it('回卷时间下粒子仍在自己的轨道上（径向范围不变）', () => {
+    const arrays = generateBeltParticles(TEST_BELT);
+    const hugeDays = 3.13e9; // ≈ 857 万年（L3 往返后的实际量级）
+    for (const idx of [0, 100, 499]) {
+      const p = beltParticlePositionAu(arrays, idx, beltShaderTimeDays(hugeDays));
+      const r = Math.hypot(p.x, p.y, p.z);
+      const a = arrays.semiMajorAu[idx];
+      const e = arrays.eccentricity[idx];
+      expect(r).toBeGreaterThanOrEqual(a * (1 - e) - 1e-6);
+      expect(r).toBeLessThanOrEqual(a * (1 + e) + 1e-6);
+    }
+  });
+
+  it('非有限输入抛错', () => {
+    expect(() => beltShaderTimeDays(Number.NaN)).toThrow(RangeError);
+    expect(() => beltShaderTimeDays(Number.POSITIVE_INFINITY)).toThrow(RangeError);
   });
 });

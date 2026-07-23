@@ -5,7 +5,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { BeltConfig } from '@/types';
 import { useSimulationStore } from '@/store';
-import { generateBeltParticles } from '@/utils/belts';
+import { beltShaderTimeDays, generateBeltParticles } from '@/utils/belts';
 import { SCENE_UNITS_PER_AU, trapezoidWeight } from '@/utils/scale';
 
 interface BeltProps {
@@ -113,7 +113,10 @@ export function Belt({ config }: BeltProps): JSX.Element {
 
   useFrame(() => {
     const state = useSimulationStore.getState();
-    material.uniforms.uSimDays.value = state.simDays;
+    // 时间回卷（bug 修复）：银河系/宇宙视角时间压缩后 simDays 可达 10⁹⁺ 天，
+    // float32 下 n·t ~ 10⁷ 弧度使 GPU sin/cos 失效、粒子坍缩成贴日团块；
+    // 按固定窗口取模后粒子仍沿各自轨道运动（统计近似登记于 utils/belts.ts）
+    material.uniforms.uSimDays.value = beltShaderTimeDays(state.simDays);
     // LOD 渐变：太阳系层内容（L1 起可见），银河系层淡出（需求 3.2.2）
     material.uniforms.uOpacity.value = trapezoidWeight(state.continuousLevel, 0.5, 0.9, 2.6, 3.2);
   });

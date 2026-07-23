@@ -100,6 +100,37 @@ export function generateBeltParticles(config: BeltConfig): BeltParticleArrays {
 }
 
 /**
+ * 着色器时间回卷窗口（天）：2^19 ≈ 1435 年。
+ *
+ * 背景（bug 修复）：顶点着色器以 float32 计算 M = M₀ + n·t。银河系/宇宙视角
+ * 的时间压缩会把 simDays 推进到 10⁹–10¹⁰ 量级，此时 n·t ~ 10⁷ 弧度，
+ * float32（约 7 位有效数字）与 GPU sin/cos 的距离归约在该量级完全失效，
+ * 粒子位置坍缩成贴着太阳的错误团块（曾被误认为"柯伊伯带位置错误"）。
+ *
+ * 处理（已登记的统计近似）：传给 shader 的时间按本窗口取模。每个粒子仍
+ * 严格沿自己的开普勒轨道运动（开普勒剪切保持），仅在窗口跨越瞬间沿轨道
+ * 相位一次性重排——粒子带是统计意义的环（不追踪具体天体），重排前后
+ * 外观分布一致，无可感知影响。窗口取 2^19 天使最快粒子（内缘 2.2 AU，
+ * n≈5.3×10⁻³ rad/天）的 |M| ≤ 约 2800 弧度，处于 float32 与 GPU
+ * 三角函数的可靠精度范围内。
+ */
+export const BELT_TIME_WRAP_DAYS = 524288;
+
+/**
+ * 粒子带 shader 时间（天）：simDays 按 BELT_TIME_WRAP_DAYS 回卷到 [0, W)
+ *
+ * simDays < W（常规太阳系视角时间尺度，约 1435 年内）时恒等返回，
+ * 行为与未回卷完全一致。
+ */
+export function beltShaderTimeDays(simDays: number): number {
+  if (!Number.isFinite(simDays)) {
+    throw new RangeError(`模拟时间必须为有限数，收到 ${simDays}`);
+  }
+  const wrapped = simDays % BELT_TIME_WRAP_DAYS;
+  return wrapped < 0 ? wrapped + BELT_TIME_WRAP_DAYS : wrapped;
+}
+
+/**
  * 粒子位置 CPU 参考实现（黄道坐标 AU，与着色器公式一致）
  */
 export function beltParticlePositionAu(
