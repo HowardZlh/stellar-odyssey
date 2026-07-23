@@ -6,10 +6,17 @@ import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { PlanetData } from '@/types';
 import { getMoonsByParent } from '@/data/moons';
+import { textureUrl } from '@/data/textures';
 import { useSimulationStore } from '@/store';
+import { useBitmapTexture } from '@/hooks/useBitmapTexture';
 import { DEG_TO_RAD, heliocentricPosition, rotationAngleAtTime } from '@/utils/physics';
 import { bodyDisplayRadius, eclipticToScene } from '@/utils/scale';
 import { ringDisplayRadii } from '@/utils/satellites';
+import {
+  RING_SHADOW_STRENGTH,
+  TERMINATOR_SOFTNESS,
+  axialTiltNormal,
+} from '@/utils/planetShading';
 import { Moon } from '@/components/CelestialBody/Moon';
 import {
   createBodyTextureCanvas,
@@ -29,6 +36,173 @@ const TEXTURE_HIGH_RES = 1024;
 const HIGH_RES_LEVEL_THRESHOLD = 1.6;
 /** 外层视角下内层运动退化阈值（需求 3.3）：冻结行星位置更新并隐藏 */
 const FREEZE_LEVEL_THRESHOLD = 3.2;
+/**
+ * 真实位图纹理懒加载阈值（P3-2）：接近行星视角时开始预取
+ * （进入 L1 前位图基本就绪；L2 远观使用程序化低清即可）
+ */
+const BITMAP_LEVEL_THRESHOLD = 2.2;
+
+/** 气态/冰巨行星（明暗界线云带色温渐变较明显，需求 4.6） */
+const GAS_GIANTS = new Set(['jupiter', 'saturn', 'uranus', 'neptune']);
+
+/**
+ * 行星表面光照 shader（P3-4，需求 4.6 行星光影——物理真实）
+ *
+ * 光照模型近似（登记）：太阳按方向光处理（自场景原点指向表面点的反方向），
+ * 忽略太阳角直径的真实半影，terminator 用 smoothstep 软化近似。
+ * 几何解析纯逻辑镜像与单元测试见 utils/planetShading.ts。
+ *
+ * - 昼夜明暗界线：N·L 经 smoothstep 柔和过渡，自转/公转时随日照方向正确移动
+ * - 土星环投影：表面点朝太阳的射线与环平面（赤道面共面圆盘）解析求交，
+ *   命中环带时按环纹理 alpha 遮光（卡西尼缝透光）
+ * - 气态行星云带在明暗界线处的色温渐变（uWarmth）
+ * - 含对数深度缓冲 chunk（与 Canvas logarithmicDepthBuffer 一致，需求 5.1）
+ */
+const SURFACE_VERTEX_SHADER = /* glsl */ `
+  #include <common>
+  #include <logdepthbuf_pars_vertex>
+  varying vec2 vUv;
+  varying vec3 vNormalW;
+  varying vec3 vPosW;
+  void main() {
+    vUv = uv;
+    vNormalW = normalize(mat3(modelMatrix) * normal);
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vPosW = world.xyz;
+    gl_Position = projectionMatrix * viewMatrix * world;
+    #include <logdepthbuf_vertex>
+  }
+`;
+
+const SURFACE_FRAGMENT_SHADER = /* glsl */ `
+  #include <common>
+  #include <logdepthbuf_pars_fragment>
+  uniform sampler2D uMap;
+  uniform float uAmbient;
+  uniform float uTerminatorSoftness;
+  uniform float uWarmth;
+  uniform float uHasRing;
+  uniform sampler2D uRingMap;
+  uniform float uRingInner;
+  uniform float uRingOuter;
+  uniform float uRingShadowStrength;
+  uniform vec3 uPlanetCenterW;
+  uniform vec3 uRingNormalW;
+  varying vec2 vUv;
+  varying vec3 vNormalW;
+  varying vec3 vPosW;
+  void main() {
+    #include <logdepthbuf_fragment>
+    // 光照方向统一：太阳位于场景原点（需求 4.6）
+    vec3 sunDir = normalize(-vPosW);
+    float ndl = dot(normalize(vNormalW), sunDir);
+    // 昼夜明暗界线柔和过渡（terminator）
+    float day = smoothstep(-uTerminatorSoftness, uTerminatorSoftness, ndl);
+    vec3 base = texture2D(uMap, vUv).rgb;
+    // 土星环投影：朝太阳的射线与环平面解析求交（utils/planetShading.ts 镜像）
+    float shadow = 1.0;
+    if (uHasRing > 0.5) {
+      float denom = dot(uRingNormalW, sunDir);
+      if (abs(denom) > 1e-6) {
+        float t = dot(uRingNormalW, uPlanetCenterW - vPosW) / denom;
+        if (t > 0.0) {
+          vec3 hit = vPosW + sunDir * t;
+          float r = length(hit - uPlanetCenterW);
+          if (r >= uRingInner && r <= uRingOuter) {
+            float radial01 = (r - uRingInner) / (uRingOuter - uRingInner);
+            float ringAlpha = texture2D(uRingMap, vec2(radial01, 0.5)).a;
+            shadow = 1.0 - ringAlpha * uRingShadowStrength;
+          }
+        }
+      }
+    }
+    float light = uAmbient + (1.0 - uAmbient) * day * shadow;
+    vec3 color = base * light;
+    // 明暗界线暖色带（气态行星云带色温渐变，utils/planetShading.terminatorWarmBand 镜像）
+    float warmBand = smoothstep(0.02, 0.3, day) * (1.0 - smoothstep(0.3, 0.75, day));
+    color *= mix(vec3(1.0), vec3(1.1, 0.95, 0.8), warmBand * uWarmth);
+    gl_FragColor = vec4(color, 1.0);
+    // 与内置材质一致的色调映射与输出色彩空间转换（保持画面基准不变）
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;
+
+/**
+ * 云层 shader（P3-4 配套）：与表面同一昼夜光照模型（terminator 统一），
+ * 支持程序化 RGBA 云图（uUseAlphaMap=0）或真实灰度云图作 alpha（=1）。
+ */
+const CLOUD_FRAGMENT_SHADER = /* glsl */ `
+  #include <common>
+  #include <logdepthbuf_pars_fragment>
+  uniform sampler2D uMap;
+  uniform float uUseAlphaMap;
+  uniform float uOpacity;
+  uniform float uAmbient;
+  uniform float uTerminatorSoftness;
+  varying vec2 vUv;
+  varying vec3 vNormalW;
+  varying vec3 vPosW;
+  void main() {
+    #include <logdepthbuf_fragment>
+    vec3 sunDir = normalize(-vPosW);
+    float ndl = dot(normalize(vNormalW), sunDir);
+    float day = smoothstep(-uTerminatorSoftness, uTerminatorSoftness, ndl);
+    vec4 tex = texture2D(uMap, vUv);
+    // 真实云图（灰度 JPG）：亮度即云量 → alpha；程序化 RGBA 云图沿用自带 alpha
+    float cloudAlpha = mix(tex.a, dot(tex.rgb, vec3(0.299, 0.587, 0.114)), uUseAlphaMap);
+    float light = uAmbient + (1.0 - uAmbient) * day;
+    gl_FragColor = vec4(vec3(light), cloudAlpha * uOpacity);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;
+
+/**
+ * 行星环 shader（P3-4）：行星在环面上的阴影——
+ * 环上点朝太阳（原点）的射线被行星球体遮挡时进入阴影，
+ * 轮廓边缘 smoothstep 软化（utils/planetShading.planetShadowOnRing 镜像）。
+ */
+const RING_VERTEX_SHADER = /* glsl */ `
+  #include <common>
+  #include <logdepthbuf_pars_vertex>
+  varying vec2 vUv;
+  varying vec3 vPosW;
+  void main() {
+    vUv = uv;
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vPosW = world.xyz;
+    gl_Position = projectionMatrix * viewMatrix * world;
+    #include <logdepthbuf_vertex>
+  }
+`;
+
+const RING_FRAGMENT_SHADER = /* glsl */ `
+  #include <common>
+  #include <logdepthbuf_pars_fragment>
+  uniform sampler2D uMap;
+  uniform float uOpacity;
+  uniform vec3 uPlanetCenterW;
+  uniform float uPlanetRadius;
+  varying vec2 vUv;
+  varying vec3 vPosW;
+  void main() {
+    #include <logdepthbuf_fragment>
+    vec4 tex = texture2D(uMap, vUv);
+    float sunDist = length(vPosW);
+    vec3 sunDir = -vPosW / max(sunDist, 1e-6);
+    vec3 toC = uPlanetCenterW - vPosW;
+    float tca = dot(toC, sunDir);
+    float shadow = 1.0;
+    if (tca > 0.0 && tca < sunDist) {
+      float d = length(toC - sunDir * tca);
+      shadow = 0.18 + 0.82 * smoothstep(uPlanetRadius * 0.92, uPlanetRadius * 1.08, d);
+    }
+    gl_FragColor = vec4(tex.rgb * shadow, tex.a * uOpacity);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;
 
 /**
  * 行星：开普勒轨道公转 + 真实轴倾角自转 + 表面细节 + 卫星系统
@@ -36,8 +210,10 @@ const FREEZE_LEVEL_THRESHOLD = 3.2;
  * - 位置每帧由模拟时间求解开普勒方程得到（匀面速度，需求 3.1.1）
  * - 轴倾角按 NASA 数据设置；金星 177.36°、天王星 97.77° 的"翻转轴"
  *   本身就表现了逆向自转
- * - 表面：程序化纹理（大陆/海洋、大红斑、环缝等特征可辨识），LOD 两级切换
- * - 地球：独立旋转云层 + 大气边缘辉光；土星：环系（含卡西尼缝）
+ * - 表面：真实位图纹理（Solar System Scope CC BY 4.0，P3-1）异步懒加载，
+ *   未就绪/加载失败时降级为程序化纹理（LOD 两级切换保留）
+ * - 光影（P3-4）：昼夜明暗界线柔和过渡 + 土星环双向投影（shader 解析法）
+ * - 地球：独立旋转云层（真实云图）+ 大气边缘辉光 + 真实夜灯贴图
  * - 卫星：赤道面参考平面的卫星挂在轴倾角组内，月球（黄道面例外）挂在外层
  * - 高时间压缩比（L3+）下冻结更新（返回时按共享时间轴重新求值，需求 3.3）
  */
@@ -52,6 +228,11 @@ export function Planet({ data }: PlanetProps): JSX.Element {
   const frozen = useSimulationStore((s) => s.continuousLevel > FREEZE_LEVEL_THRESHOLD);
   // 真实比例模式（需求 4.1）：半径按真实线性比例映射（对数压缩的真实开关）
   const realScaleMode = useSimulationStore((s) => s.realScaleMode);
+  // 位图纹理懒加载门控（P3-2）：接近行星视角才请求；聚焦/跟随的行星优先
+  const nearPlanetView = useSimulationStore((s) => s.continuousLevel < BITMAP_LEVEL_THRESHOLD);
+  const isFocused = useSimulationStore(
+    (s) => s.followBodyId === data.id || s.selectedBodyId === data.id,
+  );
   const [highRes, setHighRes] = useState(false);
 
   const radius = bodyDisplayRadius(data.radiusKm, realScaleMode);
@@ -60,8 +241,25 @@ export function Planet({ data }: PlanetProps): JSX.Element {
   const equatorialMoons = moons.filter((m) => m.referencePlane === 'planetEquator');
   const eclipticMoons = moons.filter((m) => m.referencePlane === 'ecliptic');
 
-  // 表面纹理（确定性程序化生成；高分辨率按需升级，同一生成器保证无突变）
-  const texture = useMemo(() => {
+  // 真实位图纹理（P3-1）：懒加载，失败/未就绪时为 null → 程序化降级
+  const surfacePriority = isFocused ? 0 : 2;
+  const detailPriority = isFocused ? 0 : 3;
+  const surfaceBitmap = useBitmapTexture(
+    textureUrl(data.id, 'surface'),
+    surfacePriority,
+    nearPlanetView,
+  );
+  const nightBitmap = useBitmapTexture(textureUrl(data.id, 'night'), detailPriority, nearPlanetView);
+  const cloudsBitmap = useBitmapTexture(
+    textureUrl(data.id, 'clouds'),
+    detailPriority,
+    nearPlanetView,
+  );
+  const ringBitmap = useBitmapTexture(textureUrl(data.id, 'ring'), surfacePriority, nearPlanetView);
+
+  // 程序化表面纹理（降级路径，确定性生成；位图就绪后不再生成）
+  const proceduralTexture = useMemo(() => {
+    if (surfaceBitmap) return null;
     const canvas = createBodyTextureCanvas(
       data.id,
       data.color,
@@ -70,27 +268,119 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
-  }, [data.id, data.color, highRes]);
+  }, [data.id, data.color, highRes, surfaceBitmap]);
 
-  const cloudTexture = useMemo(() => {
-    if (!data.surface?.hasCloudLayer) return null;
-    const canvas = createCloudTextureCanvas(highRes ? 512 : 256);
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-  }, [data.surface, highRes]);
+  const surfaceTexture = surfaceBitmap ?? proceduralTexture;
 
-  // 夜半球城市灯光（可选需求 3.1.1）：仅背向太阳的半球显示暖黄灯光
-  const nightMaterial = useMemo(() => {
-    if (!data.surface?.hasNightLights) return null;
-    const tex = new THREE.CanvasTexture(createNightLightsCanvas(highRes ? 1024 : 512));
+  // 环平面法线（世界系）：轴倾角绕 Z 旋转后的 +Y（utils/planetShading.axialTiltNormal）
+  const ringNormal = useMemo(() => {
+    const n = axialTiltNormal(tiltRad);
+    return new THREE.Vector3(n.x, n.y, n.z);
+  }, [tiltRad]);
+
+  const ringRadii = useMemo(() => {
+    if (!data.ring) return null;
+    return ringDisplayRadii(
+      data.radiusKm,
+      data.ring.innerRadiusKm,
+      data.ring.outerRadiusKm,
+      realScaleMode,
+    );
+  }, [data.ring, data.radiusKm, realScaleMode]);
+
+  // 环纹理：真实环纹位图（含卡西尼缝 alpha）优先，降级为程序化环纹
+  const ringTextureAssets = useMemo(() => {
+    if (!data.ring) return null;
+    if (ringBitmap) return { texture: ringBitmap, owned: false };
+    const tex = new THREE.CanvasTexture(createRingTextureCanvas(data.ring));
     tex.colorSpace = THREE.SRGBColorSpace;
+    return { texture: tex, owned: true };
+  }, [data.ring, ringBitmap]);
+
+  // 表面材质：自定义光照 shader（terminator + 环投影，P3-4）
+  const surfaceMaterial = useMemo(() => {
+    if (!surfaceTexture) return null;
     return new THREE.ShaderMaterial({
+      uniforms: {
+        uMap: { value: surfaceTexture },
+        uAmbient: { value: 0.32 },
+        uTerminatorSoftness: { value: TERMINATOR_SOFTNESS },
+        uWarmth: { value: GAS_GIANTS.has(data.id) ? 0.55 : 0.18 },
+        uHasRing: { value: ringRadii && ringTextureAssets ? 1 : 0 },
+        // 无环时用表面纹理占位（uHasRing=0 分支不采样，但保持 sampler 绑定有效）
+        uRingMap: { value: ringTextureAssets?.texture ?? surfaceTexture },
+        uRingInner: { value: ringRadii?.innerUnits ?? 1 },
+        uRingOuter: { value: ringRadii?.outerUnits ?? 2 },
+        uRingShadowStrength: { value: RING_SHADOW_STRENGTH },
+        uPlanetCenterW: { value: new THREE.Vector3() },
+        uRingNormalW: { value: ringNormal.clone() },
+      },
+      vertexShader: SURFACE_VERTEX_SHADER,
+      fragmentShader: SURFACE_FRAGMENT_SHADER,
+    });
+  }, [surfaceTexture, data.id, ringRadii, ringTextureAssets, ringNormal]);
+
+  const cloudAssets = useMemo(() => {
+    if (!data.surface?.hasCloudLayer) return null;
+    // 真实云图（灰度 JPG，亮度作 alpha）优先；降级为程序化 RGBA 云图
+    let texture: THREE.Texture;
+    let owned: boolean;
+    let useAlphaMap: number;
+    if (cloudsBitmap) {
+      texture = cloudsBitmap;
+      owned = false;
+      useAlphaMap = 1;
+    } else {
+      const canvas = createCloudTextureCanvas(highRes ? 512 : 256);
+      texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      owned = true;
+      useAlphaMap = 0;
+    }
+    const material = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      uniforms: {
+        uMap: { value: texture },
+        uUseAlphaMap: { value: useAlphaMap },
+        uOpacity: { value: 0.85 },
+        uAmbient: { value: 0.32 },
+        uTerminatorSoftness: { value: TERMINATOR_SOFTNESS },
+      },
+      vertexShader: SURFACE_VERTEX_SHADER,
+      fragmentShader: CLOUD_FRAGMENT_SHADER,
+    });
+    return { material, texture, owned };
+  }, [data.surface, highRes, cloudsBitmap]);
+
+  // 夜半球城市灯光（可选需求 3.1.1）：仅背向太阳的半球显示暖黄灯光；
+  // P3-1：真实城市灯光贴图（SSS night 贴图，亮度作 alpha）与真实大陆对齐
+  const nightAssets = useMemo(() => {
+    if (!data.surface?.hasNightLights) return null;
+    let texture: THREE.Texture;
+    let owned: boolean;
+    let alphaFromLuminance: number;
+    if (nightBitmap) {
+      texture = nightBitmap;
+      owned = false;
+      alphaFromLuminance = 1;
+    } else {
+      texture = new THREE.CanvasTexture(createNightLightsCanvas(highRes ? 1024 : 512));
+      texture.colorSpace = THREE.SRGBColorSpace;
+      owned = true;
+      alphaFromLuminance = 0;
+    }
+    const material = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
-      uniforms: { uMap: { value: tex } },
+      uniforms: {
+        uMap: { value: texture },
+        uAlphaFromLuminance: { value: alphaFromLuminance },
+      },
       vertexShader: /* glsl */ `
+        #include <common>
+        #include <logdepthbuf_pars_vertex>
         varying vec2 vUv;
         varying vec3 vNormalW;
         varying vec3 vPosW;
@@ -100,34 +390,39 @@ export function Planet({ data }: PlanetProps): JSX.Element {
           vec4 world = modelMatrix * vec4(position, 1.0);
           vPosW = world.xyz;
           gl_Position = projectionMatrix * viewMatrix * world;
+          #include <logdepthbuf_vertex>
         }
       `,
       fragmentShader: /* glsl */ `
+        #include <common>
+        #include <logdepthbuf_pars_fragment>
         uniform sampler2D uMap;
+        uniform float uAlphaFromLuminance;
         varying vec2 vUv;
         varying vec3 vNormalW;
         varying vec3 vPosW;
         void main() {
-          // 太阳位于场景原点：日照方向 = 表面点指向原点
+          #include <logdepthbuf_fragment>
+          // 太阳位于场景原点：日照方向 = 表面点指向原点（与表面 shader 统一）
           vec3 sunDir = normalize(-vPosW);
           float ndl = dot(normalize(vNormalW), sunDir);
           // 仅夜半球显示（晨昏线附近平滑过渡）
           float night = smoothstep(0.08, -0.18, ndl);
           vec4 tex = texture2D(uMap, vUv);
-          gl_FragColor = vec4(tex.rgb, tex.a * night);
+          // 真实夜灯贴图（RGB 无 alpha）：亮度作为 alpha；程序化贴图沿用自带 alpha
+          float lum = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
+          float alpha = mix(tex.a, clamp(lum * 1.6, 0.0, 1.0), uAlphaFromLuminance);
+          gl_FragColor = vec4(tex.rgb, alpha * night);
         }
       `,
     });
-  }, [data.surface, highRes]);
+    return { material, texture, owned };
+  }, [data.surface, highRes, nightBitmap]);
 
+  // 环材质与几何（P3-4：行星在环面上的阴影 shader）
   const ringAssets = useMemo(() => {
-    if (!data.ring) return null;
-    const { innerUnits, outerUnits } = ringDisplayRadii(
-      data.radiusKm,
-      data.ring.innerRadiusKm,
-      data.ring.outerRadiusKm,
-      realScaleMode,
-    );
+    if (!data.ring || !ringRadii || !ringTextureAssets) return null;
+    const { innerUnits, outerUnits } = ringRadii;
     const geometry = new THREE.RingGeometry(innerUnits, outerUnits, 128, 1);
     // UV 重映射为径向坐标（环纹理 x 方向 = 内缘 → 外缘）
     const pos = geometry.attributes.position;
@@ -137,45 +432,70 @@ export function Planet({ data }: PlanetProps): JSX.Element {
       v.fromBufferAttribute(pos, i);
       uv.setXY(i, (v.length() - innerUnits) / (outerUnits - innerUnits), 0.5);
     }
-    const tex = new THREE.CanvasTexture(createRingTextureCanvas(data.ring));
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const material = new THREE.MeshBasicMaterial({
-      map: tex,
+    const material = new THREE.ShaderMaterial({
       transparent: true,
-      opacity: data.ring.opacity,
       side: THREE.DoubleSide,
       depthWrite: false,
+      uniforms: {
+        uMap: { value: ringTextureAssets.texture },
+        uOpacity: { value: data.ring.opacity },
+        uPlanetCenterW: { value: new THREE.Vector3() },
+        uPlanetRadius: { value: radius },
+      },
+      vertexShader: RING_VERTEX_SHADER,
+      fragmentShader: RING_FRAGMENT_SHADER,
     });
-    return { geometry, material, texture: tex };
-  }, [data.ring, data.radiusKm, realScaleMode]);
+    return { geometry, material };
+  }, [data.ring, ringRadii, ringTextureAssets, radius]);
 
   useEffect(() => {
     return () => {
-      texture.dispose();
+      proceduralTexture?.dispose();
     };
-  }, [texture]);
+  }, [proceduralTexture]);
 
   useEffect(() => {
     return () => {
-      cloudTexture?.dispose();
+      surfaceMaterial?.dispose();
     };
-  }, [cloudTexture]);
+  }, [surfaceMaterial]);
 
   useEffect(() => {
     return () => {
-      if (nightMaterial) {
-        (nightMaterial.uniforms.uMap.value as THREE.Texture).dispose();
-        nightMaterial.dispose();
+      // 位图纹理由 TextureManager 统一持有与释放，仅释放自建 canvas 纹理
+      if (cloudAssets) {
+        if (cloudAssets.owned) {
+          cloudAssets.texture.dispose();
+        }
+        cloudAssets.material.dispose();
       }
     };
-  }, [nightMaterial]);
+  }, [cloudAssets]);
+
+  useEffect(() => {
+    return () => {
+      if (nightAssets) {
+        if (nightAssets.owned) {
+          nightAssets.texture.dispose();
+        }
+        nightAssets.material.dispose();
+      }
+    };
+  }, [nightAssets]);
+
+  useEffect(() => {
+    return () => {
+      if (ringTextureAssets?.owned) {
+        ringTextureAssets.texture.dispose();
+      }
+    };
+  }, [ringTextureAssets]);
 
   useEffect(() => {
     return () => {
       if (ringAssets) {
         ringAssets.geometry.dispose();
         ringAssets.material.dispose();
-        ringAssets.texture.dispose();
       }
     };
   }, [ringAssets]);
@@ -186,9 +506,9 @@ export function Planet({ data }: PlanetProps): JSX.Element {
 
     // 外层视角下内层运动退化（需求 3.3）：冻结演算，返回时按共享时间轴重求
     if (groupRef.current) {
-      const frozen = continuousLevel > FREEZE_LEVEL_THRESHOLD;
-      groupRef.current.visible = !frozen;
-      if (frozen) return;
+      const isFrozen = continuousLevel > FREEZE_LEVEL_THRESHOLD;
+      groupRef.current.visible = !isFrozen;
+      if (isFrozen) return;
     }
 
     // 纹理 LOD 升级：首次进入行星视角时切换高分辨率
@@ -201,6 +521,21 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     const scene = eclipticToScene(ecliptic);
     if (groupRef.current) {
       groupRef.current.position.set(scene.x, scene.y, scene.z);
+    }
+    // 光影 uniform 更新（可见时才更新，按可见性门控）：行星中心世界坐标
+    if (surfaceMaterial) {
+      (surfaceMaterial.uniforms.uPlanetCenterW.value as THREE.Vector3).set(
+        scene.x,
+        scene.y,
+        scene.z,
+      );
+    }
+    if (ringAssets) {
+      (ringAssets.material.uniforms.uPlanetCenterW.value as THREE.Vector3).set(
+        scene.x,
+        scene.y,
+        scene.z,
+      );
     }
     // 自转：绕倾斜后的自身轴，周期取绝对值（逆向由轴倾角 >90° 表达）
     const rotation = rotationAngleAtTime(Math.abs(data.rotation.siderealPeriodHours), simDays);
@@ -221,35 +556,30 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     <group ref={groupRef} name={data.id}>
       {/* 轴倾角组：绕 Z 轴倾斜（相对轨道面，此处近似相对黄道面） */}
       <group rotation={[0, 0, tiltRad]}>
-        <mesh
-          ref={bodyRef}
-          onClick={(e) => {
-            e.stopPropagation();
-            selectBody(data.id);
-          }}
-        >
-          <sphereGeometry args={[radius, 48, 48]} />
-          <meshStandardMaterial map={texture} roughness={0.85} metalness={0.05} />
-        </mesh>
+        {surfaceMaterial && (
+          <mesh
+            ref={bodyRef}
+            material={surfaceMaterial}
+            onClick={(e) => {
+              e.stopPropagation();
+              selectBody(data.id);
+            }}
+          >
+            <sphereGeometry args={[radius, 48, 48]} />
+          </mesh>
+        )}
 
         {/* 夜半球城市灯光（可选需求 3.1.1：背向太阳的半球显示） */}
-        {nightMaterial && (
-          <mesh ref={nightRef} material={nightMaterial}>
+        {nightAssets && (
+          <mesh ref={nightRef} material={nightAssets.material}>
             <sphereGeometry args={[radius * 1.005, 48, 48]} />
           </mesh>
         )}
 
-        {/* 云层（独立旋转，需求 3.1.1 地球） */}
-        {cloudTexture && (
-          <mesh ref={cloudRef}>
+        {/* 云层（独立旋转，需求 3.1.1 地球；P3-1 真实云图 + 统一昼夜光照） */}
+        {cloudAssets && (
+          <mesh ref={cloudRef} material={cloudAssets.material}>
             <sphereGeometry args={[radius * 1.02, 48, 48]} />
-            <meshStandardMaterial
-              map={cloudTexture}
-              transparent
-              opacity={0.85}
-              depthWrite={false}
-              roughness={1}
-            />
           </mesh>
         )}
 
@@ -268,7 +598,7 @@ export function Planet({ data }: PlanetProps): JSX.Element {
           </mesh>
         )}
 
-        {/* 行星环（土星：分层环纹 + 卡西尼缝，需求 3.1.1） */}
+        {/* 行星环（土星：真实环纹 + 卡西尼缝 + 行星阴影，需求 3.1.1/4.6） */}
         {ringAssets && (
           <mesh
             rotation={[-Math.PI / 2, 0, 0]}

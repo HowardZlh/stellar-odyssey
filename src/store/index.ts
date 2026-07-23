@@ -64,6 +64,8 @@ export interface SimulationState {
   supernovaCounter: number;
   /** 性能监控面板显示（FPS/内存，可开关，需求 3.5.2 可选项） */
   showPerformance: boolean;
+  /** Bloom 泛光效果开关（P3，需求 4.6：默认开启，低性能设备可关闭） */
+  bloomEnabled: boolean;
   /** 银河系—仙女座碰撞合并快进预览进行中（可选需求 3.1.3） */
   mergePreviewActive: boolean;
   /** 合并预览进度（0-1） */
@@ -121,6 +123,8 @@ export interface SimulationState {
   archiveSupernova: () => void;
   dismissSupernovaNotice: () => void;
   setShowPerformance: (show: boolean) => void;
+  setBloomEnabled: (enabled: boolean) => void;
+  toggleBloom: () => void;
   /**
    * 启动银河系—仙女座碰撞合并快进预览（可选需求 3.1.3）：
    * 模拟时间在 MERGE_PREVIEW_DURATION_SEC 内平滑快进到合并时刻，
@@ -166,6 +170,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   supernovaNoticeVisible: false,
   supernovaCounter: 0,
   showPerformance: false,
+  bloomEnabled: true,
   mergePreviewActive: false,
   mergePreviewProgress01: 0,
   mergePreviewReturnSimDays: null,
@@ -314,6 +319,10 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   dismissSupernovaNotice: () => set({ supernovaNoticeVisible: false }),
 
   setShowPerformance: (show) => set({ showPerformance: show }),
+
+  setBloomEnabled: (enabled) => set({ bloomEnabled: enabled }),
+
+  toggleBloom: () => set((state) => ({ bloomEnabled: !state.bloomEnabled })),
 
   startMergePreview: () =>
     set((state) => {

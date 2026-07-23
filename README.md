@@ -1,5 +1,13 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## 素材许可（Attribution）
+
+- `public/textures/` 下的行星/月球/太阳表面纹理与土星环纹理来自
+  [Solar System Scope Textures](https://www.solarsystemscope.com/textures/)，
+  许可协议 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)（基于 NASA 观测数据制作）。
+  纹理清单与代码内登记见 `src/data/textures.ts`；加载失败时自动降级为程序化纹理
+  （`src/components/CelestialBody/proceduralTextures.ts`）。
+
 ## Getting Started
 
 First, run the development server:
