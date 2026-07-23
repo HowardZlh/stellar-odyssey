@@ -141,3 +141,71 @@ export function dustTailBendOffset(t01: number, bendMagnitude: number): number {
 export function tailSeparationAngleDeg(bendMagnitude: number): number {
   return (Math.atan(Math.max(0, bendMagnitude)) * 180) / Math.PI;
 }
+
+// ---------------------------------------------------------------------------
+// 粒子化彗尾（彗尾细节增强）：以下纯函数为 Comet.tsx 粒子 shader 的 CPU 镜像
+// （项目惯例：shader 逻辑必须有纯函数镜像 + 单测）
+//
+// 物理近似登记：
+// - 流动动画表达彗核物质持续外流（离子尾快、尘埃尾慢），速度为视觉调校值
+// - 离子尾摆动近似太阳风扰动导致的射线/扭结形态（真实为磁场重联等复杂过程）
+// - 横向扩散包络 r(t) = core + (max−core)·t^0.7 近似彗尾自根部向尾端的展宽
+// ---------------------------------------------------------------------------
+
+/** 横向扩散包络指数（<1：根部展宽快、尾端趋缓，视觉上更接近真实彗尾外形） */
+export const TAIL_SPREAD_EXPONENT = 0.7;
+
+/** 轴向亮度衰减指数：alpha ∝ (1−t)^n，尾端平滑消隐（消除截断突兀） */
+export const TAIL_FADE_EXPONENT = 1.2;
+
+/** 离子尾摆动波数（沿尾轴的相位梯度，产生行波状飘动） */
+export const ION_SWAY_WAVE_NUMBER = 4;
+
+/**
+ * 彗尾粒子流动相位（shader 镜像）：t = fract(seed + flow)
+ *
+ * 粒子沿尾轴的归一化位置随流动相位推进并循环回收——
+ * 表达彗核物质持续外流。
+ */
+export function tailFlowT01(seed01: number, flow01: number): number {
+  const sum = seed01 + flow01;
+  return sum - Math.floor(sum);
+}
+
+/**
+ * 彗尾横向扩散半径包络（shader 镜像）：
+ * r(t) = core + (max − core)·t^TAIL_SPREAD_EXPONENT
+ * （t = 沿尾轴归一化距离；根部窄与彗发融合、尾端宽）
+ */
+export function tailSpreadRadius(
+  t01: number,
+  coreRadiusUnits: number,
+  maxRadiusUnits: number,
+): number {
+  if (!(coreRadiusUnits >= 0) || !(maxRadiusUnits >= coreRadiusUnits)) {
+    throw new RangeError(
+      `扩散半径必须满足 0 ≤ core ≤ max，收到 core=${coreRadiusUnits}, max=${maxRadiusUnits}`,
+    );
+  }
+  const t = Math.min(1, Math.max(0, t01));
+  return coreRadiusUnits + (maxRadiusUnits - coreRadiusUnits) * Math.pow(t, TAIL_SPREAD_EXPONENT);
+}
+
+/**
+ * 离子尾摆动横向偏移（shader 镜像）：
+ * offset(t) = amp·t·sin(phase − t·ION_SWAY_WAVE_NUMBER)
+ * （根部固定为 0，摆幅随 t 向尾端线性增大——太阳风扰动的行波形态）
+ */
+export function ionTailSwayOffset(t01: number, phaseRad: number, ampUnits: number): number {
+  const t = Math.min(1, Math.max(0, t01));
+  return ampUnits * t * Math.sin(phaseRad - t * ION_SWAY_WAVE_NUMBER);
+}
+
+/**
+ * 彗尾粒子轴向亮度衰减（shader 镜像）：fade(t) = (1−t)^TAIL_FADE_EXPONENT
+ * （尾根最亮、尾端平滑消隐至 0）
+ */
+export function tailAxialFade01(t01: number): number {
+  const t = Math.min(1, Math.max(0, t01));
+  return Math.pow(1 - t, TAIL_FADE_EXPONENT);
+}
