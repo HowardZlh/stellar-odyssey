@@ -5,7 +5,8 @@ import type { ViewLevel } from '@/types';
 import { CAMERA_VIEWS } from '@/data/cameraViews';
 import { getBodyInfoById } from '@/data/catalog';
 import { useSimulationStore } from '@/store';
-import { galacticYearProgress } from '@/utils/galaxy';
+import { galacticFrameHudLabel } from '@/utils/galacticFrame';
+import { galacticYearProgress, sunGalacticPositionLy } from '@/utils/galaxy';
 import { formatSceneScaleLabel } from '@/utils/scale';
 import { SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
 import { formatSimDate } from '@/utils/time';
@@ -33,6 +34,8 @@ export function HudInfo(): JSX.Element {
   const activeSupernova = useSimulationStore((s) => s.activeSupernova);
   const supernovaNoticeVisible = useSimulationStore((s) => s.supernovaNoticeVisible);
   const dismissSupernovaNotice = useSimulationStore((s) => s.dismissSupernovaNotice);
+  const galacticFrameMode = useSimulationStore((s) => s.galacticFrameMode);
+  const toggleGalacticFrameMode = useSimulationStore((s) => s.toggleGalacticFrameMode);
 
   // 模拟时间/标尺以低频率刷新（0.25s），避免每帧渲染 React 组件
   const [simDateText, setSimDateText] = useState('');
@@ -44,11 +47,13 @@ export function HudInfo(): JSX.Element {
       setSimDateText(formatSimDate(state.simDays));
       // 尺度标尺：相机距离按当前层级的尺度映射解释（AU / 光年 / Mpc）
       setScaleText(formatSceneScaleLabel(state.cameraDistanceUnits, state.continuousLevel));
-      // 银河年进度（L3 显示）
+      // 银河年进度 + 太阳当前银盘面高度（L3 显示，P6 §3.1.2 垂直振荡指示）
       if (state.viewLevel === 'L3') {
         const progress = galacticYearProgress(state.simDays);
+        const heightLy = sunGalacticPositionLy(state.simDays).y;
+        const heightSign = heightLy >= 0 ? '+' : '−';
         setGalacticText(
-          `银河年进度：第 ${progress.orbits + 1} 圈 ${(progress.progress01 * 100).toFixed(1)}%（绕行 ${((progress.orbits + progress.progress01) * 360).toFixed(0)}°）`,
+          `银河年进度：第 ${progress.orbits + 1} 圈 ${(progress.progress01 * 100).toFixed(1)}%（绕行 ${((progress.orbits + progress.progress01) * 360).toFixed(0)}°）｜银盘面高度 ${heightSign}${Math.abs(heightLy).toFixed(0)} ly`,
         );
       } else {
         setGalacticText('');
@@ -67,8 +72,21 @@ export function HudInfo(): JSX.Element {
         <p className="text-sm font-medium text-space-accent">{CAMERA_VIEWS[viewLevel].nameZh}</p>
         <p className="mt-1 text-gray-300">模拟时间：{simDateText}</p>
         <p className="mt-1 text-gray-300">当前尺度：{scaleText}</p>
-        <p className="mt-1 text-gray-500">{REFERENCE_FRAMES[viewLevel]}</p>
+        <p className="mt-1 text-gray-500">
+          {viewLevel === 'L3' ? galacticFrameHudLabel(galacticFrameMode) : REFERENCE_FRAMES[viewLevel]}
+        </p>
         {galacticText && <p className="mt-1 text-emerald-300/80">{galacticText}</p>}
+        {viewLevel === 'L3' && (
+          <p className="mt-1">
+            <button
+              type="button"
+              onClick={toggleGalacticFrameMode}
+              className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] hover:bg-white/20"
+            >
+              🌀 参考系：{galacticFrameMode === 'galactic-center' ? '银心固定' : '跟随太阳系'}（G 切换）
+            </button>
+          </p>
+        )}
         {rateClampNotice && (
           <p className="mt-1 text-amber-300/90">⚠ 快周期卫星运动已减速显示（防闪烁）</p>
         )}

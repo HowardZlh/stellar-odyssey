@@ -966,6 +966,97 @@ export function createGlowSpriteCanvas(color: string, size = 128): HTMLCanvasEle
   return canvas;
 }
 
+/**
+ * 圆形软边粒子贴图（P6 全局粒子贴图修复，需求 3.2）：
+ * 所有 PointsMaterial 统一设置此贴图消除方形粒子。中心实心、边缘柔和衰减，
+ * 比 createGlowSpriteCanvas（三停光晕）中心更实，适合作为"恒星点"。
+ */
+export function createSoftPointCanvas(size = 64): HTMLCanvasElement {
+  const canvas = makeCanvas(size, size);
+  const ctx = getContext2D(canvas);
+  const half = size / 2;
+  const gradient = ctx.createRadialGradient(half, half, 0, half, half, half);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.45, 'rgba(255,255,255,0.85)');
+  gradient.addColorStop(0.75, 'rgba(255,255,255,0.3)');
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(half, half, half, 0, Math.PI * 2);
+  ctx.fill();
+  return canvas;
+}
+
+/**
+ * 核球/银晕辉光贴图（P6 §3.3）：径向渐变基底 + fBm 噪声扰动的多层辉光，
+ * 替换纯径向渐变圆斑，消除"贴图圆斑"感。确定性种子。
+ */
+export function createBulgeGlowCanvas(color: string, size = 256, seed = 7): HTMLCanvasElement {
+  const canvas = makeCanvas(size, size);
+  const ctx = getContext2D(canvas);
+  const c = hexToRgb(color);
+  const fbm = createFbm(seed, 4, 6, 6);
+  const half = size / 2;
+  const image = ctx.createImageData(size, size);
+  const data = image.data;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const nx = (x - half) / half;
+      const ny = (y - half) / half;
+      const dist = Math.hypot(nx, ny);
+      // 径向衰减（中心亮）
+      const radial = Math.max(0, 1 - dist);
+      // 噪声扰动辉光（团块状而非光滑圆斑）
+      const n = fbm(x / size, y / size);
+      const alpha = clamp01(radial * radial * (0.55 + 0.9 * n));
+      const idx = (y * size + x) * 4;
+      const bright = 0.7 + 0.3 * n;
+      data[idx] = c.r * bright;
+      data[idx + 1] = c.g * bright;
+      data[idx + 2] = c.b * bright;
+      data[idx + 3] = alpha * 255;
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  return canvas;
+}
+
+/**
+ * 衍射芒线贴图（P6 §3.2 白矮星天狼星B）：中心亮点 + 四向十字芒线
+ * （观测中致密高亮点星呈现的衍射尖峰质感），程序化生成。
+ */
+export function createDiffractionSpikeCanvas(color: string, size = 128): HTMLCanvasElement {
+  const canvas = makeCanvas(size, size);
+  const ctx = getContext2D(canvas);
+  const c = hexToRgb(color);
+  const half = size / 2;
+  // 中心核（软圆点）
+  const core = ctx.createRadialGradient(half, half, 0, half, half, half * 0.28);
+  core.addColorStop(0, rgbToCss(c, 1));
+  core.addColorStop(1, rgbToCss(c, 0));
+  ctx.fillStyle = core;
+  ctx.fillRect(0, 0, size, size);
+  // 四向芒线（细长渐变条），含 45° 次级芒线
+  ctx.globalCompositeOperation = 'lighter';
+  const spikes = [0, Math.PI / 2, Math.PI / 4, -Math.PI / 4];
+  const lengths = [half * 0.95, half * 0.95, half * 0.55, half * 0.55];
+  for (let i = 0; i < spikes.length; i += 1) {
+    ctx.save();
+    ctx.translate(half, half);
+    ctx.rotate(spikes[i]);
+    const len = lengths[i];
+    const grad = ctx.createLinearGradient(-len, 0, len, 0);
+    grad.addColorStop(0, rgbToCss(c, 0));
+    grad.addColorStop(0.5, rgbToCss(c, i < 2 ? 0.7 : 0.4));
+    grad.addColorStop(1, rgbToCss(c, 0));
+    ctx.fillStyle = grad;
+    const w = i < 2 ? size * 0.02 : size * 0.014;
+    ctx.fillRect(-len, -w / 2, len * 2, w);
+    ctx.restore();
+  }
+  return canvas;
+}
+
 /** 柔和光斑（星系内部构件：核球、旋臂团块等） */
 function drawGlowBlob(
   ctx: CanvasRenderingContext2D,
@@ -1009,7 +1100,46 @@ function drawSpiralArm(
     const blobR = size * (0.05 * (1 - t) + 0.014);
     const color = mixRgb(tint, white, (1 - t) * 0.45);
     drawGlowBlob(ctx, x, y, blobR, color, 0.16 * (1 - t * 0.75) + 0.03);
+    // P6 §3.4：旋臂上散布 HII 区亮点（粉/蓝亮结点，恒星形成区）
+    if (rand() < 0.16) {
+      const hii: Rgb = rand() < 0.5 ? { r: 255, g: 150, b: 190 } : { r: 180, g: 210, b: 255 };
+      drawGlowBlob(ctx, x, y, size * 0.02, hii, 0.5);
+    }
   }
+}
+
+/**
+ * 尘埃带暗弧（P6 §3.4）：沿旋臂内侧的暗色弧，普通混合下压暗底光，
+ * 增强旋臂立体感（旋涡星系尘埃带特征）。
+ */
+function drawDustLane(
+  ctx: CanvasRenderingContext2D,
+  rand: () => number,
+  cx: number,
+  cy: number,
+  size: number,
+  baseAngle: number,
+  windRad: number
+): void {
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-out';
+  const steps = 48;
+  for (let s = 0; s <= steps; s += 1) {
+    const t = s / steps;
+    const theta = baseAngle + t * windRad + 0.18; // 内侧偏移
+    const r = size * 0.5 * (0.16 + 0.72 * t ** 0.92);
+    const x = cx + Math.cos(theta) * r;
+    const y = cy + Math.sin(theta) * r;
+    const blobR = size * (0.03 * (1 - t) + 0.008);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, blobR);
+    g.addColorStop(0, `rgba(0,0,0,${0.35 * (1 - t * 0.6)})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, blobR, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 /**
@@ -1025,7 +1155,8 @@ export function createGalaxySpriteCanvas(
   morphology: GalaxyMorphology,
   tintColor: string,
   size: number,
-  seed: number
+  seed: number,
+  variant?: 'm31' | 'm33'
 ): HTMLCanvasElement {
   const canvas = makeCanvas(size, size);
   const ctx = getContext2D(canvas);
@@ -1036,9 +1167,50 @@ export function createGalaxySpriteCanvas(
   const cy = size / 2;
   // 叠加发光：团块相互增亮，接近真实星光叠加
   ctx.globalCompositeOperation = 'lighter';
+
+  // P6 §3.4：M31/M33 专属形态（与通用旋涡星系区分）
+  if (variant === 'm31') {
+    // 仙女座：大而亮的核球 + 紧致缠绕旋臂 + 显著尘埃环
+    drawGlowBlob(ctx, cx, cy, size * 0.5, tint, 0.12);
+    drawGlowBlob(ctx, cx, cy, size * 0.22, mixRgb(tint, white, 0.55), 0.9);
+    drawGlowBlob(ctx, cx, cy, size * 0.1, white, 0.95);
+    for (let a = 0; a < 2; a += 1) {
+      const baseAngle = a * Math.PI + 0.2;
+      drawSpiralArm(ctx, rand, cx, cy, size, baseAngle, 0.2, Math.PI * 2.0, tint);
+      drawDustLane(ctx, rand, cx, cy, size, baseAngle, Math.PI * 2.0);
+    }
+    // 显著尘埃环（Spitzer/Herschel 红外观测形态）
+    drawDustLane(ctx, rand, cx, cy, size, 0.5, Math.PI * 1.6);
+    return canvas;
+  }
+  if (variant === 'm33') {
+    // 三角座：松散、絮状旋臂 + 弱核球 + 大量 HII 区亮点
+    drawGlowBlob(ctx, cx, cy, size * 0.42, tint, 0.12);
+    drawGlowBlob(ctx, cx, cy, size * 0.12, mixRgb(tint, white, 0.5), 0.7);
+    const armCount = 3;
+    for (let a = 0; a < armCount; a += 1) {
+      const baseAngle = (a / armCount) * Math.PI * 2 + rand() * 0.6;
+      drawSpiralArm(ctx, rand, cx, cy, size, baseAngle, 0.08, Math.PI * 1.1, tint);
+    }
+    // 额外散布 HII 区（三角座富含恒星形成区）
+    for (let i = 0; i < 24; i += 1) {
+      const ang = rand() * Math.PI * 2;
+      const dist = rand() * size * 0.42;
+      drawGlowBlob(
+        ctx,
+        cx + Math.cos(ang) * dist,
+        cy + Math.sin(ang) * dist,
+        size * 0.018,
+        { r: 255, g: 150, b: 190 },
+        0.5
+      );
+    }
+    return canvas;
+  }
+
   switch (morphology) {
     case 'spiral': {
-      // 银盘底光 + 亮核 + 2-3 条旋臂
+      // 银盘底光 + 亮核 + 2-3 条旋臂 + 尘埃带 + HII 区亮点
       drawGlowBlob(ctx, cx, cy, size * 0.46, tint, 0.1);
       drawGlowBlob(ctx, cx, cy, size * 0.17, mixRgb(tint, white, 0.6), 0.85);
       drawGlowBlob(ctx, cx, cy, size * 0.07, white, 0.9);
@@ -1046,6 +1218,7 @@ export function createGalaxySpriteCanvas(
       for (let a = 0; a < armCount; a += 1) {
         const baseAngle = (a / armCount) * Math.PI * 2 + rand() * 0.4;
         drawSpiralArm(ctx, rand, cx, cy, size, baseAngle, 0.12, Math.PI * 1.35, tint);
+        drawDustLane(ctx, rand, cx, cy, size, baseAngle, Math.PI * 1.35);
       }
       break;
     }
@@ -1065,12 +1238,19 @@ export function createGalaxySpriteCanvas(
       break;
     }
     case 'elliptical': {
-      // 光滑椭圆径向渐变，无内部结构；轴比与方位角随 seed 变化
+      // 光度沿 de Vaucouleurs r^(1/4) 轮廓衰减（P6 §3.4）：中心陡峭、外围延展。
+      // 用多层嵌套柔边椭圆逼近 r^1/4 falloff（越靠中心层越亮）。轴比/方位角随 seed。
       const ratio = 0.55 + rand() * 0.3;
       const rot = rand() * Math.PI;
-      drawSoftEllipse(ctx, cx, cy, size * 0.45, size * 0.45 * ratio, rot, tint, 0.35, 0.15);
-      drawSoftEllipse(ctx, cx, cy, size * 0.28, size * 0.28 * ratio, rot, mixRgb(tint, white, 0.4), 0.55, 0.2);
-      drawSoftEllipse(ctx, cx, cy, size * 0.12, size * 0.12 * ratio, rot, mixRgb(tint, white, 0.75), 0.85, 0.3);
+      const layers = 6;
+      for (let i = layers - 1; i >= 0; i -= 1) {
+        const t = i / (layers - 1); // 1=外, 0=中心
+        const rr = size * (0.08 + 0.4 * t);
+        // de Vaucouleurs：I ∝ exp(−k·r^0.25)，归一化亮度随半径快速下降
+        const bright = Math.exp(-3.0 * Math.pow(t, 0.25)) + 0.05;
+        const col = mixRgb(tint, white, 0.75 * (1 - t));
+        drawSoftEllipse(ctx, cx, cy, rr, rr * ratio, rot, col, Math.min(0.9, bright), 0.2);
+      }
       break;
     }
     case 'irregular': {

@@ -17,6 +17,22 @@
  * - 太阳垂直银盘振荡周期约 7000 万年、振幅约 ±70–100 pc
  *   （Bahcall & Bahcall 1985, Nature）
  * - 黄道面与银道面夹角约 60.2°（IAU 银道坐标系定义）
+ *
+ * ── 数据自洽修正（P6，需求 3.1.2 §3.1.2 / §5）──────────────────────────
+ * 三个观测量「银河年 230 Myr、太阳距银心 26000 ly、旋转线速度 220 km/s」
+ * 并不能同时严格成立：圆周运动约束 v = ω·R = (2π/T)·R 要求三者联动。
+ *   - 由 T=230 Myr、v=220 km/s 反推 R = v·T/(2π) ≈ 26863 ly ≈ 8.24 kpc；
+ *   - 原取 R=26000 ly 时，v/R 推出的角速度（0.02823 rad/Myr）比
+ *     2π/230（0.02732 rad/Myr）大约 3.3%，导致「银河年进度」与「粒子较差
+ *     自转/太阳邻域相对速度」两套演算相互矛盾。
+ * 自洽方案（本项目采纳，登记）：**固定 T=230 Myr 与 v=220 km/s**（二者为
+ * 最常被引用、且直接呈现在 HUD 的圆整值），令太阳银心距离随之取
+ * SUN_GALACTIC_RADIUS_LY = 26863 ly（≈8.24 kpc，落在 IAU R₀≈8.0–8.3 kpc
+ * 观测区间内，故科学上完全成立）。修正后：
+ *   diskAngularSpeedRadPerMyr(SUN_GALACTIC_RADIUS_LY) === 2π/GALACTIC_YEAR_MYR
+ * 精确成立（单测断言），银河年进度与旋转曲线角速度一致，3% 偏差消除。
+ * 参考：IAU 推荐 R₀≈8.178 kpc（GRAVITY Collab. 2019）、Θ₀≈220–233 km/s
+ * （Reid et al. 2014；McMillan 2017），本组合处于推荐范围内。
  */
 
 import type { Vec3 } from '@/types';
@@ -32,11 +48,28 @@ export const GALACTIC_DISK_THICKNESS_LY = 1000;
 /** 核球半径（光年）：中心核球半径约 8 千光年 */
 export const GALACTIC_BULGE_RADIUS_LY = 8000;
 
-/** 太阳距银心距离（光年）：约 8 kpc ≈ 2.6 万光年 */
-export const SUN_GALACTIC_RADIUS_LY = 26000;
-
-/** 银河年（百万年）：太阳绕银心一圈约 2.3 亿年 */
+/** 银河年（百万年）：太阳绕银心一圈约 2.3 亿年（自洽基准量，见文件头） */
 export const GALACTIC_YEAR_MYR = 230;
+
+/** 银盘旋转线速度（km/s）：平坦旋转曲线，太阳附近约 220 km/s（自洽基准量，见文件头） */
+export const GALACTIC_ROTATION_KM_S = 220;
+
+/**
+ * 速度换算：1 km/s ≈ 3.3357 光年/百万年
+ * 推导：1 km/s × 3.1557e13 s/Myr ÷ 9.4607e12 km/ly ≈ 3.3357 ly/Myr
+ */
+export const KM_S_TO_LY_PER_MYR = 3.3357;
+
+/**
+ * 太阳距银心距离（光年）：≈ 8.24 kpc ≈ 2.69 万光年
+ *
+ * 自洽取值（见文件头「数据自洽修正」）：由 v=220 km/s、T=230 Myr 反推
+ * R = v·T/(2π)。刻意选取使 diskAngularSpeedRadPerMyr(R) 精确等于 2π/T，
+ * 消除银河年进度与旋转曲线角速度间约 3.3% 的历史偏差；数值落在 IAU R₀
+ * 观测区间（8.0–8.3 kpc）内，科学成立。
+ */
+export const SUN_GALACTIC_RADIUS_LY =
+  (GALACTIC_ROTATION_KM_S * KM_S_TO_LY_PER_MYR * GALACTIC_YEAR_MYR) / (Math.PI * 2);
 
 /** 太阳垂直银盘振荡周期（百万年）：约 7000 万年 */
 export const SUN_VERTICAL_PERIOD_MYR = 70;
@@ -47,17 +80,8 @@ export const SUN_VERTICAL_AMPLITUDE_LY = 300;
 /** 黄道面与银道面夹角（度），渲染端使用 */
 export const ECLIPTIC_GALACTIC_TILT_DEG = 60.2;
 
-/** 银盘旋转线速度（km/s）：平坦旋转曲线，太阳附近约 220 km/s */
-export const GALACTIC_ROTATION_KM_S = 220;
-
 /** 1 百万年的天数（儒略年 365.25 天） */
 export const DAYS_PER_MYR = 365.25e6;
-
-/**
- * 速度换算：1 km/s ≈ 3.3357 光年/百万年
- * 推导：1 km/s × 3.1557e13 s/Myr ÷ 9.4607e12 km/ly ≈ 3.3357 ly/Myr
- */
-export const KM_S_TO_LY_PER_MYR = 3.3357;
 
 /**
  * 模拟天数 → 百万年（Myr）
@@ -169,8 +193,9 @@ export function galaxyShaderMyr(myr: number): number {
  *
  * 密度波理论：旋臂图案以恒定角速度 Ω_p 刚性旋转，与恒星较差自转不同。
  * 取 Ω_p ≈ 0.020 rad/Myr（对应共转半径约 3.7 万光年，在太阳轨道之外），
- * 太阳附近恒星角速度 ω(26000 ly) ≈ 0.0282 rad/Myr > Ω_p，
- * 因此太阳系约每 2 亿年相对旋臂图案前移一个旋臂间隔（周期性穿越旋臂）。
+ * 太阳附近恒星角速度 ω(R_sun) = 2π/230 ≈ 0.0273 rad/Myr > Ω_p（P6 自洽修正后，
+ * 见文件头；修正前误取 R=26000 得 0.0282），
+ * 因此太阳系约每 3 亿年相对旋臂图案前移一个旋臂间隔（周期性穿越旋臂）。
  * 来源：Lin & Shu (1964) 密度波理论；共转半径取值为示意近似（已登记）。
  */
 export const ARM_PATTERN_SPEED_RAD_PER_MYR = 0.02;

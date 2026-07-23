@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import type { SupernovaEvent, Vec3, ViewLevel } from '@/types';
 import { DEFAULT_ANCHOR_BODY_ID, cycleBodyId, isCycleBody } from '@/utils/bodyCycle';
 import { daysSinceJ2000 } from '@/utils/physics';
+import type { GalacticFrameMode } from '@/utils/galacticFrame';
 import { continuousLevelForDistance, discreteLevelFromContinuous } from '@/utils/scale';
 import { SN_MAX_REMNANTS, clampSupernovaDuration } from '@/utils/supernova';
 import { advanceSimTimeContinuous, clampSpeedMultiplier } from '@/utils/time';
@@ -60,6 +61,13 @@ export interface SimulationState {
   anchorBodyId: string;
   /** 真实比例模式（需求 4.1：视觉夸大的真实比例开关，P2） */
   realScaleMode: boolean;
+  /**
+   * 银河系视角（L3）参考系观察模式（P6，需求 3.1.1）：
+   * 'follow' 跟随太阳系（太阳系居原点、银河系相对滑动，现状默认）；
+   * 'galactic-center' 银心固定（银心居原点、太阳系标记沿轨道实际移动）。
+   * G 键切换，切换时 2 秒平滑过渡。
+   */
+  galacticFrameMode: GalacticFrameMode;
   /** 当前活跃超新星事件（需求 3.1.5 动态事件；同一时刻至多一个） */
   activeSupernova: SupernovaEvent | null;
   /** 已完成的超新星遗迹（永久保留，FIFO 上限 SN_MAX_REMNANTS） */
@@ -116,6 +124,8 @@ export interface SimulationState {
   cycleAnchorBody: (direction: 1 | -1) => void;
   setRealScaleMode: (enabled: boolean) => void;
   toggleRealScaleMode: () => void;
+  setGalacticFrameMode: (mode: GalacticFrameMode) => void;
+  toggleGalacticFrameMode: () => void;
   /**
    * 触发超新星（手动演示或自动触发；已有活跃事件时忽略）
    *
@@ -177,6 +187,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   flyToRequestId: 0,
   anchorBodyId: DEFAULT_ANCHOR_BODY_ID,
   realScaleMode: false,
+  galacticFrameMode: 'follow',
   activeSupernova: null,
   supernovaRemnants: [],
   supernovaNoticeVisible: false,
@@ -322,6 +333,13 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   setRealScaleMode: (enabled) => set({ realScaleMode: enabled }),
 
   toggleRealScaleMode: () => set((state) => ({ realScaleMode: !state.realScaleMode })),
+
+  setGalacticFrameMode: (mode) => set({ galacticFrameMode: mode }),
+
+  toggleGalacticFrameMode: () =>
+    set((state) => ({
+      galacticFrameMode: state.galacticFrameMode === 'follow' ? 'galactic-center' : 'follow',
+    })),
 
   triggerSupernova: (positionLy, progenitorMassSun, durationSec, nowMs) =>
     set((state) => {
