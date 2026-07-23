@@ -16,6 +16,7 @@ import {
 } from '@/data/galaxies';
 import { useSimulationStore } from '@/store';
 import { cosmicDistanceToSceneUnits, lyToSceneUnits, trapezoidWeight } from '@/utils/scale';
+import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import {
   OBSERVABLE_UNIVERSE_RADIUS_LY,
   generateCosmicWeb,
@@ -101,6 +102,8 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
     if (!group) return;
     const weight = fadeWeight(state.continuousLevel);
     group.visible = weight > 0.001;
+    // Raycaster 不检查 visible：淡出后禁用 raycast，避免 L2/L3 下隐形星系拦截点击
+    setObjectTreeRaycastEnabled(group, weight > 0.05);
     if (!group.visible) return;
 
     const { simDays } = state;

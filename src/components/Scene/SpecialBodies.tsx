@@ -13,6 +13,7 @@ import {
 } from '@/data/specialBodies';
 import { useSimulationStore } from '@/store';
 import { SCENE_UNITS_PER_LY, trapezoidWeight } from '@/utils/scale';
+import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import { sunGalacticPositionLy } from '@/utils/galaxy';
 import { createSeededRandom } from '@/utils/random';
 import {
@@ -30,9 +31,14 @@ import { createGlowSpriteCanvas } from '@/components/CelestialBody/proceduralTex
 
 /**
  * 特殊天体 LOD 淡入淡出（需求 3.1.5 通用要求）：
- * L3 完整可见，进入 L4 前淡出（恒星级天体在 L4 不可见，如脉冲星）
+ * L3 完整可见，进入 L4 前淡出（恒星级天体在 L4 不可见，如脉冲星）。
+ * 淡入起点 2.5 与 L2/L3 离散边界一致（discreteLevelFromContinuous）：
+ * HUD 显示"太阳系视角"期间银河系层内容完全不可见、不可点击。
  */
-const SPECIAL_FADE = { x0: 2.1, x1: 2.6, x2: 3.4, x3: 4.0 } as const;
+const SPECIAL_FADE = { x0: 2.5, x1: 2.9, x2: 3.4, x3: 4.0 } as const;
+
+/** 可交互阈值：淡入权重低于该值时禁用 raycast（隐形对象不拦截点击） */
+const INTERACTIVE_WEIGHT = 0.05;
 
 function specialFadeWeight(continuousLevel: number): number {
   return trapezoidWeight(
@@ -53,12 +59,23 @@ function useGalacticPlacement(
   body: SpecialBodyData,
   groupRef: React.RefObject<THREE.Group>,
 ): void {
+  // 挂载即按当前层级门控（消除首帧 visible/raycast 默认开启的竞态）
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    const weight = specialFadeWeight(useSimulationStore.getState().continuousLevel);
+    group.visible = weight > 0.001;
+    setObjectTreeRaycastEnabled(group, weight > INTERACTIVE_WEIGHT);
+  }, [groupRef]);
   useFrame(() => {
     const group = groupRef.current;
     if (!group) return;
     const state = useSimulationStore.getState();
     const weight = specialFadeWeight(state.continuousLevel);
     group.visible = weight > 0.001;
+    // three.js Raycaster 不检查 visible：淡出后必须显式禁用 raycast，
+    // 否则太阳系视角下隐形的星云/星团热区仍会拦截点击（bug 修复）
+    setObjectTreeRaycastEnabled(group, weight > INTERACTIVE_WEIGHT);
     if (!group.visible) return;
     if (body.positionMode === 'galactic-center') {
       group.position.set(0, 0, 0);
@@ -79,7 +96,7 @@ function useGalacticPlacement(
 /** 共用：标签 */
 function BodyLabel({ body, sizeUnits }: { body: SpecialBodyData; sizeUnits: number }): JSX.Element | null {
   const showLabels = useSimulationStore((s) => s.showLabels);
-  const inRange = useSimulationStore((s) => s.continuousLevel > 2.35 && s.continuousLevel < 3.9);
+  const inRange = useSimulationStore((s) => s.continuousLevel > 2.5 && s.continuousLevel < 3.9);
   if (!showLabels || !inRange) return null;
   return (
     <Html

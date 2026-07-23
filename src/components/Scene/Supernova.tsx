@@ -19,12 +19,16 @@ import {
   supernovaVisualState,
 } from '@/utils/supernova';
 import { nebulaExpansionScale } from '@/utils/specialBodies';
+import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import { createGlowSpriteCanvas } from '@/components/CelestialBody/proceduralTextures';
 
-/** 超新星可视范围（与银河系内容一致的 LOD 门控） */
+/** 超新星可视范围（与银河系内容一致的 LOD 门控，起点为 L2/L3 边界 2.5） */
 function snFadeWeight(continuousLevel: number): number {
-  return trapezoidWeight(continuousLevel, 2.05, 2.6, 4.5, 5);
+  return trapezoidWeight(continuousLevel, 2.5, 2.9, 4.5, 5);
 }
+
+/** 可交互阈值：淡入权重低于该值时禁用 raycast（隐形对象不拦截点击） */
+const INTERACTIVE_WEIGHT = 0.05;
 
 /** 冲击波最大半径（场景单位；约 800 光年的示意尺度，已登记视觉夸大） */
 const SHOCK_MAX_RADIUS_UNITS = 800 * SCENE_UNITS_PER_LY;
@@ -51,6 +55,7 @@ export function rollSupernovaParams(rand: () => number = Math.random): {
 
 /** 永久遗迹：膨胀星云 + 中心致密天体（中子星或黑洞，按前身星质量） */
 function Remnant({ event }: { event: SupernovaEvent }): JSX.Element {
+  const groupRef = useRef<THREE.Group>(null);
   const nebulaRef = useRef<THREE.Sprite>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const compact = remnantCompactObject(event.progenitorMassSun);
@@ -64,6 +69,12 @@ function Remnant({ event }: { event: SupernovaEvent }): JSX.Element {
 
   useFrame(({ clock }) => {
     const weight = snFadeWeight(useSimulationStore.getState().continuousLevel);
+    // 淡出后隐藏并禁用 raycast（Raycaster 不检查 visible，隐形遗迹不得拦截点击）
+    if (groupRef.current) {
+      groupRef.current.visible = weight > 0.001;
+      setObjectTreeRaycastEnabled(groupRef.current, weight > INTERACTIVE_WEIGHT);
+      if (!groupRef.current.visible) return;
+    }
     if (nebulaRef.current) {
       const s = size * nebulaExpansionScale(clock.elapsedTime, 120, 0.08);
       nebulaRef.current.scale.set(s, s, 1);
@@ -78,7 +89,7 @@ function Remnant({ event }: { event: SupernovaEvent }): JSX.Element {
   ] as const;
 
   return (
-    <group position={[posUnits[0], posUnits[1], posUnits[2]]} name={event.id}>
+    <group ref={groupRef} position={[posUnits[0], posUnits[1], posUnits[2]]} name={event.id}>
       {/* 遗迹星云（持续缓慢膨胀） */}
       <sprite
         ref={nebulaRef}

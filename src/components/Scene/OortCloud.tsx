@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -14,6 +14,7 @@ import {
   oortShellReferencePoint,
 } from '@/utils/oort';
 import { trapezoidWeight } from '@/utils/scale';
+import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 
 /**
  * 奥尔特云外边界示意（可选需求 3.1.1）
@@ -23,6 +24,7 @@ import { trapezoidWeight } from '@/utils/scale';
  * 仅在 L2 末端 → L3 前段的过渡区间可见。
  */
 export function OortCloud(): JSX.Element {
+  const pointsRef = useRef<THREE.Points>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const showLabels = useSimulationStore((s) => s.showLabels);
   // Html 标签不随父级 visible 隐藏，需单独按层级门控
@@ -65,7 +67,12 @@ export function OortCloud(): JSX.Element {
   useFrame(() => {
     const { continuousLevel } = useSimulationStore.getState();
     // 过渡参照物：L2 末端淡入，进入 L3 后淡出
-    material.opacity = 0.4 * trapezoidWeight(continuousLevel, 2.1, 2.4, 2.7, 3.1);
+    const weight = trapezoidWeight(continuousLevel, 2.1, 2.4, 2.7, 3.1);
+    material.opacity = 0.4 * weight;
+    // Raycaster 不检查透明度：淡出后禁用 raycast，避免隐形粒子壳拦截点击
+    if (pointsRef.current) {
+      setObjectTreeRaycastEnabled(pointsRef.current, weight > 0.05);
+    }
   });
 
   const labelPos = oortShellReferencePoint(OORT_VISUAL_RADIUS_UNITS);
@@ -73,6 +80,7 @@ export function OortCloud(): JSX.Element {
   return (
     <group name="oort-cloud">
       <points
+        ref={pointsRef}
         geometry={geometry}
         material={material}
         onClick={(e) => {
