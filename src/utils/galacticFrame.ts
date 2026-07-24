@@ -164,3 +164,53 @@ export function advanceFrameTransition(
   }
   return Math.max(0, current - step);
 }
+
+// ---------------------------------------------------------------------------
+// 渲染位姿注册表（bug 修复：飞往/跟随 L3 天体与渲染位姿一致）
+// ---------------------------------------------------------------------------
+
+/**
+ * 渲染端实际生效的参考系位姿参数（镜像 satellitePhase.ts 的注册表模式）
+ *
+ * 背景（P6 自查修复）：cameraFocus.galacticPointToSceneUnits 原按"跟随模式、
+ * 无垂直增益"的固定公式换算银心系坐标 → 场景坐标；P6 引入银心固定模式
+ * （groupOffset=0）与垂直视觉增益（默认 6）后，若解析端不感知这两个参数：
+ * - 银心固定模式下飞往特殊天体/超新星/银心会错位整个太阳轨道半径（~1300 单位）；
+ * - 跟随模式默认增益下所有银河系组内容的世界 y 与解析值偏差最高 ±(gain−1)·300 ly。
+ *
+ * Galaxy.tsx 每帧把实际应用的（缓动后）银心固定权重与垂直增益写入本注册表，
+ * cameraFocus / SpatialAudio 按注册值解析，保证"相机飞往/跟随的点"与
+ * "渲染的天体"始终一致。未注册（组件未挂载/单测）时取默认 w=0、gain=1，
+ * 行为与历史公式完全一致。
+ */
+export interface RenderedGalacticFrame {
+  /** 银心固定权重 ∈ [0,1]（缓动后的实际应用值） */
+  weight: number;
+  /** 垂直振荡视觉增益 ≥1（真实比例模式为 1） */
+  verticalGain: number;
+}
+
+const DEFAULT_RENDERED_FRAME: RenderedGalacticFrame = { weight: 0, verticalGain: 1 };
+
+let renderedFrame: RenderedGalacticFrame = DEFAULT_RENDERED_FRAME;
+
+/** 写入当前帧实际应用的参考系位姿参数（Galaxy.tsx 每帧调用） */
+export function setRenderedGalacticFrame(weight: number, verticalGain: number): void {
+  if (!Number.isFinite(weight) || weight < 0 || weight > 1) {
+    throw new RangeError(`银心固定权重必须在 [0,1] 内，收到 ${weight}`);
+  }
+  if (!Number.isFinite(verticalGain) || verticalGain < 1) {
+    throw new RangeError(`垂直增益必须 ≥1，收到 ${verticalGain}`);
+  }
+  renderedFrame = { weight, verticalGain };
+}
+
+/** 读取当前渲染位姿参数（未注册返回默认 w=0、gain=1，即历史跟随模式行为） */
+export function renderedGalacticFrame(): RenderedGalacticFrame {
+  return renderedFrame;
+}
+
+/** 重置注册表（Galaxy 组件卸载/测试用） */
+export function resetRenderedGalacticFrame(): void {
+  renderedFrame = DEFAULT_RENDERED_FRAME;
+}

@@ -39,6 +39,7 @@ import {
 import { satelliteBodyDisplayRadius, satelliteOrbitDisplayRadius } from '@/utils/satellites';
 import { renderedSatellitePhaseRad } from '@/utils/satellitePhase';
 import { dwarfDisplayRadius, isDwarfPlanetClassification } from '@/utils/dwarfPlanets';
+import { renderedGalacticFrame } from '@/utils/galacticFrame';
 import { ECLIPTIC_GALACTIC_TILT_DEG, sunGalacticPositionLy } from '@/utils/galaxy';
 import { mwM31SeparationLy, satelliteGalaxyPositionLy } from '@/utils/universe';
 
@@ -74,14 +75,20 @@ export function viewDistanceForRadius(radiusUnits: number): number {
 /**
  * 银心系本地坐标（光年）→ 场景坐标（场景单位）
  *
- * 与 Galaxy 组件的组变换一致：世界坐标 = tiltX·(p − sun)·unitsPerLy
- * （银河系组绕 X 轴倾斜 60.2°，并反向平移使太阳系位于场景原点）。
+ * 与 Galaxy 组件的组变换一致（P6 自查修复：感知参考系模式与垂直增益）：
+ * 世界坐标 = tiltX·(p − (1−w)·sun_gained)·unitsPerLy，其中
+ * sun_gained = 太阳银心系位置且 y 分量乘垂直视觉增益（与 Galaxy 组偏移
+ * 计算一致，见 galacticFrame.computeGalacticFramePose）；w 为银心固定权重
+ * （跟随模式 0 / 银心固定 1 / 过渡期间中间值），从渲染位姿注册表读取。
+ * 未注册（组件未挂载/单测）时 w=0、gain=1，与历史公式完全一致。
  */
 export function galacticPointToSceneUnits(pLy: Vec3, simDays: number): Vec3 {
+  const { weight, verticalGain } = renderedGalacticFrame();
   const sun = sunGalacticPositionLy(simDays);
-  const x = (pLy.x - sun.x) * SCENE_UNITS_PER_LY;
-  const y = (pLy.y - sun.y) * SCENE_UNITS_PER_LY;
-  const z = (pLy.z - sun.z) * SCENE_UNITS_PER_LY;
+  const k = 1 - weight;
+  const x = (pLy.x - sun.x * k) * SCENE_UNITS_PER_LY;
+  const y = (pLy.y - sun.y * verticalGain * k) * SCENE_UNITS_PER_LY;
+  const z = (pLy.z - sun.z * k) * SCENE_UNITS_PER_LY;
   const tilt = ECLIPTIC_GALACTIC_TILT_DEG * DEG_TO_RAD;
   const cos = Math.cos(tilt);
   const sin = Math.sin(tilt);
@@ -183,13 +190,16 @@ function specialBodyFocusTarget(body: SpecialBodyData, simDays: number): FocusTa
       viewDistanceUnits: Math.max(viewDistanceForRadius(sizeUnits), 40),
     };
   }
-  // sun-relative：随太阳共转，世界坐标 = tiltX·(offset·unitsPerLy)（与 simDays 无关）
+  // sun-relative：随太阳共转（跟随模式下世界坐标 = tiltX·(offset·unitsPerLy)，
+  // 与 simDays 无关）。太阳 y 分量乘垂直增益，与 SpecialBodies.useGalacticPlacement
+  // 的渲染位置一致（P6 自查修复：增益不一致导致特殊天体解析位置垂直漂移）
   const offset = body.offsetLy;
   if (!offset) return null;
   const sun = sunGalacticPositionLy(simDays);
+  const gain = renderedGalacticFrame().verticalGain;
   return {
     position: galacticPointToSceneUnits(
-      { x: sun.x + offset.x, y: sun.y + offset.y, z: sun.z + offset.z },
+      { x: sun.x + offset.x, y: sun.y * gain + offset.y, z: sun.z + offset.z },
       simDays,
     ),
     viewDistanceUnits: Math.max(viewDistanceForRadius(sizeUnits), 30),

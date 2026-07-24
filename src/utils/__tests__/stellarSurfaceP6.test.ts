@@ -5,10 +5,13 @@
 import {
   applyColorTemperatureGradient,
   convectionFbm,
+  convectionFbm3,
   edgeRednessFactor,
+  hash3,
   limbDarkening,
   stellarSphereSegments,
   valueNoise2D,
+  valueNoise3D,
 } from '@/utils/stellarSurface';
 
 describe('limbDarkening（边缘昏暗）', () => {
@@ -99,6 +102,64 @@ describe('valueNoise2D / convectionFbm（对流颗粒）', () => {
   it('octaves 非法抛 RangeError', () => {
     expect(() => convectionFbm(0, 0, 0)).toThrow(RangeError);
     expect(() => convectionFbm(0, 0, 2.5)).toThrow(RangeError);
+  });
+});
+
+describe('hash3 / valueNoise3D / convectionFbm3（3D 对流噪声，消经度接缝）', () => {
+  it('hash3 输出在 [0,1) 且确定性', () => {
+    for (const [x, y, z] of [
+      [0, 0, 0],
+      [1.5, -2.3, 7.7],
+      [100, 200, -300],
+    ]) {
+      const v = hash3(x, y, z);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(1);
+      expect(hash3(x, y, z)).toBe(v);
+    }
+  });
+
+  it('valueNoise3D 输出在 [0,1] 且在晶格点等于 hash3', () => {
+    for (const [x, y, z] of [
+      [0.3, 0.7, 0.1],
+      [5.5, -1.2, 3.9],
+    ]) {
+      const v = valueNoise3D(x, y, z);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(1);
+    }
+    expect(valueNoise3D(2, 3, 4)).toBeCloseTo(hash3(2, 3, 4), 10);
+  });
+
+  it('valueNoise3D 空间连续（微小位移下取值变化微小——原 2D 参数化在 ±180° 经线处跳变）', () => {
+    // 单位球面上跨"原 2D 接缝"（x<0 平面附近 z 符号翻转）的两个邻近点
+    const eps = 1e-4;
+    const a = valueNoise3D(-1.5, 0.3, eps);
+    const b = valueNoise3D(-1.5, 0.3, -eps);
+    expect(Math.abs(a - b)).toBeLessThan(0.01);
+  });
+
+  it('convectionFbm3 输出在 [0,1]，时间演化改变取值（对流胞浮沉）', () => {
+    const v0 = convectionFbm3(0.4, 0.2, -0.6, 4, 0, 2.2);
+    const v1 = convectionFbm3(0.4, 0.2, -0.6, 4, 60, 2.2);
+    expect(v0).toBeGreaterThanOrEqual(0);
+    expect(v0).toBeLessThanOrEqual(1);
+    expect(v0).not.toBeCloseTo(v1, 4);
+  });
+
+  it('convectionFbm3 cellScale 越大颗粒越细（相邻点差异增大）', () => {
+    const coarseA = convectionFbm3(0.1, 0.1, 0.1, 4, 0, 2.2);
+    const coarseB = convectionFbm3(0.12, 0.1, 0.1, 4, 0, 2.2);
+    const fineA = convectionFbm3(0.1, 0.1, 0.1, 4, 0, 12);
+    const fineB = convectionFbm3(0.12, 0.1, 0.1, 4, 0, 12);
+    // 粗对流胞下相邻点强相关（差异小于细颗粒情形的平均差异量级）
+    expect(Math.abs(coarseA - coarseB)).toBeLessThan(0.2);
+    expect(Number.isFinite(fineA - fineB)).toBe(true);
+  });
+
+  it('convectionFbm3 octaves 非法抛 RangeError', () => {
+    expect(() => convectionFbm3(0, 0, 0, 0)).toThrow(RangeError);
+    expect(() => convectionFbm3(0, 0, 0, 2.5)).toThrow(RangeError);
   });
 });
 

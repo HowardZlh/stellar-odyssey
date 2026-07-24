@@ -149,6 +149,72 @@ export function convectionFbm(
 }
 
 /**
+ * 3D 哈希（确定性伪随机，[0,1)）—— 与 GLSL fract(sin(dot(p, vec3(...)))) 镜像一致
+ *
+ * P6 自查修复：对流噪声原以 2D 球面参数化（atan 经度展开）采样，在 ±180°
+ * 经线处不连续 → 恒星表面出现垂直接缝。改为 3D 噪声直接以单位球面坐标采样
+ * （无经度接缝、无极点收缩），本组函数为 shader 的 CPU 参考实现。
+ */
+export function hash3(x: number, y: number, z: number): number {
+  const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+/** 三线性平滑 3D 值噪声（[0,1]），与 GLSL valueNoise3 镜像一致 */
+export function valueNoise3D(x: number, y: number, z: number): number {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const zi = Math.floor(z);
+  const tx = smoothstep01(x - xi);
+  const ty = smoothstep01(y - yi);
+  const tz = smoothstep01(z - zi);
+  const v000 = hash3(xi, yi, zi);
+  const v100 = hash3(xi + 1, yi, zi);
+  const v010 = hash3(xi, yi + 1, zi);
+  const v110 = hash3(xi + 1, yi + 1, zi);
+  const v001 = hash3(xi, yi, zi + 1);
+  const v101 = hash3(xi + 1, yi, zi + 1);
+  const v011 = hash3(xi, yi + 1, zi + 1);
+  const v111 = hash3(xi + 1, yi + 1, zi + 1);
+  const a = (v000 + (v100 - v000) * tx) + ((v010 + (v110 - v010) * tx) - (v000 + (v100 - v000) * tx)) * ty;
+  const b = (v001 + (v101 - v001) * tx) + ((v011 + (v111 - v011) * tx) - (v001 + (v101 - v001) * tx)) * ty;
+  return a + (b - a) * tz;
+}
+
+/**
+ * 对流颗粒 3D fBm（球面无接缝版，与 GLSL fbm3 镜像一致）
+ *
+ * @param x,y,z 采样坐标（单位球面坐标 × 1.5 后传入，与 shader 一致）
+ * @param octaves 层数（≥1）
+ * @param time 时间（缓慢平移噪声域，模拟对流胞演化）
+ * @param cellScale 首层频率（越大颗粒越细）
+ */
+export function convectionFbm3(
+  x: number,
+  y: number,
+  z: number,
+  octaves: number,
+  time = 0,
+  cellScale = 4,
+): number {
+  if (!Number.isInteger(octaves) || octaves < 1) {
+    throw new RangeError(`octaves 必须为 ≥1 的整数，收到 ${octaves}`);
+  }
+  let sum = 0;
+  let amp = 1;
+  let freq = cellScale;
+  let total = 0;
+  for (let o = 0; o < octaves; o += 1) {
+    const drift = time * (0.05 + o * 0.02);
+    sum += valueNoise3D(x * freq + drift, y * freq - drift, z * freq + drift * 0.7) * amp;
+    total += amp;
+    amp *= 0.5;
+    freq *= 2;
+  }
+  return sum / total;
+}
+
+/**
  * 恒星球体推荐分段数（P6：由 12–24 提升至 32–48，近观无棱角）
  *
  * 依恒星视觉半径线性分级，钳制在 [32, 48]。

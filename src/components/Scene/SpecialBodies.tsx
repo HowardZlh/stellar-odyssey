@@ -14,6 +14,7 @@ import {
 import { useSimulationStore } from '@/store';
 import { SCENE_UNITS_PER_LY, trapezoidWeight } from '@/utils/scale';
 import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
+import { verticalVisualGain } from '@/utils/galacticMotionCues';
 import { sunGalacticPositionLy } from '@/utils/galaxy';
 import { createSeededRandom } from '@/utils/random';
 import {
@@ -131,37 +132,42 @@ function StellarSurface({
         varying vec3 vViewDir;
         varying vec3 vObjPos;
 
-        // 与 utils/stellarSurface.ts hash2/valueNoise2D 镜像一致
-        float hash2(float x, float y) {
-          return fract(sin(x * 127.1 + y * 311.7) * 43758.5453);
+        // 与 utils/stellarSurface.ts hash3/valueNoise3D/convectionFbm3 镜像一致。
+        // 3D 噪声直接以单位球面坐标采样（P6 自查修复）：原 2D 球面参数化
+        // （atan 经度展开）在 ±180° 经线处不连续，恒星表面出现垂直接缝
+        float hash3(vec3 p) {
+          return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
         }
         float smooth01(float t) { t = clamp(t, 0.0, 1.0); return t*t*(3.0-2.0*t); }
-        float valueNoise(vec2 p) {
-          float xi = floor(p.x); float yi = floor(p.y);
-          float xf = p.x - xi; float yf = p.y - yi;
-          float v00 = hash2(xi, yi);
-          float v10 = hash2(xi+1.0, yi);
-          float v01 = hash2(xi, yi+1.0);
-          float v11 = hash2(xi+1.0, yi+1.0);
-          float tx = smooth01(xf); float ty = smooth01(yf);
-          float a = mix(v00, v10, tx);
-          float b = mix(v01, v11, tx);
-          return mix(a, b, ty);
+        float valueNoise3(vec3 p) {
+          vec3 i = floor(p);
+          vec3 f = p - i;
+          vec3 t = vec3(smooth01(f.x), smooth01(f.y), smooth01(f.z));
+          float v000 = hash3(i);
+          float v100 = hash3(i + vec3(1.0, 0.0, 0.0));
+          float v010 = hash3(i + vec3(0.0, 1.0, 0.0));
+          float v110 = hash3(i + vec3(1.0, 1.0, 0.0));
+          float v001 = hash3(i + vec3(0.0, 0.0, 1.0));
+          float v101 = hash3(i + vec3(1.0, 0.0, 1.0));
+          float v011 = hash3(i + vec3(0.0, 1.0, 1.0));
+          float v111 = hash3(i + vec3(1.0, 1.0, 1.0));
+          float a = mix(mix(v000, v100, t.x), mix(v010, v110, t.x), t.y);
+          float b = mix(mix(v001, v101, t.x), mix(v011, v111, t.x), t.y);
+          return mix(a, b, t.z);
         }
-        float fbm(vec2 p, float t) {
+        float fbm3(vec3 p, float t) {
           float sum = 0.0; float amp = 1.0; float total = 0.0; float freq = uCellScale;
           for (int o = 0; o < 4; o++) {
             float drift = t * (0.05 + float(o) * 0.02);
-            sum += valueNoise(vec2(p.x*freq + drift, p.y*freq - drift)) * amp;
+            sum += valueNoise3(p * freq + vec3(drift, -drift, drift * 0.7)) * amp;
             total += amp; amp *= 0.5; freq *= 2.0;
           }
           return sum / total;
         }
 
         void main() {
-          // 球面参数化坐标（对流颗粒采样）
-          vec2 uv = vec2(atan(vObjPos.z, vObjPos.x) / 6.2831853 + 0.5, vObjPos.y * 0.5 + 0.5);
-          float cells = fbm(uv * 3.0, uTime);
+          // 单位球面坐标直接采样 3D 噪声（无经度接缝、无极点收缩）
+          float cells = fbm3(vObjPos * 1.5, uTime);
           // 边缘昏暗 μ = N·V
           float mu = clamp(dot(normalize(vNormal), normalize(vViewDir)), 0.0, 1.0);
           float limb = 1.0 - uLimbU * (1.0 - mu);
@@ -225,11 +231,15 @@ function useGalacticPlacement(
     }
     const offset = body.offsetLy;
     if (!offset) return;
-    // 随太阳共转（近似处理已登记）：位置 = 太阳银心系位置 + 固定偏移
+    // 随太阳共转（近似处理已登记）：位置 = 太阳银心系位置 + 固定偏移。
+    // 太阳 y 分量乘垂直视觉增益，与 Galaxy 组偏移一致（P6 自查修复）：
+    // 否则跟随模式下组偏移按增益后 y 平移、此处按原始 y 定位，特殊天体
+    // 会相对太阳系产生 ±(gain−1)·300 ly 的垂直振荡漂移
     const sun = sunGalacticPositionLy(state.simDays);
+    const gain = verticalVisualGain(state.realScaleMode);
     group.position.set(
       (sun.x + offset.x) * SCENE_UNITS_PER_LY,
-      (sun.y + offset.y) * SCENE_UNITS_PER_LY,
+      (sun.y * gain + offset.y) * SCENE_UNITS_PER_LY,
       (sun.z + offset.z) * SCENE_UNITS_PER_LY,
     );
   });
