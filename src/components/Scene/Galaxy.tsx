@@ -25,7 +25,10 @@ import {
   advanceFrameTransition,
   computeGalacticFramePose,
   frameModeTargetWeight,
+  resetRenderedGalacticFrame,
+  setRenderedGalacticFrame,
 } from '@/utils/galacticFrame';
+import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import {
   orbitFlowTickAngle,
   samplePredictionArc,
@@ -68,6 +71,7 @@ export function Galaxy(): JSX.Element {
   const markerRef = useRef<THREE.Group>(null);
   const arrowRef = useRef<THREE.ArrowHelper>(null);
   const showYouAreHere = useSimulationStore((s) => s.showYouAreHere);
+  const selectBody = useSimulationStore((s) => s.selectBody);
   // Html 标签不随父级 visible 隐藏，需单独按层级门控（银河系内容 L2/L3 边界起可见）
   const inGalaxyRange = useSimulationStore((s) => s.continuousLevel > 2.5);
 
@@ -266,6 +270,9 @@ export function Galaxy(): JSX.Element {
     return { heightGeometry: geo, heightMaterial: mat, heightLine: line };
   }, []);
 
+  // 组件卸载时重置渲染位姿注册表（回到默认跟随模式解析行为）
+  useEffect(() => () => resetRenderedGalacticFrame(), []);
+
   useEffect(() => {
     return () => {
       diskGeometry.dispose();
@@ -360,6 +367,9 @@ export function Galaxy(): JSX.Element {
     });
     group.rotation.copy(tiltEuler);
     group.position.set(pose.groupOffset.x, pose.groupOffset.y, pose.groupOffset.z);
+    // 渲染位姿注册（bug 修复）：cameraFocus/SpatialAudio 按本帧实际应用的
+    // 银心固定权重与垂直增益解析 L3 天体场景坐标，保证飞往/跟随与渲染一致
+    setRenderedGalacticFrame(w, gain);
 
     // 历史尾迹采样（时间倒退/大跳变/垂直增益切换时清空，避免坐标残留或折角）
     const lastSample = lastSampleMyrRef.current;
@@ -418,7 +428,10 @@ export function Galaxy(): JSX.Element {
     // You are here 标记与运动方向箭头
     if (markerRef.current) {
       markerRef.current.position.copy(tmpLocal);
-      markerRef.current.visible = state.showYouAreHere && weight > 0.05;
+      const markerVisible = state.showYouAreHere && weight > 0.05;
+      markerRef.current.visible = markerVisible;
+      // Raycaster 不检查 visible：标记隐藏时禁用点选热区
+      setObjectTreeRaycastEnabled(markerRef.current, markerVisible);
     }
     if (arrowRef.current) {
       // 运动方向：位置对时间的数值微分
@@ -495,6 +508,18 @@ export function Galaxy(): JSX.Element {
 
       {/* You are here 标记（可开关，需求 3.1.2） */}
       <group ref={markerRef} visible={showYouAreHere}>
+        {/* 点选热区（需求 §3.1.1：太阳系标记可点选/可飞往——选中太阳后
+            信息面板"飞往"即导航回太阳系；银心固定模式下任何"飞往"都会
+            自动切回跟随模式，见 CameraController） */}
+        <mesh
+          onClick={(e) => {
+            e.stopPropagation();
+            selectBody('sun');
+          }}
+        >
+          <sphereGeometry args={[42, 12, 12]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
         <sprite ref={markerSpriteRef} scale={[90, 90, 1]}>
           <spriteMaterial
             map={glowTextures.marker}

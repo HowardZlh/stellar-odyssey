@@ -125,6 +125,14 @@ export function CameraController(): JSX.Element {
   const captureFlyToTransition = (store: SimulationState): void => {
     const id = store.flyToBodyId;
     if (!id) return;
+    // P6 自查修复（需求 §3.1.1"飞往后自动切回跟随模式"）：银心固定参考系
+    // 仅用于 L3 尺度观察"太阳系在轨道内运行"，任何"飞往"都先切回跟随参考系。
+    // 否则位于场景原点的目标（太阳系天体/银心黑洞）会与低层级"原点=太阳系"
+    // 的语义矛盾（相机靠近原点后太阳系内容在银心处淡入）。切回后渲染权重
+    // 2 秒过渡、飞往运镜每帧重解析目标位置，全程平滑无跳变。
+    if (store.galacticFrameMode === 'galactic-center') {
+      store.setGalacticFrameMode('follow');
+    }
     const target = resolveTargetById(id, store);
     if (!target) return;
 

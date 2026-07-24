@@ -8,6 +8,9 @@ import {
   computeGalacticFramePose,
   frameModeTargetWeight,
   galacticFrameHudLabel,
+  renderedGalacticFrame,
+  resetRenderedGalacticFrame,
+  setRenderedGalacticFrame,
   sunWorldScenePos,
   tiltAroundX,
 } from '@/utils/galacticFrame';
@@ -179,5 +182,68 @@ describe('advanceFrameTransition（2 秒平滑过渡）', () => {
   it('seconds≤0 抛 RangeError', () => {
     expect(() => advanceFrameTransition(0, 1, 0.016, 0)).toThrow(RangeError);
     expect(() => advanceFrameTransition(0, 1, 0.016, -1)).toThrow(RangeError);
+  });
+});
+
+describe('渲染位姿注册表（bug 修复：飞往/跟随 L3 天体与渲染位姿一致）', () => {
+  afterEach(() => resetRenderedGalacticFrame());
+
+  it('默认（未注册）为 w=0、gain=1（历史跟随模式行为）', () => {
+    resetRenderedGalacticFrame();
+    expect(renderedGalacticFrame()).toEqual({ weight: 0, verticalGain: 1 });
+  });
+
+  it('set/read/reset 生效', () => {
+    setRenderedGalacticFrame(0.5, 6);
+    expect(renderedGalacticFrame()).toEqual({ weight: 0.5, verticalGain: 6 });
+    resetRenderedGalacticFrame();
+    expect(renderedGalacticFrame()).toEqual({ weight: 0, verticalGain: 1 });
+  });
+
+  it('权重越界 / 增益 <1 抛 RangeError', () => {
+    expect(() => setRenderedGalacticFrame(-0.1, 1)).toThrow(RangeError);
+    expect(() => setRenderedGalacticFrame(1.1, 1)).toThrow(RangeError);
+    expect(() => setRenderedGalacticFrame(Number.NaN, 1)).toThrow(RangeError);
+    expect(() => setRenderedGalacticFrame(0.5, 0.5)).toThrow(RangeError);
+    expect(() => setRenderedGalacticFrame(0.5, Number.NaN)).toThrow(RangeError);
+  });
+
+  it('银心固定（w=1）下 galacticPointToSceneUnits 不再减太阳位置：银心映射到原点', () => {
+    setRenderedGalacticFrame(1, 1);
+    const days = myrToDays(37);
+    const center = galacticPointToSceneUnits({ x: 0, y: 0, z: 0 }, days);
+    expect(Math.hypot(center.x, center.y, center.z)).toBeCloseTo(0, 6);
+    // 太阳映射到轨道实际位置（= 组内太阳倾斜位置 sunWorld）
+    const sun = sunGalacticPositionLy(days);
+    const p = galacticPointToSceneUnits(sun, days);
+    const expected = sunWorldScenePos(days);
+    expect(p.x).toBeCloseTo(expected.x, 6);
+    expect(p.y).toBeCloseTo(expected.y, 6);
+    expect(p.z).toBeCloseTo(expected.z, 6);
+  });
+
+  it('跟随模式垂直增益（w=0, gain=6）：增益后的太阳位置映射到原点（与组偏移一致）', () => {
+    setRenderedGalacticFrame(0, 6);
+    const days = myrToDays(20); // 垂直振荡非零处
+    const sun = sunGalacticPositionLy(days);
+    expect(Math.abs(sun.y)).toBeGreaterThan(1);
+    const p = galacticPointToSceneUnits({ x: sun.x, y: sun.y * 6, z: sun.z }, days);
+    expect(Math.hypot(p.x, p.y, p.z)).toBeCloseTo(0, 6);
+  });
+
+  it('过渡中（w=0.5, gain=6）：解析位置 = tilt(p − 0.5·sun_gained)·units', () => {
+    setRenderedGalacticFrame(0.5, 6);
+    const days = myrToDays(20);
+    const sun = sunGalacticPositionLy(days);
+    const pLy = { x: 1000, y: 200, z: -500 };
+    const p = galacticPointToSceneUnits(pLy, days);
+    const expected = tiltAroundX({
+      x: (pLy.x - sun.x * 0.5) * SCENE_UNITS_PER_LY,
+      y: (pLy.y - sun.y * 6 * 0.5) * SCENE_UNITS_PER_LY,
+      z: (pLy.z - sun.z * 0.5) * SCENE_UNITS_PER_LY,
+    });
+    expect(p.x).toBeCloseTo(expected.x, 6);
+    expect(p.y).toBeCloseTo(expected.y, 6);
+    expect(p.z).toBeCloseTo(expected.z, 6);
   });
 });

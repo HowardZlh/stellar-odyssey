@@ -15,6 +15,7 @@ import {
 } from '@/utils/oort';
 import { trapezoidWeight } from '@/utils/scale';
 import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
+import { getSoftPointTexture } from '@/components/CelestialBody/sharedTextures';
 
 /**
  * 奥尔特云外边界示意（可选需求 3.1.1）
@@ -48,6 +49,8 @@ export function OortCloud(): JSX.Element {
     const mat = new THREE.PointsMaterial({
       color: '#9fb4d8',
       size: 6,
+      // 圆形软边贴图（P6 全局粒子贴图修复补遗）：消除方形粒子
+      map: getSoftPointTexture(),
       transparent: true,
       opacity: 0,
       sizeAttenuation: true,

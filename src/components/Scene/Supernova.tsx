@@ -21,6 +21,33 @@ import {
 import { nebulaExpansionScale } from '@/utils/specialBodies';
 import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import { createGlowSpriteCanvas } from '@/components/CelestialBody/proceduralTextures';
+import { getNebulaTexture } from '@/components/CelestialBody/nebulaTextures';
+
+/**
+ * 遗迹丝状星云纹理（P6 §3.2：与蟹状星云共用 shell 生成路径，新遗迹同样受益）
+ *
+ * 按参数缓存（getNebulaTexture），全部遗迹复用同一张纹理；
+ * 个体差异用 sprite 旋转（eventSpinRad）表达，零额外生成成本。
+ */
+function remnantNebulaTexture(): THREE.DataTexture {
+  return getNebulaTexture({
+    size: 256,
+    seed: 20261987, // SN 1987A 致意；确定性种子
+    innerColor: '#cfe4ff',
+    outerColor: '#6f8fd8',
+    filamentStrength: 0.8,
+    irregularity: 0.6,
+    octaves: 5,
+    shape: 'shell',
+  });
+}
+
+/** 事件 id → 确定性旋转角（弧度）：同一遗迹每帧/每次挂载外观稳定 */
+function eventSpinRad(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return ((h % 628) / 628) * Math.PI * 2;
+}
 
 /** 超新星可视范围（与银河系内容一致的 LOD 门控，起点为 L2/L3 边界 2.5） */
 function snFadeWeight(continuousLevel: number): number {
@@ -61,11 +88,8 @@ function Remnant({ event }: { event: SupernovaEvent }): JSX.Element {
   const compact = remnantCompactObject(event.progenitorMassSun);
   const size = SHOCK_MAX_RADIUS_UNITS * 0.6;
 
-  const texture = useMemo(
-    () => new THREE.CanvasTexture(createGlowSpriteCanvas('#9fc4ff', 128)),
-    [],
-  );
-  useEffect(() => () => texture.dispose(), [texture]);
+  // 丝状遗迹壳纹理（进程内缓存共享，勿在组件卸载时 dispose）
+  const texture = remnantNebulaTexture();
 
   useFrame(({ clock }) => {
     const weight = snFadeWeight(useSimulationStore.getState().continuousLevel);
@@ -100,6 +124,7 @@ function Remnant({ event }: { event: SupernovaEvent }): JSX.Element {
       >
         <spriteMaterial
           map={texture}
+          rotation={eventSpinRad(event.id)}
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}
@@ -142,20 +167,13 @@ function ActiveSupernova({ event }: { event: SupernovaEvent }): JSX.Element {
   const remnantRef = useRef<THREE.Sprite>(null);
   const archivedRef = useRef(false);
 
-  const textures = useMemo(
-    () => ({
-      flash: new THREE.CanvasTexture(createGlowSpriteCanvas('#fff6e8', 256)),
-      remnant: new THREE.CanvasTexture(createGlowSpriteCanvas('#9fc4ff', 128)),
-    }),
+  const flashTexture = useMemo(
+    () => new THREE.CanvasTexture(createGlowSpriteCanvas('#fff6e8', 256)),
     [],
   );
-  useEffect(
-    () => () => {
-      textures.flash.dispose();
-      textures.remnant.dispose();
-    },
-    [textures],
-  );
+  useEffect(() => () => flashTexture.dispose(), [flashTexture]);
+  // 遗迹渐显与永久遗迹同一丝状壳纹理（缓存共享，勿 dispose）
+  const remnantTexture = remnantNebulaTexture();
 
   useFrame(() => {
     const store = useSimulationStore.getState();
@@ -211,7 +229,7 @@ function ActiveSupernova({ event }: { event: SupernovaEvent }): JSX.Element {
     >
       <sprite ref={flashRef}>
         <spriteMaterial
-          map={textures.flash}
+          map={flashTexture}
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}
@@ -238,10 +256,11 @@ function ActiveSupernova({ event }: { event: SupernovaEvent }): JSX.Element {
           depthWrite={false}
         />
       </mesh>
-      {/* 遗迹星云渐显 */}
+      {/* 遗迹星云渐显（丝状壳纹理，与永久遗迹同一旋转角保证交接无跳变） */}
       <sprite ref={remnantRef}>
         <spriteMaterial
-          map={textures.remnant}
+          map={remnantTexture}
+          rotation={eventSpinRad(event.id)}
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}

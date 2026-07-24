@@ -14,6 +14,7 @@ import {
   supernovaFocusTarget,
   viewDistanceForRadius,
 } from '@/utils/cameraFocus';
+import { resetRenderedGalacticFrame, setRenderedGalacticFrame } from '@/utils/galacticFrame';
 import { DEG_TO_RAD, heliocentricPosition } from '@/utils/physics';
 import {
   SCENE_UNITS_PER_LY,
@@ -246,3 +247,44 @@ describe('未知 id', () => {
     expect(resolveFocusTarget('not-a-body', 0)).toBeNull();
   });
 });
+
+describe('参考系模式感知（P6 自查修复：飞往/跟随与渲染位姿一致）', () => {
+  afterEach(() => resetRenderedGalacticFrame());
+
+  it('银心固定（w=1）：人马座A* 解析到场景原点（银心居原点）', () => {
+    setRenderedGalacticFrame(1, 1);
+    const target = resolveFocusTarget('sgr-a-star', 8.4e9)!;
+    expect(Math.hypot(target.position.x, target.position.y, target.position.z)).toBeCloseTo(
+      0,
+      6,
+    );
+  });
+
+  it('银心固定（w=1）：超新星解析到银心系固定位置（不随模拟时间移动）', () => {
+    setRenderedGalacticFrame(1, 1);
+    const event: SupernovaEvent = {
+      id: 'sn-2',
+      positionLy: { x: 20000, y: 100, z: -8000 },
+      startedAtMs: 0,
+      durationSec: 18,
+      progenitorMassSun: 15,
+    };
+    const a = supernovaFocusTarget(event, 0);
+    const b = supernovaFocusTarget(event, 4.2e10);
+    expect(a.position.x).toBeCloseTo(b.position.x, 6);
+    expect(a.position.y).toBeCloseTo(b.position.y, 6);
+    expect(a.position.z).toBeCloseTo(b.position.z, 6);
+  });
+
+  it('跟随模式垂直增益（w=0, gain=6）：随太阳共转天体仍与模拟时间无关（无垂直漂移）', () => {
+    setRenderedGalacticFrame(0, 6);
+    const a = resolveFocusTarget('betelgeuse', 0)!;
+    // 取垂直振荡极值附近时刻（t=17.5 Myr，sin 峰值）
+    const b = resolveFocusTarget('betelgeuse', 17.5 * 365.25e6)!;
+    expect(a.position.x).toBeCloseTo(b.position.x, 6);
+    expect(a.position.y).toBeCloseTo(b.position.y, 6);
+    expect(a.position.z).toBeCloseTo(b.position.z, 6);
+  });
+});
+
+
