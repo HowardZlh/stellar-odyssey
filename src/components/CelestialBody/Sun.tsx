@@ -16,7 +16,10 @@ import {
   flareProgress01,
 } from '@/utils/solarActivity';
 import { SOLAR_OMEGA_COEFFS, solarShearShaderDays } from '@/utils/solarRotation';
+import { solarCycleState } from '@/utils/solarCycle';
 import {
+  FILAMENT_HALF_WIDTH_RAD,
+  FILAMENT_MIN_BRIGHTNESS,
   SUNSPOT_MAX_RENDERED,
   SUNSPOT_PENUMBRA_BRIGHTNESS,
   SUNSPOT_UMBRA_BRIGHTNESS,
@@ -33,10 +36,21 @@ import {
   CORONA_QUAD_SCALE,
   CORONA_STREAMER_FREQ,
   CORONA_TIME_RATE,
+  CORONAL_HOLE_DIR,
+  CORONAL_HOLE_MIN_BRIGHTNESS,
+  CORONAL_HOLE_RADIUS_RAD,
+  FACULAE_BRIGHTNESS_BOOST,
+  FACULAE_OUTER_RADIUS_RATIO,
   GRANULE_AMP_FAR,
   GRANULE_AMP_NEAR,
   GRANULE_CELL_SCALE,
   PHOTOSPHERE_BRIGHTNESS_GAIN,
+  SPICULE_AMP,
+  SPICULE_NOISE_FREQ,
+  SPICULE_TIME_RATE,
+  SUPERGRANULE_AMP,
+  SUPERGRANULE_CELL_SCALE,
+  SUPERGRANULE_TIME_RATE,
   SUN_EDGE_REDNESS,
   SUN_LIMB_DARKENING_U,
   SUN_SPHERE_SEGMENTS,
@@ -241,17 +255,27 @@ export function Sun(): JSX.Element {
           float cells = fbm3(vObjPos * 1.5, uTime);
           float amp = mix(uAmpFar, uAmpNear, uDetailStrength);
           float bright = clamp(1.0 + (cells - 0.5) * 2.0 * amp, 0.6, 1.4);
+          // S3 超米粒组织（sunSurface.supergranulationModulation 镜像）：
+          // 低频大尺度亮度调制（~30,000 km），仅近观淡入
+          float superCells = valueNoise3(
+            vObjPos * ${SUPERGRANULE_CELL_SCALE.toFixed(4)}
+            + vec3(uTime * ${SUPERGRANULE_TIME_RATE.toFixed(4)})
+          );
+          bright += (superCells - 0.5) * 2.0 * ${SUPERGRANULE_AMP.toFixed(4)} * uDetailStrength;
           // 黑子暗区（sunspots.sunspotDarkening 镜像）：本影深暗 +
           // 半影放射状纤维（围绕黑子中心的方向噪声调制）
           float spotFactor = 1.0;
+          // S3 光斑（faculae）：黑子周边亮斑累加（sunSurface.faculaeBoost 镜像）
+          float faculae = 0.0;
+          float muEarly = clamp(dot(normalize(vNormal), normalize(vViewDir)), 0.0, 1.0);
           for (int i = 0; i < ${SUNSPOT_MAX_RENDERED}; i++) {
             if (i >= uSpotCount) break;
             vec3 sd = uSpotDirs[i];
             float cosAng = dot(vObjPos, sd);
             float ang = acos(clamp(cosAng, -1.0, 1.0));
             float radius = uSpotParams[i].x;
+            float strength = uSpotParams[i].y;
             if (ang < radius) {
-              float strength = uSpotParams[i].y;
               float umbraR = radius * ${SUNSPOT_UMBRA_FRAC.toFixed(4)};
               float f;
               if (ang <= umbraR) {
@@ -264,9 +288,50 @@ export function Sun(): JSX.Element {
                 f = pen + (1.0 - pen) * (t * t * (3.0 - 2.0 * t));
               }
               spotFactor = min(spotFactor, 1.0 - (1.0 - f) * strength);
+            } else {
+              // 光斑环带（黑子半径 → FACULAE_OUTER_RADIUS_RATIO×半径）
+              float outer = radius * ${FACULAE_OUTER_RADIUS_RATIO.toFixed(4)};
+              if (ang < outer) {
+                float ft = (ang - radius) / (outer - radius);
+                float band = sin(3.14159265 * ft);
+                vec3 rel = vObjPos - sd * cosAng;
+                float fn = valueNoise3(normalize(rel + vec3(1e-5)) * 30.0 + sd * 90.0);
+                float limbW = 0.4 + 0.6 * (1.0 - muEarly);
+                faculae += ${FACULAE_BRIGHTNESS_BOOST.toFixed(4)} * band * strength * limbW * (0.6 + 0.4 * fn);
+              }
             }
           }
           bright *= spotFactor;
+          // 光斑增亮随近观细节强度淡入（远观弱化，避免喧宾夺主）
+          bright += faculae * mix(0.5, 1.0, uDetailStrength);
+          // S3 暗条（filament，sunspots.filamentDarkening 镜像）：黑子对之间的
+          // 磁中性线附近呈暗色细线（日珥在日面的投影，冷等离子体吸收）
+          float filament = 1.0;
+          for (int p = 0; p < ${SUNSPOT_MAX_RENDERED / 2}; p++) {
+            int li = p * 2;
+            int fi = p * 2 + 1;
+            if (fi >= uSpotCount) break;
+            vec3 a = uSpotDirs[li];
+            vec3 b = uSpotDirs[fi];
+            vec3 mid = normalize(a + b);
+            vec3 axis = b - a;
+            float axisLen = length(axis);
+            if (axisLen < 1e-4) continue;
+            axis /= axisLen;
+            // 沿中性线的投影位置（相对中点，归一化到 [0,1]）
+            float along = dot(vObjPos - mid, axis) / axisLen + 0.5;
+            // 横向角距（片元方向到中性线的垂直角距近似）
+            vec3 rel = vObjPos - mid;
+            float perp = length(rel - axis * dot(rel, axis));
+            float strength = uSpotParams[li].y;
+            if (along >= 0.0 && along <= 1.0 && perp < ${FILAMENT_HALF_WIDTH_RAD.toFixed(4)}) {
+              float across = 1.0 - perp / ${FILAMENT_HALF_WIDTH_RAD.toFixed(4)};
+              float alongW = sin(3.14159265 * along);
+              float dark = (1.0 - ${FILAMENT_MIN_BRIGHTNESS.toFixed(4)}) * across * alongW * strength;
+              filament = min(filament, 1.0 - dark);
+            }
+          }
+          bright *= filament;
           // 耀斑局部增亮（solarActivity.flareLocalBoost 镜像）：
           // 峰值远超 Bloom 阈值（0.55），自然联动泛光
           if (uFlareAmp > 0.001) {
@@ -307,12 +372,16 @@ export function Sun(): JSX.Element {
           uMaxAlpha: { value: CHROMOSPHERE_MAX_ALPHA },
           uFresnelPower: { value: CHROMOSPHERE_FRESNEL_POWER },
           uStrength: { value: 0 },
+          // S3 针状体：色球边缘高频噪声扰动相位
+          uTime: { value: 0 },
         },
         vertexShader: /* glsl */ `
           varying vec3 vNormal;
           varying vec3 vViewDir;
+          varying vec3 vObjPos;
           void main() {
             vNormal = normalize(normalMatrix * normal);
+            vObjPos = normalize(position);
             vec4 mv = modelViewMatrix * vec4(position, 1.0);
             vViewDir = normalize(-mv.xyz);
             gl_Position = projectionMatrix * mv;
@@ -323,11 +392,21 @@ export function Sun(): JSX.Element {
           uniform float uMaxAlpha;
           uniform float uFresnelPower;
           uniform float uStrength;
+          uniform float uTime;
           varying vec3 vNormal;
           varying vec3 vViewDir;
+          varying vec3 vObjPos;
+          float hash3(vec3 p) {
+            return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+          }
           void main() {
             float mu = clamp(dot(normalize(vNormal), normalize(vViewDir)), 0.0, 1.0);
             float alpha = pow(1.0 - mu, uFresnelPower) * uMaxAlpha * uStrength;
+            // S3 针状体（sunSurface.spiculeRimPerturbation 镜像）：
+            // 色球边缘高频锯齿状 alpha 扰动（细小针状喷流示意，勿加几何）
+            float n = hash3(floor(vObjPos * ${SPICULE_NOISE_FREQ.toFixed(1)} + uTime));
+            alpha = alpha * (1.0 + ${SPICULE_AMP.toFixed(4)} * (n - 0.5) * 2.0);
+            alpha = max(0.0, alpha);
             gl_FragColor = vec4(uColor * alpha, alpha);
             #include <tonemapping_fragment>
             #include <colorspace_fragment>
@@ -354,6 +433,12 @@ export function Sun(): JSX.Element {
           uCenterW: { value: new THREE.Vector3() },
           uTime: { value: 0 },
           uStrength: { value: 0 },
+          // S3 周期联动：日冕形态各向同性因子（0 极小期赤道集中 → 1 极大期全纬度）
+          uIsotropy: { value: 0 },
+          // S3 日冕洞：开放磁力线暗区方向（世界坐标单位矢量）
+          uHoleDir: {
+            value: new THREE.Vector3(CORONAL_HOLE_DIR.x, CORONAL_HOLE_DIR.y, CORONAL_HOLE_DIR.z),
+          },
         },
         vertexShader: /* glsl */ `
           varying vec2 vLocal;
@@ -373,6 +458,8 @@ export function Sun(): JSX.Element {
           uniform vec3 uCenterW;
           uniform float uTime;
           uniform float uStrength;
+          uniform float uIsotropy;
+          uniform vec3 uHoleDir;
           varying vec2 vLocal;
           varying vec3 vWorldPos;
 
@@ -414,8 +501,19 @@ export function Sun(): JSX.Element {
             vec3 dir = normalize(vWorldPos - uCenterW);
             float streak = fbm3(dir, uTime);
             float eq = pow(1.0 - abs(dir.y), 2.0);
-            float streamer = (0.45 + 0.55 * streak) * (0.35 + 0.65 * eq);
-            float a = fall * streamer * uStrength;
+            // S3 周期联动（sunSurface.coronaStreamerFactor 镜像）：
+            // 极小期强赤道加权、极大期趋各向同性（日冕全纬度铺开）
+            float angular = mix(0.35 + 0.65 * eq, 1.0, uIsotropy);
+            float streamer = (0.45 + 0.55 * streak) * angular;
+            // S3 日冕洞（sunSurface.coronalHoleDarkening 镜像）：开放磁力线暗区
+            float holeAng = acos(clamp(dot(dir, normalize(uHoleDir)), -1.0, 1.0));
+            float hole = 1.0;
+            if (holeAng < ${CORONAL_HOLE_RADIUS_RAD.toFixed(4)}) {
+              float ht = holeAng / ${CORONAL_HOLE_RADIUS_RAD.toFixed(4)};
+              float hs = ht * ht * (3.0 - 2.0 * ht);
+              hole = ${CORONAL_HOLE_MIN_BRIGHTNESS.toFixed(4)} + (1.0 - ${CORONAL_HOLE_MIN_BRIGHTNESS.toFixed(4)}) * hs;
+            }
+            float a = fall * streamer * hole * uStrength;
             gl_FragColor = vec4(uColor * a, a);
             #include <tonemapping_fragment>
             #include <colorspace_fragment>
@@ -542,8 +640,15 @@ export function Sun(): JSX.Element {
     }
     photosphereMaterial.uniforms.uFlareAmp.value = flareAmp;
     chromosphereMaterial.uniforms.uStrength.value = strength;
+    // S3 针状体边缘扰动相位（较快演化）
+    chromosphereMaterial.uniforms.uTime.value = phase * SPICULE_TIME_RATE;
     coronaMaterial.uniforms.uStrength.value = strength;
     coronaMaterial.uniforms.uTime.value = phase * CORONA_TIME_RATE;
+    // S3 周期联动（§4.4）：日冕形态各向同性因子随活动周期包络（极小期
+    // 赤道集中 → 极大期全纬度铺开）；仅结构化日冕可见时才需读取
+    if (strength > 0) {
+      coronaMaterial.uniforms.uIsotropy.value = solarCycleState(simDays).coronaIsotropy01;
+    }
     // 日冕广告牌朝向相机
     if (coronaRef.current) {
       coronaRef.current.quaternion.copy(camera.quaternion);

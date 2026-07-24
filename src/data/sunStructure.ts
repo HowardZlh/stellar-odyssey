@@ -99,6 +99,10 @@ export const FLARE_ENERGY_NOTE_ZH =
 export const CME_GEOMAGNETIC_NOTE_ZH =
   '朝向地球的 CME 到达后可能引发地磁暴，影响卫星、电网和通信（携带的等离子体云约 1–3 天后抵达地球）';
 
+/** 日冕洞科普（S3 §4.2） */
+export const CORONAL_HOLE_NOTE_ZH =
+  '日冕洞是日冕中磁力线向外开放的区域，在 EUV/X 射线下呈暗斑；它是高速太阳风（~800 km/s，远快于慢风 ~400 km/s）的主要源头，常驻于太阳极区';
+
 /** 太阳风科普（§4.3-4） */
 export const SOLAR_WIND_NOTE_ZH =
   '太阳风是从日冕持续外流的带电粒子流（质子/电子），速度 400–800 km/s，吹出的空腔形成太阳圈（Heliosphere），保护太阳系免受星际辐射';

@@ -97,6 +97,28 @@ export interface SimulationState {
   cmeCounter: number;
   /** CME 事件通知可见（朝地球时附加地磁暴科普） */
   cmeNoticeVisible: boolean;
+  /**
+   * 朝地球 CME 预计抵达地球的模拟时间（S3 §4.3-3；null 为无在途 CME）。
+   * 抵达后触发地球极区极光增强示意 + "已抵达"通知。
+   */
+  cmeArrivalSimDays: number | null;
+  /** CME 抵达地球触发极光增强的起始模拟时间（null 为未抵达/无极光） */
+  auroraStartedAtSimDays: number | null;
+  /** CME 已抵达地球通知可见 */
+  cmeArrivalNoticeVisible: boolean;
+  /**
+   * 点选的太阳表面特征（S3 §4.5：黑子群/日珥单独点选热区科普卡片）；
+   * null 为未选。value 由 HudInfo 展示（含"可容纳 N 个地球"动态换算）。
+   */
+  selectedSolarFeature: {
+    kind: 'sunspot' | 'prominence';
+    /** 中文标题 */
+    titleZh: string;
+    /** 科普正文 */
+    descZh: string;
+    /** "可容纳 N 个地球"（仅黑子，四舍五入整数；日珥为 null） */
+    earthCount: number | null;
+  } | null;
   /** 太阳内部结构剖面模式（S2 §4.1：1/4 切除视图，与外部活动特效互斥） */
   sunCutawayMode: boolean;
   /** 剖面模式当前点选分层（null 为未选） */
@@ -202,6 +224,17 @@ export interface SimulationState {
   /** 活跃 CME 粒子壳层抵达回收边界：清除事件（粒子缓冲复用） */
   completeCme: () => void;
   dismissCmeNotice: () => void;
+  /** 排定朝地球 CME 抵达时间（触发时按传播延迟计算；null 取消） */
+  scheduleCmeArrival: (arrivalSimDays: number | null) => void;
+  /** CME 抵达地球：触发极光增强 + "已抵达"通知（清除排定的抵达时间） */
+  triggerCmeArrival: (atSimDays: number) => void;
+  /** 极光增强动画完成：清除极光状态 */
+  completeAurora: () => void;
+  dismissCmeArrivalNotice: () => void;
+  /** 点选太阳表面特征（黑子群/日珥科普卡片；null 关闭） */
+  setSelectedSolarFeature: (
+    feature: SimulationState['selectedSolarFeature'],
+  ) => void;
   /** 剖面模式开关（关闭时同时清除分层选中） */
   setSunCutawayMode: (enabled: boolean) => void;
   /** 剖面分层点选（null 取消选中） */
@@ -261,6 +294,10 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   activeCme: null,
   cmeCounter: 0,
   cmeNoticeVisible: false,
+  cmeArrivalSimDays: null,
+  auroraStartedAtSimDays: null,
+  cmeArrivalNoticeVisible: false,
+  selectedSolarFeature: null,
   sunCutawayMode: false,
   sunCutawayLayer: null,
   showPerformance: false,
@@ -499,6 +536,28 @@ export const useSimulationStore = create<SimulationState>((set) => ({
     }),
 
   dismissCmeNotice: () => set({ cmeNoticeVisible: false }),
+
+  scheduleCmeArrival: (arrivalSimDays) => set({ cmeArrivalSimDays: arrivalSimDays }),
+
+  triggerCmeArrival: (atSimDays) =>
+    set((state) => {
+      if (!Number.isFinite(atSimDays)) return state;
+      return {
+        cmeArrivalSimDays: null,
+        auroraStartedAtSimDays: atSimDays,
+        cmeArrivalNoticeVisible: true,
+      };
+    }),
+
+  completeAurora: () =>
+    set((state) => {
+      if (state.auroraStartedAtSimDays === null) return state;
+      return { auroraStartedAtSimDays: null };
+    }),
+
+  dismissCmeArrivalNotice: () => set({ cmeArrivalNoticeVisible: false }),
+
+  setSelectedSolarFeature: (feature) => set({ selectedSolarFeature: feature }),
 
   setSunCutawayMode: (enabled) =>
     set((state) => {

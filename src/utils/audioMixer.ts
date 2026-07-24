@@ -184,3 +184,30 @@ export function advancePlanetAmbienceTransition(
     durationSeconds <= 0 ? 1 : Math.min(1, state.progress + deltaSeconds / durationSeconds);
   return { ...state, progress };
 }
+
+// ---------------------------------------------------------------------------
+// L1 太阳近观"沸腾"颗粒噪声音景（S3，IMPROVEMENT_REQUIREMENTS_SOLAR §4.6）
+// ---------------------------------------------------------------------------
+
+/**
+ * 太阳沸腾音景峰值增益（叠加在 sun-hum 低频轰鸣之上的颗粒噪声层）：
+ * 亮度克制，仅 L1 近观显著（真空无声，艺术化设计，UI 说明）。
+ */
+export const SUN_BOIL_MAX_GAIN = 0.18;
+
+/**
+ * 太阳沸腾颗粒噪声层增益（纯逻辑，§4.6）：随 L1 近观强度与活动周期相位微调。
+ * - 近观强度（nearStrength01）：L1 贴近太阳时最强，远离淡出（主导因子）；
+ * - 周期包络（cycleEnvelope01）：极大期活动旺盛，颗粒噪声略增（±20% 调制）。
+ *
+ * @param nearStrength01 太阳近观细节强度 ∈ [0,1]（planetDetail.detailStrength01）
+ * @param cycleEnvelope01 活动周期黑子包络 ∈ [0,1]（solarCycle.cycleSunspotEnvelope）
+ * @returns 沸腾层增益 ∈ [0, SUN_BOIL_MAX_GAIN]
+ */
+export function sunBoilLayerGain(nearStrength01: number, cycleEnvelope01: number): number {
+  const near = clamp01(nearStrength01);
+  const cyc = clamp01(cycleEnvelope01);
+  // 周期相位微调：极小期 0.8 倍、极大期 1.2 倍
+  const cycleMod = 0.8 + 0.4 * cyc;
+  return SUN_BOIL_MAX_GAIN * near * cycleMod;
+}

@@ -15,6 +15,7 @@ import { galacticFrameHudLabel } from '@/utils/galacticFrame';
 import { galacticYearProgress, sunGalacticPositionLy } from '@/utils/galaxy';
 import { formatSceneScaleLabel } from '@/utils/scale';
 import { sunActivityStatusLines } from '@/utils/solarActivity';
+import { solarCycleState, solarCycleStatusLine } from '@/utils/solarCycle';
 import { SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
 import { formatSimDate } from '@/utils/time';
 
@@ -50,8 +51,13 @@ export function HudInfo(): JSX.Element {
   const activeCme = useSimulationStore((s) => s.activeCme);
   const cmeNoticeVisible = useSimulationStore((s) => s.cmeNoticeVisible);
   const dismissCmeNotice = useSimulationStore((s) => s.dismissCmeNotice);
+  const cmeArrivalNoticeVisible = useSimulationStore((s) => s.cmeArrivalNoticeVisible);
+  const dismissCmeArrivalNotice = useSimulationStore((s) => s.dismissCmeArrivalNotice);
   const sunCutawayMode = useSimulationStore((s) => s.sunCutawayMode);
   const setSunCutawayMode = useSimulationStore((s) => s.setSunCutawayMode);
+  // S3 §4.5：点选的太阳表面特征（黑子群/日珥科普卡片）
+  const selectedSolarFeature = useSimulationStore((s) => s.selectedSolarFeature);
+  const setSelectedSolarFeature = useSimulationStore((s) => s.setSelectedSolarFeature);
   const sunCutawayLayer = useSimulationStore((s) => s.sunCutawayLayer);
   const setSunCutawayLayer = useSimulationStore((s) => s.setSunCutawayLayer);
 
@@ -59,6 +65,8 @@ export function HudInfo(): JSX.Element {
   const [simDateText, setSimDateText] = useState('');
   const [scaleText, setScaleText] = useState('');
   const [galacticText, setGalacticText] = useState('');
+  // S3 §4.4：太阳活动周期状态行（低频刷新，随快进演变）
+  const [cycleLine, setCycleLine] = useState<{ label: string; value: string } | null>(null);
   useEffect(() => {
     const update = (): void => {
       const state = useSimulationStore.getState();
@@ -76,6 +84,8 @@ export function HudInfo(): JSX.Element {
       } else {
         setGalacticText('');
       }
+      // 太阳活动周期状态行（第 N 周期 · 相位名 · 黑子相对数示意）
+      setCycleLine(solarCycleStatusLine(solarCycleState(state.simDays)));
     };
     update();
     const id = setInterval(update, 250);
@@ -250,7 +260,70 @@ export function HudInfo(): JSX.Element {
             </div>
           </div>
         )}
+        {/* S3 §4.3-3：CME 抵达地球通知（极区极光增强示意） */}
+        {cmeArrivalNoticeVisible && (
+          <div className="rounded-lg border border-emerald-400/40 bg-space-panel p-3 text-xs backdrop-blur">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-emerald-300">
+                🌌 CME 已抵达地球！
+              </p>
+              <button
+                type="button"
+                onClick={dismissCmeArrivalNotice}
+                className="text-gray-400 hover:text-white"
+                aria-label="关闭 CME 抵达通知"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="mt-1 text-gray-300">
+              等离子体云抵达地球磁层，扰动引发地磁暴——极区高层大气激发出增强极光
+              （示意）。
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  requestFlyTo('earth');
+                  dismissCmeArrivalNotice();
+                }}
+                className="rounded bg-emerald-400/90 px-2 py-1 text-black hover:bg-emerald-300"
+              >
+                🚀 飞往地球观看
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* S3 §4.5：黑子群/日珥点选科普卡片（含"可容纳 N 个地球"动态换算） */}
+      {selectedSolarFeature && (
+        <div className="absolute bottom-4 left-1/2 w-80 -translate-x-1/2 rounded-lg border border-orange-300/30 bg-space-panel p-4 text-xs backdrop-blur">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-orange-300">
+              {selectedSolarFeature.titleZh}
+            </h3>
+            <button
+              type="button"
+              onClick={() => setSelectedSolarFeature(null)}
+              className="text-gray-400 hover:text-white"
+              aria-label="关闭特征卡片"
+            >
+              ✕
+            </button>
+          </div>
+          <p className="leading-5 text-gray-300">{selectedSolarFeature.descZh}</p>
+          {selectedSolarFeature.earthCount !== null && (
+            <p className="mt-2 rounded bg-orange-400/10 px-2 py-1 text-orange-200">
+              🌍 该黑子约可容纳{' '}
+              <span className="font-semibold">
+                {selectedSolarFeature.earthCount.toLocaleString('zh-CN')}
+              </span>{' '}
+              个地球（按放大前真实尺寸换算）
+            </p>
+          )}
+        </div>
+      )}
 
       {/* 剖面分层科普卡片（S2 §4.1：各层可点选高亮并显示说明） */}
       {sunCutawayMode && sunCutawayLayer && (
@@ -316,6 +389,13 @@ export function HudInfo(): JSX.Element {
                 <dd className="text-right">{line.value}</dd>
               </div>
             ))}
+            {/* S3 §4.4：太阳活动周期状态行（第 N 周期 · 相位名 · 黑子相对数） */}
+            {selected.id === 'sun' && cycleLine && (
+              <div key={cycleLine.label} className="flex justify-between gap-2">
+                <dt className="shrink-0 text-amber-300/90">{cycleLine.label}</dt>
+                <dd className="text-right text-amber-200/90">{cycleLine.value}</dd>
+              </div>
+            )}
             {/* S2 §4.5：太阳当前活动事件行（耀斑级别/CME 速度/平静） */}
             {selected.id === 'sun' &&
               sunActivityStatusLines(

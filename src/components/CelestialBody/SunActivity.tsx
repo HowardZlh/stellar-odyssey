@@ -19,6 +19,7 @@ import {
   PROMINENCE_COUNT,
   PROMINENCE_HEIGHT_FRAC,
   PROMINENCE_SPAN_RAD,
+  prominenceEruptionLift,
   WIND_BASE_ALPHA,
   WIND_MAX_RADIUS_UNITS,
   WIND_PARTICLE_COUNT,
@@ -29,6 +30,8 @@ import {
   cmeProgress01,
   cmeShellRadiusUnits,
   cmeSpeedForClass,
+  cycleModulatedMeanInterval,
+  FLARE_MEAN_INTERVAL_DAYS,
   flareClassRoll,
   flareIntensity01,
   flareMagnitudeRoll,
@@ -39,17 +42,23 @@ import {
   shouldAutoTriggerFlare,
   windCycleDays,
   windShaderDays,
+  windSpeedFactorForDirection,
+  cmeArrivalDelayDays,
+  AURORA_ENHANCEMENT_DAYS,
 } from '@/utils/solarActivity';
+import { CORONAL_HOLE_DIR } from '@/utils/sunSurface';
 import { solarRotationAngleRad } from '@/utils/solarRotation';
 import type { SunspotInstance } from '@/utils/sunspots';
 import {
   SUNSPOT_PAIR_SLOTS,
   activeRegionLatLon,
   sunspotDirection,
+  sunspotEarthCount,
   sunspotHash01,
   sunspotPairInto,
 } from '@/utils/sunspots';
 import { advanceCutawayProgress, externalActivityFade } from '@/utils/sunCutaway';
+import { cycleFrequencyFactor, cycleSunspotEnvelope, solarCyclePhase01 } from '@/utils/solarCycle';
 
 /**
  * 太阳活动系统（S2，IMPROVEMENT_REQUIREMENTS_SOLAR §4.3/§5）：
@@ -157,11 +166,20 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
   const flareGlowRef = useRef<THREE.Sprite>(null);
   const promMeshRefs = useRef<Array<THREE.Mesh | null>>([]);
   const loopMeshRefs = useRef<Array<THREE.Mesh | null>>([]);
+  // S3 §4.5：黑子群/日珥点选热区（不可见球体，随特征位置更新）
+  const spotHotspotRefs = useRef<Array<THREE.Mesh | null>>([]);
+  const promHotspotRefs = useRef<Array<THREE.Mesh | null>>([]);
+  // 缓存各黑子槽位当前渲染半径（供点选换算"可容纳 N 个地球"）
+  const spotRadiusRef = useRef<Float32Array>(new Float32Array(SUNSPOT_PAIR_SLOTS));
   // 剖面互斥淡出进度（0 无剖面 → 1 全剖面）
   const cutawayFadeRef = useRef(0);
   const lastSimDaysRef = useRef<number | null>(null);
   // 每个耀斑事件至多联动一次 CME
   const linkedFlareIdRef = useRef<string | null>(null);
+  // S3 爆发日珥前导：记录最近触发的 CME id、被选中拉升的日珥索引与起始时间
+  const eruptCmeIdRef = useRef<string | null>(null);
+  const eruptPromIndexRef = useRef<number>(-1);
+  const eruptStartDaysRef = useRef<number>(0);
 
   const windStartRadius = radius * 1.15;
   const windCycle = useMemo(() => windCycleDays(windStartRadius), [windStartRadius]);
@@ -171,20 +189,29 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
     const rand = createSeededRandom(WIND_SEED);
     const dirs = new Float32Array(WIND_PARTICLE_COUNT * 3);
     const seeds = new Float32Array(WIND_PARTICLE_COUNT);
+    // S3 日冕洞快风：粒子方向落在冕洞锥内时速度增益（快风源）
+    const speedFac = new Float32Array(WIND_PARTICLE_COUNT);
     for (let i = 0; i < WIND_PARTICLE_COUNT; i += 1) {
       // 均匀球面方向（全方向外流）
       const cosPolar = rand() * 2 - 1;
       const sinPolar = Math.sqrt(Math.max(0, 1 - cosPolar * cosPolar));
       const azimuth = rand() * Math.PI * 2;
-      dirs[i * 3] = sinPolar * Math.cos(azimuth);
-      dirs[i * 3 + 1] = cosPolar;
-      dirs[i * 3 + 2] = sinPolar * Math.sin(azimuth);
+      const dx = sinPolar * Math.cos(azimuth);
+      const dy = cosPolar;
+      const dz = sinPolar * Math.sin(azimuth);
+      dirs[i * 3] = dx;
+      dirs[i * 3 + 1] = dy;
+      dirs[i * 3 + 2] = dz;
       seeds[i] = rand();
+      // 方向与日冕洞方向的余弦 → 速度因子（快慢风方向加权，确定性）
+      const cosHole = dx * CORONAL_HOLE_DIR.x + dy * CORONAL_HOLE_DIR.y + dz * CORONAL_HOLE_DIR.z;
+      speedFac[i] = windSpeedFactorForDirection(cosHole);
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(WIND_PARTICLE_COUNT * 3), 3));
     geometry.setAttribute('aDir', new THREE.BufferAttribute(dirs, 3));
     geometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+    geometry.setAttribute('aSpeedFac', new THREE.BufferAttribute(speedFac, 1));
     // 位置由着色器计算，手动设置包围球供视锥剔除
     geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), WIND_MAX_RADIUS_UNITS * 1.1);
     const material = new THREE.ShaderMaterial({
@@ -202,6 +229,7 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
       vertexShader: /* glsl */ `
         attribute vec3 aDir;
         attribute float aSeed;
+        attribute float aSpeedFac;
         uniform float uDays;
         uniform float uCycleDays;
         uniform float uR0;
@@ -209,8 +237,9 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
         uniform float uSize;
         varying float vPhase;
         void main() {
-          // 外流相位循环回收（solarActivity.windPhase01 镜像）
-          float phase = fract(uDays / uCycleDays + aSeed);
+          // 外流相位循环回收（solarActivity.windPhase01 镜像）；
+          // S3 日冕洞快风：该方向粒子相位推进更快（速度增益）
+          float phase = fract(uDays * aSpeedFac / uCycleDays + aSeed);
           vPhase = phase;
           vec3 pos = aDir * mix(uR0, uRMax, phase);
           vec4 mv = modelViewMatrix * vec4(pos, 1.0);
@@ -441,8 +470,14 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
           earthDirected: cmeIsEarthDirected(dir, earthDirectionAt(simDays)),
         });
       }
-    } else if (!sunCutawayMode && !timeJumped && shouldAutoTriggerFlare(Math.random(), delta)) {
-      state.triggerSolarFlare(rollFlareParams(simDays));
+    } else if (!sunCutawayMode && !timeJumped) {
+      // S3 周期联动（§4.4）：耀斑泊松均值按活动周期频率因子缩放
+      // （极大期更频繁、极小期更稀疏）
+      const freqFactor = cycleFrequencyFactor(cycleSunspotEnvelope(solarCyclePhase01(simDays)));
+      const flareMean = cycleModulatedMeanInterval(FLARE_MEAN_INTERVAL_DAYS, freqFactor);
+      if (shouldAutoTriggerFlare(Math.random(), delta, flareMean)) {
+        state.triggerSolarFlare(rollFlareParams(simDays));
+      }
     }
 
     if (activeCme) {
@@ -455,13 +490,61 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
       if (elapsed < 0 || shellRadius >= CME_MAX_RADIUS_UNITS) {
         state.completeCme();
       }
-    } else if (
-      !sunCutawayMode &&
+    } else if (!sunCutawayMode && !timeJumped) {
+      // 独立低概率 CME（无耀斑前导，§4.3-3 触发方式）；
+      // S3 周期联动：均值同样按频率因子缩放
+      const freqFactor = cycleFrequencyFactor(cycleSunspotEnvelope(solarCyclePhase01(simDays)));
+      const cmeMean = cycleModulatedMeanInterval(CME_INDEPENDENT_MEAN_INTERVAL_DAYS, freqFactor);
+      if (shouldAutoTriggerFlare(Math.random(), delta, cmeMean)) {
+        state.triggerCme(rollCmeParams(simDays));
+      }
+    }
+
+    // ---- S3 爆发日珥前导（§4.3-6）：新 CME 触发时选取最接近抛射方向的
+    // 日珥拉升脱离作为前导（联动动画，日珥池复用）----
+    if (activeCme && activeCme.id !== eruptCmeIdRef.current) {
+      eruptCmeIdRef.current = activeCme.id;
+      // 选取当前方位与 CME 抛射方向夹角最小的日珥
+      let bestIdx = -1;
+      let bestDot = -Infinity;
+      for (let i = 0; i < PROMINENCE_COUNT; i += 1) {
+        const anchor = PROMINENCES[i];
+        const lonRad = anchor.lon0Rad + solarRotationAngleRad(anchor.latRad, simDays);
+        const dir = sunspotDirection(anchor.latRad, lonRad);
+        const d =
+          dir.x * activeCme.direction.x +
+          dir.y * activeCme.direction.y +
+          dir.z * activeCme.direction.z;
+        if (d > bestDot) {
+          bestDot = d;
+          bestIdx = i;
+        }
+      }
+      eruptPromIndexRef.current = bestIdx;
+      eruptStartDaysRef.current = simDays;
+      // S3 CME 抵达地球（§4.3-3）：朝地球 CME 按传播延迟排定抵达时间
+      if (activeCme.earthDirected) {
+        state.scheduleCmeArrival(simDays + cmeArrivalDelayDays(activeCme.speedKmS));
+      }
+    }
+    if (!activeCme) {
+      eruptCmeIdRef.current = null;
+      eruptPromIndexRef.current = -1;
+    }
+    // CME 抵达地球检测（模拟时间越过排定抵达时刻，非时间跳变时触发）
+    if (
+      state.cmeArrivalSimDays !== null &&
       !timeJumped &&
-      shouldAutoTriggerFlare(Math.random(), delta, CME_INDEPENDENT_MEAN_INTERVAL_DAYS)
+      simDays >= state.cmeArrivalSimDays
     ) {
-      // 独立低概率 CME（无耀斑前导，§4.3-3 触发方式）
-      state.triggerCme(rollCmeParams(simDays));
+      state.triggerCmeArrival(simDays);
+    }
+    // 极光增强窗口结束后清除（Planet.tsx 读取 auroraStartedAtSimDays 增亮大气）
+    if (state.auroraStartedAtSimDays !== null) {
+      const since = simDays - state.auroraStartedAtSimDays;
+      if (since < 0 || since >= AURORA_ENHANCEMENT_DAYS) {
+        state.completeAurora();
+      }
     }
 
     // ---- 可见性门控（§5.2 硬性）：层级淡出 × 剖面互斥淡出 ----
@@ -546,12 +629,17 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
       tmp.center.set(dir.x, dir.y, dir.z);
       tmp.xAxis.crossVectors(tmp.up, tmp.center).normalize();
       const evolve = prominenceEvolveFactor(simDays, anchor.seed01);
+      // S3 爆发日珥前导：被选中的日珥在 CME 触发后短暂拉升脱离
+      let eruptLift = 1;
+      if (i === eruptPromIndexRef.current) {
+        eruptLift = 1 + prominenceEruptionLift(simDays - eruptStartDaysRef.current);
+      }
       placeArc(
         mesh,
         tmp.center,
         tmp.xAxis,
         PROMINENCE_SPAN_RAD / 2,
-        radius * PROMINENCE_HEIGHT_FRAC * evolve,
+        radius * PROMINENCE_HEIGHT_FRAC * evolve * eruptLift,
       );
       mesh.visible = true;
     }
@@ -582,7 +670,63 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
       const mesh = loopMeshRefs.current[i];
       if (mesh) mesh.visible = false;
     }
+
+    // ---- S3 §4.5 点选热区：黑子群（前导黑子处）+ 日珥 ----
+    for (let slot = 0; slot < SUNSPOT_PAIR_SLOTS; slot += 1) {
+      const hs = spotHotspotRefs.current[slot];
+      if (!hs) continue;
+      if (nearWeight > 0.002 && sunspotPairInto(slot, simDays, tmp.leader, tmp.follower)) {
+        const d = sunspotDirection(tmp.leader.latRad, tmp.leader.lonRad);
+        hs.position.set(d.x, d.y, d.z).multiplyScalar(radius * 1.01);
+        // 热区半径按黑子角半径对应的弦长（略放大便于点选）
+        const hsR = Math.max(radius * 0.04, radius * Math.sin(tmp.leader.radiusRad) * 1.3);
+        hs.scale.setScalar(hsR);
+        spotRadiusRef.current[slot] = tmp.leader.radiusRad;
+        hs.visible = true;
+      } else {
+        hs.visible = false;
+      }
+    }
+    for (let i = 0; i < PROMINENCE_COUNT; i += 1) {
+      const hs = promHotspotRefs.current[i];
+      const prom = promMeshRefs.current[i];
+      if (!hs) continue;
+      if (prom && prom.visible) {
+        // 热区置于日珥拱顶附近（日珥 mesh 已定位，取其上方径向偏移）
+        hs.position.copy(prom.position).multiplyScalar(1.12);
+        hs.scale.setScalar(radius * 0.08);
+        hs.visible = true;
+      } else {
+        hs.visible = false;
+      }
+    }
   });
+
+  /** 黑子群点选：科普卡片 + "可容纳 N 个地球"动态换算（§4.5） */
+  const handleSpotClick = (slot: number): void => {
+    const radiusRad = spotRadiusRef.current[slot];
+    const earthCount = radiusRad > 0 ? Math.round(sunspotEarthCount(radiusRad)) : null;
+    useSimulationStore.getState().setSelectedSolarFeature({
+      kind: 'sunspot',
+      titleZh: '太阳黑子群',
+      descZh:
+        '强磁场抑制对流形成的低温暗区（本影 ~3,500–4,500 °C，对比光球 ~5,500 °C）。' +
+        '成对出现（前导/后随，磁极相反——Hale 极性定律），随较差自转移动。',
+      earthCount,
+    });
+  };
+
+  /** 日珥点选：科普卡片（§4.5） */
+  const handleProminenceClick = (): void => {
+    useSimulationStore.getState().setSelectedSolarFeature({
+      kind: 'prominence',
+      titleZh: '日珥',
+      descZh:
+        '色球物质沿磁力线悬浮于高温日冕中的拱状结构（氢α 红色调），寿命数天至数月；' +
+        '在日面上投影为暗条。爆发日珥可作为日冕物质抛射（CME）的前导。',
+      earthCount: null,
+    });
+  };
 
   return (
     <group ref={groupRef} name="sun-activity">
@@ -623,6 +767,40 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
           visible={false}
           raycast={() => null}
         />
+      ))}
+      {/* S3 §4.5 黑子群点选热区（不可见球体，仅提供点击命中） */}
+      {Array.from({ length: SUNSPOT_PAIR_SLOTS }, (_, i) => (
+        <mesh
+          key={`spot-hotspot-${i}`}
+          ref={(el) => {
+            spotHotspotRefs.current[i] = el;
+          }}
+          visible={false}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSpotClick(i);
+          }}
+        >
+          <sphereGeometry args={[1, 12, 12]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
+      ))}
+      {/* S3 §4.5 日珥点选热区 */}
+      {Array.from({ length: PROMINENCE_COUNT }, (_, i) => (
+        <mesh
+          key={`prom-hotspot-${i}`}
+          ref={(el) => {
+            promHotspotRefs.current[i] = el;
+          }}
+          visible={false}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleProminenceClick();
+          }}
+        >
+          <sphereGeometry args={[1, 12, 12]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
       ))}
     </group>
   );

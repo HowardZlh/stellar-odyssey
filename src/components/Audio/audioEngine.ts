@@ -44,6 +44,9 @@ export class AudioEngine {
   /** L1 环境音可调节点（行星差异化音景，P3-6） */
   private l1Tuning: AmbienceTuning | null = null;
 
+  /** S3 §4.6 太阳近观"沸腾"颗粒噪声层增益节点（常驻，按近观强度调节） */
+  private sunBoilGain: GainNode | null = null;
+
   /** 是否已成功初始化 */
   get initialized(): boolean {
     return this.context !== null;
@@ -83,6 +86,9 @@ export class AudioEngine {
       for (const config of SPATIAL_SOURCES) {
         this.spatial.set(config.id, this.buildSpatialChain(context, master, config));
       }
+      // S3 §4.6：太阳近观"沸腾"颗粒噪声层（常驻循环噪声 + 带通滤波 +
+      // 缓慢 LFO 起伏，增益默认 0，setSunBoilGain 按 L1 近观强度调节）
+      this.sunBoilGain = this.buildSunBoilLayer(context, master);
     } catch {
       // 静默降级：无音效但不影响主功能
       this.context = null;
@@ -314,6 +320,56 @@ export class AudioEngine {
       }
     } catch {
       // 静默降级
+    }
+  }
+
+  /**
+   * S3 §4.6：设置太阳近观"沸腾"颗粒噪声层增益（0-1 已含峰值缩放）。
+   * 由音频循环按 L1 近观强度与周期相位（utils/audioMixer.sunBoilLayerGain）
+   * 传入；未初始化时静默降级。
+   */
+  setSunBoilGain(gain: number): void {
+    if (!this.context || !this.sunBoilGain) return;
+    try {
+      const now = this.context.currentTime;
+      const clamped = Math.min(1, Math.max(0, gain));
+      this.sunBoilGain.gain.setTargetAtTime(clamped, now, 0.15);
+    } catch {
+      // 静默降级
+    }
+  }
+
+  /**
+   * 构建太阳沸腾颗粒噪声层（S3 §4.6）：循环白噪 → 带通（聚焦中频"咕嘟"感）
+   * → 缓慢 LFO 幅度起伏 → 增益（默认 0）→ master。返回增益节点供实时调节。
+   */
+  private buildSunBoilLayer(context: AudioContext, master: GainNode): GainNode | null {
+    try {
+      const noise = context.createBufferSource();
+      noise.buffer = this.createNoiseBuffer(context);
+      noise.loop = true;
+      const bandpass = context.createBiquadFilter();
+      bandpass.type = 'bandpass';
+      bandpass.frequency.value = 420;
+      bandpass.Q.value = 0.8;
+      // 缓慢 LFO 调制幅度，营造"沸腾翻滚"起伏
+      const lfo = context.createOscillator();
+      lfo.frequency.value = 0.7;
+      const lfoGain = context.createGain();
+      lfoGain.gain.value = 0.35;
+      const boilGain = context.createGain();
+      boilGain.gain.value = 0;
+      // LFO → boilGain.gain 偏置（在基准 0 上叠加起伏，仅在 gain>0 时可闻）
+      lfo.connect(lfoGain);
+      lfoGain.connect(boilGain.gain);
+      noise.connect(bandpass);
+      bandpass.connect(boilGain);
+      boilGain.connect(master);
+      noise.start();
+      lfo.start();
+      return boilGain;
+    } catch {
+      return null;
     }
   }
 
