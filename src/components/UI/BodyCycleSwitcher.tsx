@@ -14,6 +14,8 @@ export function BodyCycleSwitcher(): JSX.Element | null {
   const followBodyId = useSimulationStore((s) => s.followBodyId);
   const anchorBodyId = useSimulationStore((s) => s.anchorBodyId);
   const cycleAnchorBody = useSimulationStore((s) => s.cycleAnchorBody);
+  // 黑子群/日珥科普卡片（HudInfo，底部居中弹出）可见时上移让位，避免重叠
+  const selectedSolarFeature = useSimulationStore((s) => s.selectedSolarFeature);
 
   if (!cycleControlVisible(viewLevel, followBodyId)) return null;
 
@@ -21,7 +23,11 @@ export function BodyCycleSwitcher(): JSX.Element | null {
   const position = bodyCyclePositionLabel(anchorBodyId);
 
   return (
-    <div className="absolute bottom-28 left-1/2 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-space-panel px-4 py-2 text-xs backdrop-blur">
+    <div
+      className={`absolute left-1/2 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-space-panel px-4 py-2 text-xs backdrop-blur transition-[bottom] duration-300 ${
+        selectedSolarFeature ? 'bottom-64' : 'bottom-28'
+      }`}
+    >
       <button
         type="button"
         onClick={() => cycleAnchorBody(-1)}

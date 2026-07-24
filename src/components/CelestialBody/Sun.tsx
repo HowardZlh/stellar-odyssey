@@ -10,9 +10,12 @@ import { useBitmapTexture } from '@/hooks/useBitmapTexture';
 import { bodyDisplayRadius } from '@/utils/scale';
 import { detailGateUpdate, detailStrength01 } from '@/utils/planetDetail';
 import {
+  FLARE_BRIGHTNESS_BOOST,
+  FLARE_RIBBON_HALF_WIDTH_RAD,
+  FLARE_RIBBON_OFFSET_RAD,
   FLARE_SPOT_RADIUS_RAD,
-  flareIntensity01,
   flareLocalBoost,
+  flareMultiPeakIntensity01,
   flareProgress01,
 } from '@/utils/solarActivity';
 import { SOLAR_OMEGA_COEFFS, solarShearShaderDays } from '@/utils/solarRotation';
@@ -20,10 +23,16 @@ import { solarCycleState } from '@/utils/solarCycle';
 import {
   FILAMENT_HALF_WIDTH_RAD,
   FILAMENT_MIN_BRIGHTNESS,
+  PENUMBRA_FIBRIL_AMP,
+  PENUMBRA_FIBRIL_FREQ,
+  SUNSPOT_GROUP_SLOTS,
   SUNSPOT_MAX_RENDERED,
   SUNSPOT_PENUMBRA_BRIGHTNESS,
   SUNSPOT_UMBRA_BRIGHTNESS,
   SUNSPOT_UMBRA_FRAC,
+  UMBRA_IRREGULAR_AMP,
+  UMBRA_IRREGULAR_FREQ,
+  fillSunspotGroupData,
   fillSunspotShaderData,
 } from '@/utils/sunspots';
 import {
@@ -44,7 +53,15 @@ import {
   GRANULE_AMP_FAR,
   GRANULE_AMP_NEAR,
   GRANULE_CELL_SCALE,
+  HELMET_STREAMER_SHARPNESS,
+  INTERGRANULAR_LANE_DARKEN,
+  INTERGRANULAR_LANE_THRESHOLD,
+  NETWORK_BRIGHT_POINT_GAIN,
+  NETWORK_BRIGHT_POINT_THRESHOLD,
   PHOTOSPHERE_BRIGHTNESS_GAIN,
+  POLAR_PLUME_CONE_RAD,
+  POLAR_PLUME_FREQ,
+  POLAR_PLUME_GAIN,
   SPICULE_AMP,
   SPICULE_NOISE_FREQ,
   SPICULE_TIME_RATE,
@@ -126,6 +143,10 @@ export function Sun(): JSX.Element {
     () => ({
       dirs: new Float32Array(SUNSPOT_MAX_RENDERED * 3),
       params: new Float32Array(SUNSPOT_MAX_RENDERED * 3),
+      // S4 群级中性线（前导/后随方向 + 群强度），供暗条 + 双带耀斑几何
+      groupLeader: new Float32Array(SUNSPOT_GROUP_SLOTS * 3),
+      groupFollower: new Float32Array(SUNSPOT_GROUP_SLOTS * 3),
+      groupStrength: new Float32Array(SUNSPOT_GROUP_SLOTS),
     }),
     [],
   );
@@ -159,8 +180,23 @@ export function Sun(): JSX.Element {
         uSpotParams: {
           value: Array.from({ length: SUNSPOT_MAX_RENDERED }, () => new THREE.Vector3()),
         },
+        // S4：群级中性线（暗条 + 双带耀斑几何，替代 S3 逐对配对）
+        uGroupCount: { value: 0 },
+        uGroupLeader: {
+          value: Array.from({ length: SUNSPOT_GROUP_SLOTS }, () => new THREE.Vector3()),
+        },
+        uGroupFollower: {
+          value: Array.from({ length: SUNSPOT_GROUP_SLOTS }, () => new THREE.Vector3()),
+        },
+        uGroupStrength: {
+          value: new Float32Array(SUNSPOT_GROUP_SLOTS),
+        },
         uFlareDir: { value: new THREE.Vector3(1, 0, 0) },
         uFlareAmp: { value: 0 },
+        // S4 B1 双带耀斑：耀斑源群的中性线端点（前导/后随方向）+ 强度
+        uFlareLeader: { value: new THREE.Vector3(1, 0, 0) },
+        uFlareFollower: { value: new THREE.Vector3(1, 0, 0) },
+        uFlareRibbon: { value: 0 },
       },
       vertexShader: /* glsl */ `
         varying vec3 vNormal;
@@ -193,8 +229,15 @@ export function Sun(): JSX.Element {
         uniform int uSpotCount;
         uniform vec3 uSpotDirs[${SUNSPOT_MAX_RENDERED}];
         uniform vec3 uSpotParams[${SUNSPOT_MAX_RENDERED}];
+        uniform int uGroupCount;
+        uniform vec3 uGroupLeader[${SUNSPOT_GROUP_SLOTS}];
+        uniform vec3 uGroupFollower[${SUNSPOT_GROUP_SLOTS}];
+        uniform float uGroupStrength[${SUNSPOT_GROUP_SLOTS}];
         uniform vec3 uFlareDir;
         uniform float uFlareAmp;
+        uniform vec3 uFlareLeader;
+        uniform vec3 uFlareFollower;
+        uniform float uFlareRibbon;
         varying vec3 vNormal;
         varying vec3 vViewDir;
         varying vec3 vObjPos;
@@ -262,6 +305,21 @@ export function Sun(): JSX.Element {
             + vec3(uTime * ${SUPERGRANULE_TIME_RATE.toFixed(4)})
           );
           bright += (superCells - 0.5) * 2.0 * ${SUPERGRANULE_AMP.toFixed(4)} * uDetailStrength;
+          // S4 F1 暗巷网络（sunSurface.intergranularLaneDarkening 镜像）：
+          // 米粒胞间下沉冷物质暗边界强化，对流网络更清晰（仅近观）
+          if (cells < ${INTERGRANULAR_LANE_THRESHOLD.toFixed(4)}) {
+            float laneDepth = (${INTERGRANULAR_LANE_THRESHOLD.toFixed(4)} - cells)
+              / ${INTERGRANULAR_LANE_THRESHOLD.toFixed(4)};
+            bright *= 1.0 - ${INTERGRANULAR_LANE_DARKEN.toFixed(4)} * laneDepth * uDetailStrength;
+          }
+          // S4 F1 网络磁场亮点（sunSurface.networkBrightPointBoost 镜像）：
+          // 超米粒边界磁场聚集的光球亮点（network bright points）
+          if (superCells > ${NETWORK_BRIGHT_POINT_THRESHOLD.toFixed(4)}) {
+            float nb = (superCells - ${NETWORK_BRIGHT_POINT_THRESHOLD.toFixed(4)})
+              / ${(1 - NETWORK_BRIGHT_POINT_THRESHOLD).toFixed(4)};
+            bright += ${NETWORK_BRIGHT_POINT_GAIN.toFixed(4)}
+              * nb * nb * (3.0 - 2.0 * nb) * uDetailStrength;
+          }
           // 黑子暗区（sunspots.sunspotDarkening 镜像）：本影深暗 +
           // 半影放射状纤维（围绕黑子中心的方向噪声调制）
           float spotFactor = 1.0;
@@ -275,16 +333,31 @@ export function Sun(): JSX.Element {
             float ang = acos(clamp(cosAng, -1.0, 1.0));
             float radius = uSpotParams[i].x;
             float strength = uSpotParams[i].y;
+            float aseed = uSpotParams[i].z;
             if (ang < radius) {
-              float umbraR = radius * ${SUNSPOT_UMBRA_FRAC.toFixed(4)};
+              // S4 A2：片元相对黑子中心的方位角（本影不规则化 + 半影细丝共用）
+              vec3 rel = vObjPos - sd * cosAng;
+              // 构造黑子局部切平面基（tangent/bitangent）以定义方位角
+              vec3 up = abs(sd.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+              vec3 tang = normalize(cross(up, sd));
+              vec3 bitang = cross(sd, tang);
+              float azim = atan(dot(rel, bitang), dot(rel, tang));
+              // S4 A2 不规则本影：低频角向噪声扰动本影边界（多边形化）
+              float baseUmbraR = radius * ${SUNSPOT_UMBRA_FRAC.toFixed(4)};
+              float irr = sin(azim * ${UMBRA_IRREGULAR_FREQ.toFixed(1)} + aseed) * 0.6
+                + sin(azim * ${(UMBRA_IRREGULAR_FREQ + 2).toFixed(1)} + aseed * 1.7) * 0.4;
+              float umbraR = baseUmbraR * (1.0 + ${UMBRA_IRREGULAR_AMP.toFixed(4)} * irr);
               float f;
               if (ang <= umbraR) {
                 f = ${SUNSPOT_UMBRA_BRIGHTNESS.toFixed(4)};
               } else {
                 float t = (ang - umbraR) / (radius - umbraR);
-                vec3 rel = vObjPos - sd * cosAng;
                 float fib = valueNoise3(normalize(rel + vec3(1e-5)) * 24.0 + sd * 60.0);
-                float pen = ${SUNSPOT_PENUMBRA_BRIGHTNESS.toFixed(4)} + 0.15 * (fib - 0.5);
+                // S4 A2 丝状半影：径向拉伸的放射状细丝（角向高频条纹 × 径向包络）
+                float stripes = sin(azim * ${PENUMBRA_FIBRIL_FREQ.toFixed(1)} + (fib - 0.5) * 6.0);
+                float radialEnv = sin(3.14159265 * clamp(t, 0.0, 1.0));
+                float fibril = ${PENUMBRA_FIBRIL_AMP.toFixed(4)} * stripes * radialEnv * (0.5 + 0.5 * fib);
+                float pen = ${SUNSPOT_PENUMBRA_BRIGHTNESS.toFixed(4)} + 0.15 * (fib - 0.5) + fibril;
                 f = pen + (1.0 - pen) * (t * t * (3.0 - 2.0 * t));
               }
               spotFactor = min(spotFactor, 1.0 - (1.0 - f) * strength);
@@ -306,24 +379,23 @@ export function Sun(): JSX.Element {
           bright += faculae * mix(0.5, 1.0, uDetailStrength);
           // S3 暗条（filament，sunspots.filamentDarkening 镜像）：黑子对之间的
           // 磁中性线附近呈暗色细线（日珥在日面的投影，冷等离子体吸收）
+          // S4：改用群级中性线（前导→后随），支持不规则群
           float filament = 1.0;
-          for (int p = 0; p < ${SUNSPOT_MAX_RENDERED / 2}; p++) {
-            int li = p * 2;
-            int fi = p * 2 + 1;
-            if (fi >= uSpotCount) break;
-            vec3 a = uSpotDirs[li];
-            vec3 b = uSpotDirs[fi];
-            vec3 mid = normalize(a + b);
+          for (int p = 0; p < ${SUNSPOT_GROUP_SLOTS}; p++) {
+            if (p >= uGroupCount) break;
+            vec3 a = uGroupLeader[p];
+            vec3 b = uGroupFollower[p];
             vec3 axis = b - a;
             float axisLen = length(axis);
             if (axisLen < 1e-4) continue;
+            vec3 mid = normalize(a + b);
             axis /= axisLen;
             // 沿中性线的投影位置（相对中点，归一化到 [0,1]）
             float along = dot(vObjPos - mid, axis) / axisLen + 0.5;
             // 横向角距（片元方向到中性线的垂直角距近似）
             vec3 rel = vObjPos - mid;
             float perp = length(rel - axis * dot(rel, axis));
-            float strength = uSpotParams[li].y;
+            float strength = uGroupStrength[p];
             if (along >= 0.0 && along <= 1.0 && perp < ${FILAMENT_HALF_WIDTH_RAD.toFixed(4)}) {
               float across = 1.0 - perp / ${FILAMENT_HALF_WIDTH_RAD.toFixed(4)};
               float alongW = sin(3.14159265 * along);
@@ -338,7 +410,35 @@ export function Sun(): JSX.Element {
             float fAng = acos(clamp(dot(vObjPos, uFlareDir), -1.0, 1.0));
             float ft = clamp(fAng / ${FLARE_SPOT_RADIUS_RAD.toFixed(4)}, 0.0, 1.0);
             float fw = 1.0 - ft * ft * (3.0 - 2.0 * ft);
-            bright += uFlareAmp * fw * fw;
+            // S4 B1 双带耀斑（solarActivity.flareRibbonBoost 镜像）：沿耀斑源群
+            // 磁中性线两侧的两条带状增亮（two-ribbon）
+            vec3 fa = uFlareLeader;
+            vec3 fb = uFlareFollower;
+            vec3 faxis = fb - fa;
+            float faxisLen = length(faxis);
+            float ribbon = 0.0;
+            if (uFlareRibbon > 0.001 && faxisLen > 1e-4) {
+              vec3 fmid = normalize(fa + fb);
+              faxis /= faxisLen;
+              float rAlong = dot(vObjPos - fmid, faxis) / faxisLen + 0.5;
+              vec3 rRel = vObjPos - fmid;
+              // 带符号横向角距（沿中性线法向的一侧为正、另一侧为负）
+              vec3 fnorm = normalize(cross(faxis, fmid));
+              float rPerp = dot(rRel, fnorm);
+              if (rAlong >= 0.0 && rAlong <= 1.0) {
+                float dRib = min(
+                  abs(rPerp - ${FLARE_RIBBON_OFFSET_RAD.toFixed(4)}),
+                  abs(rPerp + ${FLARE_RIBBON_OFFSET_RAD.toFixed(4)})
+                );
+                if (dRib < ${FLARE_RIBBON_HALF_WIDTH_RAD.toFixed(4)}) {
+                  float across = 1.0 - dRib / ${FLARE_RIBBON_HALF_WIDTH_RAD.toFixed(4)};
+                  float alongW = sin(3.14159265 * rAlong);
+                  float w = across * alongW;
+                  ribbon = uFlareRibbon * w * w;
+                }
+              }
+            }
+            bright += uFlareAmp * fw * fw + ribbon;
           }
           // 临边昏暗 μ = N·V（stellarSurface.limbDarkening 镜像）
           float mu = clamp(dot(normalize(vNormal), normalize(vViewDir)), 0.0, 1.0);
@@ -500,11 +600,29 @@ export function Sun(): JSX.Element {
             // 角向冕流：以世界方向采样噪声（径向自然拉长成条纹）
             vec3 dir = normalize(vWorldPos - uCenterW);
             float streak = fbm3(dir, uTime);
-            float eq = pow(1.0 - abs(dir.y), 2.0);
+            float absY = abs(dir.y);
+            float eq = pow(1.0 - absY, 2.0);
             // S3 周期联动（sunSurface.coronaStreamerFactor 镜像）：
             // 极小期强赤道加权、极大期趋各向同性（日冕全纬度铺开）
             float angular = mix(0.35 + 0.65 * eq, 1.0, uIsotropy);
             float streamer = (0.45 + 0.55 * streak) * angular;
+            // S4 E3 盔状冕流（sunSurface.helmetStreamerFactor 镜像）：
+            // 赤道盔状尖顶锐化（高次幂），极大期渐弥散
+            float helmet = mix(
+              pow(1.0 - absY, ${HELMET_STREAMER_SHARPNESS.toFixed(1)}),
+              eq,
+              uIsotropy
+            );
+            streamer += 0.5 * helmet * (0.45 + 0.55 * streak);
+            // S4 E3 极羽（sunSurface.polarPlumeBrightness 镜像）：
+            // 极区开放磁力线细窄羽状射线（角向条纹）
+            float cosCone = ${Math.cos(POLAR_PLUME_CONE_RAD).toFixed(6)};
+            if (absY > cosCone) {
+              float pt = (absY - cosCone) / (1.0 - cosCone);
+              float pn = valueNoise3(vec3(atan(dir.z, dir.x) * 3.0, dir.y * 2.0, uTime * 0.3));
+              float plumeStripes = 0.5 + 0.5 * sin(pn * ${POLAR_PLUME_FREQ.toFixed(1)} * 3.14159265);
+              streamer += ${POLAR_PLUME_GAIN.toFixed(4)} * pt * plumeStripes;
+            }
             // S3 日冕洞（sunSurface.coronalHoleDarkening 镜像）：开放磁力线暗区
             float holeAng = acos(clamp(dot(dir, normalize(uHoleDir)), -1.0, 1.0));
             float hole = 1.0;
@@ -603,7 +721,8 @@ export function Sun(): JSX.Element {
     photosphereMaterial.uniforms.uDetailStrength.value = strength;
     // S2 较差自转纹理剪切相位（有界窗口回卷，登记于 utils/solarRotation.ts）
     photosphereMaterial.uniforms.uRotDays.value = solarShearShaderDays(simDays);
-    // S2 黑子：确定性伪随机系统按模拟时间填充（零分配），随较差自转移动
+    // S2/S4 黑子：确定性伪随机系统按模拟时间填充（零分配），随较差自转移动。
+    // S4：逐槽位展开黑子群（前导 + 后随 + 卫星），每颗黑子一条方向/参数记录。
     const spotCount = fillSunspotShaderData(simDays, spotScratch.dirs, spotScratch.params);
     photosphereMaterial.uniforms.uSpotCount.value = spotCount;
     const spotDirsU = photosphereMaterial.uniforms.uSpotDirs.value as THREE.Vector3[];
@@ -620,9 +739,34 @@ export function Sun(): JSX.Element {
         spotScratch.params[i * 3 + 2],
       );
     }
+    // S4 群级中性线（暗条 + 双带耀斑几何）：每活跃群一条前导→后随中性线
+    const groupCount = fillSunspotGroupData(
+      simDays,
+      spotScratch.groupLeader,
+      spotScratch.groupFollower,
+      spotScratch.groupStrength,
+    );
+    photosphereMaterial.uniforms.uGroupCount.value = groupCount;
+    const groupLeaderU = photosphereMaterial.uniforms.uGroupLeader.value as THREE.Vector3[];
+    const groupFollowerU = photosphereMaterial.uniforms.uGroupFollower.value as THREE.Vector3[];
+    const groupStrengthU = photosphereMaterial.uniforms.uGroupStrength.value as Float32Array;
+    for (let i = 0; i < groupCount; i += 1) {
+      groupLeaderU[i].set(
+        spotScratch.groupLeader[i * 3],
+        spotScratch.groupLeader[i * 3 + 1],
+        spotScratch.groupLeader[i * 3 + 2],
+      );
+      groupFollowerU[i].set(
+        spotScratch.groupFollower[i * 3],
+        spotScratch.groupFollower[i * 3 + 1],
+        spotScratch.groupFollower[i * 3 + 2],
+      );
+      groupStrengthU[i] = spotScratch.groupStrength[i];
+    }
 
-    // S2 耀斑局部增亮（事件生命周期由 SunActivity 驱动，此处只读）
+    // S2 耀斑局部增亮 + S4 B1 双带耀斑（事件生命周期由 SunActivity 驱动，此处只读）
     let flareAmp = 0;
+    let flareRibbon = 0;
     if (activeSolarFlare) {
       const p = flareProgress01(
         simDays,
@@ -630,15 +774,51 @@ export function Sun(): JSX.Element {
         activeSolarFlare.durationDays,
       );
       if (Number.isFinite(p)) {
-        flareAmp = flareLocalBoost(0, flareIntensity01(p));
+        // S4 B2 多峰光变：脉冲相尖峰 → 主峰 → 指数余辉（替代单峰指数）
+        const intensity = flareMultiPeakIntensity01(Math.min(1, Math.max(0, p)));
+        flareAmp = flareLocalBoost(0, intensity);
+        // 双带峰值同量级（shader 内 flareRibbonBoost 镜像按 w² 衰减）
+        flareRibbon = FLARE_BRIGHTNESS_BOOST * Math.min(1, Math.max(0, intensity));
       }
-      (photosphereMaterial.uniforms.uFlareDir.value as THREE.Vector3).set(
-        activeSolarFlare.sourceDir.x,
-        activeSolarFlare.sourceDir.y,
-        activeSolarFlare.sourceDir.z,
-      );
+      const fx = activeSolarFlare.sourceDir.x;
+      const fy = activeSolarFlare.sourceDir.y;
+      const fz = activeSolarFlare.sourceDir.z;
+      (photosphereMaterial.uniforms.uFlareDir.value as THREE.Vector3).set(fx, fy, fz);
+      // S4 B1：取与耀斑源方向最接近的活动区群中性线（前导→后随）
+      let bestDot = -Infinity;
+      let bestG = -1;
+      for (let g = 0; g < groupCount; g += 1) {
+        const dot =
+          spotScratch.groupLeader[g * 3] * fx +
+          spotScratch.groupLeader[g * 3 + 1] * fy +
+          spotScratch.groupLeader[g * 3 + 2] * fz;
+        if (dot > bestDot) {
+          bestDot = dot;
+          bestG = g;
+        }
+      }
+      const flareLeaderU = photosphereMaterial.uniforms.uFlareLeader.value as THREE.Vector3;
+      const flareFollowerU = photosphereMaterial.uniforms.uFlareFollower.value as THREE.Vector3;
+      if (bestG >= 0) {
+        flareLeaderU.set(
+          spotScratch.groupLeader[bestG * 3],
+          spotScratch.groupLeader[bestG * 3 + 1],
+          spotScratch.groupLeader[bestG * 3 + 2],
+        );
+        flareFollowerU.set(
+          spotScratch.groupFollower[bestG * 3],
+          spotScratch.groupFollower[bestG * 3 + 1],
+          spotScratch.groupFollower[bestG * 3 + 2],
+        );
+      } else {
+        // 无活跃群（回退方位耀斑）：无中性线则不渲染双带
+        flareLeaderU.set(fx, fy, fz);
+        flareFollowerU.set(fx, fy, fz);
+        flareRibbon = 0;
+      }
     }
     photosphereMaterial.uniforms.uFlareAmp.value = flareAmp;
+    photosphereMaterial.uniforms.uFlareRibbon.value = flareRibbon;
     chromosphereMaterial.uniforms.uStrength.value = strength;
     // S3 针状体边缘扰动相位（较快演化）
     chromosphereMaterial.uniforms.uTime.value = phase * SPICULE_TIME_RATE;
