@@ -10,6 +10,20 @@ import { useBitmapTexture } from '@/hooks/useBitmapTexture';
 import { bodyDisplayRadius } from '@/utils/scale';
 import { detailGateUpdate, detailStrength01 } from '@/utils/planetDetail';
 import {
+  FLARE_SPOT_RADIUS_RAD,
+  flareIntensity01,
+  flareLocalBoost,
+  flareProgress01,
+} from '@/utils/solarActivity';
+import { SOLAR_OMEGA_COEFFS, solarShearShaderDays } from '@/utils/solarRotation';
+import {
+  SUNSPOT_MAX_RENDERED,
+  SUNSPOT_PENUMBRA_BRIGHTNESS,
+  SUNSPOT_UMBRA_BRIGHTNESS,
+  SUNSPOT_UMBRA_FRAC,
+  fillSunspotShaderData,
+} from '@/utils/sunspots';
+import {
   CHROMOSPHERE_COLOR,
   CHROMOSPHERE_FRESNEL_POWER,
   CHROMOSPHERE_MAX_ALPHA,
@@ -29,6 +43,8 @@ import {
   granulationPhase,
   spriteGlowOpacity,
 } from '@/utils/sunSurface';
+import { SunActivity } from './SunActivity';
+import { SunCutaway } from './SunCutaway';
 import { getTextureManager } from './textureManager';
 
 /**
@@ -50,6 +66,16 @@ import { getTextureManager } from './textureManager';
  * 纯逻辑镜像与艺术化登记见 utils/sunSurface.ts 文件头（米粒尺度/速率
  * 钳制/色球厚度放大/日冕范围压缩）；GLSL 噪声与 utils/stellarSurface.ts
  * hash3/valueNoise3D/convectionFbm3 镜像一致。
+ *
+ * S2 扩展（IMPROVEMENT_REQUIREMENTS_SOLAR §4.1/§4.3）：
+ * - 黑子：光球 shader 暗区（本影+半影放射状纤维，镜像 utils/sunspots.ts），
+ *   位置/强度每帧由确定性伪随机系统填充（零分配），随较差自转移动。
+ * - 较差自转：按纬度对纹理 U 坐标附加差速相位（赤道 25.4 天/极区 34 天，
+ *   镜像 utils/solarRotation.ts，相位回卷防 float32 精度失效）。
+ * - 耀斑：活跃事件时源区局部增亮（镜像 solarActivity.flareLocalBoost，
+ *   峰值超 Bloom 阈值自然泛光）；事件生命周期由 SunActivity 驱动。
+ * - 剖面模式（§4.1）：开启时隐藏光球/色球/日冕/光晕，由 SunCutaway
+ *   呈现 1/4 切除内部结构；外部活动特效互斥淡出（SunActivity 内处理）。
  */
 export function Sun(): JSX.Element {
   // 真实比例模式（需求 4.1）：太阳半径按真实线性比例映射（约 0.047 场景单位）
@@ -67,8 +93,32 @@ export function Sun(): JSX.Element {
 
   const coronaRef = useRef<THREE.Mesh>(null);
   const sunGroupRef = useRef<THREE.Group>(null);
+  // S2 剖面模式：开启时隐藏光球/色球/日冕/光晕（SunCutaway 互斥呈现）
+  const cutawayMode = useSimulationStore((s) => s.sunCutawayMode);
+  // 剖面模式下光球（visible=false 仍参与 raycast）不得拦截分层点选
+  const photosphereRaycast = useMemo(() => {
+    const base = THREE.Mesh.prototype.raycast;
+    return function gatedRaycast(
+      this: THREE.Mesh,
+      raycaster: THREE.Raycaster,
+      intersects: THREE.Intersection[],
+    ): void {
+      if (useSimulationStore.getState().sunCutawayMode) return;
+      base.call(this, raycaster, intersects);
+    };
+  }, []);
+  // 黑子 shader 数据暂存（渲染循环零分配）
+  const spotScratch = useMemo(
+    () => ({
+      dirs: new Float32Array(SUNSPOT_MAX_RENDERED * 3),
+      params: new Float32Array(SUNSPOT_MAX_RENDERED * 3),
+    }),
+    [],
+  );
 
   // 光球 shader：米粒组织 + 临边昏暗 + 色温梯度（镜像 utils/sunSurface.ts）
+  // + 黑子暗区（镜像 utils/sunspots.ts）+ 较差自转（镜像 utils/solarRotation.ts）
+  // + 耀斑局部增亮（镜像 utils/solarActivity.ts）
   const photosphereMaterial = useMemo(() => {
     const fallback = new THREE.Color(SUN.color);
     const tint = new THREE.Color('#fff2d0');
@@ -86,6 +136,17 @@ export function Sun(): JSX.Element {
         uAmpFar: { value: GRANULE_AMP_FAR },
         uAmpNear: { value: GRANULE_AMP_NEAR },
         uGain: { value: PHOTOSPHERE_BRIGHTNESS_GAIN },
+        // S2：较差自转相位（回卷天数）+ 黑子 + 耀斑
+        uRotDays: { value: 0 },
+        uSpotCount: { value: 0 },
+        uSpotDirs: {
+          value: Array.from({ length: SUNSPOT_MAX_RENDERED }, () => new THREE.Vector3()),
+        },
+        uSpotParams: {
+          value: Array.from({ length: SUNSPOT_MAX_RENDERED }, () => new THREE.Vector3()),
+        },
+        uFlareDir: { value: new THREE.Vector3(1, 0, 0) },
+        uFlareAmp: { value: 0 },
       },
       vertexShader: /* glsl */ `
         varying vec3 vNormal;
@@ -114,10 +175,24 @@ export function Sun(): JSX.Element {
         uniform float uAmpFar;
         uniform float uAmpNear;
         uniform float uGain;
+        uniform float uRotDays;
+        uniform int uSpotCount;
+        uniform vec3 uSpotDirs[${SUNSPOT_MAX_RENDERED}];
+        uniform vec3 uSpotParams[${SUNSPOT_MAX_RENDERED}];
+        uniform vec3 uFlareDir;
+        uniform float uFlareAmp;
         varying vec3 vNormal;
         varying vec3 vViewDir;
         varying vec3 vObjPos;
         varying vec2 vUv;
+
+        // 较差自转角速度剖面（度/天，utils/solarRotation.solarRotationOmegaDegPerDay 镜像）
+        float omegaDegPerDay(float lat) {
+          float s2 = sin(lat) * sin(lat);
+          return ${SOLAR_OMEGA_COEFFS.a.toFixed(8)}
+            + (${SOLAR_OMEGA_COEFFS.b.toFixed(8)}) * s2
+            + (${SOLAR_OMEGA_COEFFS.c.toFixed(8)}) * s2 * s2;
+        }
 
         // 与 utils/stellarSurface.ts hash3/valueNoise3D/convectionFbm3 镜像一致
         //（3D 噪声以单位球面坐标采样：无经度接缝、无极点收缩）
@@ -152,14 +227,54 @@ export function Sun(): JSX.Element {
         }
 
         void main() {
+          // 较差自转（solarRotation.solarRotationUvOffset 镜像）：
+          // 按纬度对纹理 U 坐标附加相对赤道的差速剪切相位（赤道 25.4 天 /
+          // 极区 34 天；有界剪切窗口登记于 utils/solarRotation.ts）
+          float lat = (vUv.y - 0.5) * 3.14159265358979;
+          float uvShift = -(omegaDegPerDay(lat) - ${SOLAR_OMEGA_COEFFS.a.toFixed(8)}) * uRotDays / 360.0;
+          vec2 uvR = vec2(fract(vUv.x + uvShift), vUv.y);
           vec3 base = uHasMap > 0.5
-            ? texture2D(uMap, vUv).rgb * uTint
+            ? texture2D(uMap, uvR).rgb * uTint
             : uFallbackColor;
           // 米粒组织（sunSurface.granulationBrightness 镜像）：
           // 胞中心亮、边界暗，幅度随近观细节强度增强
           float cells = fbm3(vObjPos * 1.5, uTime);
           float amp = mix(uAmpFar, uAmpNear, uDetailStrength);
           float bright = clamp(1.0 + (cells - 0.5) * 2.0 * amp, 0.6, 1.4);
+          // 黑子暗区（sunspots.sunspotDarkening 镜像）：本影深暗 +
+          // 半影放射状纤维（围绕黑子中心的方向噪声调制）
+          float spotFactor = 1.0;
+          for (int i = 0; i < ${SUNSPOT_MAX_RENDERED}; i++) {
+            if (i >= uSpotCount) break;
+            vec3 sd = uSpotDirs[i];
+            float cosAng = dot(vObjPos, sd);
+            float ang = acos(clamp(cosAng, -1.0, 1.0));
+            float radius = uSpotParams[i].x;
+            if (ang < radius) {
+              float strength = uSpotParams[i].y;
+              float umbraR = radius * ${SUNSPOT_UMBRA_FRAC.toFixed(4)};
+              float f;
+              if (ang <= umbraR) {
+                f = ${SUNSPOT_UMBRA_BRIGHTNESS.toFixed(4)};
+              } else {
+                float t = (ang - umbraR) / (radius - umbraR);
+                vec3 rel = vObjPos - sd * cosAng;
+                float fib = valueNoise3(normalize(rel + vec3(1e-5)) * 24.0 + sd * 60.0);
+                float pen = ${SUNSPOT_PENUMBRA_BRIGHTNESS.toFixed(4)} + 0.15 * (fib - 0.5);
+                f = pen + (1.0 - pen) * (t * t * (3.0 - 2.0 * t));
+              }
+              spotFactor = min(spotFactor, 1.0 - (1.0 - f) * strength);
+            }
+          }
+          bright *= spotFactor;
+          // 耀斑局部增亮（solarActivity.flareLocalBoost 镜像）：
+          // 峰值远超 Bloom 阈值（0.55），自然联动泛光
+          if (uFlareAmp > 0.001) {
+            float fAng = acos(clamp(dot(vObjPos, uFlareDir), -1.0, 1.0));
+            float ft = clamp(fAng / ${FLARE_SPOT_RADIUS_RAD.toFixed(4)}, 0.0, 1.0);
+            float fw = 1.0 - ft * ft * (3.0 - 2.0 * ft);
+            bright += uFlareAmp * fw * fw;
+          }
           // 临边昏暗 μ = N·V（stellarSurface.limbDarkening 镜像）
           float mu = clamp(dot(normalize(vNormal), normalize(vViewDir)), 0.0, 1.0);
           float limb = 1.0 - uLimbU * (1.0 - mu);
@@ -346,6 +461,7 @@ export function Sun(): JSX.Element {
     photosphereMaterial.uniforms.uHasMap.value = surfaceTexture ? 1 : 0;
   }, [surfaceTexture, photosphereMaterial]);
 
+
   // 卸载释放（AGENTS.md 内存管理）：材质/光晕贴图/细节层显存
   useEffect(() => {
     return () => {
@@ -361,7 +477,7 @@ export function Sun(): JSX.Element {
   }, [photosphereMaterial, chromosphereMaterial, coronaMaterial, glowAssets]);
 
   useFrame(({ camera }) => {
-    const { simDays, continuousLevel } = useSimulationStore.getState();
+    const { simDays, continuousLevel, activeSolarFlare } = useSimulationStore.getState();
     // 太阳恒居场景原点附近（银河系组反向平移锚定），以组世界坐标为准
     const group = sunGroupRef.current;
     const centerW = coronaMaterial.uniforms.uCenterW.value as THREE.Vector3;
@@ -387,6 +503,44 @@ export function Sun(): JSX.Element {
     const phase = granulationPhase(simDays);
     photosphereMaterial.uniforms.uTime.value = phase;
     photosphereMaterial.uniforms.uDetailStrength.value = strength;
+    // S2 较差自转纹理剪切相位（有界窗口回卷，登记于 utils/solarRotation.ts）
+    photosphereMaterial.uniforms.uRotDays.value = solarShearShaderDays(simDays);
+    // S2 黑子：确定性伪随机系统按模拟时间填充（零分配），随较差自转移动
+    const spotCount = fillSunspotShaderData(simDays, spotScratch.dirs, spotScratch.params);
+    photosphereMaterial.uniforms.uSpotCount.value = spotCount;
+    const spotDirsU = photosphereMaterial.uniforms.uSpotDirs.value as THREE.Vector3[];
+    const spotParamsU = photosphereMaterial.uniforms.uSpotParams.value as THREE.Vector3[];
+    for (let i = 0; i < spotCount; i += 1) {
+      spotDirsU[i].set(
+        spotScratch.dirs[i * 3],
+        spotScratch.dirs[i * 3 + 1],
+        spotScratch.dirs[i * 3 + 2],
+      );
+      spotParamsU[i].set(
+        spotScratch.params[i * 3],
+        spotScratch.params[i * 3 + 1],
+        spotScratch.params[i * 3 + 2],
+      );
+    }
+
+    // S2 耀斑局部增亮（事件生命周期由 SunActivity 驱动，此处只读）
+    let flareAmp = 0;
+    if (activeSolarFlare) {
+      const p = flareProgress01(
+        simDays,
+        activeSolarFlare.startedAtSimDays,
+        activeSolarFlare.durationDays,
+      );
+      if (Number.isFinite(p)) {
+        flareAmp = flareLocalBoost(0, flareIntensity01(p));
+      }
+      (photosphereMaterial.uniforms.uFlareDir.value as THREE.Vector3).set(
+        activeSolarFlare.sourceDir.x,
+        activeSolarFlare.sourceDir.y,
+        activeSolarFlare.sourceDir.z,
+      );
+    }
+    photosphereMaterial.uniforms.uFlareAmp.value = flareAmp;
     chromosphereMaterial.uniforms.uStrength.value = strength;
     coronaMaterial.uniforms.uStrength.value = strength;
     coronaMaterial.uniforms.uTime.value = phase * CORONA_TIME_RATE;
@@ -405,6 +559,8 @@ export function Sun(): JSX.Element {
     <group name="sun" ref={sunGroupRef}>
       <mesh
         material={photosphereMaterial}
+        visible={!cutawayMode}
+        raycast={photosphereRaycast}
         onClick={(e) => {
           e.stopPropagation();
           selectBody(SUN.id);
@@ -413,7 +569,7 @@ export function Sun(): JSX.Element {
         <sphereGeometry args={[radius, SUN_SPHERE_SEGMENTS, SUN_SPHERE_SEGMENTS]} />
       </mesh>
       {/* 色球：放大壳层菲涅尔红环（氢α，厚度放大登记于 utils/sunSurface.ts） */}
-      <mesh material={chromosphereMaterial} raycast={() => null}>
+      <mesh material={chromosphereMaterial} visible={!cutawayMode} raycast={() => null}>
         <sphereGeometry
           args={[radius * CHROMOSPHERE_SHELL_SCALE, SUN_SPHERE_SEGMENTS, SUN_SPHERE_SEGMENTS]}
         />
@@ -422,14 +578,19 @@ export function Sun(): JSX.Element {
       <mesh
         ref={coronaRef}
         material={coronaMaterial}
+        visible={!cutawayMode}
         scale={[radius * CORONA_QUAD_SCALE, radius * CORONA_QUAD_SCALE, 1]}
         raycast={() => null}
       >
         <planeGeometry args={[1, 1]} />
       </mesh>
       {glowAssets.materials.map(([material, scale], idx) => (
-        <sprite key={idx} material={material} scale={[scale, scale, 1]} />
+        <sprite key={idx} material={material} visible={!cutawayMode} scale={[scale, scale, 1]} />
       ))}
+      {/* S2 太阳活动系统：太阳风/CME 粒子 + 日珥/日冕环 + 耀斑辉光与事件驱动 */}
+      <SunActivity radius={radius} />
+      {/* S2 内部结构剖面模式（§4.1）：1/4 切除视图，分层可点选 */}
+      <SunCutaway radius={radius} surfaceTexture={sunTexture} />
       {/* 附录A：太阳点光源强度 8 */}
       <pointLight intensity={8} distance={0} decay={0.4} color="#fff5e0" />
     </group>

@@ -5,10 +5,12 @@ import { CAMERA_VIEWS } from '@/data/cameraViews';
 import { useSimulationStore } from '@/store';
 import { SN_DEFAULT_DURATION_SEC } from '@/utils/supernova';
 import { rollSupernovaParams } from '@/components/Scene/Supernova';
+import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunActivity';
 
 /**
  * 控制面板（需求 3.5.1）：视角锚点 / 模拟速度 / 音效 / 轨道线与标签开关 /
- * 真实比例模式（P2）/ 超新星手动演示（P2，需求 3.1.5 触发方式）
+ * 真实比例模式（P2）/ 超新星手动演示（P2，需求 3.1.5 触发方式）/
+ * 太阳耀斑与 CME 手动演示 + 太阳剖面模式开关（S2 §4.1/§4.3/§4.5）
  */
 export function ControlPanel(): JSX.Element {
   const viewLevel = useSimulationStore((s) => s.viewLevel);
@@ -44,9 +46,24 @@ export function ControlPanel(): JSX.Element {
   const startMergePreview = useSimulationStore((s) => s.startMergePreview);
   const restoreFromMergePreview = useSimulationStore((s) => s.restoreFromMergePreview);
 
+  const activeSolarFlare = useSimulationStore((s) => s.activeSolarFlare);
+  const triggerSolarFlare = useSimulationStore((s) => s.triggerSolarFlare);
+  const activeCme = useSimulationStore((s) => s.activeCme);
+  const triggerCme = useSimulationStore((s) => s.triggerCme);
+  const sunCutawayMode = useSimulationStore((s) => s.sunCutawayMode);
+  const setSunCutawayMode = useSimulationStore((s) => s.setSunCutawayMode);
+
   const handleSupernovaDemo = (): void => {
     const params = rollSupernovaParams();
     triggerSupernova(params.positionLy, params.massSun, SN_DEFAULT_DURATION_SEC);
+  };
+
+  const handleFlareDemo = (): void => {
+    triggerSolarFlare(rollFlareParams(useSimulationStore.getState().simDays));
+  };
+
+  const handleCmeDemo = (): void => {
+    triggerCme(rollCmeParams(useSimulationStore.getState().simDays));
   };
 
   return (
@@ -186,6 +203,19 @@ export function ControlPanel(): JSX.Element {
         <label className="mb-1 flex items-center gap-2 text-xs">
           <input
             type="checkbox"
+            checked={sunCutawayMode}
+            onChange={(e) => setSunCutawayMode(e.target.checked)}
+          />
+          太阳内部剖面（1/4 切除视图）
+        </label>
+        {sunCutawayMode && (
+          <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
+            剖面下核心/辐射区/对流区可点选查看科普；外部活动特效已暂时淡出
+          </p>
+        )}
+        <label className="mb-1 flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
             checked={bloomEnabled}
             onChange={(e) => setBloomEnabled(e.target.checked)}
           />
@@ -215,6 +245,39 @@ export function ControlPanel(): JSX.Element {
           }`}
         >
           {activeSupernova ? '💥 超新星爆发进行中…' : '💥 触发超新星演示（旋臂内随机）'}
+        </button>
+        {/* 太阳耀斑/CME 手动演示（S2 §4.3-2/3 触发方式） */}
+        <button
+          type="button"
+          onClick={handleFlareDemo}
+          disabled={activeSolarFlare !== null || sunCutawayMode}
+          className={`mt-2 w-full rounded px-2 py-1.5 text-xs ${
+            activeSolarFlare || sunCutawayMode
+              ? 'cursor-not-allowed bg-white/5 text-gray-500'
+              : 'bg-orange-400/20 text-orange-200 hover:bg-orange-400/30'
+          }`}
+        >
+          {activeSolarFlare
+            ? `☀️ 耀斑进行中（${activeSolarFlare.flareClass}${activeSolarFlare.magnitude.toFixed(1)} 级）…`
+            : sunCutawayMode
+              ? '☀️ 触发太阳耀斑演示（剖面模式下不可用）'
+              : '☀️ 触发太阳耀斑演示（活动区随机）'}
+        </button>
+        <button
+          type="button"
+          onClick={handleCmeDemo}
+          disabled={activeCme !== null || sunCutawayMode}
+          className={`mt-2 w-full rounded px-2 py-1.5 text-xs ${
+            activeCme || sunCutawayMode
+              ? 'cursor-not-allowed bg-white/5 text-gray-500'
+              : 'bg-rose-400/20 text-rose-200 hover:bg-rose-400/30'
+          }`}
+        >
+          {activeCme
+            ? `🌊 CME 进行中（${Math.round(activeCme.speedKmS)} km/s）…`
+            : sunCutawayMode
+              ? '🌊 触发 CME 演示（剖面模式下不可用）'
+              : '🌊 触发日冕物质抛射（CME）演示'}
         </button>
         {/* 银河系—仙女座碰撞合并快进预览（可选需求 3.1.3） */}
         <button

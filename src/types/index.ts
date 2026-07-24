@@ -321,6 +321,41 @@ export interface SpecialBodyData {
   dataSource: string;
 }
 
+/** 耀斑级别（NOAA GOES 软 X 射线通量分级，S2 §4.3-2） */
+export type SolarFlareClass = 'C' | 'M' | 'X';
+
+/** 太阳耀斑事件（S2 §4.3-2，模拟时间轴驱动：暂停冻结、快进联动） */
+export interface SolarFlareEvent {
+  /** 事件 id（flare-<序号>） */
+  id: string;
+  /** 级别（C/M/X） */
+  flareClass: SolarFlareClass;
+  /** 级内量级（如 X2.3 的 2.3） */
+  magnitude: number;
+  /** 触发时刻（模拟天） */
+  startedAtSimDays: number;
+  /** 阶段动画总时长（模拟天，utils/solarActivity.FLARE_DURATION_DAYS） */
+  durationDays: number;
+  /** 源活动区方位（太阳对象空间单位矢量，锚定黑子群附近） */
+  sourceDir: Vec3;
+  /** 是否联动触发 CME（触发时按级别概率判定） */
+  cmeLinked: boolean;
+}
+
+/** 日冕物质抛射事件（S2 §4.3-3） */
+export interface CmeEvent {
+  /** 事件 id（cme-<序号>） */
+  id: string;
+  /** 抛射方向（场景/太阳对象空间单位矢量） */
+  direction: Vec3;
+  /** 速度（km/s，250–3,000 真实量级） */
+  speedKmS: number;
+  /** 触发时刻（模拟天） */
+  startedAtSimDays: number;
+  /** 是否朝向地球（通知附加地磁暴科普） */
+  earthDirected: boolean;
+}
+
 /** 超新星事件（需求 3.1.5 动态事件） */
 export interface SupernovaEvent {
   /** 事件 id（sn-<序号>） */

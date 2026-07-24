@@ -33,11 +33,15 @@ describe('行星与太阳', () => {
     expect(lineValue(venus, '自转周期')).toContain('（逆向）');
   });
 
-  it('太阳类型为恒星，含半径行', () => {
+  it('太阳类型为恒星，含半径行；S2 扩展结构分层/温度对比行与补充来源', () => {
     const sun = getBodyInfoById('sun')!;
     expect(sun.typeZh).toBe('恒星');
     expect(lineValue(sun, '半径')).toContain('695,700');
-    expect(sun.dataSource).toBe(SUN.dataSource);
+    // S2 §4.5：dataSource 在原 NASA 来源上补充较差自转/日冕加热文献
+    expect(sun.dataSource).toContain(SUN.dataSource);
+    expect(lineValue(sun, '结构分层')).toContain('辐射区');
+    expect(lineValue(sun, '日冕温度')).toContain('未解之谜');
+    expect(lineValue(sun, '较差自转')).toContain('25.4');
   });
 });
 

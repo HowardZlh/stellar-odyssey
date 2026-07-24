@@ -28,6 +28,7 @@ const UI_TOGGLE_KEYS = [
   'realScaleMode',
   'showPerformance',
   'bloomEnabled',
+  'sunCutawayMode',
 ] as const;
 
 /**
@@ -108,6 +109,17 @@ export function AudioController(): null {
       // 超新星爆发（需求 3.1.5 音效联动）：低频冲击
       if (state.activeSupernova && state.activeSupernova.id !== prevState.activeSupernova?.id) {
         engine.playSupernovaBurst(state.audioVolume);
+      }
+      // 太阳耀斑爆发（S2 §4.6）：短促低频冲击
+      if (
+        state.activeSolarFlare &&
+        state.activeSolarFlare.id !== prevState.activeSolarFlare?.id
+      ) {
+        engine.playFlareBurst(state.audioVolume);
+      }
+      // CME（S2 §4.6）：更长的低频涌动（1–3 秒平滑起落）
+      if (state.activeCme && state.activeCme.id !== prevState.activeCme?.id) {
+        engine.playCmeSurge(state.audioVolume);
       }
       // 选择天体：双音上行提示
       if (state.selectedBodyId !== null && state.selectedBodyId !== prevState.selectedBodyId) {

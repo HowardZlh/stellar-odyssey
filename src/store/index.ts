@@ -6,11 +6,20 @@
  */
 
 import { create } from 'zustand';
-import type { SupernovaEvent, Vec3, ViewLevel } from '@/types';
+import type {
+  CmeEvent,
+  SolarFlareClass,
+  SolarFlareEvent,
+  SupernovaEvent,
+  Vec3,
+  ViewLevel,
+} from '@/types';
 import { DEFAULT_ANCHOR_BODY_ID, cycleBodyId, isCycleBody } from '@/utils/bodyCycle';
 import { daysSinceJ2000 } from '@/utils/physics';
 import type { GalacticFrameMode } from '@/utils/galacticFrame';
 import { continuousLevelForDistance, discreteLevelFromContinuous } from '@/utils/scale';
+import { CME_SPEED_KM_S_MAX, CME_SPEED_KM_S_MIN, FLARE_DURATION_DAYS } from '@/utils/solarActivity';
+import type { SunCutawayLayerId } from '@/utils/sunCutaway';
 import { SN_MAX_REMNANTS, clampSupernovaDuration } from '@/utils/supernova';
 import { advanceSimTimeContinuous, clampSpeedMultiplier } from '@/utils/time';
 import { MERGE_PREVIEW_DURATION_SEC, mergePreviewSimDays } from '@/utils/universe';
@@ -76,6 +85,22 @@ export interface SimulationState {
   supernovaNoticeVisible: boolean;
   /** 超新星事件累计计数（生成事件 id） */
   supernovaCounter: number;
+  /** 当前活跃太阳耀斑事件（S2 §4.3-2；同一时刻至多一个） */
+  activeSolarFlare: SolarFlareEvent | null;
+  /** 耀斑事件累计计数（生成事件 id） */
+  solarFlareCounter: number;
+  /** 耀斑事件通知可见（级别 + "飞往观看"按钮） */
+  solarFlareNoticeVisible: boolean;
+  /** 当前活跃 CME 事件（S2 §4.3-3；粒子缓冲复用，同一时刻至多一个） */
+  activeCme: CmeEvent | null;
+  /** CME 事件累计计数（生成事件 id） */
+  cmeCounter: number;
+  /** CME 事件通知可见（朝地球时附加地磁暴科普） */
+  cmeNoticeVisible: boolean;
+  /** 太阳内部结构剖面模式（S2 §4.1：1/4 切除视图，与外部活动特效互斥） */
+  sunCutawayMode: boolean;
+  /** 剖面模式当前点选分层（null 为未选） */
+  sunCutawayLayer: SunCutawayLayerId | null;
   /** 性能监控面板显示（FPS/内存，可开关，需求 3.5.2 可选项） */
   showPerformance: boolean;
   /** Bloom 泛光效果开关（P3，需求 4.6：默认开启，低性能设备可关闭） */
@@ -143,6 +168,44 @@ export interface SimulationState {
   /** 活跃超新星动画完成：归档为永久遗迹（FIFO 上限） */
   archiveSupernova: () => void;
   dismissSupernovaNotice: () => void;
+  /**
+   * 触发太阳耀斑（手动演示或泊松自动触发；已有活跃事件时忽略）
+   *
+   * @param params.flareClass C/M/X 级别
+   * @param params.magnitude 级内量级（1.0–9.9）
+   * @param params.sourceDir 源活动区方位（单位矢量，黑子群附近）
+   * @param params.startedAtSimDays 触发时刻（模拟天）
+   * @param params.cmeLinked 是否联动 CME（按级别概率判定后传入）
+   * @param params.durationDays 动画时长（模拟天，默认 FLARE_DURATION_DAYS）
+   */
+  triggerSolarFlare: (params: {
+    flareClass: SolarFlareClass;
+    magnitude: number;
+    sourceDir: Vec3;
+    startedAtSimDays: number;
+    cmeLinked: boolean;
+    durationDays?: number;
+  }) => void;
+  /** 活跃耀斑动画完成：清除事件（无遗迹） */
+  completeSolarFlare: () => void;
+  dismissSolarFlareNotice: () => void;
+  /**
+   * 触发 CME（耀斑联动/独立低概率/手动演示；已有活跃事件时忽略；
+   * 速度钳制到 250–3,000 km/s 真实量级）
+   */
+  triggerCme: (params: {
+    direction: Vec3;
+    speedKmS: number;
+    startedAtSimDays: number;
+    earthDirected: boolean;
+  }) => void;
+  /** 活跃 CME 粒子壳层抵达回收边界：清除事件（粒子缓冲复用） */
+  completeCme: () => void;
+  dismissCmeNotice: () => void;
+  /** 剖面模式开关（关闭时同时清除分层选中） */
+  setSunCutawayMode: (enabled: boolean) => void;
+  /** 剖面分层点选（null 取消选中） */
+  setSunCutawayLayer: (layer: SunCutawayLayerId | null) => void;
   setShowPerformance: (show: boolean) => void;
   setBloomEnabled: (enabled: boolean) => void;
   toggleBloom: () => void;
@@ -192,6 +255,14 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   supernovaRemnants: [],
   supernovaNoticeVisible: false,
   supernovaCounter: 0,
+  activeSolarFlare: null,
+  solarFlareCounter: 0,
+  solarFlareNoticeVisible: false,
+  activeCme: null,
+  cmeCounter: 0,
+  cmeNoticeVisible: false,
+  sunCutawayMode: false,
+  sunCutawayLayer: null,
   showPerformance: false,
   bloomEnabled: true,
   mergePreviewActive: false,
@@ -373,6 +444,72 @@ export const useSimulationStore = create<SimulationState>((set) => ({
     }),
 
   dismissSupernovaNotice: () => set({ supernovaNoticeVisible: false }),
+
+  triggerSolarFlare: (params) =>
+    set((state) => {
+      // 同一时刻至多一个活跃耀斑（避免动画/音效叠加）
+      if (state.activeSolarFlare) return state;
+      if (!(params.magnitude > 0) || !Number.isFinite(params.startedAtSimDays)) return state;
+      const counter = state.solarFlareCounter + 1;
+      const event: SolarFlareEvent = {
+        id: `flare-${counter}`,
+        flareClass: params.flareClass,
+        magnitude: params.magnitude,
+        startedAtSimDays: params.startedAtSimDays,
+        durationDays: params.durationDays ?? FLARE_DURATION_DAYS,
+        sourceDir: params.sourceDir,
+        cmeLinked: params.cmeLinked,
+      };
+      return {
+        activeSolarFlare: event,
+        solarFlareCounter: counter,
+        solarFlareNoticeVisible: true,
+      };
+    }),
+
+  completeSolarFlare: () =>
+    set((state) => {
+      if (!state.activeSolarFlare) return state;
+      return { activeSolarFlare: null, solarFlareNoticeVisible: false };
+    }),
+
+  dismissSolarFlareNotice: () => set({ solarFlareNoticeVisible: false }),
+
+  triggerCme: (params) =>
+    set((state) => {
+      // 同一时刻至多一个活跃 CME（粒子环形缓冲复用，防内存增长）
+      if (state.activeCme) return state;
+      if (!Number.isFinite(params.startedAtSimDays)) return state;
+      const counter = state.cmeCounter + 1;
+      const event: CmeEvent = {
+        id: `cme-${counter}`,
+        direction: params.direction,
+        // 速度钳制到真实观测量级（250–3,000 km/s）
+        speedKmS: Math.min(CME_SPEED_KM_S_MAX, Math.max(CME_SPEED_KM_S_MIN, params.speedKmS)),
+        startedAtSimDays: params.startedAtSimDays,
+        earthDirected: params.earthDirected,
+      };
+      return { activeCme: event, cmeCounter: counter, cmeNoticeVisible: true };
+    }),
+
+  completeCme: () =>
+    set((state) => {
+      if (!state.activeCme) return state;
+      return { activeCme: null, cmeNoticeVisible: false };
+    }),
+
+  dismissCmeNotice: () => set({ cmeNoticeVisible: false }),
+
+  setSunCutawayMode: (enabled) =>
+    set((state) => {
+      if (state.sunCutawayMode === enabled) return state;
+      // 关闭时清除分层选中（§4.1 关闭恢复完整球体）
+      return enabled
+        ? { sunCutawayMode: true }
+        : { sunCutawayMode: false, sunCutawayLayer: null };
+    }),
+
+  setSunCutawayLayer: (layer) => set({ sunCutawayLayer: layer }),
 
   setShowPerformance: (show) => set({ showPerformance: show }),
 
