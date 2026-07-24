@@ -11,6 +11,11 @@ import { MOONS } from '@/data/moons';
 import { COMETS, DWARF_PLANETS, PLUTO } from '@/data/smallBodies';
 import { LOCAL_GROUP_GALAXIES, MILKY_WAY } from '@/data/galaxies';
 import { SPECIAL_BODIES } from '@/data/specialBodies';
+import {
+  CORONAL_HEATING_NOTE_ZH,
+  HALE_POLARITY_NOTE_ZH,
+  SOLAR_WIND_NOTE_ZH,
+} from '@/data/sunStructure';
 import { OORT_INNER_AU, OORT_OUTER_AU } from '@/utils/oort';
 import { SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
 
@@ -170,7 +175,7 @@ function galaxyLines(g: GalaxyData): BodyInfoLine[] {
 function buildCatalog(): Map<string, BodyInfo> {
   const catalog = new Map<string, BodyInfo>();
 
-  // 太阳
+  // 太阳（S2 §4.5 面板扩展：结构分层/温度对比/较差自转/黑子/日冕加热问题）
   catalog.set(SUN.id, {
     id: SUN.id,
     name: SUN.name,
@@ -179,8 +184,14 @@ function buildCatalog(): Map<string, BodyInfo> {
     lines: [
       { label: '半径', value: `${formatNumber(SUN.radiusKm)} km` },
       { label: '质量', value: formatMassKg(SUN.massKg) },
+      { label: '结构分层', value: '核心 → 辐射区 → 对流区 → 光球 → 色球 → 日冕' },
+      { label: '表面温度', value: '约 5,772 K（有效温度）' },
+      { label: '日冕温度', value: `1–3 百万 K——${CORONAL_HEATING_NOTE_ZH}` },
+      { label: '较差自转', value: '赤道 25.4 天 / 极区约 34 天（非刚体）' },
+      { label: '黑子', value: `约 3,500–4,500 °C 的低温暗区；${HALE_POLARITY_NOTE_ZH}` },
+      { label: '太阳风', value: SOLAR_WIND_NOTE_ZH },
     ],
-    dataSource: SUN.dataSource,
+    dataSource: `${SUN.dataSource}；较差自转 Snodgrass & Ulrich (1990)；日冕加热 Klimchuk (2006)`,
   });
 
   // 八大行星

@@ -4,10 +4,17 @@ import { useEffect, useState } from 'react';
 import type { ViewLevel } from '@/types';
 import { CAMERA_VIEWS } from '@/data/cameraViews';
 import { getBodyInfoById } from '@/data/catalog';
+import {
+  CME_GEOMAGNETIC_NOTE_ZH,
+  FLARE_ENERGY_NOTE_ZH,
+  SUN_STRUCTURE_DATA_SOURCE,
+  getSunLayerById,
+} from '@/data/sunStructure';
 import { useSimulationStore } from '@/store';
 import { galacticFrameHudLabel } from '@/utils/galacticFrame';
 import { galacticYearProgress, sunGalacticPositionLy } from '@/utils/galaxy';
 import { formatSceneScaleLabel } from '@/utils/scale';
+import { sunActivityStatusLines } from '@/utils/solarActivity';
 import { SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
 import { formatSimDate } from '@/utils/time';
 
@@ -36,6 +43,17 @@ export function HudInfo(): JSX.Element {
   const dismissSupernovaNotice = useSimulationStore((s) => s.dismissSupernovaNotice);
   const galacticFrameMode = useSimulationStore((s) => s.galacticFrameMode);
   const toggleGalacticFrameMode = useSimulationStore((s) => s.toggleGalacticFrameMode);
+  // S2 太阳活动事件（§4.3 通知 + §4.5 信息面板扩展）
+  const activeSolarFlare = useSimulationStore((s) => s.activeSolarFlare);
+  const solarFlareNoticeVisible = useSimulationStore((s) => s.solarFlareNoticeVisible);
+  const dismissSolarFlareNotice = useSimulationStore((s) => s.dismissSolarFlareNotice);
+  const activeCme = useSimulationStore((s) => s.activeCme);
+  const cmeNoticeVisible = useSimulationStore((s) => s.cmeNoticeVisible);
+  const dismissCmeNotice = useSimulationStore((s) => s.dismissCmeNotice);
+  const sunCutawayMode = useSimulationStore((s) => s.sunCutawayMode);
+  const setSunCutawayMode = useSimulationStore((s) => s.setSunCutawayMode);
+  const sunCutawayLayer = useSimulationStore((s) => s.sunCutawayLayer);
+  const setSunCutawayLayer = useSimulationStore((s) => s.setSunCutawayLayer);
 
   // 模拟时间/标尺以低频率刷新（0.25s），避免每帧渲染 React 组件
   const [simDateText, setSimDateText] = useState('');
@@ -104,46 +122,174 @@ export function HudInfo(): JSX.Element {
         )}
       </div>
 
-      {/* 超新星爆发事件通知（需求 3.1.5：UI 提示 + "飞往观看"按钮） */}
-      {supernovaNoticeVisible && activeSupernova && (
-        <div className="absolute left-1/2 top-4 w-96 -translate-x-1/2 rounded-lg border border-amber-400/40 bg-space-panel p-3 text-xs backdrop-blur">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-amber-300">💥 超新星爆发！</p>
-            <button
-              type="button"
-              onClick={dismissSupernovaNotice}
-              className="text-gray-400 hover:text-white"
-              aria-label="关闭超新星通知"
-            >
-              ✕
-            </button>
+      {/* 事件通知列（超新星/耀斑/CME，需求 3.1.5 与 S2 §4.3） */}
+      <div className="absolute left-1/2 top-4 flex w-96 -translate-x-1/2 flex-col gap-2">
+        {/* 超新星爆发事件通知（需求 3.1.5：UI 提示 + "飞往观看"按钮） */}
+        {supernovaNoticeVisible && activeSupernova && (
+          <div className="rounded-lg border border-amber-400/40 bg-space-panel p-3 text-xs backdrop-blur">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-amber-300">💥 超新星爆发！</p>
+              <button
+                type="button"
+                onClick={dismissSupernovaNotice}
+                className="text-gray-400 hover:text-white"
+                aria-label="关闭超新星通知"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="mt-1 text-gray-300">
+              银河系旋臂内探测到核坍缩超新星（前身星约{' '}
+              {activeSupernova.progenitorMassSun.toFixed(0)} 倍太阳质量）
+            </p>
+            <p className="mt-1 text-[10px] text-gray-500">{SN_REAL_FREQUENCY_NOTE_ZH}</p>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  requestFlyTo(activeSupernova.id);
+                  dismissSupernovaNotice();
+                }}
+                className="rounded bg-amber-400/90 px-2 py-1 text-black hover:bg-amber-300"
+              >
+                🚀 飞往观看
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  selectBody(activeSupernova.id);
+                }}
+                className="rounded bg-white/10 px-2 py-1 hover:bg-white/20"
+              >
+                查看详情
+              </button>
+            </div>
           </div>
-          <p className="mt-1 text-gray-300">
-            银河系旋臂内探测到核坍缩超新星（前身星约{' '}
-            {activeSupernova.progenitorMassSun.toFixed(0)} 倍太阳质量）
-          </p>
-          <p className="mt-1 text-[10px] text-gray-500">{SN_REAL_FREQUENCY_NOTE_ZH}</p>
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                requestFlyTo(activeSupernova.id);
-                dismissSupernovaNotice();
-              }}
-              className="rounded bg-amber-400/90 px-2 py-1 text-black hover:bg-amber-300"
-            >
-              🚀 飞往观看
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                selectBody(activeSupernova.id);
-              }}
-              className="rounded bg-white/10 px-2 py-1 hover:bg-white/20"
-            >
-              查看详情
-            </button>
+        )}
+
+        {/* 太阳耀斑事件通知（S2 §4.3-2：级别 + "飞往观看"） */}
+        {solarFlareNoticeVisible && activeSolarFlare && (
+          <div className="rounded-lg border border-orange-400/40 bg-space-panel p-3 text-xs backdrop-blur">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-orange-300">
+                ☀️ 太阳耀斑爆发（{activeSolarFlare.flareClass}
+                {activeSolarFlare.magnitude.toFixed(1)} 级）！
+              </p>
+              <button
+                type="button"
+                onClick={dismissSolarFlareNotice}
+                className="text-gray-400 hover:text-white"
+                aria-label="关闭耀斑通知"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="mt-1 text-gray-300">
+              活动区（黑子群附近）发生磁重联能量释放
+              {activeSolarFlare.cmeLinked && '，预计伴随日冕物质抛射（CME）'}
+            </p>
+            <p className="mt-1 text-[10px] text-gray-500">{FLARE_ENERGY_NOTE_ZH}</p>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  requestFlyTo('sun');
+                  dismissSolarFlareNotice();
+                }}
+                className="rounded bg-orange-400/90 px-2 py-1 text-black hover:bg-orange-300"
+              >
+                🚀 飞往观看
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  selectBody('sun');
+                }}
+                className="rounded bg-white/10 px-2 py-1 hover:bg-white/20"
+              >
+                查看详情
+              </button>
+            </div>
           </div>
+        )}
+
+        {/* CME 事件通知（S2 §4.3-3：朝地球时附加地磁暴科普） */}
+        {cmeNoticeVisible && activeCme && (
+          <div className="rounded-lg border border-rose-400/40 bg-space-panel p-3 text-xs backdrop-blur">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-rose-300">
+                🌊 日冕物质抛射（CME）！约 {Math.round(activeCme.speedKmS)} km/s
+              </p>
+              <button
+                type="button"
+                onClick={dismissCmeNotice}
+                className="text-gray-400 hover:text-white"
+                aria-label="关闭 CME 通知"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="mt-1 text-gray-300">
+              大团等离子体从日冕喷出，呈扩张壳层飞离太阳
+              {activeCme.earthDirected && '——本次抛射朝向地球！'}
+            </p>
+            {activeCme.earthDirected && (
+              <p className="mt-1 text-[10px] text-amber-300/90">⚠ {CME_GEOMAGNETIC_NOTE_ZH}</p>
+            )}
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  requestFlyTo('sun');
+                  dismissCmeNotice();
+                }}
+                className="rounded bg-rose-400/90 px-2 py-1 text-black hover:bg-rose-300"
+              >
+                🚀 飞往观看
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 剖面分层科普卡片（S2 §4.1：各层可点选高亮并显示说明） */}
+      {sunCutawayMode && sunCutawayLayer && (
+        <div className="absolute bottom-4 left-4 w-72 rounded-lg border border-orange-300/30 bg-space-panel p-4 text-xs backdrop-blur">
+          {(() => {
+            const layer = getSunLayerById(sunCutawayLayer);
+            if (!layer) return null;
+            return (
+              <>
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-orange-300">
+                    {layer.nameZh}（{layer.name}）
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setSunCutawayLayer(null)}
+                    className="text-gray-400 hover:text-white"
+                    aria-label="关闭分层卡片"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <dl className="space-y-1 text-gray-300">
+                  <div className="flex justify-between gap-2">
+                    <dt className="shrink-0">范围</dt>
+                    <dd className="text-right">{layer.rangeZh}</dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="shrink-0">温度</dt>
+                    <dd className="text-right">{layer.temperatureZh}</dd>
+                  </div>
+                </dl>
+                <p className="mt-2 leading-5 text-gray-300">{layer.descriptionZh}</p>
+                <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-gray-500">
+                  数据来源：{SUN_STRUCTURE_DATA_SOURCE}
+                </p>
+              </>
+            );
+          })()}
         </div>
       )}
 
@@ -170,7 +316,36 @@ export function HudInfo(): JSX.Element {
                 <dd className="text-right">{line.value}</dd>
               </div>
             ))}
+            {/* S2 §4.5：太阳当前活动事件行（耀斑级别/CME 速度/平静） */}
+            {selected.id === 'sun' &&
+              sunActivityStatusLines(
+                activeSolarFlare
+                  ? { class: activeSolarFlare.flareClass, magnitude: activeSolarFlare.magnitude }
+                  : null,
+                activeCme
+                  ? { speedKmS: activeCme.speedKmS, earthDirected: activeCme.earthDirected }
+                  : null,
+              ).map((line) => (
+                <div key={line.label} className="flex justify-between gap-2">
+                  <dt className="shrink-0 text-orange-300/90">{line.label}</dt>
+                  <dd className="text-right text-orange-200/90">{line.value}</dd>
+                </div>
+              ))}
           </dl>
+          {/* S2 §4.1：剖面模式入口（信息面板侧） */}
+          {selected.id === 'sun' && (
+            <button
+              type="button"
+              onClick={() => setSunCutawayMode(!sunCutawayMode)}
+              className={`mt-2 w-full rounded px-2 py-1 text-[11px] ${
+                sunCutawayMode
+                  ? 'bg-orange-400/90 text-black hover:bg-orange-300'
+                  : 'bg-white/10 hover:bg-white/20'
+              }`}
+            >
+              {sunCutawayMode ? '🔬 关闭内部结构剖面' : '🔬 查看内部结构（1/4 剖面）'}
+            </button>
+          )}
           {/* 飞往 / 跟随（需求 3.2.3：点选后可飞往，可锁定任意天体跟随） */}
           <div className="mt-2 flex gap-2 border-t border-white/10 pt-2">
             <button

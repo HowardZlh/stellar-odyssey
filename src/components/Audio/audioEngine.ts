@@ -184,6 +184,107 @@ export class AudioEngine {
   }
 
   /**
+   * 太阳耀斑爆发音效（S2 §4.6）：短促低频冲击（磁重联能量释放示意）
+   *
+   * 程序化合成：正弦下扫（150→45 Hz，约 1.2 秒）+ 带通噪声短爆，
+   * 比超新星更短促轻量；遵循 §3.4 真空无声艺术化声明；未初始化时静默降级。
+   */
+  playFlareBurst(volume = 1): void {
+    if (!this.context || !this.masterGain) return;
+    try {
+      const context = this.context;
+      const now = context.currentTime;
+      const burstGain = context.createGain();
+      burstGain.gain.setValueAtTime(0, now);
+      burstGain.gain.linearRampToValueAtTime(0.55 * volume, now + 0.05);
+      burstGain.gain.exponentialRampToValueAtTime(0.001, now + 1.6);
+      burstGain.connect(this.masterGain);
+
+      // 低频冲击：正弦下扫 + 2 倍泛音（"缺失基频"心理声学，同超新星范式）
+      for (const ratio of [1, 2]) {
+        const osc = context.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(150 * ratio, now);
+        osc.frequency.exponentialRampToValueAtTime(45 * ratio, now + 1.2);
+        const oscGain = context.createGain();
+        oscGain.gain.value = ratio === 1 ? 1 : 0.35;
+        osc.connect(oscGain);
+        oscGain.connect(burstGain);
+        osc.start(now);
+        osc.stop(now + 1.7);
+      }
+
+      // 带通噪声短爆（等离子体嘶鸣示意）
+      const noise = context.createBufferSource();
+      noise.buffer = this.createNoiseBuffer(context);
+      const filter = context.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.Q.value = 0.9;
+      filter.frequency.setValueAtTime(1400, now);
+      filter.frequency.exponentialRampToValueAtTime(200, now + 1.0);
+      const noiseGain = context.createGain();
+      noiseGain.gain.value = 0.35;
+      noise.connect(filter);
+      filter.connect(noiseGain);
+      noiseGain.connect(burstGain);
+      noise.start(now);
+      noise.stop(now + 1.7);
+    } catch {
+      // 静默降级
+    }
+  }
+
+  /**
+   * CME 音效（S2 §4.6）：更长的低频涌动（1–3 秒平滑起落）
+   *
+   * 程序化合成：低通噪声涌动（滤波频率缓慢下扫）+ 40 Hz 低频正弦铺底，
+   * 增益 1 秒起、1.6 秒落；未初始化时静默降级。
+   */
+  playCmeSurge(volume = 1): void {
+    if (!this.context || !this.masterGain) return;
+    try {
+      const context = this.context;
+      const now = context.currentTime;
+      const surgeGain = context.createGain();
+      surgeGain.gain.setValueAtTime(0, now);
+      surgeGain.gain.linearRampToValueAtTime(0.45 * volume, now + 1.0);
+      surgeGain.gain.exponentialRampToValueAtTime(0.001, now + 2.6);
+      surgeGain.connect(this.masterGain);
+
+      // 低通噪声涌动（等离子体云涌出示意）
+      const noise = context.createBufferSource();
+      noise.buffer = this.createNoiseBuffer(context);
+      noise.loop = true;
+      const filter = context.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(420, now);
+      filter.frequency.exponentialRampToValueAtTime(90, now + 2.4);
+      const noiseGain = context.createGain();
+      noiseGain.gain.value = 0.8;
+      noise.connect(filter);
+      filter.connect(noiseGain);
+      noiseGain.connect(surgeGain);
+      noise.start(now);
+      noise.stop(now + 2.7);
+
+      // 低频正弦铺底（40 Hz + 2 倍泛音）
+      for (const ratio of [1, 2]) {
+        const osc = context.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = 40 * ratio;
+        const oscGain = context.createGain();
+        oscGain.gain.value = ratio === 1 ? 0.5 : 0.2;
+        osc.connect(oscGain);
+        oscGain.connect(surgeGain);
+        osc.start(now);
+        osc.stop(now + 2.7);
+      }
+    } catch {
+      // 静默降级
+    }
+  }
+
+  /**
    * 更新空间音源（可选需求 3.4.2 3D 空间音效）
    *
    * @param id 音源 id（utils/spatialAudio.SPATIAL_SOURCES）
