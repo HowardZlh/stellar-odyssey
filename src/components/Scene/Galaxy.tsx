@@ -1,13 +1,14 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
-import * as THREE from 'three';
-import { MILKY_WAY } from '@/data/galaxies';
-import { useSimulationStore } from '@/store';
-import { DEG_TO_RAD } from '@/utils/physics';
-import { SCENE_UNITS_PER_LY, trapezoidWeight } from '@/utils/scale';
+import { useEffect, useMemo, useRef } from "react";
+import { useFrame } from "@react-three/fiber";
+import { Html } from "@react-three/drei";
+import * as THREE from "three";
+import { MILKY_WAY } from "@/data/galaxies";
+import { isGalaxyAnchoredFocusId } from "@/data/specialBodies";
+import { useSimulationStore } from "@/store";
+import { DEG_TO_RAD } from "@/utils/physics";
+import { SCENE_UNITS_PER_LY, trapezoidWeight } from "@/utils/scale";
 import {
   ARM_PATTERN_SPEED_RAD_PER_MYR,
   DENSITY_WAVE_CONTRAST,
@@ -20,28 +21,33 @@ import {
   generateGalaxyDiskParticles,
   simDaysToMyr,
   sunGalacticPositionLy,
-} from '@/utils/galaxy';
+} from "@/utils/galaxy";
 import {
   advanceFrameTransition,
   computeGalacticFramePose,
   frameModeTargetWeight,
   resetRenderedGalacticFrame,
   setRenderedGalacticFrame,
-} from '@/utils/galacticFrame';
-import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
+} from "@/utils/galacticFrame";
+import { setObjectTreeRaycastEnabled } from "@/utils/raycastGate";
 import {
   orbitFlowTickAngle,
   samplePredictionArc,
   verticalVisualGain,
-} from '@/utils/galacticMotionCues';
-import { easeInOutCubic } from '@/utils/animation';
-import { createTrailBuffer, clearTrail, pushTrailPoint, trailToOrderedArray } from '@/utils/trail';
+} from "@/utils/galacticMotionCues";
+import { easeInOutCubic } from "@/utils/animation";
+import {
+  createTrailBuffer,
+  clearTrail,
+  pushTrailPoint,
+  trailToOrderedArray,
+} from "@/utils/trail";
 import {
   createBulgeGlowCanvas,
   createGlowSpriteCanvas,
-} from '@/components/CelestialBody/proceduralTextures';
-import { SpecialBodies } from '@/components/Scene/SpecialBodies';
-import { Supernova } from '@/components/Scene/Supernova';
+} from "@/components/CelestialBody/proceduralTextures";
+import { SpecialBodies } from "@/components/Scene/SpecialBodies";
+import { Supernova } from "@/components/Scene/Supernova";
 
 /** 银盘粒子数（附录A：30,000–50,000） */
 const DISK_PARTICLE_COUNT = 40000;
@@ -55,6 +61,8 @@ const PREDICTION_REFRESH_MYR = 1.5;
 const PREDICTION_SEGMENTS = 96;
 /** 轨道流动刻度光点数（沿轨道均匀分布，整体以太阳角速度流动） */
 const FLOW_TICK_COUNT = 48;
+/** 聚焦权重提升过渡时长（秒），与 SpecialBodies 一致 */
+const FOCUS_BOOST_SECONDS = 0.5;
 
 /**
  * 银河系场景（需求 3.1.2）：
@@ -92,12 +100,21 @@ export function Galaxy(): JSX.Element {
     });
     const n = particles.count;
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
-    geo.setAttribute('aRadiusLy', new THREE.BufferAttribute(particles.radiiLy, 1));
-    geo.setAttribute('aPhase', new THREE.BufferAttribute(particles.phases, 1));
-    geo.setAttribute('aHeightLy', new THREE.BufferAttribute(particles.heightsLy, 1));
-    geo.setAttribute('aColor', new THREE.BufferAttribute(particles.colors, 3));
-    geo.setAttribute('aSize', new THREE.BufferAttribute(particles.sizes, 1));
+    geo.setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array(n * 3), 3),
+    );
+    geo.setAttribute(
+      "aRadiusLy",
+      new THREE.BufferAttribute(particles.radiiLy, 1),
+    );
+    geo.setAttribute("aPhase", new THREE.BufferAttribute(particles.phases, 1));
+    geo.setAttribute(
+      "aHeightLy",
+      new THREE.BufferAttribute(particles.heightsLy, 1),
+    );
+    geo.setAttribute("aColor", new THREE.BufferAttribute(particles.colors, 3));
+    geo.setAttribute("aSize", new THREE.BufferAttribute(particles.sizes, 1));
     geo.boundingSphere = new THREE.Sphere(
       new THREE.Vector3(0, 0, 0),
       GALACTIC_DISK_RADIUS_LY * SCENE_UNITS_PER_LY * 1.2,
@@ -180,11 +197,19 @@ export function Galaxy(): JSX.Element {
   // ---------- 中心辉光（多层）与银心标记 ----------
   const glowTextures = useMemo(() => {
     // 核球/银晕：噪声扰动多层辉光（P6 §3.3，替换纯径向渐变圆斑）
-    const core = new THREE.CanvasTexture(createBulgeGlowCanvas('#ffe8c8', 256, 91));
-    const halo = new THREE.CanvasTexture(createBulgeGlowCanvas('#c8d4ff', 256, 41));
-    const marker = new THREE.CanvasTexture(createGlowSpriteCanvas('#7fffd4', 128));
+    const core = new THREE.CanvasTexture(
+      createBulgeGlowCanvas("#ffe8c8", 256, 91),
+    );
+    const halo = new THREE.CanvasTexture(
+      createBulgeGlowCanvas("#c8d4ff", 256, 41),
+    );
+    const marker = new THREE.CanvasTexture(
+      createGlowSpriteCanvas("#7fffd4", 128),
+    );
     // 圆形软边贴图（P6：消除方形粒子），供流动刻度 PointsMaterial 使用
-    const flowTick = new THREE.CanvasTexture(createGlowSpriteCanvas('#ffffff', 64));
+    const flowTick = new THREE.CanvasTexture(
+      createGlowSpriteCanvas("#ffffff", 64),
+    );
     return { core, halo, marker, flowTick };
   }, []);
 
@@ -199,10 +224,13 @@ export function Galaxy(): JSX.Element {
   const { trailGeometry, trailMaterial, trailLine } = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute(
-      'position',
+      "position",
       new THREE.BufferAttribute(new Float32Array(TRAIL_CAPACITY * 3), 3),
     );
-    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_CAPACITY * 3), 3));
+    geo.setAttribute(
+      "color",
+      new THREE.BufferAttribute(new Float32Array(TRAIL_CAPACITY * 3), 3),
+    );
     geo.setDrawRange(0, 0);
     const mat = new THREE.LineBasicMaterial({
       vertexColors: true,
@@ -214,23 +242,31 @@ export function Galaxy(): JSX.Element {
     return { trailGeometry: geo, trailMaterial: mat, trailLine: line };
   }, []);
 
-  const { predictionGeometry, predictionMaterial, predictionLine } = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute(
-      'position',
-      new THREE.BufferAttribute(new Float32Array((PREDICTION_SEGMENTS + 1) * 3), 3),
-    );
-    const mat = new THREE.LineDashedMaterial({
-      color: '#9fd8ff',
-      transparent: true,
-      opacity: 0.5,
-      dashSize: 18,
-      gapSize: 12,
-    });
-    const line = new THREE.Line(geo, mat);
-    line.frustumCulled = false;
-    return { predictionGeometry: geo, predictionMaterial: mat, predictionLine: line };
-  }, []);
+  const { predictionGeometry, predictionMaterial, predictionLine } =
+    useMemo(() => {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute(
+        "position",
+        new THREE.BufferAttribute(
+          new Float32Array((PREDICTION_SEGMENTS + 1) * 3),
+          3,
+        ),
+      );
+      const mat = new THREE.LineDashedMaterial({
+        color: "#9fd8ff",
+        transparent: true,
+        opacity: 0.5,
+        dashSize: 18,
+        gapSize: 12,
+      });
+      const line = new THREE.Line(geo, mat);
+      line.frustumCulled = false;
+      return {
+        predictionGeometry: geo,
+        predictionMaterial: mat,
+        predictionLine: line,
+      };
+    }, []);
   const lastPredictionMyrRef = useRef<number | null>(null);
   const lastGainRef = useRef<number>(1);
 
@@ -238,7 +274,7 @@ export function Galaxy(): JSX.Element {
   const { flowGeometry, flowMaterial, flowPoints } = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute(
-      'position',
+      "position",
       new THREE.BufferAttribute(new Float32Array(FLOW_TICK_COUNT * 3), 3),
     );
     geo.boundingSphere = new THREE.Sphere(
@@ -246,7 +282,7 @@ export function Galaxy(): JSX.Element {
       SUN_GALACTIC_RADIUS_LY * SCENE_UNITS_PER_LY * 1.2,
     );
     const mat = new THREE.PointsMaterial({
-      color: '#7fd8ff',
+      color: "#7fd8ff",
       size: 22,
       map: glowTextures.flowTick,
       transparent: true,
@@ -263,8 +299,15 @@ export function Galaxy(): JSX.Element {
   // ---------- 高度指示线（P6 §3.1.2）：标记 → 银盘投影点的细线 ----------
   const { heightGeometry, heightMaterial, heightLine } = useMemo(() => {
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(2 * 3), 3));
-    const mat = new THREE.LineBasicMaterial({ color: '#7fffd4', transparent: true, opacity: 0.5 });
+    geo.setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array(2 * 3), 3),
+    );
+    const mat = new THREE.LineBasicMaterial({
+      color: "#7fffd4",
+      transparent: true,
+      opacity: 0.5,
+    });
     const line = new THREE.Line(geo, mat);
     line.frustumCulled = false;
     return { heightGeometry: geo, heightMaterial: mat, heightLine: line };
@@ -290,12 +333,29 @@ export function Galaxy(): JSX.Element {
       glowTextures.marker.dispose();
       glowTextures.flowTick.dispose();
     };
-  }, [diskGeometry, diskMaterial, trailGeometry, trailMaterial, predictionGeometry, predictionMaterial, flowGeometry, flowMaterial, heightGeometry, heightMaterial, glowTextures]);
+  }, [
+    diskGeometry,
+    diskMaterial,
+    trailGeometry,
+    trailMaterial,
+    predictionGeometry,
+    predictionMaterial,
+    flowGeometry,
+    flowMaterial,
+    heightGeometry,
+    heightMaterial,
+    glowTextures,
+  ]);
 
   const tmpLocal = useMemo(() => new THREE.Vector3(), []);
   const tiltEuler = useMemo(() => new THREE.Euler(tiltRad, 0, 0), [tiltRad]);
   // 参考系切换线性过渡进度（0=跟随太阳系 → 1=银心固定），每帧向目标推进
   const frameProgressRef = useRef(0);
+  // 聚焦权重提升进度（bug 修复：飞往/跟随 L3 特殊天体/超新星后目标不可见）：
+  // 这些目标距场景原点仅 150–400 单位，飞抵后连续层级跌入 L2 区间，
+  // 银河系内容按层级门控会完全淡出。跟随期间组权重提升至 1（0.5 秒平滑），
+  // 保证目标天体及其所在的银河系环境可见；取消跟随后恢复层级门控。
+  const focusBoostRef = useRef(0);
 
   /**
    * 刷新未来预测线（P6 §3.1.2）：前方约 1/4 银河年的**非闭合弧段**，
@@ -307,7 +367,12 @@ export function Galaxy(): JSX.Element {
     const pos = predictionGeometry.attributes.position as THREE.BufferAttribute;
     for (let s = 0; s < samples.length; s += 1) {
       const p = samples[s];
-      pos.setXYZ(s, p.x * SCENE_UNITS_PER_LY, p.y * SCENE_UNITS_PER_LY, p.z * SCENE_UNITS_PER_LY);
+      pos.setXYZ(
+        s,
+        p.x * SCENE_UNITS_PER_LY,
+        p.y * SCENE_UNITS_PER_LY,
+        p.z * SCENE_UNITS_PER_LY,
+      );
     }
     pos.needsUpdate = true;
     predictionLine.computeLineDistances();
@@ -324,8 +389,20 @@ export function Galaxy(): JSX.Element {
     // LOD：越过 L2/L3 边界（2.5，与视角标签一致）后淡入，L3/L4 完整可见
     // （L4 下银河系自旋仍可辨识；连续层级上限为 4，平台区延伸至 4 以上保证
     // L4 不淡出）。起点不得低于 2.5：否则太阳系视角下太阳邻域的银河粒子
-    // 会贴着太阳显示，被误认为"柯伊伯带跑错位置"（bug 修复）
-    const weight = trapezoidWeight(continuousLevel, 2.5, 2.9, 4.5, 5);
+    // 会贴着太阳显示，被误认为"柯伊伯带跑错位置"（bug 修复）。
+    // 聚焦提升：跟随/飞往银河系锚定天体（特殊天体/超新星）期间保持可见
+    // （见 focusBoostRef 注释），常规 L2 游览（无跟随）行为不变
+    const focusId = state.followBodyId ?? state.flyToBodyId;
+    focusBoostRef.current = advanceFrameTransition(
+      focusBoostRef.current,
+      focusId && isGalaxyAnchoredFocusId(focusId) ? 1 : 0,
+      delta,
+      FOCUS_BOOST_SECONDS,
+    );
+    const weight = Math.max(
+      trapezoidWeight(continuousLevel, 2.5, 2.9, 4.5, 5),
+      focusBoostRef.current,
+    );
     group.visible = weight > 0.001;
     diskMaterial.uniforms.uOpacity.value = weight;
     if (!group.visible) return;
@@ -366,7 +443,11 @@ export function Galaxy(): JSX.Element {
       verticalGain: gain,
     });
     group.rotation.copy(tiltEuler);
-    group.position.set(pose.groupOffset.x, pose.groupOffset.y, pose.groupOffset.z);
+    group.position.set(
+      pose.groupOffset.x,
+      pose.groupOffset.y,
+      pose.groupOffset.z,
+    );
     // 渲染位姿注册（bug 修复）：cameraFocus/SpatialAudio 按本帧实际应用的
     // 银心固定权重与垂直增益解析 L3 天体场景坐标，保证飞往/跟随与渲染一致
     setRenderedGalacticFrame(w, gain);
@@ -395,7 +476,12 @@ export function Galaxy(): JSX.Element {
     for (let i = 0; i < count; i += 1) {
       posAttr.setXYZ(i, ordered[i * 3], ordered[i * 3 + 1], ordered[i * 3 + 2]);
       const fade = count > 1 ? i / (count - 1) : 1;
-      colAttr.setXYZ(i, 0.35 * fade + 0.05, 0.75 * fade + 0.08, 0.55 * fade + 0.1);
+      colAttr.setXYZ(
+        i,
+        0.35 * fade + 0.05,
+        0.75 * fade + 0.08,
+        0.55 * fade + 0.1,
+      );
     }
     posAttr.needsUpdate = true;
     colAttr.needsUpdate = true;
@@ -446,13 +532,16 @@ export function Galaxy(): JSX.Element {
     }
     // 中心辉光透明度
     if (coreSpriteRef.current) {
-      (coreSpriteRef.current.material as THREE.SpriteMaterial).opacity = 0.9 * weight;
+      (coreSpriteRef.current.material as THREE.SpriteMaterial).opacity =
+        0.9 * weight;
     }
     if (haloSpriteRef.current) {
-      (haloSpriteRef.current.material as THREE.SpriteMaterial).opacity = 0.35 * weight;
+      (haloSpriteRef.current.material as THREE.SpriteMaterial).opacity =
+        0.35 * weight;
     }
     if (markerSpriteRef.current) {
-      (markerSpriteRef.current.material as THREE.SpriteMaterial).opacity = 0.95 * weight;
+      (markerSpriteRef.current.material as THREE.SpriteMaterial).opacity =
+        0.95 * weight;
     }
     // 高度指示线：标记（tmpLocal，含垂直增益）→ 银盘面投影点（y=0）
     const hPos = heightGeometry.attributes.position as THREE.BufferAttribute;
@@ -472,7 +561,10 @@ export function Galaxy(): JSX.Element {
       <points geometry={diskGeometry} material={diskMaterial} />
 
       {/* 中心辉光（核球）与银晕光层 */}
-      <sprite ref={coreSpriteRef} scale={[diskRadiusUnits * 0.35, diskRadiusUnits * 0.28, 1]}>
+      <sprite
+        ref={coreSpriteRef}
+        scale={[diskRadiusUnits * 0.35, diskRadiusUnits * 0.28, 1]}
+      >
         <spriteMaterial
           map={glowTextures.core}
           transparent
@@ -480,7 +572,10 @@ export function Galaxy(): JSX.Element {
           blending={THREE.AdditiveBlending}
         />
       </sprite>
-      <sprite ref={haloSpriteRef} scale={[diskRadiusUnits * 1.1, diskRadiusUnits * 0.9, 1]}>
+      <sprite
+        ref={haloSpriteRef}
+        scale={[diskRadiusUnits * 1.1, diskRadiusUnits * 0.9, 1]}
+      >
         <spriteMaterial
           map={glowTextures.halo}
           transparent
@@ -510,11 +605,19 @@ export function Galaxy(): JSX.Element {
       <group ref={markerRef} visible={showYouAreHere}>
         {/* 点选热区（需求 §3.1.1：太阳系标记可点选/可飞往——选中太阳后
             信息面板"飞往"即导航回太阳系；银心固定模式下任何"飞往"都会
-            自动切回跟随模式，见 CameraController） */}
+            自动切回跟随模式，见 CameraController）。
+            让位规则（bug 修复）：特殊天体（参宿四等）在屏幕上聚集于标记
+            周围，射线常先命中本热区；若同一射线还命中了其他可交互对象，
+            本热区不得吞掉点击（不选中、不 stopPropagation，事件继续传播
+            到天体自身的 onClick） */}
         <mesh
           onClick={(e) => {
+            const hasOther = e.intersections.some(
+              (hit) => hit.eventObject !== e.eventObject,
+            );
+            if (hasOther) return;
             e.stopPropagation();
-            selectBody('sun');
+            selectBody("sun");
           }}
         >
           <sphereGeometry args={[42, 12, 12]} />
@@ -530,14 +633,21 @@ export function Galaxy(): JSX.Element {
         </sprite>
         <arrowHelper
           ref={arrowRef}
-          args={[new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0, 0), 160, 0x7fffd4, 40, 20]}
+          args={[
+            new THREE.Vector3(0, 0, -1),
+            new THREE.Vector3(0, 0, 0),
+            160,
+            0x7fffd4,
+            40,
+            20,
+          ]}
         />
         {inGalaxyRange && (
           <Html
             position={[0, 60, 0]}
             center
             distanceFactor={2600}
-            style={{ pointerEvents: 'none' }}
+            style={{ pointerEvents: "none" }}
           >
             <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-emerald-300">
               你在这里（太阳系）

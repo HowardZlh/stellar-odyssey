@@ -1,27 +1,28 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
-import * as THREE from 'three';
-import type { SupernovaEvent } from '@/types';
-import { useSimulationStore } from '@/store';
-import { SCENE_UNITS_PER_LY, trapezoidWeight } from '@/utils/scale';
+import { useEffect, useMemo, useRef } from "react";
+import { useFrame } from "@react-three/fiber";
+import * as THREE from "three";
+import type { SupernovaEvent } from "@/types";
+import { useSimulationStore } from "@/store";
+import { SCENE_UNITS_PER_LY, trapezoidWeight } from "@/utils/scale";
 import {
   GALACTIC_BULGE_RADIUS_LY,
   GALACTIC_DISK_RADIUS_LY,
   simDaysToMyr,
-} from '@/utils/galaxy';
+} from "@/utils/galaxy";
 import {
   SN_DEFAULT_DURATION_SEC,
   randomArmPositionLy,
   remnantCompactObject,
   shouldAutoTriggerSupernova,
   supernovaVisualState,
-} from '@/utils/supernova';
-import { nebulaExpansionScale } from '@/utils/specialBodies';
-import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
-import { createGlowSpriteCanvas } from '@/components/CelestialBody/proceduralTextures';
-import { getNebulaTexture } from '@/components/CelestialBody/nebulaTextures';
+} from "@/utils/supernova";
+import { nebulaExpansionScale } from "@/utils/specialBodies";
+import { advanceFrameTransition } from "@/utils/galacticFrame";
+import { setObjectTreeRaycastEnabled } from "@/utils/raycastGate";
+import { createGlowSpriteCanvas } from "@/components/CelestialBody/proceduralTextures";
+import { getNebulaTexture } from "@/components/CelestialBody/nebulaTextures";
 
 /**
  * 遗迹丝状星云纹理（P6 §3.2：与蟹状星云共用 shell 生成路径，新遗迹同样受益）
@@ -33,12 +34,12 @@ function remnantNebulaTexture(): THREE.DataTexture {
   return getNebulaTexture({
     size: 256,
     seed: 20261987, // SN 1987A 致意；确定性种子
-    innerColor: '#cfe4ff',
-    outerColor: '#6f8fd8',
+    innerColor: "#cfe4ff",
+    outerColor: "#6f8fd8",
     filamentStrength: 0.8,
     irregularity: 0.6,
     octaves: 5,
-    shape: 'shell',
+    shape: "shell",
   });
 }
 
@@ -52,6 +53,33 @@ function eventSpinRad(id: string): number {
 /** 超新星可视范围（与银河系内容一致的 LOD 门控，起点为 L2/L3 边界 2.5） */
 function snFadeWeight(continuousLevel: number): number {
   return trapezoidWeight(continuousLevel, 2.5, 2.9, 4.5, 5);
+}
+
+/** 聚焦权重提升过渡时长（秒），与 SpecialBodies/Galaxy 一致 */
+const FOCUS_BOOST_SECONDS = 0.5;
+
+/**
+ * 本帧有效可见权重：层级淡入权重与聚焦提升取最大值（bug 修复）
+ *
+ * 飞往/跟随超新星事件时相机距原点可能跌入 L2 连续层级区间，按层级门控
+ * 事件会完全淡出（"飞过去却看不到"）。跟随本事件期间权重提升至 1
+ * （boostRef 由调用方持有，0.5 秒平滑），取消跟随后恢复层级门控。
+ */
+function effectiveSnWeight(
+  eventId: string,
+  boostRef: { current: number },
+  delta: number,
+): number {
+  const state = useSimulationStore.getState();
+  const focused =
+    state.followBodyId === eventId || state.flyToBodyId === eventId;
+  boostRef.current = advanceFrameTransition(
+    boostRef.current,
+    focused ? 1 : 0,
+    delta,
+    FOCUS_BOOST_SECONDS,
+  );
+  return Math.max(snFadeWeight(state.continuousLevel), boostRef.current);
 }
 
 /** 可交互阈值：淡入权重低于该值时禁用 raycast（隐形对象不拦截点击） */
@@ -84,6 +112,7 @@ export function rollSupernovaParams(rand: () => number = Math.random): {
 function Remnant({ event }: { event: SupernovaEvent }): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
   const nebulaRef = useRef<THREE.Sprite>(null);
+  const boostRef = useRef(0);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const compact = remnantCompactObject(event.progenitorMassSun);
   const size = SHOCK_MAX_RADIUS_UNITS * 0.6;
@@ -91,18 +120,22 @@ function Remnant({ event }: { event: SupernovaEvent }): JSX.Element {
   // 丝状遗迹壳纹理（进程内缓存共享，勿在组件卸载时 dispose）
   const texture = remnantNebulaTexture();
 
-  useFrame(({ clock }) => {
-    const weight = snFadeWeight(useSimulationStore.getState().continuousLevel);
+  useFrame(({ clock }, delta) => {
+    const weight = effectiveSnWeight(event.id, boostRef, delta);
     // 淡出后隐藏并禁用 raycast（Raycaster 不检查 visible，隐形遗迹不得拦截点击）
     if (groupRef.current) {
       groupRef.current.visible = weight > 0.001;
-      setObjectTreeRaycastEnabled(groupRef.current, weight > INTERACTIVE_WEIGHT);
+      setObjectTreeRaycastEnabled(
+        groupRef.current,
+        weight > INTERACTIVE_WEIGHT,
+      );
       if (!groupRef.current.visible) return;
     }
     if (nebulaRef.current) {
       const s = size * nebulaExpansionScale(clock.elapsedTime, 120, 0.08);
       nebulaRef.current.scale.set(s, s, 1);
-      (nebulaRef.current.material as THREE.SpriteMaterial).opacity = 0.35 * weight;
+      (nebulaRef.current.material as THREE.SpriteMaterial).opacity =
+        0.35 * weight;
     }
   });
 
@@ -113,7 +146,11 @@ function Remnant({ event }: { event: SupernovaEvent }): JSX.Element {
   ] as const;
 
   return (
-    <group ref={groupRef} position={[posUnits[0], posUnits[1], posUnits[2]]} name={event.id}>
+    <group
+      ref={groupRef}
+      position={[posUnits[0], posUnits[1], posUnits[2]]}
+      name={event.id}
+    >
       {/* 遗迹星云（持续缓慢膨胀） */}
       <sprite
         ref={nebulaRef}
@@ -131,7 +168,7 @@ function Remnant({ event }: { event: SupernovaEvent }): JSX.Element {
         />
       </sprite>
       {/* 中心致密天体：中子星（蓝白）或黑洞（纯黑 + 微弱吸积辉光） */}
-      {compact === 'neutron-star' ? (
+      {compact === "neutron-star" ? (
         <mesh>
           <sphereGeometry args={[size * 0.05, 12, 12]} />
           <meshBasicMaterial color="#dff2ff" />
@@ -166,23 +203,24 @@ function ActiveSupernova({ event }: { event: SupernovaEvent }): JSX.Element {
   const rimRef = useRef<THREE.Mesh>(null);
   const remnantRef = useRef<THREE.Sprite>(null);
   const archivedRef = useRef(false);
+  const boostRef = useRef(0);
 
   const flashTexture = useMemo(
-    () => new THREE.CanvasTexture(createGlowSpriteCanvas('#fff6e8', 256)),
+    () => new THREE.CanvasTexture(createGlowSpriteCanvas("#fff6e8", 256)),
     [],
   );
   useEffect(() => () => flashTexture.dispose(), [flashTexture]);
   // 遗迹渐显与永久遗迹同一丝状壳纹理（缓存共享，勿 dispose）
   const remnantTexture = remnantNebulaTexture();
 
-  useFrame(() => {
+  useFrame((_, delta) => {
     const store = useSimulationStore.getState();
-    const weight = snFadeWeight(store.continuousLevel);
+    const weight = effectiveSnWeight(event.id, boostRef, delta);
     const elapsedSec = (Date.now() - event.startedAtMs) / 1000;
     const state = supernovaVisualState(elapsedSec, event.durationSec);
 
     // 动画完成：归档为永久遗迹（一次性）
-    if (state.phase === 'remnant' && !archivedRef.current) {
+    if (state.phase === "remnant" && !archivedRef.current) {
       archivedRef.current = true;
       store.archiveSupernova();
       return;
@@ -196,7 +234,8 @@ function ActiveSupernova({ event }: { event: SupernovaEvent }): JSX.Element {
         state.brightness01 * weight;
     }
     // 2. 球形冲击波壳层：Sedov-Taylor 减速扩张（半透明壳体 + 外缘增亮）
-    const shockRadius = Math.max(1e-3, state.shockRadius01) * SHOCK_MAX_RADIUS_UNITS;
+    const shockRadius =
+      Math.max(1e-3, state.shockRadius01) * SHOCK_MAX_RADIUS_UNITS;
     if (shellRef.current) {
       shellRef.current.visible = state.shockRadius01 > 0.001;
       shellRef.current.scale.setScalar(shockRadius);
@@ -292,13 +331,19 @@ export function Supernova(): JSX.Element {
     const deltaMyr = simDaysToMyr(store.simDays - last);
     if (shouldAutoTriggerSupernova(Math.random(), deltaMyr)) {
       const params = rollSupernovaParams();
-      store.triggerSupernova(params.positionLy, params.massSun, SN_DEFAULT_DURATION_SEC);
+      store.triggerSupernova(
+        params.positionLy,
+        params.massSun,
+        SN_DEFAULT_DURATION_SEC,
+      );
     }
   });
 
   return (
     <group name="supernova-events">
-      {activeSupernova && <ActiveSupernova key={activeSupernova.id} event={activeSupernova} />}
+      {activeSupernova && (
+        <ActiveSupernova key={activeSupernova.id} event={activeSupernova} />
+      )}
       {supernovaRemnants.map((event) => (
         <Remnant key={event.id} event={event} />
       ))}
