@@ -110,6 +110,9 @@ export const BODY_DETAIL_TEXTURES: readonly BodyTextureEntry[] = [
   { bodyId: 'jupiter', kind: 'surface', url: '/textures/4k_jupiter.jpg' },
   { bodyId: 'saturn', kind: 'surface', url: '/textures/4k_saturn.jpg' },
   { bodyId: 'moon', kind: 'surface', url: '/textures/4k_moon.jpg' },
+  // 太阳 4K 近观层（S1，IMPROVEMENT_REQUIREMENTS_SOLAR §4.2/§5.2）：
+  // SSS 官方"8K"下载实为 4096×2048（与木星/土星情况一致，已核实），直接采用
+  { bodyId: 'sun', kind: 'surface', url: '/textures/4k_sun.jpg' },
   // 矮行星 4K 近观层（P5 §3.4 可选项）：与 2K 同源（NASA 源图分辨率足够），
   // 接入 P4 近观门控与 LRU；法线贴图见 BODY_NORMAL_MAPS（DEM/DTM 转换，文件头登记）
   { bodyId: 'pluto', kind: 'surface', url: '/textures/4k_pluto.jpg' },

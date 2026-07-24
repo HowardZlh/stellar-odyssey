@@ -6,7 +6,8 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
   [Solar System Scope Textures](https://www.solarsystemscope.com/textures/)，
   许可协议 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)（基于 NASA 观测数据制作）。
   4K 细节层由 SSS 8K 源图本地降采样至 4096×2048（P4）；官方对天王星、海王星、土星环仅提供 2K 源图，
-  相应贴图维持 2K。纹理清单与代码内登记见 `src/data/textures.ts`；加载失败时自动降级为程序化纹理
+  相应贴图维持 2K。`4k_sun.jpg`（S1 太阳近观层）：SSS 官方"8K"下载实为 4096×2048（与木星/土星情况
+  一致，已核实），直接采用。纹理清单与代码内登记见 `src/data/textures.ts`；加载失败时自动降级为程序化纹理
   （`src/components/CelestialBody/proceduralTextures.ts`）。
 - 法线贴图（P4 近观立体细节，本仓库由公开高程数据转换生成）：
   - `4k_earth_normal.jpg`：NASA Earth Observatory
