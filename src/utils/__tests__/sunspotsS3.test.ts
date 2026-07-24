@@ -9,6 +9,7 @@ import {
   FILAMENT_HALF_WIDTH_RAD,
   FILAMENT_MIN_BRIGHTNESS,
   SUNSPOT_MAX_LAT_DEG,
+  SUNSPOT_MAX_RENDERED,
   SUNSPOT_MIN_ACTIVE_PAIRS,
   SUNSPOT_PAIR_SLOTS,
   SUNSPOT_SIZE_EXAGGERATION,
@@ -73,8 +74,8 @@ describe('sunspotSlotEnabledByCycle（周期联动激活门控）', () => {
 describe('渲染填充随周期变化（fillSunspotShaderData）', () => {
   const scan = (simDaysBase: number): number => {
     // 在一个槽位基础周期窗口内扫描，取观察到的最大活跃黑子数
-    const dirs = new Float32Array(SUNSPOT_PAIR_SLOTS * 2 * 3);
-    const params = new Float32Array(SUNSPOT_PAIR_SLOTS * 2 * 3);
+    const dirs = new Float32Array(SUNSPOT_MAX_RENDERED * 3);
+    const params = new Float32Array(SUNSPOT_MAX_RENDERED * 3);
     let maxSpots = 0;
     for (let d = 0; d < 400; d += 3) {
       const n = fillSunspotShaderData(simDaysBase + d, dirs, params);
@@ -92,8 +93,8 @@ describe('渲染填充随周期变化（fillSunspotShaderData）', () => {
 
 describe('蝴蝶图纬度迁移（fillSunspotShaderData 生成纬度）', () => {
   const maxAbsLatDeg = (simDaysBase: number): number => {
-    const dirs = new Float32Array(SUNSPOT_PAIR_SLOTS * 2 * 3);
-    const params = new Float32Array(SUNSPOT_PAIR_SLOTS * 2 * 3);
+    const dirs = new Float32Array(SUNSPOT_MAX_RENDERED * 3);
+    const params = new Float32Array(SUNSPOT_MAX_RENDERED * 3);
     let maxLat = 0;
     for (let d = 0; d < 300; d += 2) {
       const n = fillSunspotShaderData(simDaysBase + d, dirs, params);

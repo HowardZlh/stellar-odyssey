@@ -346,6 +346,104 @@ export function coronaIntensity(
 }
 
 // ---------------------------------------------------------------------------
+// S4 E3：盔状冕流 + 极羽（§4.7-E3，冕流形态精细化）
+// ---------------------------------------------------------------------------
+
+/** 盔状冕流赤道尖顶锐度（越大尖顶越窄，赤道盔状体拉伸更明显） */
+export const HELMET_STREAMER_SHARPNESS = 4.0;
+/** 极羽角半径（弧度，极区细窄羽状射线的张角） */
+export const POLAR_PLUME_CONE_RAD = 0.55;
+/** 极羽径向条纹频率（细窄羽状） */
+export const POLAR_PLUME_FREQ = 18.0;
+/** 极羽亮度增益 */
+export const POLAR_PLUME_GAIN = 0.5;
+
+/**
+ * 盔状冕流因子（S4 E3）：赤道方向的盔状冕流（helmet streamer）尖顶锐化——
+ * 在极小期（isotropy 低）赤道呈尖锐盔状尖顶，随各向同性提升趋于弥散。
+ * 相对 coronaStreamerFactor 的赤道加权更锐（高次幂），示意盔状体尖顶形态。
+ * 数据来源：日全食盔状冕流照片；Koutchmy 1988 冕流形态。
+ *
+ * @param absDirY 该点方向 |y| 分量 ∈ [0,1]
+ * @param isotropy01 各向同性因子 ∈ [0,1]
+ * @returns 赤道盔状加权 ∈ [0,1]
+ */
+export function helmetStreamerFactor(absDirY: number, isotropy01: number = 0): number {
+  const y = Math.min(1, Math.max(0, absDirY));
+  const iso = Math.min(1, Math.max(0, isotropy01));
+  // 赤道（y→0）尖锐尖顶：高次幂锐化；极大期渐弥散
+  const sharp = Math.pow(1 - y, HELMET_STREAMER_SHARPNESS);
+  return sharp * (1 - iso) + iso * Math.pow(1 - y, 2);
+}
+
+/**
+ * 极羽（polar plume）射线亮度（S4 E3）：极区开放磁力线上的细窄羽状射线。
+ * 视线方向落在极轴锥内（|y| 接近 1）时，以角向高频条纹叠加细窄射线。
+ *
+ * @param absDirY 该点方向 |y| 分量 ∈ [0,1]（越接近 1 越靠极区）
+ * @param azimuthNoise01 角向条纹噪声 ∈ [0,1]
+ * @returns 极羽亮度增益 ∈ [0, POLAR_PLUME_GAIN]
+ */
+export function polarPlumeBrightness(absDirY: number, azimuthNoise01: number): number {
+  const y = Math.min(1, Math.max(0, absDirY));
+  const n = Math.min(1, Math.max(0, azimuthNoise01));
+  // 极轴锥：|y| 大于 cos(POLAR_PLUME_CONE_RAD) 才有极羽
+  const cosCone = Math.cos(POLAR_PLUME_CONE_RAD);
+  if (y <= cosCone) return 0;
+  const t = (y - cosCone) / (1 - cosCone);
+  // 细窄射线：高频条纹（noise 调制）× 极区包络
+  const stripes = 0.5 + 0.5 * Math.sin(n * POLAR_PLUME_FREQ * Math.PI);
+  return POLAR_PLUME_GAIN * t * stripes;
+}
+
+// ---------------------------------------------------------------------------
+// S4 F1：米粒暗巷网络 + 超米粒网络磁场亮点（§4.7-F1）
+// ---------------------------------------------------------------------------
+
+/** 暗巷网络强化幅度（下沉冷物质暗边界，胞间暗巷加深） */
+export const INTERGRANULAR_LANE_DARKEN = 0.22;
+/** 暗巷阈值（fBm 低于此值判为胞间下沉暗巷） */
+export const INTERGRANULAR_LANE_THRESHOLD = 0.42;
+/** 网络磁场亮点亮度增益（超米粒边界的磁场聚集亮点） */
+export const NETWORK_BRIGHT_POINT_GAIN = 0.14;
+/** 网络亮点判定阈值（超米粒边界附近） */
+export const NETWORK_BRIGHT_POINT_THRESHOLD = 0.62;
+
+/**
+ * 米粒暗巷网络暗化（S4 F1）：强化米粒胞之间下沉冷物质的暗边界（暗巷）。
+ * 米粒 fBm 低于阈值处判为胞间下沉暗巷，额外加深，使对流网络更清晰。
+ * 数据来源：Nordlund et al. 2009 太阳对流；暗巷为下沉冷等离子体。
+ *
+ * @param fbm01 米粒 fBm 值 ∈ [0,1]
+ * @param detailStrength01 近观细节强度 ∈ [0,1]（仅近观强化）
+ * @returns 亮度乘数 ∈ (0,1]
+ */
+export function intergranularLaneDarkening(fbm01: number, detailStrength01: number): number {
+  const f = Math.min(1, Math.max(0, fbm01));
+  const s = Math.min(1, Math.max(0, detailStrength01));
+  if (f >= INTERGRANULAR_LANE_THRESHOLD) return 1;
+  const depth = (INTERGRANULAR_LANE_THRESHOLD - f) / INTERGRANULAR_LANE_THRESHOLD;
+  return 1 - INTERGRANULAR_LANE_DARKEN * depth * s;
+}
+
+/**
+ * 超米粒网络磁场亮点增亮（S4 F1）：超米粒组织边界处磁场聚集形成网络亮点
+ * （network bright points，色球网络的光球对应）。超米粒 fBm 高于阈值的
+ * 边界带增亮。
+ *
+ * @param superFbm01 超米粒 fBm 值 ∈ [0,1]
+ * @param detailStrength01 近观细节强度 ∈ [0,1]
+ * @returns 亮度增益 ∈ [0, NETWORK_BRIGHT_POINT_GAIN]
+ */
+export function networkBrightPointBoost(superFbm01: number, detailStrength01: number): number {
+  const f = Math.min(1, Math.max(0, superFbm01));
+  const s = Math.min(1, Math.max(0, detailStrength01));
+  if (f <= NETWORK_BRIGHT_POINT_THRESHOLD) return 0;
+  const t = (f - NETWORK_BRIGHT_POINT_THRESHOLD) / (1 - NETWORK_BRIGHT_POINT_THRESHOLD);
+  return NETWORK_BRIGHT_POINT_GAIN * (t * t * (3 - 2 * t)) * s;
+}
+
+// ---------------------------------------------------------------------------
 // 远观光晕与结构化日冕的分级混合（需求 §4.2 分级呈现）
 // ---------------------------------------------------------------------------
 
