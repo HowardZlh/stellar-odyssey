@@ -6,6 +6,7 @@ import { useSimulationStore } from '@/store';
 import { OrbitLine } from '@/components/Scene/OrbitLine';
 import { Belt } from '@/components/Scene/Belt';
 import { OortCloud } from '@/components/Scene/OortCloud';
+import { Heliopause } from '@/components/Scene/Heliopause';
 import { Comet } from '@/components/CelestialBody/Comet';
 import { Planet } from '@/components/CelestialBody/Planet';
 import { Sun } from '@/components/CelestialBody/Sun';
@@ -51,6 +52,9 @@ export function SolarSystem(): JSX.Element {
       {/* 小行星带（2.2–3.2 AU）与柯伊伯带（30–50 AU），开普勒剪切公转 */}
       <Belt config={ASTEROID_BELT} />
       <Belt config={KUIPER_BELT} />
+
+      {/* 日球层顶示意（S3 §4.3-4：太阳风与星际介质边界，L2 外缘半透明球壳） */}
+      <Heliopause />
 
       {/* 奥尔特云外边界示意（可选需求：L2 ↔ L3 过渡参照物） */}
       <OortCloud />

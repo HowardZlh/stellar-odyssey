@@ -13,10 +13,12 @@ import { LOCAL_GROUP_GALAXIES, MILKY_WAY } from '@/data/galaxies';
 import { SPECIAL_BODIES } from '@/data/specialBodies';
 import {
   CORONAL_HEATING_NOTE_ZH,
+  CORONAL_HOLE_NOTE_ZH,
   HALE_POLARITY_NOTE_ZH,
   SOLAR_WIND_NOTE_ZH,
 } from '@/data/sunStructure';
 import { OORT_INNER_AU, OORT_OUTER_AU } from '@/utils/oort';
+import { HELIOPAUSE_REAL_DISTANCE_AU } from '@/utils/heliopause';
 import { SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
 
 /** 信息面板中的一行（标签 + 值） */
@@ -190,6 +192,8 @@ function buildCatalog(): Map<string, BodyInfo> {
       { label: '较差自转', value: '赤道 25.4 天 / 极区约 34 天（非刚体）' },
       { label: '黑子', value: `约 3,500–4,500 °C 的低温暗区；${HALE_POLARITY_NOTE_ZH}` },
       { label: '太阳风', value: SOLAR_WIND_NOTE_ZH },
+      { label: '日冕洞', value: CORONAL_HOLE_NOTE_ZH },
+      { label: '活动周期', value: '约 11 年消长（黑子数/耀斑/CME 频率/日冕形态随周期变化，磁场 22 年反转即 Hale 周期）' },
     ],
     dataSource: `${SUN.dataSource}；较差自转 Snodgrass & Ulrich (1990)；日冕加热 Klimchuk (2006)`,
   });
@@ -288,6 +292,21 @@ function buildCatalog(): Map<string, BodyInfo> {
       { label: '示意说明', value: '真实尺度远超场景范围，球壳半径为压缩示意值（已登记）' },
     ],
     dataSource: 'NASA Solar System Exploration – Oort Cloud',
+  });
+
+  // 日球层顶（S3 §4.3-4：太阳风与星际介质边界，Voyager 实测约 120 AU）
+  catalog.set('heliopause', {
+    id: 'heliopause',
+    name: 'Heliopause (schematic)',
+    nameZh: '日球层顶（示意）',
+    typeZh: '太阳系外围结构',
+    lines: [
+      { label: '距离', value: `约 ${HELIOPAUSE_REAL_DISTANCE_AU} AU` },
+      { label: '定义', value: '太阳风与星际介质压力平衡的边界（日球层 Heliosphere 外缘）' },
+      { label: '探测', value: '旅行者 1 号（2012）、旅行者 2 号（2018）先后穿越，实测约 119–121 AU' },
+      { label: '示意说明', value: '球壳半径为压缩示意值（真实 ~120 AU 远超行星区尺度，已登记）' },
+    ],
+    dataSource: 'NASA/JPL Voyager Interstellar Mission',
   });
 
   // 本星系群及邻近星系

@@ -114,6 +114,27 @@ export function flareProgress01(simDays: number, startedAtSimDays: number, durat
 }
 
 /**
+ * 周期调制后的泊松平均间隔（S3，§4.4）：基础均值按活动周期频率因子缩放。
+ * 频率因子越大（极大期）→ 平均间隔越短 → 触发越频繁；反之极小期更稀疏。
+ *
+ * @param baseMeanIntervalDays 基础平均间隔（FLARE_MEAN_INTERVAL_DAYS 等）
+ * @param frequencyFactor 周期频率因子（solarCycle.cycleFrequencyFactor 结果，>0）
+ * @returns 调制后的平均间隔（天）= 基础均值 / 因子
+ */
+export function cycleModulatedMeanInterval(
+  baseMeanIntervalDays: number,
+  frequencyFactor: number,
+): number {
+  if (!(baseMeanIntervalDays > 0)) {
+    throw new RangeError(`基础均值必须为正数，收到 ${baseMeanIntervalDays}`);
+  }
+  if (!(frequencyFactor > 0)) {
+    throw new RangeError(`频率因子必须为正数，收到 ${frequencyFactor}`);
+  }
+  return baseMeanIntervalDays / frequencyFactor;
+}
+
+/**
  * 自动触发判定（泊松过程，同超新星范式）：Δt 内至少发生一次的概率
  * p = 1 − exp(−Δt/mean)；Δt 先按 FLARE_TRIGGER_DELTA_CLAMP_DAYS 钳制。
  */
@@ -233,6 +254,41 @@ export function cmeIsEarthDirected(
   return dot >= Math.cos((thresholdDeg * Math.PI) / 180);
 }
 
+/** 地球极光增强示意时长（模拟天，S3 §4.3-3）：CME 抵达后极区增亮窗口 */
+export const AURORA_ENHANCEMENT_DAYS = 1.5;
+
+/**
+ * CME 抵达地球的传播延迟（模拟天，S3 §4.3-3）：按真实传播时间
+ * 距离（1 AU）÷ 事件速度。真实 CME 抵达地球约 1–3 天（快 CME 更短），
+ * 与场景 km/s→单位换算一致（1 AU = SCENE_UNITS_PER_AU 场景单位）。
+ *
+ * @param speedKmS CME 速度（km/s）
+ * @returns 抵达延迟（模拟天）
+ */
+export function cmeArrivalDelayDays(speedKmS: number): number {
+  if (!(speedKmS > 0) || !Number.isFinite(speedKmS)) {
+    throw new RangeError(`速度必须为正有限数，收到 ${speedKmS}`);
+  }
+  // 1 AU 路程 / 速度：AU_KM / (km/s) 得秒，再换算为天
+  return AU_KM / speedKmS / 86400;
+}
+
+/**
+ * 极光增强强度（0-1，S3 §4.3-3）：CME 抵达后极区大气短暂增亮，
+ * 快速起亮 → 缓慢消退（克制、可退化）。
+ *
+ * @param daysSinceArrival 自抵达起经过的模拟天
+ * @returns 增强强度 ∈ [0,1]（窗口外为 0）
+ */
+export function auroraEnhancement01(daysSinceArrival: number): number {
+  if (daysSinceArrival <= 0 || daysSinceArrival >= AURORA_ENHANCEMENT_DAYS) return 0;
+  const t = daysSinceArrival / AURORA_ENHANCEMENT_DAYS;
+  // 前 15% 快速起亮，其后指数消退
+  if (t < 0.15) return t / 0.15;
+  const x = (t - 0.15) / 0.85;
+  return Math.exp(-3 * x);
+}
+
 /**
  * CME 锥内粒子方向（围绕 +Y 轴的确定性分布，渲染端整体旋转到抛射方向）：
  * 极角在 [0, 半张角] 内按面积均匀，方位角低差异分布 + 哈希抖动。
@@ -319,6 +375,32 @@ export function windShaderDays(simDays: number, cycleDays: number): number {
 export const WIND_BASE_ALPHA = 0.16;
 
 /**
+ * 日冕洞方向快风速度增益（S3 §4.2）：日冕洞是高速太阳风源，该方向粒子
+ * 显著更快（真实快风 ~800 km/s vs 慢风 ~400 km/s）。
+ */
+export const WIND_FAST_SPEED_GAIN = 1.6;
+
+/** 日冕洞快风方向角半径（弧度，与 sunSurface.CORONAL_HOLE_RADIUS_RAD 呼应） */
+export const WIND_FAST_CONE_RAD = 0.6;
+
+/**
+ * 太阳风方向速度因子（shader/CPU 镜像，§4.2）：粒子方向落在日冕洞锥内时
+ * 速度增益（快风），锥外为常速慢风；锥内外平滑过渡。
+ *
+ * @param cosAngle 粒子方向与日冕洞方向的余弦（点积）
+ * @returns 速度倍数 ∈ [1, WIND_FAST_SPEED_GAIN]
+ */
+export function windSpeedFactorForDirection(cosAngle: number): number {
+  const c = Math.min(1, Math.max(-1, cosAngle));
+  const ang = Math.acos(c);
+  if (ang >= WIND_FAST_CONE_RAD) return 1;
+  const t = ang / WIND_FAST_CONE_RAD;
+  const smooth = t * t * (3 - 2 * t);
+  // 锥中心最快、锥缘回落到 1
+  return 1 + (WIND_FAST_SPEED_GAIN - 1) * (1 - smooth);
+}
+
+/**
  * 太阳风粒子透明度（shader 镜像）：随外流相位衰减 × 近观强度微增
  *
  * @param phase01 外流相位（0 出发 → 1 回收）
@@ -351,6 +433,32 @@ export const CORONAL_LOOP_MAX = 5;
 
 /** 日冕环拱顶高度（× 足点间距） */
 export const CORONAL_LOOP_HEIGHT_RATIO = 0.6;
+
+/** 爆发日珥前导时长（模拟天，S3 §4.3-6）：日珥拉升脱离领先 CME 的窗口 */
+export const PROMINENCE_ERUPTION_DAYS = 0.5;
+
+/** 爆发日珥峰值抬升倍数（相对常态高度，示意拉升脱离） */
+export const PROMINENCE_ERUPTION_LIFT = 3.5;
+
+/**
+ * 爆发日珥抬升因子（S3 §4.3-6）：CME 触发时对应方位日珥先行拉升脱离
+ * （eruptive prominence 作为 CME 前导）。0 起始 → 快速拉升 → 脱离后回落至 0
+ * （日珥物质随 CME 抛出，日面重建）。
+ *
+ * @param elapsedDays 自爆发起经过的模拟天
+ * @returns 额外抬升高度倍数（≥0，叠加在常态高度之上）
+ */
+export function prominenceEruptionLift(elapsedDays: number): number {
+  if (elapsedDays <= 0 || elapsedDays >= PROMINENCE_ERUPTION_DAYS) return 0;
+  const t = elapsedDays / PROMINENCE_ERUPTION_DAYS;
+  // 前 60% 快速拉升（easeOut），后 40% 脱离回落
+  if (t < 0.6) {
+    const x = t / 0.6;
+    return PROMINENCE_ERUPTION_LIFT * (1 - Math.pow(1 - x, 2));
+  }
+  const x = (t - 0.6) / 0.4;
+  return PROMINENCE_ERUPTION_LIFT * (1 - x);
+}
 
 /**
  * 日珥缓慢演化因子（0.75–1.25 高度脉动，模拟时间驱动、暂停冻结）

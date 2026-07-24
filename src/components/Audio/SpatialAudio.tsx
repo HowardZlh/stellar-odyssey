@@ -7,6 +7,11 @@ import { useSimulationStore } from '@/store';
 import { getSharedAudioEngine } from '@/components/Audio/audioEngine';
 import { SPATIAL_SOURCES, spatialSourceLevelGain, toAudioPosition } from '@/utils/spatialAudio';
 import { galacticPointToSceneUnits } from '@/utils/cameraFocus';
+import { SUN } from '@/data/planets';
+import { bodyDisplayRadius } from '@/utils/scale';
+import { detailStrength01 } from '@/utils/planetDetail';
+import { sunBoilLayerGain } from '@/utils/audioMixer';
+import { cycleSunspotEnvelope, solarCyclePhase01 } from '@/utils/solarCycle';
 
 /**
  * 3D 空间音效驱动组件（可选需求 3.4.2：靠近太阳/黑洞时对应音源增强）
@@ -25,11 +30,20 @@ export function SpatialAudio(): null {
   // 复用临时向量，避免渲染循环中创建新对象（AGENTS.md 性能规范）
   const tmp = useMemo(() => new THREE.Vector3(), []);
 
+  const sunRadius = useMemo(() => bodyDisplayRadius(SUN.radiusKm, false), []);
+
   useFrame(({ camera }) => {
     const engine = getSharedAudioEngine();
     if (!engine.initialized) return;
-    const { simDays, continuousLevel, audioEnabled } = useSimulationStore.getState();
+    const { simDays, continuousLevel, audioEnabled, realScaleMode } = useSimulationStore.getState();
     const enabledFactor = audioEnabled ? 1 : 0;
+
+    // S3 §4.6：太阳近观"沸腾"颗粒噪声层（随 L1 近观强度 + 周期相位微调）
+    const radius = realScaleMode ? bodyDisplayRadius(SUN.radiusKm, true) : sunRadius;
+    const distToSun = camera.position.length();
+    const nearStrength = detailStrength01(distToSun, radius);
+    const cycleEnv = cycleSunspotEnvelope(solarCyclePhase01(simDays));
+    engine.setSunBoilGain(sunBoilLayerGain(nearStrength, cycleEnv) * enabledFactor);
 
     for (const config of SPATIAL_SOURCES) {
       if (config.id === 'sun-hum') {

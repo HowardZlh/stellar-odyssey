@@ -19,6 +19,7 @@ import {
 import { ringDisplayRadii } from '@/utils/satellites';
 import { FLOW_VISUAL_GAIN, flowShaderPhase } from '@/utils/jupiterFlow';
 import { detailGateUpdate, detailStrength01 } from '@/utils/planetDetail';
+import { auroraEnhancement01 } from '@/utils/solarActivity';
 import {
   RING_SHADOW_STRENGTH,
   TERMINATOR_SOFTNESS,
@@ -286,6 +287,8 @@ export function Planet({ data }: PlanetProps): JSX.Element {
   const bodyRef = useRef<THREE.Mesh>(null);
   const cloudRef = useRef<THREE.Mesh>(null);
   const nightRef = useRef<THREE.Mesh>(null);
+  // S3 §4.3-3：地球极区极光增强层材质（CME 抵达时短暂增亮，克制可退化）
+  const auroraMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const camera = useThree((s) => s.camera);
   const showLabels = useSimulationStore((s) => s.showLabels);
   const selectBody = useSimulationStore((s) => s.selectBody);
@@ -721,6 +724,13 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     if (cloudRef.current) {
       cloudRef.current.rotation.y = rotation * 1.12;
     }
+    // S3 §4.3-3：地球极光增强（CME 抵达后极区大气短暂增亮，克制可退化）
+    if (auroraMatRef.current && data.id === 'earth') {
+      const started = state.auroraStartedAtSimDays;
+      const enh = started === null ? 0 : auroraEnhancement01(simDays - started);
+      auroraMatRef.current.opacity = 0.5 * enh;
+      (auroraMatRef.current as unknown as { visible?: boolean }).visible = enh > 0.001;
+    }
     // 夜灯层与地表同步旋转（灯光固定在大陆上）
     if (nightRef.current) {
       nightRef.current.rotation.y = rotation;
@@ -767,6 +777,23 @@ export function Planet({ data }: PlanetProps): JSX.Element {
               color={data.surface.atmosphereColor ?? '#6ab7ff'}
               transparent
               opacity={0.16}
+              side={THREE.BackSide}
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
+            />
+          </mesh>
+        )}
+
+        {/* S3 §4.3-3 地球极光增强层（CME 抵达时短暂增亮，绿色高层大气辉光） */}
+        {data.id === 'earth' && (
+          <mesh raycast={() => null}>
+            <sphereGeometry args={[radius * 1.05, 32, 32]} />
+            <meshBasicMaterial
+              ref={auroraMatRef}
+              color="#4dffa0"
+              transparent
+              opacity={0}
+              visible={false}
               side={THREE.BackSide}
               blending={THREE.AdditiveBlending}
               depthWrite={false}
