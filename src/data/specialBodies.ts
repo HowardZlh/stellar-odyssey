@@ -450,9 +450,17 @@ export function getSpecialBodyById(id: string): SpecialBodyData | undefined {
  * 门控在 2.5 以下完全淡出——导致"飞过去却看不到"。跟随/飞往这类目标期间
  * 需要对目标天体与银河系组做聚焦权重提升（保持可见），本函数为判定依据。
  * 河外特殊天体（positionMode 'extragalactic'）不在银河系组内，不适用。
+ *
+ * R2-5 §5.1-C 白名单扩展：日球层顶（heliopause）纳入——L3 域序列成员，
+ * 飞抵观察层级 ~2.65 处银河系组常态已部分可见，聚焦提升保证巡游期间
+ * 银河系上下文不因层级波动淡出。实现差异登记：L3 序列成员"太阳（sun）"
+ * 不纳入——飞抵太阳后相机落入 L1 太阳系尺度，若提升银河系组权重会让
+ * 太阳邻域银河粒子贴着太阳显示（复发历史 bug"被误认为柯伊伯带跑错
+ * 位置"，见 Galaxy.tsx 淡入起点注释），太阳自身可见性不依赖银河系组。
  */
 export function isGalaxyAnchoredFocusId(id: string): boolean {
   if (id.startsWith("sn-")) return true;
+  if (id === "heliopause") return true;
   const body = getSpecialBodyById(id);
   return Boolean(
     body && body.level === "L3" && body.positionMode !== "extragalactic",

@@ -11,6 +11,11 @@ import {
   getSunLayerById,
 } from '@/data/sunStructure';
 import { useSimulationStore } from '@/store';
+import {
+  isScopeCycleBody,
+  scopeCyclePositionLabel,
+  scopeForViewLevel,
+} from '@/utils/cycleScopes';
 import { eventNoticeVisibleInScope, eventOutOfScopeSummaryZh } from '@/utils/eventScopes';
 import { galacticFrameHudLabel } from '@/utils/galacticFrame';
 import { galacticYearProgress, sunGalacticPositionLy } from '@/utils/galaxy';
@@ -71,6 +76,12 @@ export function HudInfo(): JSX.Element {
   const setSelectedSolarFeature = useSimulationStore((s) => s.setSelectedSolarFeature);
   const sunCutawayLayer = useSimulationStore((s) => s.sunCutawayLayer);
   const setSunCutawayLayer = useSimulationStore((s) => s.setSunCutawayLayer);
+  // R2-5 §5.1-B：选中天体属于当前视角域序列时补"上一个/下一个"快捷入口
+  // （与底部 BodyCycleSwitcher 行为一致，按域路由）
+  const cycleScope = useSimulationStore((s) =>
+    scopeForViewLevel(s.continuousLevel, s.followBodyId),
+  );
+  const cycleScopeBody = useSimulationStore((s) => s.cycleScopeBody);
 
   // 模拟时间/标尺以低频率刷新（0.25s），避免每帧渲染 React 组件
   const [simDateText, setSimDateText] = useState('');
@@ -490,6 +501,33 @@ export function HudInfo(): JSX.Element {
             >
               {followBodyId === selected.id ? '🔓 取消跟随' : '🔒 跟随'}
             </button>
+            {/* R2-5 §5.1-B：域序列内天体补"上一个/下一个"快捷入口
+                （与底部切换控件行为一致，按域路由，快捷键 [ / ]） */}
+            {isScopeCycleBody(cycleScope, selected.id) && (
+              <span className="ml-auto flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => cycleScopeBody(-1)}
+                  className="rounded bg-white/10 px-2 py-1 text-[11px] hover:bg-white/20"
+                  aria-label="序列上一个天体（快捷键 [）"
+                  title="上一个（[）"
+                >
+                  ←
+                </button>
+                <span className="text-[10px] text-gray-400">
+                  {scopeCyclePositionLabel(cycleScope, selected.id)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => cycleScopeBody(1)}
+                  className="rounded bg-white/10 px-2 py-1 text-[11px] hover:bg-white/20"
+                  aria-label="序列下一个天体（快捷键 ]）"
+                  title="下一个（]）"
+                >
+                  →
+                </button>
+              </span>
+            )}
           </div>
           <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-gray-500">
             数据来源：{selected.dataSource}
