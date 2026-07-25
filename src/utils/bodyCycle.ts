@@ -84,3 +84,70 @@ export function cycleControlVisible(viewLevel: ViewLevel, followBodyId: string |
   if (viewLevel === 'L1') return true;
   return followBodyId !== null && isCycleBody(followBodyId);
 }
+
+// ---------------------------------------------------------------------------
+// R2-2 §2.2-C 目标行星系统一致判定（近观细节视角域门控）
+// ---------------------------------------------------------------------------
+
+/**
+ * 当前跟随/锚定焦点天体 id（R2-2）：飞往目标优先（运镜中细节域随目标切换），
+ * 其次跟随目标；均为空时 L1 语境回落到锚定天体，L2-L4 无焦点。
+ */
+export function focusBodyIdForDetail(
+  viewLevel: ViewLevel,
+  flyToBodyId: string | null,
+  followBodyId: string | null,
+  anchorBodyId: string,
+): string | null {
+  if (flyToBodyId) return flyToBodyId;
+  if (followBodyId) return followBodyId;
+  return viewLevel === 'L1' ? anchorBodyId : null;
+}
+
+/**
+ * 焦点天体所属行星系统 id（R2-2 §2.2-C）：卫星（自然/人造）归属其行星
+ * （focusParentId 非空即取之），行星/矮行星等归属自身；无焦点返回 null。
+ *
+ * @param focusParentId 焦点天体的所属行星 id（非卫星时传 null，
+ *   调用方经 data/moons.getMoonById 解析）
+ */
+export function focusPlanetSystemId(
+  focusBodyId: string | null,
+  focusParentId: string | null,
+): string | null {
+  if (!focusBodyId) return null;
+  return focusParentId ?? focusBodyId;
+}
+
+/**
+ * 人造卫星近观细节域门控（R2-2 §2.2-C）：glTF 精细模型/近观放大仅在
+ * "L1 语境（cycleControlVisible 同款判定）且焦点目标与该卫星属于同一
+ * 行星系统"时允许激活——跟随地球/月球/该卫星本身 → 地球系统卫星可激活；
+ * 跟随火星/木星、L2 及以上视角 → 保持远观小点/盒体形态。
+ */
+export function satelliteDetailScopeAllowed(
+  viewLevel: ViewLevel,
+  focusBodyId: string | null,
+  focusParentId: string | null,
+  satelliteParentId: string,
+): boolean {
+  const l1Context =
+    viewLevel === 'L1' || (focusBodyId !== null && isCycleBody(focusBodyId));
+  if (!l1Context) return false;
+  return focusPlanetSystemId(focusBodyId, focusParentId) === satelliteParentId;
+}
+
+/**
+ * 行星 4K/法线近观细节域门控（R2-2 §2.2-C）：焦点目标系统须与该行星一致；
+ * 无焦点（L2-L4 自由镜头）时回落距离判据（保持现有行为，防误杀），
+ * 有焦点但系统不一致（如运镜路径擦过其他行星）时禁止激活。
+ */
+export function planetDetailScopeAllowed(
+  focusBodyId: string | null,
+  focusParentId: string | null,
+  planetId: string,
+): boolean {
+  const systemId = focusPlanetSystemId(focusBodyId, focusParentId);
+  if (systemId === null) return true;
+  return systemId === planetId;
+}

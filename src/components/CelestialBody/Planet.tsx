@@ -18,7 +18,9 @@ import {
 } from '@/utils/dwarfPlanets';
 import { ringDisplayRadii } from '@/utils/satellites';
 import { FLOW_VISUAL_GAIN, flowShaderPhase } from '@/utils/jupiterFlow';
-import { detailGateUpdate, detailStrength01 } from '@/utils/planetDetail';
+import { detailGateUpdateScoped, detailStrength01 } from '@/utils/planetDetail';
+import { focusBodyIdForDetail, planetDetailScopeAllowed } from '@/utils/bodyCycle';
+import { getMoonById } from '@/data/moons';
 import { auroraEnhancement01 } from '@/utils/solarActivity';
 import {
   RING_SHADOW_STRENGTH,
@@ -664,7 +666,22 @@ export function Planet({ data }: PlanetProps): JSX.Element {
       labelHiddenRef.current = hideLabel;
       setLabelHidden(hideLabel);
     }
-    const gate = detailGateUpdate(detailActiveRef.current, distToBody, radius, continuousLevel);
+    // R2-2 §2.2-C：叠加目标行星系统一致显式判定（焦点在其他行星系统时
+    // 不激活，防运镜路径擦过本行星时误加载 4K/法线细节层）
+    const focusId = focusBodyIdForDetail(
+      state.viewLevel,
+      state.flyToBodyId,
+      state.followBodyId,
+      state.anchorBodyId,
+    );
+    const focusParentId = focusId ? (getMoonById(focusId)?.parentId ?? null) : null;
+    const gate = detailGateUpdateScoped(
+      detailActiveRef.current,
+      distToBody,
+      radius,
+      continuousLevel,
+      planetDetailScopeAllowed(focusId, focusParentId, data.id),
+    );
     if (gate.active !== detailActiveRef.current) {
       detailActiveRef.current = gate.active;
       setDetailActive(gate.active);

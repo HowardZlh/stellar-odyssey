@@ -196,6 +196,108 @@ export function satelliteNearMagnification(distanceUnits: number): number {
 }
 
 // ---------------------------------------------------------------------------
+// R2-2 §2.2-A 人造卫星角尺寸钳制 + 极近淡出（修复"卫星铺满屏幕"）
+// ---------------------------------------------------------------------------
+
+/** 卫星投影角尺寸上限：屏幕高度的约 10%（R2-2 建议区间 8–12% 取中值） */
+export const SATELLITE_MAX_SCREEN_HEIGHT_FRACTION = 0.1;
+/** 极近淡出起点/终点（场景单位）：相机距离低于起点开始淡出，到终点全透明 */
+export const SATELLITE_PROXIMITY_FADE_START_UNITS = 0.4;
+export const SATELLITE_PROXIMITY_FADE_END_UNITS = 0.08;
+
+/**
+ * 角尺寸钳制系数（R2-2 §2.2-A）：卫星模型全展跨度 spanUnits 在距离
+ * distanceUnits 处的投影屏高占比 = (span/2 ÷ distance) ÷ tan(fov/2)；
+ * 超过 SATELLITE_MAX_SCREEN_HEIGHT_FRACTION 时按比例缩小显示尺寸，
+ * 保证任意相机距离下卫星屏占比 ≤ 屏幕高度约 10%。
+ *
+ * 连续性：钳制边界处系数恰为 1（连续函数，非阶跃）；
+ * 距离 → 0 时系数 → 0（配合极近淡出，不再出现放大铺屏）。
+ */
+export function satelliteScreenClampFactor(
+  distanceUnits: number,
+  spanUnits: number,
+  fovRad: number,
+): number {
+  if (!Number.isFinite(distanceUnits) || distanceUnits < 0) {
+    throw new RangeError(`相机距离必须为非负有限数，收到 ${distanceUnits}`);
+  }
+  if (!Number.isFinite(spanUnits) || spanUnits < 0) {
+    throw new RangeError(`模型跨度必须为非负有限数，收到 ${spanUnits}`);
+  }
+  if (!Number.isFinite(fovRad) || fovRad <= 0 || fovRad >= Math.PI) {
+    throw new RangeError(`垂直视场角必须在 (0, π) 内，收到 ${fovRad}`);
+  }
+  if (spanUnits === 0) return 1;
+  const allowedHalfSpan =
+    distanceUnits * Math.tan(fovRad / 2) * SATELLITE_MAX_SCREEN_HEIGHT_FRACTION;
+  const halfSpan = spanUnits / 2;
+  if (halfSpan <= allowedHalfSpan) return 1;
+  return allowedHalfSpan / halfSpan;
+}
+
+/**
+ * 极近淡出不透明度 [0,1]（R2-2 §2.2-A）：相机极近（穿模路径）时卫星
+ * 平滑淡出而非继续放大，避免"从卫星内部看到模型内壁"。
+ * smoothstep 过渡，距离 ≥ 起点全不透明、≤ 终点全透明。
+ */
+export function satelliteProximityFade01(distanceUnits: number): number {
+  if (!Number.isFinite(distanceUnits) || distanceUnits < 0) {
+    throw new RangeError(`相机距离必须为非负有限数，收到 ${distanceUnits}`);
+  }
+  if (distanceUnits >= SATELLITE_PROXIMITY_FADE_START_UNITS) return 1;
+  if (distanceUnits <= SATELLITE_PROXIMITY_FADE_END_UNITS) return 0;
+  const t =
+    (distanceUnits - SATELLITE_PROXIMITY_FADE_END_UNITS) /
+    (SATELLITE_PROXIMITY_FADE_START_UNITS - SATELLITE_PROXIMITY_FADE_END_UNITS);
+  return t * t * (3 - 2 * t);
+}
+
+// ---------------------------------------------------------------------------
+// R2-2 §2.2-B 运镜/视角过渡期间冻结近观放大
+// ---------------------------------------------------------------------------
+
+/** 视角锚点过渡冻结窗口（秒，与 cameraViews.VIEW_TRANSITION_SECONDS 一致） */
+export const MAG_FREEZE_TRANSITION_WINDOW_SECONDS = 2;
+/** 冻结解除后近观放大平滑恢复时长上限（秒，R2-2 要求 ≤1 秒） */
+export const MAG_RECOVERY_SECONDS = 1;
+
+/**
+ * 近观放大冻结判定（R2-2 §2.2-B）：飞往运镜进行中（flyToBodyId 非空）
+ * 或视角锚点过渡 2 秒窗口内，近观放大固定 1×。
+ */
+export function nearMagnificationFrozen(
+  flyToActive: boolean,
+  secondsSinceViewTransition: number,
+): boolean {
+  if (flyToActive) return true;
+  return secondsSinceViewTransition < MAG_FREEZE_TRANSITION_WINDOW_SECONDS;
+}
+
+/**
+ * 近观放大平滑逼近（R2-2 §2.2-B）：每帧向目标放大倍数限速逼近，
+ * 全程（1× ↔ 最大倍数）恰用 MAG_RECOVERY_SECONDS 秒完成，无尺寸跳变；
+ * 冻结方向（→1×）与恢复方向（→目标）同速率，双向均平滑。
+ */
+export function approachNearMagnification(
+  current: number,
+  target: number,
+  deltaSeconds: number,
+): number {
+  if (!Number.isFinite(current) || !Number.isFinite(target)) {
+    throw new RangeError(`放大倍数必须为有限数，收到 current=${current} target=${target}`);
+  }
+  if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) {
+    throw new RangeError(`帧间隔必须为非负有限数，收到 ${deltaSeconds}`);
+  }
+  const maxStep =
+    ((SATELLITE_NEAR_MAGNIFICATION - 1) / MAG_RECOVERY_SECONDS) * deltaSeconds;
+  const diff = target - current;
+  if (Math.abs(diff) <= maxStep) return target;
+  return current + Math.sign(diff) * maxStep;
+}
+
+// ---------------------------------------------------------------------------
 // 真实比例模式（P2，需求 4.1）：卫星轨道/本体/行星环按真实线性比例映射
 // ---------------------------------------------------------------------------
 

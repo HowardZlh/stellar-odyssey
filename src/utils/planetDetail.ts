@@ -70,6 +70,26 @@ export function detailGateUpdate(
 }
 
 /**
+ * 近观门控 + 目标行星系统一致显式判定（R2-2 §2.2-C）：
+ * 在 detailGateUpdate 距离/层级判据之上叠加 systemMatch（由
+ * utils/bodyCycle.planetDetailScopeAllowed / satelliteDetailScopeAllowed
+ * 求得）——焦点目标与本天体不属同一行星系统时禁止激活，
+ * 防运镜路径擦过其他天体时误激活；已激活时立即退出并释放显存。
+ */
+export function detailGateUpdateScoped(
+  prevActive: boolean,
+  distanceToBodyUnits: number,
+  radiusUnits: number,
+  continuousLevel: number,
+  systemMatch: boolean,
+): DetailGateUpdate {
+  if (!systemMatch) {
+    return { active: false, releaseNow: prevActive };
+  }
+  return detailGateUpdate(prevActive, distanceToBodyUnits, radiusUnits, continuousLevel);
+}
+
+/**
  * 近观细节强度 [0,1]（shader uDetailStrength）：
  * 进入阈值 60% 以内为全强度，退出阈值处衰减为 0（平滑无突变）。
  */

@@ -6,7 +6,13 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { MoonData } from '@/types';
 import { useSimulationStore } from '@/store';
-import { satelliteNearMagnification } from '@/utils/satellites';
+import {
+  approachNearMagnification,
+  nearMagnificationFrozen,
+  satelliteNearMagnification,
+  satelliteProximityFade01,
+  satelliteScreenClampFactor,
+} from '@/utils/satellites';
 import {
   nadirAttitudeQuaternion,
   panelSunTrackAngleAboutZRad,
@@ -110,6 +116,13 @@ export function SatelliteModel({
   const prevLocalPos = useRef<THREE.Vector3 | null>(null);
   const lastDim = useRef(-1);
   const fadeApplied = useRef(false);
+  // R2-2 §2.2-B：平滑放大倍数（冻结/恢复双向限速逼近，无尺寸跳变）
+  const magRef = useRef(1);
+  // 视角锚点过渡计时（挂载时取当前 id、计时视为已过窗口，仅响应后续变化）
+  const transitionRef = useRef({
+    id: useSimulationStore.getState().viewTransitionId,
+    elapsed: Number.POSITIVE_INFINITY,
+  });
 
   // 惯性固定姿态（哈勃）：固定指向（一次性设定）
   useEffect(() => {
@@ -118,7 +131,7 @@ export function SatelliteModel({
     }
   }, [data.id]);
 
-  useFrame(() => {
+  useFrame((_, delta) => {
     const container = containerRef.current;
     if (!container) return;
     const orbitGroup = container.parent;
@@ -127,21 +140,46 @@ export function SatelliteModel({
     // 近观放大（登记的视觉夸大）：按相机-卫星距离平滑插值
     container.getWorldPosition(worldPos);
     const dist = camera.position.distanceTo(worldPos);
-    const mag = satelliteNearMagnification(dist);
+
+    // R2-2 §2.2-B：飞往运镜/视角锚点过渡 2 秒窗口内冻结近观放大为 1×，
+    // 到达跟随后 ≤1 秒限速平滑恢复（approachNearMagnification）
+    const state = useSimulationStore.getState();
+    if (state.viewTransitionId !== transitionRef.current.id) {
+      transitionRef.current.id = state.viewTransitionId;
+      transitionRef.current.elapsed = 0;
+    } else if (Number.isFinite(transitionRef.current.elapsed)) {
+      transitionRef.current.elapsed += delta;
+    }
+    const frozen = nearMagnificationFrozen(
+      state.flyToBodyId !== null,
+      transitionRef.current.elapsed,
+    );
+    const magTarget = frozen ? 1 : satelliteNearMagnification(dist);
+    magRef.current = approachNearMagnification(magRef.current, magTarget, delta);
+    const mag = magRef.current;
+
+    // R2-2 §2.2-A：角尺寸钳制——投影屏占比超屏幕高度约 10% 时按比例缩小
+    // （模型归一化全展跨度 = scale × 2.4，与远观盒体一致）
+    const fovRad = THREE.MathUtils.degToRad(
+      (camera as THREE.PerspectiveCamera).fov ?? 50,
+    );
+    const clamp = satelliteScreenClampFactor(dist, bodyRadius * mag * 2.4, fovRad);
     const fade = Math.min(1, Math.max(0, fadeRef.current));
-    const scale = bodyRadius * mag * (0.9 + 0.1 * fade);
+    const scale = bodyRadius * mag * clamp * (0.9 + 0.1 * fade);
     container.scale.setScalar(scale);
 
-    // 淡入（LOD 切换无突变）：与远观盒体交叉淡化
-    if (fade < 1 || fadeApplied.current) {
-      fadeApplied.current = fade < 1;
+    // 淡入（LOD 切换无突变）：与远观盒体交叉淡化；
+    // R2-2 §2.2-A：相机极近（穿模路径）时叠加平滑淡出（opacity → 0）
+    const opacity = fade * satelliteProximityFade01(dist);
+    if (opacity < 1 || fadeApplied.current) {
+      fadeApplied.current = opacity < 1;
       model.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (!mesh.isMesh) return;
         const material = mesh.material as THREE.Material;
         if (!material) return;
-        material.transparent = fade < 1;
-        material.opacity = fade;
+        material.transparent = opacity < 1;
+        material.opacity = opacity;
       });
     }
 
