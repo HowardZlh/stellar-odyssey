@@ -41,7 +41,11 @@ import {
   eclipticToScene,
   lyToSceneUnits,
 } from '@/utils/scale';
-import { HELIOPAUSE_VISUAL_RADIUS_UNITS } from '@/utils/heliopause';
+import {
+  HELIOPAUSE_VISUAL_RADIUS_UNITS,
+  VOYAGER_MARKERS,
+  voyagerMarkerPositionUnits,
+} from '@/utils/heliopause';
 import { OORT_VISUAL_RADIUS_UNITS } from '@/utils/oort';
 import { satelliteBodyDisplayRadius, satelliteOrbitDisplayRadius } from '@/utils/satellites';
 import { renderedSatellitePhaseRad } from '@/utils/satellitePhase';
@@ -81,6 +85,19 @@ const SOLAR_SHELL_RADII_UNITS: Readonly<Record<string, number>> = {
   heliopause: HELIOPAUSE_VISUAL_RADIUS_UNITS,
   'oort-cloud': OORT_VISUAL_RADIUS_UNITS,
 };
+
+/**
+ * 特殊天体观察距离下限（场景单位）：银心天体（人马座 A*）/太阳邻域天体。
+ * R2-7 起导出供 utils/nearView 近观激活距离同源换算（禁止两套参数）。
+ */
+export const SPECIAL_VIEW_DISTANCE_FLOOR_GALACTIC_CENTER = 40;
+export const SPECIAL_VIEW_DISTANCE_FLOOR_SUN_RELATIVE = 30;
+
+/**
+ * 旅行者标记观察距离（场景单位，R2-7 §7.1-A）：标记点位于日球层顶
+ * 示意球壳上（半径 ~380 单位），取近观距离使标记辉光与壳层上下文同框。
+ */
+export const VOYAGER_VIEW_DISTANCE_UNITS = 40;
 
 /**
  * 太阳系外围球壳结构的飞往/跟随目标解析（R2-1 §1.1-B）
@@ -242,7 +259,10 @@ function specialBodyFocusTarget(body: SpecialBodyData, simDays: number): FocusTa
   if (body.positionMode === 'galactic-center') {
     return {
       position: galacticPointToSceneUnits({ x: 0, y: 0, z: 0 }, simDays),
-      viewDistanceUnits: Math.max(viewDistanceForRadius(sizeUnits), 40),
+      viewDistanceUnits: Math.max(
+        viewDistanceForRadius(sizeUnits),
+        SPECIAL_VIEW_DISTANCE_FLOOR_GALACTIC_CENTER,
+      ),
     };
   }
   // sun-relative：随太阳共转（跟随模式下世界坐标 = tiltX·(offset·unitsPerLy)，
@@ -257,7 +277,10 @@ function specialBodyFocusTarget(body: SpecialBodyData, simDays: number): FocusTa
       { x: sun.x + offset.x, y: sun.y * gain + offset.y, z: sun.z + offset.z },
       simDays,
     ),
-    viewDistanceUnits: Math.max(viewDistanceForRadius(sizeUnits), 30),
+    viewDistanceUnits: Math.max(
+      viewDistanceForRadius(sizeUnits),
+      SPECIAL_VIEW_DISTANCE_FLOOR_SUN_RELATIVE,
+    ),
   };
 }
 
@@ -384,6 +407,14 @@ export function resolveFocusTarget(
   const shell = shellFocusTarget(bodyId);
   if (shell) {
     return shell;
+  }
+
+  // 旅行者 1/2 号标记点（R2-7 §7.1-A：日球层顶壳上的位置标记，可点选/飞往）
+  if (VOYAGER_MARKERS.some((m) => m.id === bodyId)) {
+    return {
+      position: voyagerMarkerPositionUnits(bodyId),
+      viewDistanceUnits: VOYAGER_VIEW_DISTANCE_UNITS,
+    };
   }
 
   return null;

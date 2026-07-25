@@ -18,7 +18,12 @@ import {
   SOLAR_WIND_NOTE_ZH,
 } from '@/data/sunStructure';
 import { OORT_INNER_AU, OORT_OUTER_AU } from '@/utils/oort';
-import { HELIOPAUSE_REAL_DISTANCE_AU } from '@/utils/heliopause';
+import {
+  HELIOPAUSE_REAL_DISTANCE_AU,
+  HELIOPAUSE_SHAPE_NOTE_ZH,
+  TERMINATION_SHOCK_REAL_DISTANCE_AU,
+  VOYAGER_MARKERS,
+} from '@/utils/heliopause';
 import { SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
 
 /** 信息面板中的一行（标签 + 值） */
@@ -294,7 +299,8 @@ function buildCatalog(): Map<string, BodyInfo> {
     dataSource: 'NASA Solar System Exploration – Oort Cloud',
   });
 
-  // 日球层顶（S3 §4.3-4：太阳风与星际介质边界，Voyager 实测约 120 AU）
+  // 日球层顶（S3 §4.3-4：太阳风与星际介质边界，Voyager 实测约 120 AU；
+  // R2-7 §7.1-A：近观三层结构 + 形态不对称登记）
   catalog.set('heliopause', {
     id: 'heliopause',
     name: 'Heliopause (schematic)',
@@ -303,11 +309,37 @@ function buildCatalog(): Map<string, BodyInfo> {
     lines: [
       { label: '距离', value: `约 ${HELIOPAUSE_REAL_DISTANCE_AU} AU` },
       { label: '定义', value: '太阳风与星际介质压力平衡的边界（日球层 Heliosphere 外缘）' },
+      {
+        label: '结构分层',
+        value: `终端激波（~${TERMINATION_SHOCK_REAL_DISTANCE_AU} AU，太阳风减速至亚声速）→ 日鞘（湍流渐变区）→ 日球层顶（~${HELIOPAUSE_REAL_DISTANCE_AU} AU 外边界）`,
+      },
+      { label: '形态', value: HELIOPAUSE_SHAPE_NOTE_ZH },
       { label: '探测', value: '旅行者 1 号（2012）、旅行者 2 号（2018）先后穿越，实测约 119–121 AU' },
       { label: '示意说明', value: '球壳半径为压缩示意值（真实 ~120 AU 远超行星区尺度，已登记）' },
     ],
     dataSource: 'NASA/JPL Voyager Interstellar Mission',
   });
+
+  // 旅行者 1/2 号标记点科普卡片（R2-7 §7.1-A，catalog 条目扩展）
+  for (const v of VOYAGER_MARKERS) {
+    catalog.set(v.id, {
+      id: v.id,
+      name: v.name,
+      nameZh: v.nameZh,
+      typeZh: '星际探测器（日球层顶穿越标记）',
+      lines: [
+        { label: '发射', value: v.launchDateZh },
+        {
+          label: '穿越日球层顶',
+          value: `${v.crossedYear} 年（距太阳约 ${v.crossedDistanceAu} AU）`,
+        },
+        { label: '备注', value: v.noteZh },
+        { label: '携带', value: '金唱片（地球之音，Golden Record）' },
+        { label: '示意说明', value: '标记位置按穿越距离与黄纬示意换算（方向经度为示意，已登记）' },
+      ],
+      dataSource: 'NASA/JPL Voyager Interstellar Mission',
+    });
+  }
 
   // 本星系群及邻近星系
   for (const g of LOCAL_GROUP_GALAXIES) {
