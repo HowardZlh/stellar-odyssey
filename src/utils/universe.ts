@@ -19,6 +19,28 @@ import { easeInOutCubic } from '@/utils/animation';
 import { DAYS_PER_MYR, KM_S_TO_LY_PER_MYR, simDaysToMyr } from '@/utils/galaxy';
 import { createSeededRandom } from '@/utils/random';
 
+/** 银河系可视半径（场景单位）：银盘半径 5 万光年 × 0.05 场景单位/光年 */
+export const MW_VISUAL_RADIUS_UNITS = 2500;
+
+/**
+ * 星系贴图平面透视夸大抑制系数（渲染登记：压缩距离下的透视夸大抑制，
+ * 与 Universe.tsx / cameraFocus.ts 历史魔法数字 0.55 同源收敛，R2-8）
+ */
+export const GALAXY_PLANE_SHRINK_FACTOR = 0.55;
+
+/**
+ * 河外星系贴图平面边长（场景单位，R2-8 同源公式收敛）：
+ * 直径相对银河系（10 万光年）换算 × 银河系可视直径 × 抑制系数。
+ * Universe.tsx（渲染）/ cameraFocus.ts（飞往观察距离）/ galaxyNearView.ts
+ * （近观激活距离与粒子层尺度）三处同源，禁止两套参数。
+ */
+export function galaxyPlaneSizeUnits(diameterLy: number): number {
+  if (!Number.isFinite(diameterLy) || diameterLy <= 0) {
+    throw new RangeError(`星系直径必须为正有限数，收到 ${diameterLy}`);
+  }
+  return (diameterLy / 100000) * MW_VISUAL_RADIUS_UNITS * 2 * GALAXY_PLANE_SHRINK_FACTOR;
+}
+
 /** MW–M31 当前距离（光年）：约 250 万光年 */
 export const MW_M31_INITIAL_SEPARATION_LY = 2.5e6;
 
