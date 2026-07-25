@@ -3,6 +3,7 @@
 import { VIEW_LEVELS } from '@/types';
 import { CAMERA_VIEWS } from '@/data/cameraViews';
 import { useSimulationStore } from '@/store';
+import { eventDemoDisabledHintZh, eventDemoEnabled } from '@/utils/eventScopes';
 import { SN_DEFAULT_DURATION_SEC } from '@/utils/supernova';
 import { rollSupernovaParams } from '@/components/Scene/Supernova';
 import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunActivity';
@@ -52,6 +53,17 @@ export function ControlPanel(): JSX.Element {
   const triggerCme = useSimulationStore((s) => s.triggerCme);
   const sunCutawayMode = useSimulationStore((s) => s.sunCutawayMode);
   const setSunCutawayMode = useSimulationStore((s) => s.setSunCutawayMode);
+  // R2-4 §4.1-C：演示按钮按视角域门控（选布尔值，仅域边界跨越时重渲染；
+  // 耀斑/CME 同属太阳系域窗口共用一个判定；方案取"置灰 + tooltip 提示"）
+  const solarDemoInScope = useSimulationStore((s) =>
+    eventDemoEnabled('flare', s.continuousLevel),
+  );
+  const supernovaDemoInScope = useSimulationStore((s) =>
+    eventDemoEnabled('supernova', s.continuousLevel),
+  );
+  const mergerDemoInScope = useSimulationStore((s) =>
+    eventDemoEnabled('merger', s.continuousLevel),
+  );
 
   const handleSupernovaDemo = (): void => {
     const params = rollSupernovaParams();
@@ -234,25 +246,32 @@ export function ControlPanel(): JSX.Element {
       {/* 特殊天体演示（需求 3.1.5：支持用户在设置中手动触发超新星） */}
       <section className="mt-4">
         <h2 className="mb-2 text-xs text-gray-400">动态事件演示</h2>
+        {/* R2-4 §4.1-C：视角域外置灰禁用 + tooltip"请切换到 XX 视角触发" */}
         <button
           type="button"
           onClick={handleSupernovaDemo}
-          disabled={activeSupernova !== null}
+          disabled={activeSupernova !== null || !supernovaDemoInScope}
+          title={supernovaDemoInScope ? undefined : eventDemoDisabledHintZh('supernova')}
           className={`w-full rounded px-2 py-1.5 text-xs ${
-            activeSupernova
+            activeSupernova || !supernovaDemoInScope
               ? 'cursor-not-allowed bg-white/5 text-gray-500'
               : 'bg-amber-400/20 text-amber-200 hover:bg-amber-400/30'
           }`}
         >
-          {activeSupernova ? '💥 超新星爆发进行中…' : '💥 触发超新星演示（旋臂内随机）'}
+          {activeSupernova
+            ? '💥 超新星爆发进行中…'
+            : supernovaDemoInScope
+              ? '💥 触发超新星演示（旋臂内随机）'
+              : `💥 超新星演示（${eventDemoDisabledHintZh('supernova')}）`}
         </button>
         {/* 太阳耀斑/CME 手动演示（S2 §4.3-2/3 触发方式） */}
         <button
           type="button"
           onClick={handleFlareDemo}
-          disabled={activeSolarFlare !== null || sunCutawayMode}
+          disabled={activeSolarFlare !== null || sunCutawayMode || !solarDemoInScope}
+          title={solarDemoInScope ? undefined : eventDemoDisabledHintZh('flare')}
           className={`mt-2 w-full rounded px-2 py-1.5 text-xs ${
-            activeSolarFlare || sunCutawayMode
+            activeSolarFlare || sunCutawayMode || !solarDemoInScope
               ? 'cursor-not-allowed bg-white/5 text-gray-500'
               : 'bg-orange-400/20 text-orange-200 hover:bg-orange-400/30'
           }`}
@@ -261,14 +280,17 @@ export function ControlPanel(): JSX.Element {
             ? `☀️ 耀斑进行中（${activeSolarFlare.flareClass}${activeSolarFlare.magnitude.toFixed(1)} 级）…`
             : sunCutawayMode
               ? '☀️ 触发太阳耀斑演示（剖面模式下不可用）'
-              : '☀️ 触发太阳耀斑演示（活动区随机）'}
+              : solarDemoInScope
+                ? '☀️ 触发太阳耀斑演示（活动区随机）'
+                : `☀️ 耀斑演示（${eventDemoDisabledHintZh('flare')}）`}
         </button>
         <button
           type="button"
           onClick={handleCmeDemo}
-          disabled={activeCme !== null || sunCutawayMode}
+          disabled={activeCme !== null || sunCutawayMode || !solarDemoInScope}
+          title={solarDemoInScope ? undefined : eventDemoDisabledHintZh('cme')}
           className={`mt-2 w-full rounded px-2 py-1.5 text-xs ${
-            activeCme || sunCutawayMode
+            activeCme || sunCutawayMode || !solarDemoInScope
               ? 'cursor-not-allowed bg-white/5 text-gray-500'
               : 'bg-rose-400/20 text-rose-200 hover:bg-rose-400/30'
           }`}
@@ -277,20 +299,29 @@ export function ControlPanel(): JSX.Element {
             ? `🌊 CME 进行中（${Math.round(activeCme.speedKmS)} km/s）…`
             : sunCutawayMode
               ? '🌊 触发 CME 演示（剖面模式下不可用）'
-              : '🌊 触发日冕物质抛射（CME）演示'}
+              : solarDemoInScope
+                ? '🌊 触发日冕物质抛射（CME）演示'
+                : `🌊 CME 演示（${eventDemoDisabledHintZh('cme')}）`}
         </button>
-        {/* 银河系—仙女座碰撞合并快进预览（可选需求 3.1.3） */}
+        {/* 银河系—仙女座碰撞合并快进预览（可选需求 3.1.3；
+            R2-4 §4.1-C：按默认方案改为域外置灰——此前点击会由
+            startMergePreview 自动切到 L4，行为变更已登记需求文档 */}
         <button
           type="button"
           onClick={startMergePreview}
-          disabled={mergePreviewActive}
+          disabled={mergePreviewActive || !mergerDemoInScope}
+          title={mergerDemoInScope ? undefined : eventDemoDisabledHintZh('merger')}
           className={`mt-2 w-full rounded px-2 py-1.5 text-xs ${
-            mergePreviewActive
+            mergePreviewActive || !mergerDemoInScope
               ? 'cursor-not-allowed bg-white/5 text-gray-500'
               : 'bg-sky-400/20 text-sky-200 hover:bg-sky-400/30'
           }`}
         >
-          {mergePreviewActive ? '⏩ 合并预览进行中…' : '⏩ 预览银河系—仙女座碰撞合并'}
+          {mergePreviewActive
+            ? '⏩ 合并预览进行中…'
+            : mergerDemoInScope
+              ? '⏩ 预览银河系—仙女座碰撞合并'
+              : `⏩ 合并预览（${eventDemoDisabledHintZh('merger')}）`}
         </button>
         {mergePreviewReturnSimDays !== null && !mergePreviewActive && (
           <button

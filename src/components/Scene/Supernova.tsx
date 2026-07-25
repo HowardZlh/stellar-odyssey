@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { SupernovaEvent } from "@/types";
 import { useSimulationStore } from "@/store";
+import { eventAutoTriggerAllowed } from "@/utils/eventScopes";
 import { SCENE_UNITS_PER_LY, trapezoidWeight } from "@/utils/scale";
 import {
   GALACTIC_BULGE_RADIUS_LY,
@@ -328,6 +329,10 @@ export function Supernova(): JSX.Element {
     lastSimDaysRef.current = store.simDays;
     if (last === null || store.simDays <= last) return;
     if (store.activeSupernova) return;
+    // R2-4 §4.1-D：超新星自动触发显式限定银河系/宇宙视角域（≥2.5）。
+    // 此前 L1/L2 不触发只是低时间压缩比下 deltaMyr≈0 的概率副作用，
+    // 这里补显式判定；活跃事件的衰减/遗迹归档不受视角门控影响。
+    if (!eventAutoTriggerAllowed('supernova', store.continuousLevel)) return;
     const deltaMyr = simDaysToMyr(store.simDays - last);
     if (shouldAutoTriggerSupernova(Math.random(), deltaMyr)) {
       const params = rollSupernovaParams();

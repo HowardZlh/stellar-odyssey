@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { useSimulationStore } from '@/store';
 import type { Vec3 } from '@/types';
 import { getPlanetById } from '@/data/planets';
+import { eventAutoTriggerAllowed } from '@/utils/eventScopes';
 import { heliocentricPosition } from '@/utils/physics';
 import { createSeededRandom } from '@/utils/random';
 import { eclipticToScene, trapezoidWeight } from '@/utils/scale';
@@ -544,6 +545,11 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
     // 时间跳变（回退/超大步进）只重置基准，不触发/不残留（需求 §8）
     const delta = last === null ? 0 : simDays - last;
     const timeJumped = delta < 0 || delta > 50;
+    // R2-4 §4.1-D：耀斑/CME 泊松自动触发显式限定太阳系视角域（≤2.4）。
+    // 此前 L3/L4 停摆仅是高时间压缩比下 delta>50 天恒触发 timeJumped 守卫
+    // 的副作用，非显式设计；timeJumped 本身的时间跳变防护语义保留。
+    // 域外仅抑制新触发，活跃事件的衰减/收尾照常推进（§4.2 验收 3）。
+    const solarAutoTriggerInScope = eventAutoTriggerAllowed('flare', continuousLevel);
 
     if (activeSolarFlare) {
       const progress = flareProgress01(
@@ -569,7 +575,7 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
           earthDirected: cmeIsEarthDirected(dir, earthDirectionAt(simDays)),
         });
       }
-    } else if (!sunCutawayMode && !timeJumped) {
+    } else if (!sunCutawayMode && !timeJumped && solarAutoTriggerInScope) {
       // S3 周期联动（§4.4）：耀斑泊松均值按活动周期频率因子缩放
       // （极大期更频繁、极小期更稀疏）
       const freqFactor = cycleFrequencyFactor(cycleSunspotEnvelope(solarCyclePhase01(simDays)));
@@ -592,7 +598,7 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
       if (elapsed < 0 || shellRadius >= CME_MAX_RADIUS_UNITS) {
         state.completeCme();
       }
-    } else if (!sunCutawayMode && !timeJumped) {
+    } else if (!sunCutawayMode && !timeJumped && solarAutoTriggerInScope) {
       // 独立低概率 CME（无耀斑前导，§4.3-3 触发方式）；
       // S3 周期联动：均值同样按频率因子缩放
       const freqFactor = cycleFrequencyFactor(cycleSunspotEnvelope(solarCyclePhase01(simDays)));
