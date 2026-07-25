@@ -52,7 +52,11 @@ import { renderedSatellitePhaseRad } from '@/utils/satellitePhase';
 import { dwarfDisplayRadius, isDwarfPlanetClassification } from '@/utils/dwarfPlanets';
 import { renderedGalacticFrame } from '@/utils/galacticFrame';
 import { ECLIPTIC_GALACTIC_TILT_DEG, sunGalacticPositionLy } from '@/utils/galaxy';
-import { mwM31SeparationLy, satelliteGalaxyPositionLy } from '@/utils/universe';
+import {
+  galaxyPlaneSizeUnits,
+  mwM31SeparationLy,
+  satelliteGalaxyPositionLy,
+} from '@/utils/universe';
 
 /** 飞往/跟随目标：场景坐标 + 建议观察距离 */
 export interface FocusTarget {
@@ -393,8 +397,8 @@ export function resolveFocusTarget(
   const galaxyPosition = galaxyScenePosition(bodyId, simDays);
   if (galaxyPosition) {
     const galaxy = LOCAL_GROUP_GALAXIES.find((g) => g.id === bodyId)!;
-    // 视觉尺寸与 Universe.tsx 一致：直径相对银河系 ×2500×2×0.55
-    const sizeUnits = (galaxy.diameterLy / 100000) * 2500 * 2 * 0.55;
+    // 视觉尺寸与 Universe.tsx 渲染同源（utils/universe.galaxyPlaneSizeUnits，R2-8 收敛）
+    const sizeUnits = galaxyPlaneSizeUnits(galaxy.diameterLy);
     return { position: galaxyPosition, viewDistanceUnits: viewDistanceForRadius(sizeUnits / 2) };
   }
 

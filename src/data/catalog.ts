@@ -25,6 +25,10 @@ import {
   VOYAGER_MARKERS,
 } from '@/utils/heliopause';
 import { SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
+import {
+  GALAXY_STRUCTURE_NOTE_BY_MORPHOLOGY_ZH,
+  GALAXY_STRUCTURE_SOURCE_ZH,
+} from '@/utils/galaxyNearView';
 
 /** 信息面板中的一行（标签 + 值） */
 export interface BodyInfoLine {
@@ -168,12 +172,13 @@ function formatRadialVelocity(v: number): string {
   return v < 0 ? `接近 ${Math.abs(v)} km/s` : `退行 ${v} km/s`;
 }
 
-/** 星系信息行 */
+/** 星系信息行（R2-8 §8.1：补结构说明行——核球/盘/晕，随时可见含跟随近观语境） */
 function galaxyLines(g: GalaxyData): BodyInfoLine[] {
   return [
     { label: '距离', value: formatLightYears(g.distanceLy) },
     { label: '直径', value: formatLightYears(g.diameterLy) },
     { label: '视向速度', value: formatRadialVelocity(g.radialVelocityKmS) },
+    { label: '结构', value: GALAXY_STRUCTURE_NOTE_BY_MORPHOLOGY_ZH[g.morphology] },
     { label: '描述', value: g.descriptionZh },
   ];
 }
@@ -341,7 +346,7 @@ function buildCatalog(): Map<string, BodyInfo> {
     });
   }
 
-  // 本星系群及邻近星系
+  // 本星系群及邻近星系（R2-8：结构行数据来源随 dataSource 标注）
   for (const g of LOCAL_GROUP_GALAXIES) {
     catalog.set(g.id, {
       id: g.id,
@@ -349,7 +354,7 @@ function buildCatalog(): Map<string, BodyInfo> {
       nameZh: g.nameZh,
       typeZh: MORPHOLOGY_ZH[g.morphology],
       lines: galaxyLines(g),
-      dataSource: g.dataSource,
+      dataSource: `${g.dataSource}；${GALAXY_STRUCTURE_SOURCE_ZH}`,
     });
   }
 
@@ -380,9 +385,13 @@ function buildCatalog(): Map<string, BodyInfo> {
       { label: '直径', value: formatLightYears(MILKY_WAY.diameterLy) },
       { label: '盘厚度', value: formatLightYears(MILKY_WAY.diskThicknessLy) },
       { label: '主旋臂', value: MILKY_WAY.armNames.join('、') },
+      {
+        label: '结构',
+        value: GALAXY_STRUCTURE_NOTE_BY_MORPHOLOGY_ZH[MILKY_WAY.morphology],
+      },
       { label: '银心', value: MILKY_WAY.sagittariusAStarZh },
     ],
-    dataSource: MILKY_WAY.dataSource,
+    dataSource: `${MILKY_WAY.dataSource}；${GALAXY_STRUCTURE_SOURCE_ZH}`,
   });
 
   return catalog;

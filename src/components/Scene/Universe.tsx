@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -20,6 +20,7 @@ import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import { getSoftPointTexture } from '@/components/CelestialBody/sharedTextures';
 import {
   OBSERVABLE_UNIVERSE_RADIUS_LY,
+  galaxyPlaneSizeUnits,
   generateCosmicWeb,
   hubbleScaleFactor,
   magellanicStreamPointsLy,
@@ -28,6 +29,15 @@ import {
   mwM31SeparationLy,
   satelliteGalaxyPositionLy,
 } from '@/utils/universe';
+import {
+  claimGalaxyNearView,
+  galaxyNearViewEnterDistanceUnits,
+  galaxyNearViewHolderIds,
+  resetGalaxyNearViewHolders,
+} from '@/utils/galaxyNearView';
+import { NEAR_VIEW_TRANSITION_SECONDS, nearViewGateUpdate } from '@/utils/nearView';
+import { advanceFrameTransition } from '@/utils/galacticFrame';
+import { GalaxyNearViewLayer } from '@/components/Scene/GalaxyNearView';
 import {
   createGalaxySpriteCanvas,
   createGlowSpriteCanvas,
@@ -42,22 +52,14 @@ import {
 
 /** 宇宙级内容 LOD 渐变区间（连续层级） */
 const FADE = { start: 3.05, full: 3.6 } as const;
-/** 银河系可视半径（场景单位，与 Galaxy 组件一致：5 万光年 × 0.05） */
-const MW_VISUAL_RADIUS_UNITS = 2500;
 
 function fadeWeight(continuousLevel: number): number {
   // 连续层级上限为 4，平台区延伸至 4 以上保证 L4 锚点处不淡出
   return trapezoidWeight(continuousLevel, FADE.start, FADE.full, 4.5, 5);
 }
 
-/** 由星系 id 派生确定性伪随机盘面朝向 */
-function orientationFromId(id: string): [number, number, number] {
-  let h = 0;
-  for (let i = 0; i < id.length; i += 1) {
-    h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  }
-  return [((h % 100) / 100) * Math.PI * 0.5, ((h % 37) / 37) * Math.PI, 0];
-}
+/** 渲染循环共用临时向量（零分配纪律） */
+const GALAXY_TMP_VEC = new THREE.Vector3();
 
 interface GalaxyObjectProps {
   galaxy: GalaxyData;
@@ -66,6 +68,13 @@ interface GalaxyObjectProps {
 /**
  * 单个河外星系：形态差异化贴图（旋涡/棒旋/椭圆/不规则，需求 3.1.3），
  * 位置每帧计算（M31 沿连线接近银河系；大小麦哲伦云绕银河系运动）。
+ *
+ * R2-8 近观升级：
+ * - 贴图平面改 billboard 面向相机（薄片修复方案登记于 utils/galaxyNearView
+ *   文件头：M31 真实倾角 77° 观测特征改由近观粒子层承载，艺术化差异已登记）；
+ * - 飞往/跟随本星系且相机进入近观激活距离时，贴图平面交叉淡出到 3D 粒子
+ *   近观层（GalaxyNearViewLayer），释放时淡入恢复；LRU 容量 1——最新激活
+ *   星系挤出上一个持有者（挤出即卸载 dispose），远观非跟随保持贴图现状。
  */
 function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
@@ -74,6 +83,27 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
   const showLabels = useSimulationStore((s) => s.showLabels);
   // Html 标签不随父级 visible 隐藏，需单独按层级门控
   const inRange = useSimulationStore((s) => s.continuousLevel > FADE.start);
+  // R2-8：跟随/飞往本星系期间隐藏其标签（R2-7 近观标签治理同款——近距下
+  // distanceFactor 缩放呈大字号遮挡近观结构；信息面板已示名称）
+  const focusedNow = useSimulationStore(
+    (s) => s.followBodyId === galaxy.id || s.flyToBodyId === galaxy.id,
+  );
+
+  // ---- R2-8 近观门控状态（滞回 + 0.5s 淡入淡出 + LRU 保留） ----
+  const [nearMounted, setNearMounted] = useState(false);
+  const nearMountedRef = useRef(false);
+  const nearActiveRef = useRef(false);
+  const near01Ref = useRef(0);
+  const weightRef = useRef(0);
+  const nearEnterDistance = useMemo(
+    () => galaxyNearViewEnterDistanceUnits(galaxy.id),
+    [galaxy.id],
+  );
+  /** 近观层不透明度 = 宇宙层级淡入权重 × 近观激活权重 */
+  const getNearOpacity = useCallback(
+    () => weightRef.current * near01Ref.current,
+    [],
+  );
 
   const texture = useMemo(() => {
     // M31/M33 专属形态（P6 §3.4，与通用旋涡星系区分）
@@ -97,15 +127,16 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
     };
   }, [texture]);
 
-  // 视觉尺寸：直径相对银河系换算（登记：×0.55 抑制压缩距离下的透视夸大）
-  const sizeUnits = (galaxy.diameterLy / 100000) * MW_VISUAL_RADIUS_UNITS * 2 * 0.55;
-  const orientation = useMemo(() => orientationFromId(galaxy.id), [galaxy.id]);
+  // 视觉尺寸：直径相对银河系换算（同源公式 utils/universe.galaxyPlaneSizeUnits，
+  // 登记：×0.55 抑制压缩距离下的透视夸大）
+  const sizeUnits = galaxyPlaneSizeUnits(galaxy.diameterLy);
 
-  useFrame(() => {
+  useFrame(({ camera }, delta) => {
     const state = useSimulationStore.getState();
     const group = groupRef.current;
     if (!group) return;
     const weight = fadeWeight(state.continuousLevel);
+    weightRef.current = weight;
     group.visible = weight > 0.001;
     // Raycaster 不检查 visible：淡出后禁用 raycast，避免 L2/L3 下隐形星系拦截点击
     setObjectTreeRaycastEnabled(group, weight > 0.05);
@@ -147,8 +178,41 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
     }
     // 其余星系静态（初始 position）
 
+    // ---- R2-8 近观门控（滞回状态机 utils/nearView.nearViewGateUpdate）----
+    const focused =
+      state.followBodyId === galaxy.id || state.flyToBodyId === galaxy.id;
+    const distance = camera.position.distanceTo(group.getWorldPosition(GALAXY_TMP_VEC));
+    const gate = nearViewGateUpdate(
+      nearActiveRef.current,
+      focused,
+      distance,
+      nearEnterDistance,
+    );
+    nearActiveRef.current = gate.active;
+    // 激活时声明 LRU 持有权（已是最新持有者时跳过，渲染循环零分配）
+    if (gate.active && galaxyNearViewHolderIds()[0] !== galaxy.id) {
+      claimGalaxyNearView(galaxy.id);
+    }
+    near01Ref.current = advanceFrameTransition(
+      near01Ref.current,
+      gate.active ? 1 : 0,
+      delta,
+      NEAR_VIEW_TRANSITION_SECONDS,
+    );
+    // LRU 语义：释放跟随后近观层保留（淡出但不卸载，快速切回免重建）；
+    // 被其他星系挤出持有权时立即卸载（几何/材质随卸载 dispose）
+    const shouldMount = galaxyNearViewHolderIds().includes(galaxy.id);
+    if (shouldMount !== nearMountedRef.current) {
+      nearMountedRef.current = shouldMount;
+      setNearMounted(shouldMount);
+    }
+
     if (meshRef.current) {
-      (meshRef.current.material as THREE.MeshBasicMaterial).opacity = weight;
+      // billboard 面向相机（薄片修复，登记见组件头注释）；
+      // 近观层激活时贴图交叉淡出（释放时随 near01 回落自动淡入）
+      meshRef.current.quaternion.copy(camera.quaternion);
+      (meshRef.current.material as THREE.MeshBasicMaterial).opacity =
+        weight * (1 - near01Ref.current);
     }
   });
 
@@ -166,7 +230,6 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
     >
       <mesh
         ref={meshRef}
-        rotation={orientation}
         onClick={(e) => {
           e.stopPropagation();
           selectBody(galaxy.id);
@@ -181,7 +244,11 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
           blending={THREE.AdditiveBlending}
         />
       </mesh>
-      {showLabels && inRange && (
+      {/* R2-8 近观 3D 粒子层（LRU 容量 1；卸载即 dispose） */}
+      {nearMounted && (
+        <GalaxyNearViewLayer galaxy={galaxy} getOpacity={getNearOpacity} />
+      )}
+      {showLabels && inRange && !focusedNow && (
         <Html
           position={[0, sizeUnits * 0.55, 0]}
           center
@@ -362,6 +429,9 @@ export function Universe(): JSX.Element {
       mergeGlowTexture.dispose();
     };
   }, [webGeometry, webMaterial, approachGeometry, approachMaterial, boundaryGeometry, boundaryMaterial, observableGeometry, observableMaterial, streamGeometry, streamMaterial, mergeGlowTexture]);
+
+  // R2-8：场景卸载时重置星系近观层 LRU 持有者注册表（防跨挂载残留）
+  useEffect(() => () => resetGalaxyNearViewHolders(), []);
 
   useFrame(() => {
     const state = useSimulationStore.getState();
