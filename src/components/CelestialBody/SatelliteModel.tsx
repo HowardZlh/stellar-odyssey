@@ -123,6 +123,12 @@ export function SatelliteModel({
     id: useSimulationStore.getState().viewTransitionId,
     elapsed: Number.POSITIVE_INFINITY,
   });
+  // 飞往运镜计时（挂载常发生在运镜途中——运镜路径贴近卫星触发门控，
+  // 故挂载即从 0 计时按冻结处理；稳态挂载多等一个窗口后平滑恢复，无跳变）
+  const flyRef = useRef({
+    id: useSimulationStore.getState().flyToRequestId,
+    elapsed: 0,
+  });
 
   // 惯性固定姿态（哈勃）：固定指向（一次性设定）
   useEffect(() => {
@@ -141,8 +147,9 @@ export function SatelliteModel({
     container.getWorldPosition(worldPos);
     const dist = camera.position.distanceTo(worldPos);
 
-    // R2-2 §2.2-B：飞往运镜/视角锚点过渡 2 秒窗口内冻结近观放大为 1×，
-    // 到达跟随后 ≤1 秒限速平滑恢复（approachNearMagnification）
+    // R2-2 §2.2-B：飞往运镜（2.5 秒窗口）/视角锚点过渡（2 秒窗口）内
+    // 冻结近观放大为 1×，到达跟随后 ≤1 秒限速平滑恢复
+    // （approachNearMagnification；flyToBodyId 飞抵后保留故以请求计时判定）
     const state = useSimulationStore.getState();
     if (state.viewTransitionId !== transitionRef.current.id) {
       transitionRef.current.id = state.viewTransitionId;
@@ -150,8 +157,14 @@ export function SatelliteModel({
     } else if (Number.isFinite(transitionRef.current.elapsed)) {
       transitionRef.current.elapsed += delta;
     }
+    if (state.flyToRequestId !== flyRef.current.id) {
+      flyRef.current.id = state.flyToRequestId;
+      flyRef.current.elapsed = 0;
+    } else {
+      flyRef.current.elapsed += delta;
+    }
     const frozen = nearMagnificationFrozen(
-      state.flyToBodyId !== null,
+      flyRef.current.elapsed,
       transitionRef.current.elapsed,
     );
     const magTarget = frozen ? 1 : satelliteNearMagnification(dist);

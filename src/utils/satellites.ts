@@ -259,19 +259,28 @@ export function satelliteProximityFade01(distanceUnits: number): number {
 
 /** 视角锚点过渡冻结窗口（秒，与 cameraViews.VIEW_TRANSITION_SECONDS 一致） */
 export const MAG_FREEZE_TRANSITION_WINDOW_SECONDS = 2;
+/**
+ * 飞往运镜冻结窗口（秒，与 CameraController.FLY_TO_SECONDS 一致）。
+ * 实现差异登记（R2-2 §2.2-B）：需求原文以"flyToBodyId 非空"判定运镜进行中，
+ * 但现有 store 语义下 flyToBodyId 在飞抵后保留（跟随期间不清空），
+ * 故改以"flyToRequestId 变更后的运镜时长窗口"等效判定。
+ */
+export const MAG_FREEZE_FLY_TO_WINDOW_SECONDS = 2.5;
 /** 冻结解除后近观放大平滑恢复时长上限（秒，R2-2 要求 ≤1 秒） */
 export const MAG_RECOVERY_SECONDS = 1;
 
 /**
- * 近观放大冻结判定（R2-2 §2.2-B）：飞往运镜进行中（flyToBodyId 非空）
- * 或视角锚点过渡 2 秒窗口内，近观放大固定 1×。
+ * 近观放大冻结判定（R2-2 §2.2-B）：飞往运镜进行中（飞往请求后 2.5 秒
+ * 运镜窗口内）或视角锚点过渡 2 秒窗口内，近观放大固定 1×。
  */
 export function nearMagnificationFrozen(
-  flyToActive: boolean,
+  secondsSinceFlyToRequest: number,
   secondsSinceViewTransition: number,
 ): boolean {
-  if (flyToActive) return true;
-  return secondsSinceViewTransition < MAG_FREEZE_TRANSITION_WINDOW_SECONDS;
+  return (
+    secondsSinceFlyToRequest < MAG_FREEZE_FLY_TO_WINDOW_SECONDS ||
+    secondsSinceViewTransition < MAG_FREEZE_TRANSITION_WINDOW_SECONDS
+  );
 }
 
 /**

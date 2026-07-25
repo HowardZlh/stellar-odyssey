@@ -3,6 +3,7 @@
  */
 
 import {
+  MAG_FREEZE_FLY_TO_WINDOW_SECONDS,
   MAG_FREEZE_TRANSITION_WINDOW_SECONDS,
   MAG_RECOVERY_SECONDS,
   SATELLITE_MAX_SCREEN_HEIGHT_FRACTION,
@@ -118,18 +119,27 @@ describe('satelliteProximityFade01（R2-2 §2.2-A 极近淡出）', () => {
 });
 
 describe('nearMagnificationFrozen（R2-2 §2.2-B 过渡冻结）', () => {
-  it('飞往运镜进行中恒冻结', () => {
-    expect(nearMagnificationFrozen(true, Number.POSITIVE_INFINITY)).toBe(true);
-    expect(nearMagnificationFrozen(true, 100)).toBe(true);
+  const PAST = Number.POSITIVE_INFINITY;
+
+  it('飞往运镜 2.5 秒窗口内冻结（flyToBodyId 飞抵后保留，故按请求计时）', () => {
+    expect(nearMagnificationFrozen(0, PAST)).toBe(true);
+    expect(nearMagnificationFrozen(MAG_FREEZE_FLY_TO_WINDOW_SECONDS - 0.01, PAST)).toBe(true);
+    expect(nearMagnificationFrozen(MAG_FREEZE_FLY_TO_WINDOW_SECONDS, PAST)).toBe(false);
   });
 
   it('视角锚点过渡 2 秒窗口内冻结，窗口外解除', () => {
-    expect(nearMagnificationFrozen(false, 0)).toBe(true);
-    expect(nearMagnificationFrozen(false, MAG_FREEZE_TRANSITION_WINDOW_SECONDS - 0.01)).toBe(
+    expect(nearMagnificationFrozen(PAST, 0)).toBe(true);
+    expect(nearMagnificationFrozen(PAST, MAG_FREEZE_TRANSITION_WINDOW_SECONDS - 0.01)).toBe(
       true,
     );
-    expect(nearMagnificationFrozen(false, MAG_FREEZE_TRANSITION_WINDOW_SECONDS)).toBe(false);
-    expect(nearMagnificationFrozen(false, Number.POSITIVE_INFINITY)).toBe(false);
+    expect(nearMagnificationFrozen(PAST, MAG_FREEZE_TRANSITION_WINDOW_SECONDS)).toBe(false);
+    expect(nearMagnificationFrozen(PAST, PAST)).toBe(false);
+  });
+
+  it('两窗口均已过才解除冻结', () => {
+    expect(nearMagnificationFrozen(1, PAST)).toBe(true);
+    expect(nearMagnificationFrozen(PAST, 1)).toBe(true);
+    expect(nearMagnificationFrozen(3, 2.5)).toBe(false);
   });
 });
 
