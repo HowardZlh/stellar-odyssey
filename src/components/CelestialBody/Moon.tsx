@@ -6,7 +6,12 @@ import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { MoonData, OrbitalElements } from '@/types';
 import { useSimulationStore } from '@/store';
-import { detailGateUpdate } from '@/utils/planetDetail';
+import { detailGateUpdateScoped } from '@/utils/planetDetail';
+import {
+  focusBodyIdForDetail,
+  planetDetailScopeAllowed,
+  satelliteDetailScopeAllowed,
+} from '@/utils/bodyCycle';
 import {
   DEG_TO_RAD,
   RAD_TO_DEG,
@@ -17,6 +22,7 @@ import {
 import {
   satelliteBodyDisplayRadius,
   satelliteOrbitDisplayRadius,
+  satelliteScreenClampFactor,
   tidalLockedRotationAngle,
 } from '@/utils/satellites';
 import { rateClampFactor, timeCompressionForContinuousLevel } from '@/utils/time';
@@ -26,6 +32,7 @@ import {
 } from '@/utils/satellitePhase';
 import { detailTextureUrl, normalMapUrl, textureUrl } from '@/data/textures';
 import { satelliteModelEntry } from '@/data/models';
+import { getMoonById } from '@/data/moons';
 import { useBitmapTexture } from '@/hooks/useBitmapTexture';
 import { createBodyTextureCanvas } from '@/components/CelestialBody/proceduralTextures';
 import { getTextureManager } from '@/components/CelestialBody/textureManager';
@@ -219,15 +226,36 @@ export function Moon({ data, parentRadiusKm }: MoonProps): JSX.Element {
       }
     }
 
-    // P7 人造卫星近观模型门控（滞回状态机，复用 P4 detailGateUpdate）
+    // R2-2 §2.2-C 目标行星系统一致判定：焦点目标（飞往/跟随/L1 锚定）
+    // 须与本卫星属同一行星系统，防运镜路径擦过其他天体时误激活近观细节
+    const focusId = focusBodyIdForDetail(
+      state.viewLevel,
+      state.flyToBodyId,
+      state.followBodyId,
+      state.anchorBodyId,
+    );
+    const focusParentId = focusId ? (getMoonById(focusId)?.parentId ?? null) : null;
+
+    // P7 人造卫星近观模型门控（滞回状态机，复用 P4 detailGateUpdate；
+    // R2-2 叠加视角域门控：仅 L1 语境且焦点属于同一行星系统时可激活）
     if (isArtificial && groupRef.current) {
       groupRef.current.getWorldPosition(worldPos);
       const distToBody = camera.position.distanceTo(worldPos);
-      const gate = detailGateUpdate(
+      // R2-2 §2.2-A：远观盒体同样接入角尺寸钳制（运镜路径贴近/穿过
+      // 卫星轨道时盒体也不得超过屏幕高度约 10%）
+      if (bodyRef.current) {
+        const fovRad = THREE.MathUtils.degToRad(
+          (camera as THREE.PerspectiveCamera).fov ?? 50,
+        );
+        const boxClamp = satelliteScreenClampFactor(distToBody, bodyRadius * 2.4, fovRad);
+        bodyRef.current.scale.setScalar(boxClamp);
+      }
+      const gate = detailGateUpdateScoped(
         modelActiveRef.current,
         distToBody,
         Math.max(bodyRadius, 1e-6),
         continuousLevel,
+        satelliteDetailScopeAllowed(state.viewLevel, focusId, focusParentId, data.parentId),
       );
       if (gate.active !== modelActiveRef.current) {
         modelActiveRef.current = gate.active;
@@ -255,15 +283,17 @@ export function Moon({ data, parentRadiusKm }: MoonProps): JSX.Element {
       }
     }
 
-    // P4 近观细节门控（需求 4.7，月球）：相机-卫星距离滞回状态机
+    // P4 近观细节门控（需求 4.7，月球）：相机-卫星距离滞回状态机；
+    // R2-2 叠加目标行星系统一致显式判定（焦点在其他行星系统时不激活）
     if (hasDetail && groupRef.current) {
       groupRef.current.getWorldPosition(worldPos);
       const distToBody = camera.position.distanceTo(worldPos);
-      const gate = detailGateUpdate(
+      const gate = detailGateUpdateScoped(
         detailActiveRef.current,
         distToBody,
         bodyRadius,
         continuousLevel,
+        planetDetailScopeAllowed(focusId, focusParentId, data.parentId),
       );
       if (gate.active !== detailActiveRef.current) {
         detailActiveRef.current = gate.active;
