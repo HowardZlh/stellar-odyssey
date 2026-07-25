@@ -6,8 +6,6 @@ import {
   PREDICTION_ARC_FRACTION,
   VERTICAL_VISUAL_GAIN,
   isPredictionArcOpen,
-  orbitFlowPhase01,
-  orbitFlowTickAngle,
   samplePredictionArc,
   traveledArcAngleRad,
   verticalVisualGain,
@@ -86,47 +84,9 @@ describe('samplePredictionArc（前方 1/4 银河年非闭合弧段）', () => {
   });
 });
 
-describe('orbitFlowPhase01 / orbitFlowTickAngle（轨道流动刻度相位）', () => {
-  it('t=0 相位为 0', () => {
-    expect(orbitFlowPhase01(0, 48)).toBeCloseTo(0, 10);
-  });
-
-  it('相位在 [0,1) 循环推进', () => {
-    for (const myr of [10, 57.5, 115, 230, 500]) {
-      const p = orbitFlowPhase01(myrToDays(myr), 48);
-      expect(p).toBeGreaterThanOrEqual(0);
-      expect(p).toBeLessThan(1);
-    }
-  });
-
-  it('刻度整体以太阳角速度流动：一个银河年后各刻度回到起始角（周期性）', () => {
-    const i = 5;
-    const a0 = orbitFlowTickAngle(0, i, 48);
-    const a1 = orbitFlowTickAngle(myrToDays(GALACTIC_YEAR_MYR), i, 48);
-    expect(a1).toBeCloseTo(a0, 6);
-  });
-
-  it('刻度角随时间单调推进（半圈后前移约 π）', () => {
-    const a0 = orbitFlowTickAngle(0, 0, 48);
-    const a1 = orbitFlowTickAngle(myrToDays(GALACTIC_YEAR_MYR / 2), 0, 48);
-    // 前移约 π（模 2π）
-    const advance = ((a1 - a0) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
-    expect(advance).toBeCloseTo(Math.PI, 4);
-  });
-
-  it('相邻刻度均匀分布（间隔 2π/tickCount）', () => {
-    const a0 = orbitFlowTickAngle(0, 0, 48);
-    const a1 = orbitFlowTickAngle(0, 1, 48);
-    expect(a1 - a0).toBeCloseTo((Math.PI * 2) / 48, 6);
-  });
-
-  it('非法 tickCount / index 抛 RangeError', () => {
-    expect(() => orbitFlowPhase01(0, 0)).toThrow(RangeError);
-    expect(() => orbitFlowTickAngle(0, 0, 0)).toThrow(RangeError);
-    expect(() => orbitFlowTickAngle(0, 48, 48)).toThrow(RangeError);
-    expect(() => orbitFlowTickAngle(0, -1, 48)).toThrow(RangeError);
-  });
-});
+// P6 流动刻度（orbitFlowPhase01/orbitFlowTickAngle）已由 R2-6 银心系静止的
+// 轨道银河年刻度（orbitGradationAngle）替换，差异登记见 galacticMotionCues.ts
+// 文件头；新刻度与脉动高亮的测试见 galacticMotionCuesR26.test.ts
 
 describe('traveledArcAngleRad（已走过弧段角度，HUD 高亮联动）', () => {
   it('与银河年进度一致：半圈 → π', () => {

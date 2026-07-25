@@ -93,6 +93,13 @@ export interface SimulationState {
    * G 键切换，切换时 2 秒平滑过渡。
    */
   galacticFrameMode: GalacticFrameMode;
+  /**
+   * G 键银心固定模式一次性引导提示可见（R2-6 §6.1：首次切入 L3 时 toast
+   * 提示"按 G 切换银心固定视角观察太阳系公转"，会话内仅一次）
+   */
+  galacticFrameTipVisible: boolean;
+  /** G 键引导提示已出现过（会话内一次性判定） */
+  galacticFrameTipSeen: boolean;
   /** 当前活跃超新星事件（需求 3.1.5 动态事件；同一时刻至多一个） */
   activeSupernova: SupernovaEvent | null;
   /** 已完成的超新星遗迹（永久保留，FIFO 上限 SN_MAX_REMNANTS） */
@@ -196,6 +203,13 @@ export interface SimulationState {
   toggleRealScaleMode: () => void;
   setGalacticFrameMode: (mode: GalacticFrameMode) => void;
   toggleGalacticFrameMode: () => void;
+  /**
+   * 首次进入 L3 时展示 G 键引导提示（R2-6 §6.1：会话内仅一次；
+   * 已看过或已处于银心固定模式时不再展示）
+   */
+  showGalacticFrameTipOnce: () => void;
+  /** 关闭 G 键引导提示（手动关闭/超时/切换模式后不再出现） */
+  dismissGalacticFrameTip: () => void;
   /**
    * 触发超新星（手动演示或自动触发；已有活跃事件时忽略）
    *
@@ -310,6 +324,8 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   universeAnchorBodyId: SCOPE_DEFAULT_BODY.universe,
   realScaleMode: false,
   galacticFrameMode: 'follow',
+  galacticFrameTipVisible: false,
+  galacticFrameTipSeen: false,
   activeSupernova: null,
   supernovaRemnants: [],
   supernovaNoticeVisible: false,
@@ -534,12 +550,27 @@ export const useSimulationStore = create<SimulationState>((set) => ({
 
   toggleRealScaleMode: () => set((state) => ({ realScaleMode: !state.realScaleMode })),
 
-  setGalacticFrameMode: (mode) => set({ galacticFrameMode: mode }),
+  setGalacticFrameMode: (mode) =>
+    // 用户已切换模式 = 已发现该功能，引导提示收起且不再出现（R2-6 §6.1）
+    set({ galacticFrameTipVisible: false, galacticFrameTipSeen: true, galacticFrameMode: mode }),
 
   toggleGalacticFrameMode: () =>
     set((state) => ({
       galacticFrameMode: state.galacticFrameMode === 'follow' ? 'galactic-center' : 'follow',
+      galacticFrameTipVisible: false,
+      galacticFrameTipSeen: true,
     })),
+
+  showGalacticFrameTipOnce: () =>
+    set((state) => {
+      // 会话内一次性：已看过不再展示；已处于银心固定模式说明用户已会用
+      if (state.galacticFrameTipSeen || state.galacticFrameMode === 'galactic-center') {
+        return state;
+      }
+      return { galacticFrameTipVisible: true, galacticFrameTipSeen: true };
+    }),
+
+  dismissGalacticFrameTip: () => set({ galacticFrameTipVisible: false }),
 
   triggerSupernova: (positionLy, progenitorMassSun, durationSec, nowMs) =>
     set((state) => {
