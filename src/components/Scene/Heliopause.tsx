@@ -10,8 +10,8 @@ import {
   HELIOPAUSE_VISIBLE_LEVEL_MAX,
   HELIOPAUSE_VISIBLE_LEVEL_MIN,
   HELIOPAUSE_VISUAL_RADIUS_UNITS,
+  heliopauseVisibilityWeight,
 } from '@/utils/heliopause';
-import { trapezoidWeight } from '@/utils/scale';
 import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 
 /**
@@ -25,10 +25,13 @@ export function Heliopause(): JSX.Element {
   const meshRef = useRef<THREE.Mesh>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const showLabels = useSimulationStore((s) => s.showLabels);
+  // 飞往/跟随日球层顶期间标签与球壳保持可见（R2-1 聚焦权重提升）
   const inRange = useSimulationStore(
     (s) =>
-      s.continuousLevel > HELIOPAUSE_VISIBLE_LEVEL_MIN &&
-      s.continuousLevel < HELIOPAUSE_VISIBLE_LEVEL_MAX,
+      s.followBodyId === 'heliopause' ||
+      s.flyToBodyId === 'heliopause' ||
+      (s.continuousLevel > HELIOPAUSE_VISIBLE_LEVEL_MIN &&
+        s.continuousLevel < HELIOPAUSE_VISIBLE_LEVEL_MAX),
   );
 
   const { geometry, material } = useMemo(() => {
@@ -52,15 +55,11 @@ export function Heliopause(): JSX.Element {
   }, [geometry, material]);
 
   useFrame(() => {
-    const { continuousLevel } = useSimulationStore.getState();
-    // L2 段淡入（进入 L1 近观或 L3 银河系视角淡出）
-    const weight = trapezoidWeight(
-      continuousLevel,
-      HELIOPAUSE_VISIBLE_LEVEL_MIN,
-      HELIOPAUSE_VISIBLE_LEVEL_MIN + 0.3,
-      HELIOPAUSE_VISIBLE_LEVEL_MAX - 0.3,
-      HELIOPAUSE_VISIBLE_LEVEL_MAX,
-    );
+    const { continuousLevel, followBodyId, flyToBodyId } = useSimulationStore.getState();
+    // L2 段淡入（进入 L1 近观或 L3 银河系视角淡出）；
+    // 飞往/跟随期间聚焦权重提升为满值（R2-1，防层级门控淡出）
+    const focused = followBodyId === 'heliopause' || flyToBodyId === 'heliopause';
+    const weight = heliopauseVisibilityWeight(continuousLevel, focused);
     material.opacity = HELIOPAUSE_MAX_OPACITY * weight;
     if (meshRef.current) {
       setObjectTreeRaycastEnabled(meshRef.current, weight > 0.05);

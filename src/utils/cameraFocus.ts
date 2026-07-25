@@ -36,6 +36,8 @@ import {
   eclipticToScene,
   lyToSceneUnits,
 } from '@/utils/scale';
+import { HELIOPAUSE_VISUAL_RADIUS_UNITS } from '@/utils/heliopause';
+import { OORT_VISUAL_RADIUS_UNITS } from '@/utils/oort';
 import { satelliteBodyDisplayRadius, satelliteOrbitDisplayRadius } from '@/utils/satellites';
 import { renderedSatellitePhaseRad } from '@/utils/satellitePhase';
 import { dwarfDisplayRadius, isDwarfPlanetClassification } from '@/utils/dwarfPlanets';
@@ -61,6 +63,36 @@ export const MAX_VIEW_DISTANCE_UNITS = 30000;
  * 使模型充满合理视野并触发 glTF 细节层加载。
  */
 export const SATELLITE_VIEW_DISTANCE_UNITS = 1.6;
+
+/**
+ * 太阳系外围球壳结构（日球层顶/奥尔特云示意）观察距离系数（R2-1 §1.1-B）：
+ * 目标点取太阳系原点（球壳中心），观察距离 = 示意半径 × 该系数，
+ * 保证运镜落点能完整看到整个半透明球壳。
+ */
+export const SHELL_VIEW_DISTANCE_RATIO = 2.2;
+
+/** 太阳系外围球壳结构：id → 示意球壳半径（场景单位） */
+const SOLAR_SHELL_RADII_UNITS: Readonly<Record<string, number>> = {
+  heliopause: HELIOPAUSE_VISUAL_RADIUS_UNITS,
+  'oort-cloud': OORT_VISUAL_RADIUS_UNITS,
+};
+
+/**
+ * 太阳系外围球壳结构的飞往/跟随目标解析（R2-1 §1.1-B）
+ *
+ * 修复"点飞往后无运镜却显示跟随中"的假跟随死锁：日球层顶/奥尔特云
+ * 此前不在 resolveFocusTarget 任何分支，返回 null 但 followBodyId 已写入。
+ *
+ * @returns 非球壳结构 id 返回 null
+ */
+export function shellFocusTarget(bodyId: string): FocusTarget | null {
+  const radius = SOLAR_SHELL_RADII_UNITS[bodyId];
+  if (radius === undefined) return null;
+  return {
+    position: { x: 0, y: 0, z: 0 },
+    viewDistanceUnits: Math.min(MAX_VIEW_DISTANCE_UNITS, radius * SHELL_VIEW_DISTANCE_RATIO),
+  };
+}
 
 /**
  * 按天体显示半径推荐观察距离（半径的 6 倍，钳制在可用范围内）
@@ -300,6 +332,12 @@ export function resolveFocusTarget(
   const special = SPECIAL_BODIES.find((b) => b.id === bodyId);
   if (special) {
     return specialBodyFocusTarget(special, simDays);
+  }
+
+  // 太阳系外围球壳结构（日球层顶/奥尔特云示意，R2-1）
+  const shell = shellFocusTarget(bodyId);
+  if (shell) {
+    return shell;
   }
 
   return null;

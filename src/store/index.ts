@@ -15,6 +15,7 @@ import type {
   ViewLevel,
 } from '@/types';
 import { DEFAULT_ANCHOR_BODY_ID, cycleBodyId, isCycleBody } from '@/utils/bodyCycle';
+import { resolveFocusTarget } from '@/utils/cameraFocus';
 import { daysSinceJ2000 } from '@/utils/physics';
 import type { GalacticFrameMode } from '@/utils/galacticFrame';
 import { continuousLevelForDistance, discreteLevelFromContinuous } from '@/utils/scale';
@@ -353,6 +354,9 @@ export const useSimulationStore = create<SimulationState>((set) => ({
           flyToBodyId: state.anchorBodyId,
           flyToRequestId: state.flyToRequestId + 1,
           followBodyId: state.anchorBodyId,
+          // R2-1 §1.1-A：显式锚点切换自动关闭信息面板（清空选中）
+          selectedBodyId: null,
+          selectedSolarFeature: null,
         };
       }
       // 层级未变且无跟随/飞往时无事可做；跟随远距天体（如哈雷彗星 ~20 AU）
@@ -365,6 +369,10 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         // 锚点切换取消跟随/飞往（相机回到固定锚点，需求 3.2.4：L2-L4 取消跟随）
         followBodyId: null,
         flyToBodyId: null,
+        // R2-1 §1.1-A：显式锚点切换（按钮/1-4 快捷键）自动关闭信息面板；
+        // 连续滚轮缩放跨层级走 syncZoomLevel/syncCameraDistance，不清空选中
+        selectedBodyId: null,
+        selectedSolarFeature: null,
       };
     }),
 
@@ -418,14 +426,24 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   setFollowBody: (id) => set({ followBodyId: id }),
 
   requestFlyTo: (id) =>
-    set((state) => ({
-      flyToBodyId: id,
-      flyToRequestId: state.flyToRequestId + 1,
-      // 飞抵后保持锁定该天体（跟随模式），运镜期间同样按目标跟踪
-      followBodyId: id,
-      // 序列内天体记为 L1 锚定天体（会话内记忆，需求 3.2.4）
-      anchorBodyId: isCycleBody(id) ? id : state.anchorBodyId,
-    })),
+    set((state) => {
+      // R2-1 §1.1-B 兜底：目标解析失败时拒绝进入跟随（不写入 followBodyId，
+      // 静默忽略），防止未来新增天体重蹈"无运镜却显示跟随中"的假跟随死锁。
+      // 超新星事件（sn-*）由 CameraController 按事件状态单独解析，此处
+      // 按事件存在性（活跃事件或遗迹）校验。
+      const resolvable = id.startsWith('sn-')
+        ? state.activeSupernova?.id === id || state.supernovaRemnants.some((r) => r.id === id)
+        : resolveFocusTarget(id, state.simDays, state.realScaleMode) !== null;
+      if (!resolvable) return state;
+      return {
+        flyToBodyId: id,
+        flyToRequestId: state.flyToRequestId + 1,
+        // 飞抵后保持锁定该天体（跟随模式），运镜期间同样按目标跟踪
+        followBodyId: id,
+        // 序列内天体记为 L1 锚定天体（会话内记忆，需求 3.2.4）
+        anchorBodyId: isCycleBody(id) ? id : state.anchorBodyId,
+      };
+    }),
 
   cycleAnchorBody: (direction) =>
     set((state) => {

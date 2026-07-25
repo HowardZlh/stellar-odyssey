@@ -9,11 +9,13 @@ import {
   OORT_PARTICLE_COUNT,
   OORT_SEED,
   OORT_SHELL_THICKNESS_01,
+  OORT_VISIBLE_LEVEL_MAX,
+  OORT_VISIBLE_LEVEL_MIN,
   OORT_VISUAL_RADIUS_UNITS,
   generateOortShellPoints,
   oortShellReferencePoint,
+  oortVisibilityWeight,
 } from '@/utils/oort';
-import { trapezoidWeight } from '@/utils/scale';
 import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import { getSoftPointTexture } from '@/components/CelestialBody/sharedTextures';
 
@@ -28,9 +30,14 @@ export function OortCloud(): JSX.Element {
   const pointsRef = useRef<THREE.Points>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const showLabels = useSimulationStore((s) => s.showLabels);
-  // Html 标签不随父级 visible 隐藏，需单独按层级门控
+  // Html 标签不随父级 visible 隐藏，需单独按层级门控；
+  // 飞往/跟随奥尔特云期间保持可见（R2-1 聚焦权重提升）
   const inRange = useSimulationStore(
-    (s) => s.continuousLevel > 2.15 && s.continuousLevel < 3.1,
+    (s) =>
+      s.followBodyId === 'oort-cloud' ||
+      s.flyToBodyId === 'oort-cloud' ||
+      (s.continuousLevel > OORT_VISIBLE_LEVEL_MIN + 0.05 &&
+        s.continuousLevel < OORT_VISIBLE_LEVEL_MAX),
   );
 
   const { geometry, material } = useMemo(() => {
@@ -68,9 +75,11 @@ export function OortCloud(): JSX.Element {
   }, [geometry, material]);
 
   useFrame(() => {
-    const { continuousLevel } = useSimulationStore.getState();
-    // 过渡参照物：L2 末端淡入，进入 L3 后淡出
-    const weight = trapezoidWeight(continuousLevel, 2.1, 2.4, 2.7, 3.1);
+    const { continuousLevel, followBodyId, flyToBodyId } = useSimulationStore.getState();
+    // 过渡参照物：L2 末端淡入，进入 L3 后淡出；
+    // 飞往/跟随期间聚焦权重提升为满值（R2-1，防层级门控淡出）
+    const focused = followBodyId === 'oort-cloud' || flyToBodyId === 'oort-cloud';
+    const weight = oortVisibilityWeight(continuousLevel, focused);
     material.opacity = 0.4 * weight;
     // Raycaster 不检查透明度：淡出后禁用 raycast，避免隐形粒子壳拦截点击
     if (pointsRef.current) {
