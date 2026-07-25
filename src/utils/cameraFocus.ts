@@ -23,12 +23,16 @@ import {
   SATELLITE_GALAXY_ORBITS,
 } from '@/data/galaxies';
 import { SPECIAL_BODIES } from '@/data/specialBodies';
+import type { OrbitalElements } from '@/types';
 import {
+  DAYS_PER_YEAR,
   DEG_TO_RAD,
   RAD_TO_DEG,
   heliocentricPosition,
   orbitPositionWithPeriod,
+  orbitalPeriodYears,
 } from '@/utils/physics';
+import { equivalentDaysForPhase } from '@/utils/freezeGate';
 import {
   SCENE_UNITS_PER_LY,
   bodyDisplayRadius,
@@ -128,11 +132,29 @@ export function galacticPointToSceneUnits(pLy: Vec3, simDays: number): Vec3 {
   return { x, y: y * cos - z * sin, z: y * sin + z * cos };
 }
 
+/**
+ * 日心天体轨道求值时刻（R2-3）：行星/矮行星/彗星在速率钳制期间
+ * 渲染相位与精确相位存在偏差（Planet.tsx/Comet.tsx 写入渲染相位注册表），
+ * 相机跟随/飞往优先按注册相位换算等效时间求值（P7 卫星范式扩展）；
+ * 未注册（未钳制/组件未挂载/测试）时回落共享模拟时间轴。
+ */
+function heliocentricDaysForBody(bodyId: string, orbit: OrbitalElements, simDays: number): number {
+  const phase = renderedSatellitePhaseRad(bodyId);
+  if (phase === null) return simDays;
+  const periodDays = orbitalPeriodYears(orbit.semiMajorAxisAu) * DAYS_PER_YEAR;
+  return equivalentDaysForPhase(phase, orbit.meanAnomalyAtEpochDeg, periodDays);
+}
+
 /** 卫星当前场景位置（父行星位置 + 参考平面内的局部偏移） */
 function moonScenePosition(moon: MoonData, simDays: number, realScale: boolean): Vec3 | null {
   const parent = getPlanetById(moon.parentId) ?? getDwarfPlanetById(moon.parentId);
   if (!parent) return null;
-  const parentScene = eclipticToScene(heliocentricPosition(parent.orbit, simDays));
+  const parentScene = eclipticToScene(
+    heliocentricPosition(
+      parent.orbit,
+      heliocentricDaysForBody(parent.id, parent.orbit, simDays),
+    ),
+  );
   // P7：优先使用渲染相位（速率钳制期间与渲染位置保持一致，登记于文件头）；
   // 注册相位已含历元项与时间推进，评估时刻取 0
   const renderedPhase = renderedSatellitePhaseRad(moon.id);
@@ -277,7 +299,13 @@ export function resolveFocusTarget(
       ? dwarfDisplayRadius(planet.radiusKm, realScale)
       : bodyDisplayRadius(planet.radiusKm, realScale);
     return {
-      position: eclipticToScene(heliocentricPosition(planet.orbit, simDays)),
+      // R2-3：速率钳制期间按渲染相位求值（相机跟随与渲染位置一致）
+      position: eclipticToScene(
+        heliocentricPosition(
+          planet.orbit,
+          heliocentricDaysForBody(planet.id, planet.orbit, simDays),
+        ),
+      ),
       viewDistanceUnits: viewDistanceForRadius(displayRadius),
     };
   }
@@ -316,7 +344,13 @@ export function resolveFocusTarget(
   const comet = COMETS.find((c) => c.id === bodyId);
   if (comet) {
     return {
-      position: eclipticToScene(heliocentricPosition(comet.orbit, simDays)),
+      // R2-3：速率钳制期间按渲染相位求值（相机跟随与渲染位置一致）
+      position: eclipticToScene(
+        heliocentricPosition(
+          comet.orbit,
+          heliocentricDaysForBody(comet.id, comet.orbit, simDays),
+        ),
+      ),
       viewDistanceUnits: 4,
     };
   }

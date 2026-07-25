@@ -58,6 +58,8 @@ export interface SimulationState {
   selectedBodyId: string | null;
   /** 速率钳制提示（快周期卫星"运动已减速显示"，需求 3.3） */
   rateClampNotice: boolean;
+  /** 行星速率钳制提示（R2-3 淡出区间"行星运动已减速显示"，与卫星文案区分） */
+  planetRateClampNotice: boolean;
   /** 跟随天体 id（相机锁定该天体随其运动，需求 3.2.3；null 为不跟随） */
   followBodyId: string | null;
   /** 飞往目标 id（需求 3.2.3 点选后平滑运镜） */
@@ -160,6 +162,7 @@ export interface SimulationState {
   setAudioVolume: (volume: number) => void;
   selectBody: (id: string | null) => void;
   setRateClampNotice: (active: boolean) => void;
+  setPlanetRateClampNotice: (active: boolean) => void;
   resetToNow: () => void;
   /** 设置跟随天体（null 取消跟随） */
   setFollowBody: (id: string | null) => void;
@@ -279,6 +282,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   audioVolume: 0.8,
   selectedBodyId: null,
   rateClampNotice: false,
+  planetRateClampNotice: false,
   followBodyId: null,
   flyToBodyId: null,
   flyToRequestId: 0,
@@ -420,6 +424,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   selectBody: (id) => set({ selectedBodyId: id }),
 
   setRateClampNotice: (active) => set({ rateClampNotice: active }),
+  setPlanetRateClampNotice: (active) => set({ planetRateClampNotice: active }),
 
   resetToNow: () => set({ simDays: initialSimDays() }),
 
