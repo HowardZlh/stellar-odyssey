@@ -17,6 +17,8 @@
  * - 以理想球壳示意，未建模迎风/背风不对称与日球层尾。
  */
 
+import { trapezoidWeight } from '@/utils/scale';
+
 /** 真实日球层顶距离（AU，Voyager 实测量级） */
 export const HELIOPAUSE_REAL_DISTANCE_AU = 120;
 
@@ -36,3 +38,25 @@ export const HELIOPAUSE_MAX_OPACITY = 0.06;
 /** 日球层顶科普文案（信息标注/面板） */
 export const HELIOPAUSE_NOTE_ZH =
   '日球层顶是太阳风与星际介质的边界（太阳影响范围外缘），真实距太阳约 120 AU；旅行者 1/2 号已于 2012/2018 年先后穿越（示意球壳半径为压缩值）';
+
+/**
+ * 日球层顶可见度权重（R2-1 §1.1-B）
+ *
+ * 常态按连续层级窗口梯形淡入淡出（L2 段可见，进入 L1/L3 淡出）；
+ * 飞往/跟随日球层顶期间（focused）聚焦权重提升为满值——参照
+ * isGalaxyAnchoredFocusId 模式，保证球壳在跟随期间不因层级门控淡出
+ * （飞往观察距离对应连续层级 ~2.65，运镜起点 L3 已越过淡出窗口上缘）。
+ */
+export function heliopauseVisibilityWeight(continuousLevel: number, focused: boolean): number {
+  if (!Number.isFinite(continuousLevel)) {
+    throw new RangeError(`连续层级必须为有限数，收到 ${continuousLevel}`);
+  }
+  if (focused) return 1;
+  return trapezoidWeight(
+    continuousLevel,
+    HELIOPAUSE_VISIBLE_LEVEL_MIN,
+    HELIOPAUSE_VISIBLE_LEVEL_MIN + 0.3,
+    HELIOPAUSE_VISIBLE_LEVEL_MAX - 0.3,
+    HELIOPAUSE_VISIBLE_LEVEL_MAX,
+  );
+}

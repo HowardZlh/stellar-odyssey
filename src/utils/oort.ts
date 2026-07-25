@@ -15,6 +15,7 @@
 
 import type { Vec3 } from '@/types';
 import { createSeededRandom } from '@/utils/random';
+import { trapezoidWeight } from '@/utils/scale';
 
 /** 奥尔特云真实内缘（AU） */
 export const OORT_INNER_AU = 2000;
@@ -76,4 +77,30 @@ export function generateOortShellPoints(
  */
 export function oortShellReferencePoint(radiusUnits: number): Vec3 {
   return { x: radiusUnits * 0.7071, y: radiusUnits * 0.5, z: -radiusUnits * 0.5 };
+}
+
+/** 奥尔特云示意可见的连续层级窗口（L2 末端 → L3 前段过渡区间） */
+export const OORT_VISIBLE_LEVEL_MIN = 2.1;
+export const OORT_VISIBLE_LEVEL_MAX = 3.1;
+
+/**
+ * 奥尔特云可见度权重（R2-1 §1.1-B）
+ *
+ * 常态按连续层级窗口梯形淡入淡出（原 OortCloud.tsx 内联魔法数字收敛至此）；
+ * 飞往/跟随奥尔特云期间（focused）权重提升为满值——飞往观察距离
+ * （~3,520 单位）对应连续层级 ~3.18，已越过淡出窗口上缘，不提升则
+ * "飞过去却看不到"（与日球层顶同款防淡出策略）。
+ */
+export function oortVisibilityWeight(continuousLevel: number, focused: boolean): number {
+  if (!Number.isFinite(continuousLevel)) {
+    throw new RangeError(`连续层级必须为有限数，收到 ${continuousLevel}`);
+  }
+  if (focused) return 1;
+  return trapezoidWeight(
+    continuousLevel,
+    OORT_VISIBLE_LEVEL_MIN,
+    OORT_VISIBLE_LEVEL_MIN + 0.3,
+    OORT_VISIBLE_LEVEL_MAX - 0.4,
+    OORT_VISIBLE_LEVEL_MAX,
+  );
 }
