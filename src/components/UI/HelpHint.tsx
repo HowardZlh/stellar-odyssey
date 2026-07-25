@@ -15,7 +15,8 @@ export function HelpHint(): JSX.Element | null {
       <div className="flex items-center gap-4">
         <p>
           🖱 拖动旋转 · 滚轮缩放 · 右键平移 &nbsp;|&nbsp; ⌨ 1-4 切换视角 · [ / ]
-          行星视角切换天体 · G 银河系视角参考系（跟随太阳系/银心固定）· 空格暂停 · M 音效 · O 轨道线
+          巡游上一个/下一个天体（按视角域：行星/银河系/宇宙序列）· G
+          银河系视角参考系（跟随太阳系/银心固定）· 空格暂停 · M 音效 · O 轨道线
           &nbsp;|&nbsp; 点击行星查看信息
           <br />
           <span className="text-gray-500">

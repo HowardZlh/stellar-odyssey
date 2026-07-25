@@ -15,6 +15,12 @@ import type {
   ViewLevel,
 } from '@/types';
 import { DEFAULT_ANCHOR_BODY_ID, cycleBodyId, isCycleBody } from '@/utils/bodyCycle';
+import {
+  SCOPE_DEFAULT_BODY,
+  cycleBodyIdInScope,
+  isScopeCycleBody,
+  scopeForViewLevel,
+} from '@/utils/cycleScopes';
 import { resolveFocusTarget } from '@/utils/cameraFocus';
 import { daysSinceJ2000 } from '@/utils/physics';
 import type { GalacticFrameMode } from '@/utils/galacticFrame';
@@ -71,6 +77,13 @@ export interface SimulationState {
    * 进入 L1 时飞往并跟随该天体（默认地球），会话内记忆上次锚定天体
    */
   anchorBodyId: string;
+  /**
+   * L3 银河系域上次锚定天体（R2-5 §5.1-B：每域独立会话内记忆，
+   * 切换视角回来时序列位置恢复；默认人马座 A*）
+   */
+  galaxyAnchorBodyId: string;
+  /** L4 宇宙域上次锚定天体（R2-5 §5.1-B，默认仙女座 M31） */
+  universeAnchorBodyId: string;
   /** 真实比例模式（需求 4.1：视觉夸大的真实比例开关，P2） */
   realScaleMode: boolean;
   /**
@@ -173,6 +186,12 @@ export interface SimulationState {
    * 沿固定序列切换上一颗（-1）/下一颗（+1），飞往并跟随新天体
    */
   cycleAnchorBody: (direction: 1 | -1) => void;
+  /**
+   * 通用视角域天体循环切换（R2-5 §5.1-B）：按当前视角域（行星/银河系/
+   * 宇宙）沿域序列切换上一个（-1）/下一个（+1）并飞往跟随；行星域行为
+   * 与 cycleAnchorBody 一致（不回退）；L3/L4 域未跟随时先飞往记忆天体
+   */
+  cycleScopeBody: (direction: 1 | -1) => void;
   setRealScaleMode: (enabled: boolean) => void;
   toggleRealScaleMode: () => void;
   setGalacticFrameMode: (mode: GalacticFrameMode) => void;
@@ -287,6 +306,8 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   flyToBodyId: null,
   flyToRequestId: 0,
   anchorBodyId: DEFAULT_ANCHOR_BODY_ID,
+  galaxyAnchorBodyId: SCOPE_DEFAULT_BODY.galaxy,
+  universeAnchorBodyId: SCOPE_DEFAULT_BODY.universe,
   realScaleMode: false,
   galacticFrameMode: 'follow',
   activeSupernova: null,
@@ -440,6 +461,10 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         ? state.activeSupernova?.id === id || state.supernovaRemnants.some((r) => r.id === id)
         : resolveFocusTarget(id, state.simDays, state.realScaleMode) !== null;
       if (!resolvable) return state;
+      // R2-5 §5.1-B 各域序列位置记忆：L3/L4 域仅在"该域当前生效"时记录，
+      // 防跨域误写（如 L1/L2 耀斑通知"飞往太阳"不得改写银河系域记忆——
+      // 太阳虽是 L3 序列出发站，但此时语境是太阳系视角）
+      const activeScope = scopeForViewLevel(state.continuousLevel, state.followBodyId);
       return {
         flyToBodyId: id,
         flyToRequestId: state.flyToRequestId + 1,
@@ -447,6 +472,14 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         followBodyId: id,
         // 序列内天体记为 L1 锚定天体（会话内记忆，需求 3.2.4）
         anchorBodyId: isCycleBody(id) ? id : state.anchorBodyId,
+        galaxyAnchorBodyId:
+          activeScope === 'galaxy' && isScopeCycleBody('galaxy', id)
+            ? id
+            : state.galaxyAnchorBodyId,
+        universeAnchorBodyId:
+          activeScope === 'universe' && isScopeCycleBody('universe', id)
+            ? id
+            : state.universeAnchorBodyId,
       };
     }),
 
@@ -458,6 +491,42 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         flyToBodyId: next,
         flyToRequestId: state.flyToRequestId + 1,
         followBodyId: next,
+      };
+    }),
+
+  cycleScopeBody: (direction) =>
+    set((state) => {
+      const scope = scopeForViewLevel(state.continuousLevel, state.followBodyId);
+      if (scope === 'planet') {
+        // 行星域：与 cycleAnchorBody 完全一致（P4 现状保持，行为不回退）
+        const next = cycleBodyId(state.anchorBodyId, direction);
+        return {
+          anchorBodyId: next,
+          flyToBodyId: next,
+          flyToRequestId: state.flyToRequestId + 1,
+          followBodyId: next,
+        };
+      }
+      const remembered =
+        scope === 'galaxy' ? state.galaxyAnchorBodyId : state.universeAnchorBodyId;
+      const followingInScope =
+        state.followBodyId !== null && isScopeCycleBody(scope, state.followBodyId);
+      // §5.1-B：跟随域内天体时沿序列切换；未跟随时点击即飞往记忆天体
+      // （初始为域默认：L3=sgr-a-star / L4=m31），开始游览不产生跳步
+      const next = followingInScope
+        ? cycleBodyIdInScope(scope, state.followBodyId!, direction)
+        : remembered;
+      // 与 requestFlyTo 相同的解析兜底（防未来序列成员解析失败进入假跟随）
+      if (resolveFocusTarget(next, state.simDays, state.realScaleMode) === null) {
+        return state;
+      }
+      return {
+        flyToBodyId: next,
+        flyToRequestId: state.flyToRequestId + 1,
+        followBodyId: next,
+        ...(scope === 'galaxy'
+          ? { galaxyAnchorBodyId: next }
+          : { universeAnchorBodyId: next }),
       };
     }),
 

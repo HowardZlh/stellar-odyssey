@@ -20,6 +20,7 @@ import { COMETS, PLUTO, getDwarfPlanetById } from '@/data/smallBodies';
 import {
   LOCAL_GROUP_GALAXIES,
   M31_COMPANION_OFFSETS_LY,
+  MILKY_WAY,
   SATELLITE_GALAXY_ORBITS,
 } from '@/data/galaxies';
 import { SPECIAL_BODIES } from '@/data/specialBodies';
@@ -352,6 +353,17 @@ export function resolveFocusTarget(
         ),
       ),
       viewDistanceUnits: 4,
+    };
+  }
+
+  // 银河系整体（R2-5 L4 域序列首站）：目标点取银心（与 Galaxy 组渲染中心
+  // 一致，跟随/银心固定两种参考系模式下均随组变换求值），观察距离按
+  // 银盘显示半径（半径 5 万光年 × 场景比例）推荐，运镜落点可见整个银盘
+  if (bodyId === MILKY_WAY.id) {
+    const radiusUnits = (MILKY_WAY.diameterLy / 2) * SCENE_UNITS_PER_LY;
+    return {
+      position: galacticPointToSceneUnits({ x: 0, y: 0, z: 0 }, simDays),
+      viewDistanceUnits: viewDistanceForRadius(radiusUnits),
     };
   }
 

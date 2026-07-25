@@ -3,7 +3,6 @@
 import { useEffect } from 'react';
 import type { ViewLevel } from '@/types';
 import { useSimulationStore } from '@/store';
-import { cycleControlVisible } from '@/utils/bodyCycle';
 
 /** 数字键 → 视角层级映射 */
 const LEVEL_KEYS: Record<string, ViewLevel> = {
@@ -17,7 +16,8 @@ const LEVEL_KEYS: Record<string, ViewLevel> = {
  * 键盘快捷键（需求 3.5.3）：
  * 1-4 视角切换 / 空格 暂停 / M 静音 / O 轨道线 / L 标签 /
  * F 飞往选中天体 / R 真实比例模式 / Esc 取消跟随（P2）/
- * [ ] 行星视角上一颗/下一颗天体（P4，需求 3.2.4，仅 L1 语境生效）/
+ * [ ] 视角域序列上一个/下一个天体（P4 行星序列；R2-5 §5.1-B 泛化至
+ * 全部视角域按域路由：L1/L2 行星 / L3 银河系 / L4 宇宙）/
  * G 银河系视角参考系切换（跟随太阳系 ↔ 银心固定，P6，需求 3.1.1，仅 L3 生效）
  */
 export function useKeyboardShortcuts(): void {
@@ -69,15 +69,11 @@ export function useKeyboardShortcuts(): void {
           }
           break;
         case '[':
-          // 行星视角上一颗（P4，需求 3.2.4；仅 L1 语境生效）
-          if (cycleControlVisible(state.viewLevel, state.followBodyId)) {
-            state.cycleAnchorBody(-1);
-          }
+          // 视角域序列上一个（R2-5 §5.1-B：按当前视角域路由）
+          state.cycleScopeBody(-1);
           break;
         case ']':
-          if (cycleControlVisible(state.viewLevel, state.followBodyId)) {
-            state.cycleAnchorBody(1);
-          }
+          state.cycleScopeBody(1);
           break;
         case 'Escape':
           state.setFollowBody(null);

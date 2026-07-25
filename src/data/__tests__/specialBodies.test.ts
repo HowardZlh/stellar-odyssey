@@ -139,6 +139,12 @@ describe("isGalaxyAnchoredFocusId（跟随/飞往时银河系组聚焦提升判�
     expect(isGalaxyAnchoredFocusId("sn-42")).toBe(true);
   });
 
+  it("日球层顶为锚定目标（R2-5 §5.1-C 白名单扩展）；太阳除外（差异登记）", () => {
+    expect(isGalaxyAnchoredFocusId("heliopause")).toBe(true);
+    // 太阳飞抵后为 L1 尺度，提升银河系组会复发"银河粒子贴太阳"bug
+    expect(isGalaxyAnchoredFocusId("sun")).toBe(false);
+  });
+
   it("河外特殊天体 / 太阳系天体 / 星系 / 未知 id 不属于银河系组锚定目标", () => {
     for (const id of ["quasar-3c273", "sun", "earth", "m31", "not-a-body"]) {
       expect(isGalaxyAnchoredFocusId(id)).toBe(false);
