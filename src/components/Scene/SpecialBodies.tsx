@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
@@ -15,6 +15,7 @@ import { useSimulationStore } from "@/store";
 import { SCENE_UNITS_PER_LY, trapezoidWeight } from "@/utils/scale";
 import { setObjectTreeRaycastEnabled } from "@/utils/raycastGate";
 import { advanceFrameTransition } from "@/utils/galacticFrame";
+import { isHeliopauseNearFocusId } from "@/utils/heliopause";
 import { verticalVisualGain } from "@/utils/galacticMotionCues";
 import { sunGalacticPositionLy } from "@/utils/galaxy";
 import { createSeededRandom } from "@/utils/random";
@@ -29,6 +30,12 @@ import {
   redGiantPulsation,
   stellarWindPhase01,
 } from "@/utils/specialBodies";
+import {
+  NEAR_VIEW_TRANSITION_SECONDS,
+  nearViewEnterDistanceUnits,
+  nearViewGateUpdate,
+  nebulaPuffLayout,
+} from "@/utils/nearView";
 import {
   createDiffractionSpikeCanvas,
   createGlowSpriteCanvas,
@@ -279,6 +286,113 @@ function useGalacticPlacement(
   return getWeight;
 }
 
+/** 渲染循环共用临时向量（零分配纪律） */
+const NEAR_VIEW_TMP_VEC = new THREE.Vector3();
+
+/**
+ * 近观 LOD 门控 hook（R2-7 §7.1-B）：复用 P4 detailGateUpdate 滞回模式
+ * （纯逻辑 utils/nearView.nearViewGateUpdate），仅当前跟随/飞往目标激活。
+ *
+ * @returns nearActive 近观层是否挂载（React state，卸载即释放几何/材质）；
+ *   getNear01 读取平滑激活权重（0.5s 淡入淡出，淡出完成后才卸载）
+ */
+function useNearViewGate(
+  body: SpecialBodyData,
+  groupRef: React.RefObject<THREE.Group>,
+): { nearActive: boolean; getNear01: () => number } {
+  const [nearActive, setNearActive] = useState(false);
+  const mountedRef = useRef(false);
+  const activeRef = useRef(false);
+  const near01Ref = useRef(0);
+  const enterDistance = useMemo(() => nearViewEnterDistanceUnits(body.id), [body.id]);
+  const getNear01 = useCallback(() => near01Ref.current, []);
+  useFrame(({ camera }, delta) => {
+    const group = groupRef.current;
+    if (!group) return;
+    const state = useSimulationStore.getState();
+    const focused =
+      state.followBodyId === body.id || state.flyToBodyId === body.id;
+    const distance = camera.position.distanceTo(
+      group.getWorldPosition(NEAR_VIEW_TMP_VEC),
+    );
+    const gate = nearViewGateUpdate(
+      activeRef.current,
+      focused,
+      distance,
+      enterDistance,
+    );
+    activeRef.current = gate.active;
+    near01Ref.current = advanceFrameTransition(
+      near01Ref.current,
+      gate.active ? 1 : 0,
+      delta,
+      NEAR_VIEW_TRANSITION_SECONDS,
+    );
+    // 淡出完成后再卸载（激活/释放无突变；卸载即释放，无 LRU 保留）
+    const shouldMount = gate.active || near01Ref.current > 0.001;
+    if (shouldMount !== mountedRef.current) {
+      mountedRef.current = shouldMount;
+      setNearActive(shouldMount);
+    }
+  });
+  return { nearActive, getNear01 };
+}
+
+/**
+ * 星云近观体积感云团（R2-7 §7.1-B 星云类共用）：确定性布局
+ * （utils/nearView.nebulaPuffLayout）的多张 billboard 云团 sprite，
+ * 形成多层视差体积感——绕行观察不再是"单张圆形光晕"。
+ * 材质由 R3F 声明式创建（卸载自动 dispose）；纹理来自 nebulaTextures
+ * 进程内缓存（不可 dispose，共享复用）。
+ */
+function NebulaPuffCloud({
+  seed,
+  count,
+  radiusUnits,
+  flattenY,
+  textures,
+  getOpacity,
+}: {
+  seed: number;
+  count: number;
+  radiusUnits: number;
+  flattenY: number;
+  textures: readonly THREE.Texture[];
+  /** 读取本帧不透明度权重（层级权重 × 近观权重） */
+  getOpacity: () => number;
+}): JSX.Element {
+  const groupRef = useRef<THREE.Group>(null);
+  const placements = useMemo(
+    () => nebulaPuffLayout(seed, count, radiusUnits, flattenY, textures.length),
+    [seed, count, radiusUnits, flattenY, textures.length],
+  );
+  useFrame(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    const k = getOpacity();
+    for (let i = 0; i < group.children.length; i += 1) {
+      const sprite = group.children[i] as THREE.Sprite;
+      sprite.material.opacity = placements[i].opacity * k;
+    }
+  });
+  return (
+    <group ref={groupRef}>
+      {placements.map((p, i) => (
+        <sprite key={i} position={[p.x, p.y, p.z]} scale={[p.scale, p.scale, 1]}>
+          <spriteMaterial
+            map={textures[p.textureIndex]}
+            rotation={p.rotationRad}
+            transparent
+            opacity={0}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </sprite>
+      ))}
+    </group>
+  );
+}
+
 /** 共用：标签 */
 function BodyLabel({
   body,
@@ -291,7 +405,18 @@ function BodyLabel({
   const inRange = useSimulationStore(
     (s) => s.continuousLevel > 2.5 && s.continuousLevel < 3.9,
   );
-  if (!showLabels || !inRange) return null;
+  // R2-7：跟随/飞往本天体期间隐藏 L3 标签（近距下 distanceFactor 缩放
+  // 呈大字号遮挡近观细节，R2-5 目验登记的既有问题；信息面板已示名称）；
+  // 日球层顶近观语境（含旅行者标记）同样隐藏全部 L3 特殊天体标签——
+  // 相机距原点 ~836 单位时各天体标签放大 ~3 倍互相叠压，遮挡三层结构
+  const focused = useSimulationStore(
+    (s) =>
+      s.followBodyId === body.id ||
+      s.flyToBodyId === body.id ||
+      isHeliopauseNearFocusId(s.followBodyId) ||
+      isHeliopauseNearFocusId(s.flyToBodyId),
+  );
+  if (!showLabels || !inRange || focused) return null;
   return (
     <Html
       position={[0, sizeUnits * 1.3, 0]}
@@ -786,6 +911,8 @@ function OpenCluster({ body }: BodyProps): JSX.Element {
   );
 
   const getWeight = useGalacticPlacement(body, groupRef);
+  // R2-7 近观门控：跟随时挂载近观星场与"七姊妹"亮星，离开即释放
+  const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
@@ -810,6 +937,25 @@ function OpenCluster({ body }: BodyProps): JSX.Element {
         />
       </sprite>
       <points geometry={geometry} material={material} />
+      {/* R2-7 近观分级星场（+320 粒更小的暗成员星，疏散分布保持松散感） */}
+      {nearActive && (
+        <>
+          <ClusterNearStarField
+            seed={20260734}
+            count={320}
+            radiusUnits={size * 0.95}
+            concentrationPow={0.5}
+            flattenY={0.7}
+            pointSizeUnits={size * 0.05}
+            bluePalette
+            getOpacity={() => getWeight() * getNear01()}
+          />
+          <PleiadesSistersNear
+            sizeUnits={size}
+            getOpacity={() => getWeight() * getNear01()}
+          />
+        </>
+      )}
       {/* 点选热区 */}
       <mesh
         onClick={(e) => {
@@ -821,6 +967,59 @@ function OpenCluster({ body }: BodyProps): JSX.Element {
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       <BodyLabel body={body} sizeUnits={size} />
+    </group>
+  );
+}
+
+/**
+ * 昴星团"七姊妹"近观亮星（R2-7 §7.1-B）：7 颗最亮成员星的辉光 sprite
+ * （确定性位置，扁平分布），近观时亮星等级与暗成员星形成大小分级对比。
+ */
+function PleiadesSistersNear({
+  sizeUnits,
+  getOpacity,
+}: {
+  sizeUnits: number;
+  getOpacity: () => number;
+}): JSX.Element {
+  const groupRef = useRef<THREE.Group>(null);
+  const glowTexture = useMemo(
+    () => new THREE.CanvasTexture(createGlowSpriteCanvas("#cfe0ff", 64)),
+    [],
+  );
+  useEffect(() => () => glowTexture.dispose(), [glowTexture]);
+  const sisters = useMemo(() => {
+    const rand = createSeededRandom(20260735);
+    return Array.from({ length: 7 }, () => ({
+      x: (rand() - 0.5) * sizeUnits * 1.1,
+      y: (rand() - 0.5) * sizeUnits * 0.55,
+      z: (rand() - 0.5) * sizeUnits * 1.1,
+      scale: sizeUnits * (0.26 + 0.16 * rand()),
+      opacity: 0.6 + 0.3 * rand(),
+    }));
+  }, [sizeUnits]);
+  useFrame(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    const k = getOpacity();
+    for (let i = 0; i < group.children.length; i += 1) {
+      const sprite = group.children[i] as THREE.Sprite;
+      sprite.material.opacity = sisters[i].opacity * k;
+    }
+  });
+  return (
+    <group ref={groupRef}>
+      {sisters.map((s, i) => (
+        <sprite key={i} position={[s.x, s.y, s.z]} scale={[s.scale, s.scale, 1]}>
+          <spriteMaterial
+            map={glowTexture}
+            transparent
+            opacity={0}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </sprite>
+      ))}
     </group>
   );
 }
@@ -865,18 +1064,23 @@ function DarkNebula({ body }: BodyProps): JSX.Element {
   );
 
   const getWeight = useGalacticPlacement(body, groupRef);
+  // R2-7 近观门控：跟随时挂载视差发射层与前景暗云团，离开即释放
+  const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
   useFrame(() => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
+    const near01 = getNear01();
     group.traverse((obj) => {
       const base = obj.userData.baseOpacity as number | undefined;
       if (base === undefined) return;
+      // 近观层（视差发射面/前景暗云团）额外乘近观权重淡入
+      const factor = obj.userData.nearLayer ? weight * near01 : weight;
       if (obj instanceof THREE.Sprite) {
-        obj.material.opacity = base * weight;
+        obj.material.opacity = base * factor;
       } else if (obj instanceof THREE.Mesh) {
         (obj.material as THREE.Material & { opacity: number }).opacity =
-          base * weight;
+          base * factor;
       }
     });
   });
@@ -886,6 +1090,17 @@ function DarkNebula({ body }: BodyProps): JSX.Element {
     { x: 0, y: -size * 0.25, scale: 0.7, opacity: 0.92 },
     { x: 0, y: size * 0.12, scale: 0.5, opacity: 0.95 },
     { x: size * 0.2, y: size * 0.36, scale: 0.36, opacity: 0.95 },
+  ];
+
+  // R2-7 近观增量：不同深度的发射层（视差）+ 前景暗云团（深度层次）
+  const nearEmissionLayers = [
+    { z: -size * 0.85, w: 3.4, h: 2.7, opacity: 0.28, seed: 4341 },
+    { z: -size * 0.15, w: 2.2, h: 1.8, opacity: 0.32, seed: 4342 },
+  ];
+  const nearDarkPuffs = [
+    { x: -size * 0.28, y: -size * 0.42, z: size * 0.5, scale: 0.4 },
+    { x: size * 0.34, y: size * 0.05, z: size * 0.62, scale: 0.3 },
+    { x: -size * 0.05, y: size * 0.5, z: size * 0.55, scale: 0.26 },
   ];
 
   return (
@@ -926,6 +1141,55 @@ function DarkNebula({ body }: BodyProps): JSX.Element {
           />
         </mesh>
       ))}
+      {/* R2-7 近观增量：不同深度发射层（绕行视差）+ 前景暗云团（马头剪影
+          获得前后景深，近观不再是同一深度的平面贴片组） */}
+      {nearActive && (
+        <>
+          {nearEmissionLayers.map((layer, i) => (
+            <mesh
+              key={`near-emission-${i}`}
+              position={[0, 0, layer.z]}
+              userData={{ baseOpacity: layer.opacity, nearLayer: true }}
+            >
+              <planeGeometry args={[size * layer.w, size * layer.h]} />
+              <meshBasicMaterial
+                map={getNebulaTexture({
+                  size: 256,
+                  seed: layer.seed,
+                  innerColor: "#ff8898",
+                  outerColor: "#7a2838",
+                  filamentStrength: 0.55,
+                  irregularity: 0.7,
+                  octaves: 5,
+                  shape: "cloud",
+                })}
+                transparent
+                opacity={0}
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+          ))}
+          {nearDarkPuffs.map((p, i) => (
+            <sprite
+              key={`near-dark-${i}`}
+              position={[p.x, p.y, p.z]}
+              scale={[size * p.scale, size * p.scale, 1]}
+              userData={{ baseOpacity: 0.8, nearLayer: true }}
+              renderOrder={11}
+            >
+              <spriteMaterial
+                map={darkTexture}
+                transparent
+                opacity={0}
+                depthWrite={false}
+                blending={THREE.NormalBlending}
+              />
+            </sprite>
+          ))}
+        </>
+      )}
       <BodyLabel body={body} sizeUnits={size} />
     </group>
   );
@@ -940,8 +1204,12 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
   const primaryRef = useRef<THREE.Group>(null);
   const secondaryRef = useRef<THREE.Group>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
+  const showLabels = useSimulationStore((s) => s.showLabels);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
   const separation = size * 1.7;
+  // 绕共同质心的轨道半径（binaryStarPositions 同源公式：重星轨道小）
+  const rPrimary = separation / (1 + SIRIUS_MASS_RATIO);
+  const rSecondary = separation - rPrimary;
 
   const glowTexture = useMemo(
     () => new THREE.CanvasTexture(createGlowSpriteCanvas("#eef4ff", 128)),
@@ -949,13 +1217,15 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
   );
   // 白矮星衍射芒线（P6 §3.2）：致密高亮点星的观测质感
   const spikeTexture = useMemo(
-    () => new THREE.CanvasTexture(createDiffractionSpikeCanvas("#eaf0ff", 128)),
+    () => new THREE.CanvasTexture(createDiffractionSpikeCanvas("#dcebff", 128)),
     [],
   );
   useEffect(() => () => glowTexture.dispose(), [glowTexture]);
   useEffect(() => () => spikeTexture.dispose(), [spikeTexture]);
 
-  useGalacticPlacement(body, groupRef);
+  const getWeight = useGalacticPlacement(body, groupRef);
+  // R2-7 近观门控：跟随时挂载互绕轨道线与两星身份标注，离开即释放
+  const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
@@ -972,6 +1242,14 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
+      {/* R2-7 近观：绕共同质心的双轨道线（互绕运动路径可辨） */}
+      {nearActive && (
+        <SiriusNearOrbits
+          rPrimary={rPrimary}
+          rSecondary={rSecondary}
+          getOpacity={() => getWeight() * getNear01()}
+        />
+      )}
       {/* 天狼星A：主序星（大而亮） */}
       <group ref={primaryRef}>
         <mesh
@@ -992,6 +1270,19 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
             opacity={0.7}
           />
         </sprite>
+        {/* R2-7 近观两星身份标注（大小/颜色对比 + 名称可辨） */}
+        {nearActive && showLabels && (
+          <Html
+            position={[0, size * 0.62, 0]}
+            center
+            distanceFactor={26}
+            style={{ pointerEvents: "none" }}
+          >
+            <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-sky-100/90">
+              天狼星A · 主序星
+            </span>
+          </Html>
+        )}
       </group>
       {/* 天狼星B：白矮星（极小、白蓝色致密高亮点 + 衍射芒线，高密度在信息面板强调） */}
       <group ref={secondaryRef}>
@@ -1002,7 +1293,8 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
           }}
         >
           <sphereGeometry args={[size * 0.1, 20, 20]} />
-          <meshBasicMaterial color="#eaf2ff" />
+          {/* R2-7：白矮星取更蓝的色调（~25,000 K 高温白矮星，与主星对比清晰） */}
+          <meshBasicMaterial color="#cfe4ff" />
         </mesh>
         <sprite scale={[size * 1.6, size * 1.6, 1]}>
           <spriteMaterial
@@ -1013,9 +1305,88 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
             opacity={0.9}
           />
         </sprite>
+        {nearActive && showLabels && (
+          <Html
+            position={[0, size * 0.32, 0]}
+            center
+            distanceFactor={26}
+            style={{ pointerEvents: "none" }}
+          >
+            <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-blue-200/90">
+              天狼星B · 白矮星
+            </span>
+          </Html>
+        )}
       </group>
       <BodyLabel body={body} sizeUnits={size} />
     </group>
+  );
+}
+
+/**
+ * 天狼星近观互绕轨道线（R2-7 §7.1-B）：绕共同质心的两个圆轨道
+ * （与 binaryStarPositions 同源半径，重的 A 星轨道小、白矮星 B 轨道大），
+ * 近观时互绕运动路径与质心结构清晰可辨。
+ */
+function SiriusNearOrbits({
+  rPrimary,
+  rSecondary,
+  getOpacity,
+}: {
+  rPrimary: number;
+  rSecondary: number;
+  getOpacity: () => number;
+}): JSX.Element {
+  const { geoA, geoB, matA, matB } = useMemo(() => {
+    const build = (radius: number): THREE.BufferGeometry => {
+      const segments = 96;
+      const positions = new Float32Array(segments * 3);
+      for (let i = 0; i < segments; i += 1) {
+        const theta = (Math.PI * 2 * i) / segments;
+        positions[i * 3] = radius * Math.cos(theta);
+        positions[i * 3 + 1] = 0;
+        positions[i * 3 + 2] = -radius * Math.sin(theta);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      return geo;
+    };
+    const makeMat = (color: string): THREE.LineBasicMaterial =>
+      new THREE.LineBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+    return {
+      geoA: build(rPrimary),
+      geoB: build(rSecondary),
+      matA: makeMat("#9fc3ff"),
+      matB: makeMat("#cfe4ff"),
+    };
+  }, [rPrimary, rSecondary]);
+
+  useEffect(
+    () => () => {
+      geoA.dispose();
+      geoB.dispose();
+      matA.dispose();
+      matB.dispose();
+    },
+    [geoA, geoB, matA, matB],
+  );
+
+  useFrame(() => {
+    const k = getOpacity();
+    matA.opacity = 0.38 * k;
+    matB.opacity = 0.3 * k;
+  });
+
+  return (
+    <>
+      <lineLoop geometry={geoA} material={matA} />
+      <lineLoop geometry={geoB} material={matB} />
+    </>
   );
 }
 
@@ -1093,14 +1464,46 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
   );
   useEffect(() => () => beamMaterial.dispose(), [beamMaterial]);
 
+  // R2-7 近观丝状遗迹云团纹理（shell 形态 3 种子，复用 nebulaTextures 缓存）
+  const filamentTextures = useMemo(
+    () => [
+      nebulaTexture,
+      getNebulaTexture({
+        size: 256,
+        seed: 10542,
+        innerColor: "#ffb28a",
+        outerColor: "#ff4038",
+        filamentStrength: 0.9,
+        irregularity: 0.65,
+        octaves: 5,
+        shape: "shell",
+      }),
+      getNebulaTexture({
+        size: 256,
+        seed: 10543,
+        innerColor: "#bfe0ff", // 中心同步辐射星风云（蓝白）
+        outerColor: "#ff6a55",
+        filamentStrength: 0.8,
+        irregularity: 0.6,
+        octaves: 5,
+        shape: "shell",
+      }),
+    ],
+    [nebulaTexture],
+  );
+
   const getWeight = useGalacticPlacement(body, groupRef);
+  // R2-7 近观门控：跟随时挂载丝状体积云团层，离开即释放
+  const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
+    const near01 = getNear01();
     const t = clock.elapsedTime;
     beamMaterial.uniforms.uTime.value = t;
-    beamMaterial.uniforms.uOpacity.value = 0.5 * weight;
+    // 近观时射束增亮（扫描形态更清晰，R2-7）
+    beamMaterial.uniforms.uOpacity.value = 0.5 * weight * (1 + 0.6 * near01);
     // 射束旋转扫描（可视化降频周期，已登记）
     if (beamsRef.current) {
       beamsRef.current.rotation.y = pulsarBeamAngle(
@@ -1113,12 +1516,13 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
       (flashRef.current.material as THREE.SpriteMaterial).opacity =
         pulsarPulseIntensity(t, PULSAR_VISUAL_SPIN_PERIOD_SEC) * 0.95 * weight;
     }
-    // 遗迹星云缓慢膨胀（联动蟹状星云）
+    // 遗迹星云缓慢膨胀（联动蟹状星云）；近观时单张光晕减淡交叉过渡到
+    // 体积云团（R2-7"无单张圆形光晕"）
     if (nebulaRef.current) {
       const s = size * 2.6 * nebulaExpansionScale(t, 90, 0.1);
       nebulaRef.current.scale.set(s, s, 1);
       (nebulaRef.current.material as THREE.SpriteMaterial).opacity =
-        0.4 * weight;
+        0.4 * weight * (1 - 0.45 * near01);
     }
   });
 
@@ -1133,6 +1537,17 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
           blending={THREE.AdditiveBlending}
         />
       </sprite>
+      {/* R2-7 近观丝状体积云团（16 sprite，遗迹壳层立体感） */}
+      {nearActive && (
+        <NebulaPuffCloud
+          seed={1054}
+          count={16}
+          radiusUnits={size * 1.2}
+          flattenY={0.85}
+          textures={filamentTextures}
+          getOpacity={() => getWeight() * getNear01()}
+        />
+      )}
       {/* 中心中子星（极小天体 + 强磁场视觉暗示：蓝白色） */}
       <mesh
         onClick={(e) => {
@@ -1399,18 +1814,23 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
   }, [size]);
 
   const getWeight = useGalacticPlacement(body, groupRef);
+  // R2-7 近观门控：跟随时挂载体积感云团层，离开即释放
+  const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
   useFrame(() => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
+    const near01 = getNear01();
     group.traverse((obj) => {
       const base = obj.userData.baseOpacity as number | undefined;
       if (base === undefined) return;
+      // 近观时基础平面层减淡（体积云团接管主体，削弱"平面贴片"观感）
+      const factor = obj.userData.nearDim ? weight * (1 - 0.35 * near01) : weight;
       if (obj instanceof THREE.Sprite) {
-        obj.material.opacity = base * weight;
+        obj.material.opacity = base * factor;
       } else if (obj instanceof THREE.Mesh) {
         (obj.material as THREE.Material & { opacity: number }).opacity =
-          base * weight;
+          base * factor;
       }
     });
   });
@@ -1427,7 +1847,7 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
         <mesh
           key={i}
           rotation={[0, 0, layer.rot]}
-          userData={{ baseOpacity: layer.opacity }}
+          userData={{ baseOpacity: layer.opacity, nearDim: true }}
           onClick={(e) => {
             e.stopPropagation();
             selectBody(body.id);
@@ -1445,6 +1865,17 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
           />
         </mesh>
       ))}
+      {/* R2-7 近观体积感云团（18 sprite，绕行观察无"单张圆形光晕"） */}
+      {nearActive && (
+        <NebulaPuffCloud
+          seed={4210}
+          count={18}
+          radiusUnits={size * 1.05}
+          flattenY={0.55}
+          textures={cloudLayers}
+          getOpacity={() => getWeight() * getNear01()}
+        />
+      )}
       {/* 内部年轻恒星 + Trapezium 聚星（点亮局部） */}
       {youngStars.map((p, i) => (
         <sprite
@@ -1471,7 +1902,8 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
  */
 function PlanetaryNebula({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
-  const shellRef = useRef<THREE.Mesh>(null);
+  const shellRef = useRef<THREE.Group>(null);
+  const planeRef = useRef<THREE.Mesh>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
 
@@ -1492,47 +1924,184 @@ function PlanetaryNebula({ body }: BodyProps): JSX.Element {
   );
 
   const getWeight = useGalacticPlacement(body, groupRef);
+  // R2-7 近观门控：跟随时挂载环体 3D 粒子与外晕层，离开即释放
+  const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
     if (shellRef.current) {
-      // 缓慢膨胀（真实约 20–30 km/s，动画为艺术化加速，已登记）
+      // 缓慢膨胀（真实约 20–30 km/s，动画为艺术化加速，已登记）；
+      // 近观环体粒子挂在同一缩放组内与环面同步膨胀
       shellRef.current.scale.setScalar(
         nebulaExpansionScale(clock.elapsedTime, 75, 0.12),
       );
-      (shellRef.current.material as THREE.MeshBasicMaterial).opacity =
+    }
+    if (planeRef.current) {
+      (planeRef.current.material as THREE.MeshBasicMaterial).opacity =
         0.85 * weight;
     }
   });
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 环壳（带径向色层与噪声扰动的环纹理，替换硬边 torus，倾斜呈现椭圆环） */}
-      <mesh
-        ref={shellRef}
-        rotation={[Math.PI / 3, 0.4, 0]}
-        onClick={(e) => {
-          e.stopPropagation();
-          selectBody(body.id);
-        }}
-      >
-        <planeGeometry args={[size * 2.6, size * 2.6]} />
-        <meshBasicMaterial
-          map={ringTexture}
-          color={body.color}
-          transparent
-          blending={THREE.AdditiveBlending}
-          depthWrite={false}
-          side={THREE.DoubleSide}
+      {/* 环壳缩放组（倾斜姿态 + 膨胀动画；环面与近观环体粒子同步） */}
+      <group ref={shellRef} rotation={[Math.PI / 3, 0.4, 0]}>
+        {/* 环面（带径向色层与噪声扰动的环纹理，替换硬边 torus，倾斜呈现椭圆环） */}
+        <mesh
+          ref={planeRef}
+          onClick={(e) => {
+            e.stopPropagation();
+            selectBody(body.id);
+          }}
+        >
+          <planeGeometry args={[size * 2.6, size * 2.6]} />
+          <meshBasicMaterial
+            map={ringTexture}
+            color={body.color}
+            transparent
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+        {/* R2-7 近观环体 3D 粒子（环向软边粒子，侧向观察环体有厚度） */}
+        {nearActive && (
+          <RingNebulaNearTorus
+            sizeUnits={size}
+            getOpacity={() => getWeight() * getNear01()}
+          />
+        )}
+      </group>
+      {/* R2-7 近观外晕壳（外缘 Hα 弥散晕，体积包裹感） */}
+      {nearActive && (
+        <RingNebulaNearHalo
+          sizeUnits={size}
+          getOpacity={() => getWeight() * getNear01()}
         />
-      </mesh>
+      )}
       {/* 中心白矮星 */}
       <mesh>
         <sphereGeometry args={[size * 0.07, 12, 12]} />
         <meshBasicMaterial color="#ffffff" />
       </mesh>
       <BodyLabel body={body} sizeUnits={size} />
+    </group>
+  );
+}
+
+/**
+ * 环状星云近观环体粒子（R2-7 §7.1-B）：沿环面圆环分布的软边粒子环
+ * （200 粒，管截面确定性散布），与环面纹理同姿态同膨胀——侧向观察
+ * 环体呈现厚度与颗粒结构，而非一张平面贴图。
+ */
+function RingNebulaNearTorus({
+  sizeUnits,
+  getOpacity,
+}: {
+  sizeUnits: number;
+  getOpacity: () => number;
+}): JSX.Element {
+  const { geometry, material } = useMemo(() => {
+    const rand = createSeededRandom(57057);
+    const count = 200;
+    const ringRadius = sizeUnits * 0.85;
+    const tubeRadius = sizeUnits * 0.16;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const inner = new THREE.Color("#7fffcf"); // 内缘 OIII 蓝绿
+    const outer = new THREE.Color("#ff5a55"); // 外缘 Hα 红
+    for (let i = 0; i < count; i += 1) {
+      // 环向均匀 + 抖动；管截面 sqrt 分布（外密内稀的壳感）
+      const theta = Math.PI * 2 * ((i + rand() * 0.8) / count);
+      const tube = tubeRadius * Math.sqrt(rand());
+      const phi = Math.PI * 2 * rand();
+      const r = ringRadius + tube * Math.cos(phi);
+      // 环面位于 x-y 平面（与 planeGeometry 同空间）
+      positions[i * 3] = r * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.sin(theta);
+      positions[i * 3 + 2] = tube * Math.sin(phi);
+      // 径向色层：靠内偏 OIII 蓝绿、靠外偏 Hα 红（与环纹理色层一致）
+      const t = (tube * Math.cos(phi)) / tubeRadius / 2 + 0.5;
+      const c = inner.clone().lerp(outer, t);
+      const brightness = 0.5 + 0.5 * rand();
+      colors[i * 3] = c.r * brightness;
+      colors[i * 3 + 1] = c.g * brightness;
+      colors[i * 3 + 2] = c.b * brightness;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      size: sizeUnits * 0.11,
+      map: getSoftPointTexture(),
+      vertexColors: true,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: true,
+    });
+    return { geometry: geo, material: mat };
+  }, [sizeUnits]);
+
+  useEffect(
+    () => () => {
+      geometry.dispose();
+      material.dispose();
+    },
+    [geometry, material],
+  );
+
+  useFrame(() => {
+    material.opacity = 0.8 * getOpacity();
+  });
+
+  return <points geometry={geometry} material={material} />;
+}
+
+/** 环状星云近观外晕壳 + 中心 OIII 辉光（体积包裹感） */
+function RingNebulaNearHalo({
+  sizeUnits,
+  getOpacity,
+}: {
+  sizeUnits: number;
+  getOpacity: () => number;
+}): JSX.Element {
+  const groupRef = useRef<THREE.Group>(null);
+  useFrame(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    const k = getOpacity();
+    group.traverse((obj) => {
+      const base = obj.userData.baseOpacity as number | undefined;
+      if (base === undefined || !(obj instanceof THREE.Mesh)) return;
+      (obj.material as THREE.Material & { opacity: number }).opacity = base * k;
+    });
+  });
+  return (
+    <group ref={groupRef}>
+      <mesh userData={{ baseOpacity: 0.05 }}>
+        <sphereGeometry args={[sizeUnits * 1.3, 32, 24]} />
+        <meshBasicMaterial
+          color="#ff5a55"
+          transparent
+          opacity={0}
+          side={THREE.BackSide}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+      <mesh userData={{ baseOpacity: 0.09 }}>
+        <sphereGeometry args={[sizeUnits * 0.4, 24, 18]} />
+        <meshBasicMaterial
+          color="#7fffcf"
+          transparent
+          opacity={0}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
     </group>
   );
 }
@@ -1600,6 +2169,8 @@ function GlobularCluster({ body }: BodyProps): JSX.Element {
   );
 
   const getWeight = useGalacticPlacement(body, groupRef);
+  // R2-7 近观门控：跟随时挂载近观分级星场，离开即释放
+  const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
   useFrame(() => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
@@ -1610,6 +2181,20 @@ function GlobularCluster({ body }: BodyProps): JSX.Element {
   return (
     <group ref={groupRef} name={body.id}>
       <points geometry={geometry} material={material} />
+      {/* R2-7 近观分级星场（+1,200 粒更小的暗星，rand^2.4 分布中心更密——
+          近观时中心密集/边缘稀疏的分辨力提升，粒子均为圆形软边贴图） */}
+      {nearActive && (
+        <ClusterNearStarField
+          seed={20260723}
+          count={1200}
+          radiusUnits={size}
+          concentrationPow={2.4}
+          flattenY={1}
+          pointSizeUnits={size * 0.035}
+          bluePalette={false}
+          getOpacity={() => getWeight() * getNear01()}
+        />
+      )}
       {/* 点选热区（透明球） */}
       <mesh
         onClick={(e) => {
@@ -1623,6 +2208,97 @@ function GlobularCluster({ body }: BodyProps): JSX.Element {
       <BodyLabel body={body} sizeUnits={size} />
     </group>
   );
+}
+
+/**
+ * 星团近观分级星场（R2-7 §7.1-B 星团类共用）：在基础星场之上叠加
+ * 更多、更小的暗星层——近观时粒子数/大小分级提升，分布确定性生成
+ * （两次飞往形态一致），粒子为圆形软边贴图（getSoftPointTexture，
+ * 无方块粒子）。M13 用老年红黄星族色板（concentrationPow 大 → 中心
+ * 致密），昴星团用年轻热蓝星色板（分布接近均匀）。
+ */
+function ClusterNearStarField({
+  seed,
+  count,
+  radiusUnits,
+  concentrationPow,
+  flattenY,
+  pointSizeUnits,
+  bluePalette,
+  getOpacity,
+}: {
+  seed: number;
+  count: number;
+  radiusUnits: number;
+  /** 半径分布指数：r = R·rand^pow（越大中心越密；1 ≈ 疏散） */
+  concentrationPow: number;
+  flattenY: number;
+  pointSizeUnits: number;
+  bluePalette: boolean;
+  getOpacity: () => number;
+}): JSX.Element {
+  const { geometry, material } = useMemo(() => {
+    const rand = createSeededRandom(seed);
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    // 色板与基础星场一致（M13 老年红黄 + 蓝离散星 / 昴星团热蓝星）
+    const old = [
+      [1.0, 0.82, 0.55],
+      [1.0, 0.7, 0.42],
+      [1.0, 0.9, 0.72],
+    ];
+    const blueStraggler = [0.72, 0.82, 1.0];
+    for (let i = 0; i < count; i += 1) {
+      const r = radiusUnits * Math.pow(rand(), concentrationPow);
+      const cosPolar = rand() * 2 - 1;
+      const azimuth = Math.PI * 2 * rand();
+      const sinPolar = Math.sqrt(1 - cosPolar * cosPolar);
+      positions[i * 3] = r * sinPolar * Math.cos(azimuth);
+      positions[i * 3 + 1] = r * cosPolar * flattenY;
+      positions[i * 3 + 2] = r * sinPolar * Math.sin(azimuth);
+      const brightness = 0.35 + 0.45 * rand();
+      if (bluePalette) {
+        const blue = 0.85 + 0.15 * rand();
+        colors[i * 3] = 0.7 * brightness;
+        colors[i * 3 + 1] = 0.82 * brightness;
+        colors[i * 3 + 2] = blue * brightness;
+      } else {
+        const isBlue = rand() < 0.08;
+        const c = isBlue ? blueStraggler : old[Math.floor(rand() * old.length)];
+        colors[i * 3] = c[0] * brightness;
+        colors[i * 3 + 1] = c[1] * brightness;
+        colors[i * 3 + 2] = c[2] * brightness;
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      map: getSoftPointTexture(),
+      vertexColors: true,
+      size: pointSizeUnits,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: true,
+    });
+    return { geometry: geo, material: mat };
+  }, [seed, count, radiusUnits, concentrationPow, flattenY, pointSizeUnits, bluePalette]);
+
+  useEffect(
+    () => () => {
+      geometry.dispose();
+      material.dispose();
+    },
+    [geometry, material],
+  );
+
+  useFrame(() => {
+    material.opacity = 0.85 * getOpacity();
+  });
+
+  return <points geometry={geometry} material={material} />;
 }
 
 /**
