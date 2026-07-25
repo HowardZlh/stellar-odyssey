@@ -11,14 +11,30 @@ import { DEG_TO_RAD } from "@/utils/physics";
 import { SCENE_UNITS_PER_LY, trapezoidWeight } from "@/utils/scale";
 import {
   ARM_PATTERN_SPEED_RAD_PER_MYR,
+  BAR_PATTERN_SPEED_RAD_PER_MYR,
   DENSITY_WAVE_CONTRAST,
   ECLIPTIC_GALACTIC_TILT_DEG,
   GALACTIC_BULGE_RADIUS_LY,
   GALACTIC_DISK_RADIUS_LY,
   GALACTIC_DISK_THICKNESS_LY,
+  GLOBULAR_CLUSTER_COUNT,
+  GLOBULAR_CLUSTER_STARS,
+  GLOBULAR_MAX_RADIUS_LY,
+  GLOBULAR_MIN_RADIUS_LY,
+  GLOBULAR_SPREAD_LY,
+  HALO_FLATTENING,
+  HALO_MAX_RADIUS_LY,
+  HALO_MIN_RADIUS_LY,
+  M13_EXCLUSION_RADIUS_LY,
   SUN_GALACTIC_RADIUS_LY,
+  bulgeAxisRatio,
+  dustLaneStrength,
+  galaxyFaceOnFactor,
   galaxyShaderMyr,
   generateGalaxyDiskParticles,
+  generateGalaxyHaloParticles,
+  generateGlobularClusters,
+  m13GalactocentricT0Ly,
   simDaysToMyr,
   sunGalacticPositionLy,
 } from "@/utils/galaxy";
@@ -56,8 +72,23 @@ import {
 import { SpecialBodies } from "@/components/Scene/SpecialBodies";
 import { Supernova } from "@/components/Scene/Supernova";
 
-/** 银盘粒子数（附录A：30,000–50,000） */
+/**
+ * 银盘粒子数（附录A：30,000–50,000）。
+ *
+ * R2-9 粒子预算登记（L4 银河系）：
+ * - 银盘 40,000（内含核球 3,200 [8%] + 棒 4,000 [10%]，总数不变）；
+ * - 3D 恒星银晕 +3,000（HALO_PARTICLE_COUNT）；
+ * - 球状星团 +29×21 = 609（GLOBULAR_CLUSTER_COUNT × GLOBULAR_CLUSTER_STARS）；
+ * - 本组件合计 43,609；L4 场景峰值 ≈ 43,609 + M13 基础星场 420
+ *   + 星系近观层 ≤8,000（R2-8 LRU 容量 1）≈ 52,029，60 FPS 实测保持。
+ */
 const DISK_PARTICLE_COUNT = 40000;
+/** 3D 恒星银晕粒子数（R2-9 §9.1：2,000–4,000 区间） */
+const HALO_PARTICLE_COUNT = 3000;
+/** 核球粒子占比（R2-9：原 0.18 拆分为核球 0.08 + 棒 0.10） */
+const BULGE_FRACTION = 0.08;
+/** 棒粒子占比（R2-9 棒旋结构 SBbc，俯视可辨性优先取 0.10） */
+const BAR_FRACTION = 0.1;
 /** 尾迹采样间隔（百万年） */
 const TRAIL_SAMPLE_MYR = 0.8;
 /** 尾迹容量（约覆盖 1.4 个银河年） */
@@ -108,9 +139,10 @@ export function Galaxy(): JSX.Element {
       diskRadiusLy: GALACTIC_DISK_RADIUS_LY,
       thicknessLy: GALACTIC_DISK_THICKNESS_LY,
       bulgeRadiusLy: GALACTIC_BULGE_RADIUS_LY,
-      bulgeFraction: 0.18,
+      bulgeFraction: BULGE_FRACTION,
       spiralTightness: 1.2,
       armSpreadRad: 0.28,
+      barFraction: BAR_FRACTION,
     });
     const n = particles.count;
     const geo = new THREE.BufferGeometry();
@@ -129,6 +161,7 @@ export function Galaxy(): JSX.Element {
     );
     geo.setAttribute("aColor", new THREE.BufferAttribute(particles.colors, 3));
     geo.setAttribute("aSize", new THREE.BufferAttribute(particles.sizes, 1));
+    geo.setAttribute("aBar", new THREE.BufferAttribute(particles.barFlags, 1));
     geo.boundingSphere = new THREE.Sphere(
       new THREE.Vector3(0, 0, 0),
       GALACTIC_DISK_RADIUS_LY * SCENE_UNITS_PER_LY * 1.2,
@@ -145,6 +178,10 @@ export function Galaxy(): JSX.Element {
         // 旋臂密度波（可选需求 3.1.2）：图案角速度与恒星公转角速度不同
         uPatternSpeed: { value: ARM_PATTERN_SPEED_RAD_PER_MYR },
         uWaveContrast: { value: DENSITY_WAVE_CONTRAST },
+        // R2-9 棒图案角速度（刚性旋转，utils/galaxy.barParticleAngle 同源）
+        uBarOmega: { value: BAR_PATTERN_SPEED_RAD_PER_MYR },
+        // R2-9 尘埃带侧视强度（0-1，CPU 每帧按视角求 dustLaneStrength）
+        uDustLane: { value: 0 },
       },
       vertexShader: /* glsl */ `
         attribute float aRadiusLy;
@@ -152,18 +189,24 @@ export function Galaxy(): JSX.Element {
         attribute float aHeightLy;
         attribute vec3 aColor;
         attribute float aSize;
+        attribute float aBar;
         uniform float uMyr;
         uniform float uUnitsPerLy;
         uniform float uPatternSpeed;
         uniform float uWaveContrast;
+        uniform float uBarOmega;
+        uniform float uDustLane;
         varying vec3 vColor;
         varying float vWave;
+        varying float vDust;
 
         float hash1(float n) { return fract(sin(n) * 43758.5453); }
 
         void main() {
-          // 较差自转：平坦旋转曲线 v=220km/s → ω = v/r（内圈快、外圈慢）
-          float omega = (220.0 * 3.3357) / max(aRadiusLy, 500.0);
+          // 较差自转：平坦旋转曲线 v=220km/s → ω = v/r（内圈快、外圈慢）；
+          // R2-9 棒粒子（aBar=1）改用棒图案角速度 Ω_b 刚性旋转，
+          // 保持棒形态不被较差自转剪切（utils/galaxy.barParticleAngle 同源）
+          float omega = mix((220.0 * 3.3357) / max(aRadiusLy, 500.0), uBarOmega, aBar);
           float angle = aPhase + omega * uMyr;
           vec3 pos = vec3(
             aRadiusLy * cos(angle),
@@ -184,6 +227,14 @@ export function Galaxy(): JSX.Element {
           // P6 §3.3 尘埃带示意：旋臂内侧（armCos 上升沿）亮度不对称衰减
           float dust = smoothstep(-0.2, 0.6, sin(4.0 * (angle - patternPhase) + 0.5));
           vWave *= mix(0.62, 1.0, dust);
+          // R2-9 棒粒子不参与密度波/团块调制（棒为刚体图案，恒定增亮
+          // 1.6 —— 俯视时棒状暖黄核心在核球辉光之外可辨）
+          vWave = mix(vWave, 1.6, aBar);
+          // R2-9 尘埃带侧视剪影：侧视时盘中平面（|h| 小）粒子吸光变暗
+          // + 片元红化（加性混合无法画暗，以衰减近似，登记于 utils/galaxy.ts）
+          float midplane = 1.0 - smoothstep(60.0, 380.0, abs(aHeightLy));
+          vDust = uDustLane * midplane;
+          vWave *= 1.0 - 0.85 * vDust;
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
           // 远距离（L4）下限 1.2px，保证银河系整体形态仍可辨识
           gl_PointSize = clamp(aSize * (2600.0 / -mvPosition.z), 1.2, 6.0);
@@ -194,6 +245,7 @@ export function Galaxy(): JSX.Element {
         uniform float uOpacity;
         varying vec3 vColor;
         varying float vWave;
+        varying float vDust;
 
         void main() {
           vec2 c = gl_PointCoord - vec2(0.5);
@@ -201,12 +253,98 @@ export function Galaxy(): JSX.Element {
           if (d2 > 0.25) discard;
           // 柔和圆点（中心亮边缘淡）；密度波调制亮度（vWave ∈ [1−c, 1+c]）
           float falloff = 1.0 - smoothstep(0.05, 0.25, d2);
-          gl_FragColor = vec4(vColor * vWave, uOpacity * (0.35 + 0.65 * falloff));
+          // R2-9 尘埃红化：中平面残余光偏红棕（星际消光蓝端更强）
+          vec3 col = vColor * vWave;
+          col = mix(col, col * vec3(1.0, 0.55, 0.38), vDust * 0.6);
+          gl_FragColor = vec4(col, uOpacity * (0.35 + 0.65 * falloff));
         }
       `,
     });
     return { diskGeometry: geo, diskMaterial: mat };
   }, []);
+
+  // ---------- R2-9：3D 恒星银晕 + 球状星团（静态粒子，零逐帧更新） ----------
+  const { haloGeometry, haloMaterial, clusterGeometry, clusterMaterial } =
+    useMemo(() => {
+      /** 静态粒子集 → BufferGeometry（光年 → 场景单位一次性换算） */
+      const buildGeometry = (set: {
+        count: number;
+        positionsLy: Float32Array;
+        colors: Float32Array;
+        sizes: Float32Array;
+      }): THREE.BufferGeometry => {
+        const positions = new Float32Array(set.count * 3);
+        for (let i = 0; i < set.count * 3; i += 1) {
+          positions[i] = set.positionsLy[i] * SCENE_UNITS_PER_LY;
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute("aColor", new THREE.BufferAttribute(set.colors, 3));
+        geo.setAttribute("aSize", new THREE.BufferAttribute(set.sizes, 1));
+        geo.boundingSphere = new THREE.Sphere(
+          new THREE.Vector3(0, 0, 0),
+          HALO_MAX_RADIUS_LY * SCENE_UNITS_PER_LY * 1.1,
+        );
+        return geo;
+      };
+      /** 与银盘粒子同一像素换算/软圆点管线的静态点材质（颗粒感统一） */
+      const buildMaterial = (): THREE.ShaderMaterial =>
+        new THREE.ShaderMaterial({
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          uniforms: { uOpacity: { value: 0 } },
+          vertexShader: /* glsl */ `
+            attribute vec3 aColor;
+            attribute float aSize;
+            varying vec3 vColor;
+            void main() {
+              vColor = aColor;
+              vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+              gl_PointSize = clamp(aSize * (2600.0 / -mvPosition.z), 1.0, 6.0);
+              gl_Position = projectionMatrix * mvPosition;
+            }
+          `,
+          fragmentShader: /* glsl */ `
+            uniform float uOpacity;
+            varying vec3 vColor;
+            void main() {
+              vec2 c = gl_PointCoord - vec2(0.5);
+              float d2 = dot(c, c);
+              if (d2 > 0.25) discard;
+              float falloff = 1.0 - smoothstep(0.05, 0.25, d2);
+              gl_FragColor = vec4(vColor, uOpacity * (0.35 + 0.65 * falloff));
+            }
+          `,
+        });
+      const halo = generateGalaxyHaloParticles({
+        count: HALO_PARTICLE_COUNT,
+        seed: 20260726,
+        minRadiusLy: HALO_MIN_RADIUS_LY,
+        maxRadiusLy: HALO_MAX_RADIUS_LY,
+        flattening: HALO_FLATTENING,
+      });
+      // 球状星团：29 个程序化 + M13（L3 特殊天体条目联动，同一对象不重复
+      // 渲染——其 t=0 银心系位置周围留排除区，见 utils/galaxy.ts 文件头）
+      const clusters = generateGlobularClusters({
+        clusterCount: GLOBULAR_CLUSTER_COUNT,
+        starsPerCluster: GLOBULAR_CLUSTER_STARS,
+        seed: 20260726,
+        minRadiusLy: GLOBULAR_MIN_RADIUS_LY,
+        maxRadiusLy: GLOBULAR_MAX_RADIUS_LY,
+        spreadLy: GLOBULAR_SPREAD_LY,
+        exclusion: {
+          centerLy: m13GalactocentricT0Ly(),
+          radiusLy: M13_EXCLUSION_RADIUS_LY,
+        },
+      });
+      return {
+        haloGeometry: buildGeometry(halo),
+        haloMaterial: buildMaterial(),
+        clusterGeometry: buildGeometry(clusters),
+        clusterMaterial: buildMaterial(),
+      };
+    }, []);
 
   // ---------- 中心辉光（多层）与银心标记 ----------
   const glowTextures = useMemo(() => {
@@ -229,6 +367,10 @@ export function Galaxy(): JSX.Element {
 
   const coreSpriteRef = useRef<THREE.Sprite>(null);
   const haloSpriteRef = useRef<THREE.Sprite>(null);
+  // R2-9 尘埃带侧视剪影：盘中平面扁椭球吸光暗带（普通透明混合，
+  // renderOrder 置后 → 对先绘制的加性粒子/核球辉光做变暗叠加；
+  // 仅侧视渐入（opacity ∝ dustLaneStrength），正视完全透明零成本）
+  const dustLaneRef = useRef<THREE.Mesh>(null);
   const markerSpriteRef = useRef<THREE.Sprite>(null);
   // 脉动波纹扩散环（R2-6 §6.1：当前位置雷达波纹高亮，与 You are here 联动）
   const pulseRingRef = useRef<THREE.Sprite>(null);
@@ -368,6 +510,10 @@ export function Galaxy(): JSX.Element {
     return () => {
       diskGeometry.dispose();
       diskMaterial.dispose();
+      haloGeometry.dispose();
+      haloMaterial.dispose();
+      clusterGeometry.dispose();
+      clusterMaterial.dispose();
       trailGeometry.dispose();
       trailMaterial.dispose();
       predictionGeometry.dispose();
@@ -386,6 +532,10 @@ export function Galaxy(): JSX.Element {
   }, [
     diskGeometry,
     diskMaterial,
+    haloGeometry,
+    haloMaterial,
+    clusterGeometry,
+    clusterMaterial,
     trailGeometry,
     trailMaterial,
     predictionGeometry,
@@ -454,6 +604,9 @@ export function Galaxy(): JSX.Element {
     );
     group.visible = weight > 0.001;
     diskMaterial.uniforms.uOpacity.value = weight;
+    // R2-9：银晕淡（包裹感背景层）、星团亮（点簇可辨）
+    haloMaterial.uniforms.uOpacity.value = 0.55 * weight;
+    clusterMaterial.uniforms.uOpacity.value = weight;
     if (!group.visible) return;
 
     const myr = simDaysToMyr(simDays);
@@ -500,6 +653,23 @@ export function Galaxy(): JSX.Element {
     // 渲染位姿注册（bug 修复）：cameraFocus/SpatialAudio 按本帧实际应用的
     // 银心固定权重与垂直增益解析 L3 天体场景坐标，保证飞往/跟随与渲染一致
     setRenderedGalacticFrame(w, gain);
+
+    // R2-9 视角因子：相机相对银心方向 → 正视程度（纯函数，倾斜逆旋转）
+    // 驱动 1) 尘埃带侧视暗带强度；2) 核球辉光 sprite 椭球轴比
+    const camPos = frameState.camera.position;
+    const faceOn = galaxyFaceOnFactor(
+      camPos.x - group.position.x,
+      camPos.y - group.position.y,
+      camPos.z - group.position.z,
+      tiltRad,
+    );
+    const dustLane = dustLaneStrength(faceOn);
+    diskMaterial.uniforms.uDustLane.value = dustLane;
+    if (dustLaneRef.current) {
+      const laneMat = dustLaneRef.current.material as THREE.MeshBasicMaterial;
+      laneMat.opacity = 0.62 * dustLane * weight;
+      dustLaneRef.current.visible = laneMat.opacity > 0.01;
+    }
 
     // 历史尾迹采样（时间倒退/大跳变/垂直增益切换时清空，避免坐标残留或折角）
     const lastSample = lastSampleMyrRef.current;
@@ -580,14 +750,20 @@ export function Galaxy(): JSX.Element {
       arrowRef.current.setDirection(dir);
       arrowRef.current.visible = state.showYouAreHere && weight > 0.05;
     }
-    // 中心辉光透明度
+    // 中心辉光透明度 + R2-9 核球椭球感：辉光 sprite 纵横比随视角连续变化
+    // （正视圆形 → 侧视压扁 0.5，billboard 呈现扁椭球不同视角的轴比）；
+    // 侧视时随尘埃带强度压低辉光（−45%），避免白斑洗掉盘中平面暗带
     if (coreSpriteRef.current) {
       (coreSpriteRef.current.material as THREE.SpriteMaterial).opacity =
-        0.9 * weight;
+        0.85 * weight * (1 - 0.45 * dustLane);
+      const coreW = GALACTIC_DISK_RADIUS_LY * SCENE_UNITS_PER_LY * 0.26;
+      coreSpriteRef.current.scale.set(coreW, coreW * bulgeAxisRatio(faceOn), 1);
     }
     if (haloSpriteRef.current) {
+      // R2-9：银晕辉光 sprite 降为弱环境光底（0.35 → 0.22），
+      // 立体包裹感改由 3D 银晕粒子承载（叠加方案，登记）
       (haloSpriteRef.current.material as THREE.SpriteMaterial).opacity =
-        0.35 * weight;
+        0.22 * weight;
     }
     if (markerSpriteRef.current) {
       (markerSpriteRef.current.material as THREE.SpriteMaterial).opacity =
@@ -610,13 +786,36 @@ export function Galaxy(): JSX.Element {
   return (
     // 初始不可见：首帧 useFrame 前不渲染银河系内容（消除 L1/L2 下的闪现竞态）
     <group ref={groupRef} visible={false}>
-      {/* 银盘粒子（棒旋结构 + 较差自转） */}
+      {/* 银盘粒子（棒旋结构 + 较差自转 + R2-9 棒刚性旋转/尘埃带侧视暗带） */}
       <points geometry={diskGeometry} material={diskMaterial} />
 
-      {/* 中心辉光（核球）与银晕光层 */}
+      {/* R2-9：3D 恒星银晕（r^-3.5 稀疏球壳）+ 球状星团点簇（29 + M13 联动） */}
+      <points geometry={haloGeometry} material={haloMaterial} />
+      <points geometry={clusterGeometry} material={clusterMaterial} />
+
+      {/* R2-9 尘埃带侧视剪影：盘中平面扁椭球暗带（厚约 1,200 ly，
+          renderOrder=2 在加性粒子之后普通混合 → 真实"吸光"变暗；
+          侧视渐入、正视透明，强度由 useFrame 按 dustLaneStrength 驱动） */}
+      <mesh
+        ref={dustLaneRef}
+        renderOrder={2}
+        scale={[diskRadiusUnits * 0.96, diskRadiusUnits * 0.012, diskRadiusUnits * 0.96]}
+        visible={false}
+      >
+        <sphereGeometry args={[1, 48, 12]} />
+        <meshBasicMaterial
+          color="#170d06"
+          transparent
+          opacity={0}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      {/* 中心辉光（核球，R2-9 轴比随视角逐帧调整）与银晕弱环境光底 */}
       <sprite
         ref={coreSpriteRef}
-        scale={[diskRadiusUnits * 0.35, diskRadiusUnits * 0.28, 1]}
+        scale={[diskRadiusUnits * 0.26, diskRadiusUnits * 0.22, 1]}
       >
         <spriteMaterial
           map={glowTextures.core}
