@@ -11,6 +11,7 @@ import {
   getSunLayerById,
 } from '@/data/sunStructure';
 import { useSimulationStore } from '@/store';
+import { eventNoticeVisibleInScope, eventOutOfScopeSummaryZh } from '@/utils/eventScopes';
 import { galacticFrameHudLabel } from '@/utils/galacticFrame';
 import { galacticYearProgress, sunGalacticPositionLy } from '@/utils/galaxy';
 import { formatSceneScaleLabel } from '@/utils/scale';
@@ -55,6 +56,14 @@ export function HudInfo(): JSX.Element {
   const dismissCmeNotice = useSimulationStore((s) => s.dismissCmeNotice);
   const cmeArrivalNoticeVisible = useSimulationStore((s) => s.cmeArrivalNoticeVisible);
   const dismissCmeArrivalNotice = useSimulationStore((s) => s.dismissCmeArrivalNotice);
+  // R2-4 §4.1-B：事件通知按视角域过滤（选布尔值，仅域边界跨越时重渲染；
+  // 耀斑/CME/CME 抵达同属太阳系域窗口，共用一个判定）
+  const solarNoticeInScope = useSimulationStore((s) =>
+    eventNoticeVisibleInScope('flare', s.continuousLevel),
+  );
+  const supernovaNoticeInScope = useSimulationStore((s) =>
+    eventNoticeVisibleInScope('supernova', s.continuousLevel),
+  );
   const sunCutawayMode = useSimulationStore((s) => s.sunCutawayMode);
   const setSunCutawayMode = useSimulationStore((s) => s.setSunCutawayMode);
   // S3 §4.5：点选的太阳表面特征（黑子群/日珥科普卡片）
@@ -139,8 +148,10 @@ export function HudInfo(): JSX.Element {
 
       {/* 事件通知列（超新星/耀斑/CME，需求 3.1.5 与 S2 §4.3） */}
       <div className="absolute left-1/2 top-4 flex w-96 -translate-x-1/2 flex-col gap-2">
-        {/* 超新星爆发事件通知（需求 3.1.5：UI 提示 + "飞往观看"按钮） */}
-        {supernovaNoticeVisible && activeSupernova && (
+        {/* 超新星爆发事件通知（需求 3.1.5：UI 提示 + "飞往观看"按钮；
+            R2-4 §4.1-B：仅超新星视角域（L3/L4，≥2.5）内显示，域外折叠为
+            一行小字提醒——通知标志位不改动，回域内且事件仍活跃时恢复 */}
+        {supernovaNoticeInScope && supernovaNoticeVisible && activeSupernova && (
           <div className="rounded-lg border border-amber-400/40 bg-space-panel p-3 text-xs backdrop-blur">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-amber-300">💥 超新星爆发！</p>
@@ -182,8 +193,9 @@ export function HudInfo(): JSX.Element {
           </div>
         )}
 
-        {/* 太阳耀斑事件通知（S2 §4.3-2：级别 + "飞往观看"） */}
-        {solarFlareNoticeVisible && activeSolarFlare && (
+        {/* 太阳耀斑事件通知（S2 §4.3-2：级别 + "飞往观看"；
+            R2-4 §4.1-B：仅太阳系视角域（L1/L2，≤2.4）内显示 */}
+        {solarNoticeInScope && solarFlareNoticeVisible && activeSolarFlare && (
           <div className="rounded-lg border border-orange-400/40 bg-space-panel p-3 text-xs backdrop-blur">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-orange-300">
@@ -228,8 +240,9 @@ export function HudInfo(): JSX.Element {
           </div>
         )}
 
-        {/* CME 事件通知（S2 §4.3-3：朝地球时附加地磁暴科普） */}
-        {cmeNoticeVisible && activeCme && (
+        {/* CME 事件通知（S2 §4.3-3：朝地球时附加地磁暴科普；
+            R2-4 §4.1-B：仅太阳系视角域（L1/L2，≤2.4）内显示 */}
+        {solarNoticeInScope && cmeNoticeVisible && activeCme && (
           <div className="rounded-lg border border-rose-400/40 bg-space-panel p-3 text-xs backdrop-blur">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-rose-300">
@@ -265,8 +278,9 @@ export function HudInfo(): JSX.Element {
             </div>
           </div>
         )}
-        {/* S3 §4.3-3：CME 抵达地球通知（极区极光增强示意） */}
-        {cmeArrivalNoticeVisible && (
+        {/* S3 §4.3-3：CME 抵达地球通知（极区极光增强示意；
+            R2-4 §4.1-B：仅太阳系视角域（L1/L2，≤2.4）内显示 */}
+        {solarNoticeInScope && cmeArrivalNoticeVisible && (
           <div className="rounded-lg border border-emerald-400/40 bg-space-panel p-3 text-xs backdrop-blur">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-emerald-300">
@@ -298,6 +312,29 @@ export function HudInfo(): JSX.Element {
               </button>
             </div>
           </div>
+        )}
+
+        {/* R2-4 §4.1-B 方案 b：域外活跃事件折叠为一行小字提醒（逐事件一行，
+            与完整通知一一对应；事件状态照常推进，切回域内通知恢复） */}
+        {!supernovaNoticeInScope && supernovaNoticeVisible && activeSupernova && (
+          <p className="rounded border border-white/10 bg-space-panel/80 px-2 py-1 text-center text-[10px] text-gray-400 backdrop-blur">
+            {eventOutOfScopeSummaryZh('supernova')}
+          </p>
+        )}
+        {!solarNoticeInScope && solarFlareNoticeVisible && activeSolarFlare && (
+          <p className="rounded border border-white/10 bg-space-panel/80 px-2 py-1 text-center text-[10px] text-gray-400 backdrop-blur">
+            {eventOutOfScopeSummaryZh('flare')}
+          </p>
+        )}
+        {!solarNoticeInScope && cmeNoticeVisible && activeCme && (
+          <p className="rounded border border-white/10 bg-space-panel/80 px-2 py-1 text-center text-[10px] text-gray-400 backdrop-blur">
+            {eventOutOfScopeSummaryZh('cme')}
+          </p>
+        )}
+        {!solarNoticeInScope && cmeArrivalNoticeVisible && (
+          <p className="rounded border border-white/10 bg-space-panel/80 px-2 py-1 text-center text-[10px] text-gray-400 backdrop-blur">
+            {eventOutOfScopeSummaryZh('cmeArrival')}
+          </p>
         )}
       </div>
 
