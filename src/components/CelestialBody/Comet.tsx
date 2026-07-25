@@ -6,8 +6,26 @@ import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { CometData } from '@/types';
 import { useSimulationStore } from '@/store';
-import { heliocentricPosition } from '@/utils/physics';
+import {
+  DAYS_PER_YEAR,
+  DEG_TO_RAD,
+  heliocentricPosition,
+  normalizeAngle,
+  orbitalPeriodYears,
+} from '@/utils/physics';
 import { eclipticToScene } from '@/utils/scale';
+import {
+  advanceClampedPhase,
+  equivalentDaysForPhase,
+  planetFrozen,
+  planetVisibilityWeight,
+  reportPlanetRateClamp,
+} from '@/utils/freezeGate';
+import { rateClampFactor, timeCompressionForContinuousLevel } from '@/utils/time';
+import {
+  clearRenderedSatellitePhase,
+  setRenderedSatellitePhase,
+} from '@/utils/satellitePhase';
 import {
   ION_SWAY_WAVE_NUMBER,
   TAIL_FADE_EXPONENT,
@@ -239,10 +257,20 @@ export function Comet({ data }: CometProps): JSX.Element {
   const selectBody = useSimulationStore((s) => s.selectBody);
   const showLabels = useSimulationStore((s) => s.showLabels);
   // Html 标签不随父级 visible 隐藏，需单独按层级门控
-  const frozen = useSimulationStore((s) => s.continuousLevel > 3.2);
+  // R2-3：冻结判定收敛至 utils/freezeGate（与行星同步淡出-冻结）
+  const frozen = useSimulationStore((s) => planetFrozen(s.continuousLevel));
   // P4 彗核近观细节门控（仅 L1 近观渲染，滞回与行星一致）
   const [nearView, setNearView] = useState(false);
   const nearViewRef = useRef(false);
+  // R2-3 速率钳制（淡出区间兜底）：累计相位 / 上帧模拟时间 / 钳制状态 / 标签淡出
+  const clampedPhaseRef = useRef<number | null>(null);
+  const lastSimDaysRef = useRef<number | null>(null);
+  const clampedRef = useRef(false);
+  const labelElRef = useRef<HTMLSpanElement>(null);
+  const periodDays = useMemo(
+    () => orbitalPeriodYears(data.orbit.semiMajorAxisAu) * DAYS_PER_YEAR,
+    [data.orbit.semiMajorAxisAu],
+  );
 
   const comaTexture = useMemo(() => {
     const tex = new THREE.CanvasTexture(createGlowSpriteCanvas(data.color, 128));
@@ -263,6 +291,20 @@ export function Comet({ data }: CometProps): JSX.Element {
       comaCoreTexture.dispose();
     };
   }, [comaTexture, comaCoreTexture]);
+
+  // R2-3：卸载时清除渲染相位注册与钳制提示上报
+  useEffect(() => {
+    const bodyId = data.id;
+    return () => {
+      clearRenderedSatellitePhase(bodyId);
+      if (clampedRef.current) {
+        clampedRef.current = false;
+        useSimulationStore
+          .getState()
+          .setPlanetRateClampNotice(reportPlanetRateClamp(bodyId, false));
+      }
+    };
+  }, [data.id]);
 
   // P4 彗核近观资产（首次进入近观时才构建，离开后保留复用——几何/纹理极小）
   const nucleusAssets = useMemo(() => {
@@ -357,12 +399,63 @@ export function Comet({ data }: CometProps): JSX.Element {
     const group = groupRef.current;
     if (!group) return;
 
-    // 外层视角退化（与行星一致）
-    const isFrozen = continuousLevel > 3.2;
-    group.visible = !isFrozen;
-    if (isFrozen) return;
+    // R2-3 外层视角退化（与行星一致）：2.6→3.0 渐变淡出（缩放收敛登记同
+    // Planet.tsx），淡出完毕冻结演算；返回时按共享时间轴重求
+    const weight = planetVisibilityWeight(continuousLevel);
+    group.visible = weight > 0;
+    group.scale.setScalar(Math.max(weight, 1e-6));
+    if (labelElRef.current) {
+      labelElRef.current.style.opacity = weight.toFixed(3);
+    }
+    if (weight === 0) {
+      if (clampedRef.current) {
+        clampedRef.current = false;
+        clearRenderedSatellitePhase(data.id);
+        const notice = reportPlanetRateClamp(data.id, false);
+        if (notice !== state.planetRateClampNotice) state.setPlanetRateClampNotice(notice);
+      }
+      clampedPhaseRef.current = null;
+      lastSimDaysRef.current = null;
+      return;
+    }
 
-    const ecliptic = heliocentricPosition(data.orbit, simDays);
+    // R2-3 速率钳制兜底（与行星一致 0.5 圈/秒阈值）：钳制中按降速角速度
+    // 累计相位，以等效时间调用开普勒求解入口（位置/速度/活动度全链一致）
+    const compression = timeCompressionForContinuousLevel(continuousLevel);
+    const factor = rateClampFactor(periodDays, compression, state.speedMultiplier);
+    const clamped = factor < 1;
+    if (clamped !== clampedRef.current) {
+      clampedRef.current = clamped;
+      if (!clamped) clearRenderedSatellitePhase(data.id);
+      const notice = reportPlanetRateClamp(data.id, clamped);
+      if (notice !== state.planetRateClampNotice) state.setPlanetRateClampNotice(notice);
+    }
+    const meanMotion = (Math.PI * 2) / periodDays;
+    let orbitDays = simDays;
+    if (clamped) {
+      const exactPhase = normalizeAngle(
+        data.orbit.meanAnomalyAtEpochDeg * DEG_TO_RAD + meanMotion * simDays,
+      );
+      const last = lastSimDaysRef.current;
+      clampedPhaseRef.current = advanceClampedPhase(
+        last === null ? null : clampedPhaseRef.current,
+        exactPhase,
+        last === null ? 0 : simDays - last,
+        meanMotion,
+        factor,
+      );
+      setRenderedSatellitePhase(data.id, clampedPhaseRef.current);
+      orbitDays = equivalentDaysForPhase(
+        clampedPhaseRef.current,
+        data.orbit.meanAnomalyAtEpochDeg,
+        periodDays,
+      );
+    } else {
+      clampedPhaseRef.current = null;
+    }
+    lastSimDaysRef.current = simDays;
+
+    const ecliptic = heliocentricPosition(data.orbit, orbitDays);
     const scene = eclipticToScene(ecliptic);
     group.position.set(scene.x, scene.y, scene.z);
 
@@ -382,9 +475,10 @@ export function Comet({ data }: CometProps): JSX.Element {
       nearViewRef.current = gate.active;
       setNearView(gate.active);
     }
-    // 彗核缓慢自转（哈雷自转周期约 2.2 天，ESA Giotto）
+    // 彗核缓慢自转（哈雷自转周期约 2.2 天，ESA Giotto）；R2-3：钳制中沿
+    // 等效时间轴推进（与公转位置同一时间轴）
     if (nucleusRef.current) {
-      nucleusRef.current.rotation.y = (simDays / 2.2) * Math.PI * 2;
+      nucleusRef.current.rotation.y = (orbitDays / 2.2) * Math.PI * 2;
       nucleusRef.current.rotation.z = 0.35;
     }
 
@@ -427,7 +521,7 @@ export function Comet({ data }: CometProps): JSX.Element {
       const dustLength = dustTailLengthUnits(activity);
       dustTailRef.current.visible = activity > 0.05;
 
-      const vel = orbitalVelocityAuPerDay(data.orbit, simDays);
+      const vel = orbitalVelocityAuPerDay(data.orbit, orbitDays);
       // 黄道坐标 → 场景坐标方向（与 eclipticToScene 同轴序，方向无需缩放）
       const velScene = { x: vel.x, y: vel.z, z: -vel.y };
       const speed = Math.hypot(vel.x, vel.y, vel.z);
@@ -506,7 +600,9 @@ export function Comet({ data }: CometProps): JSX.Element {
 
       {showLabels && !frozen && (
         <Html position={[0, 0.8, 0]} center distanceFactor={60} style={{ pointerEvents: 'none' }}>
-          <span className="whitespace-nowrap text-xs text-cyan-200/80">{data.nameZh}</span>
+          <span ref={labelElRef} className="whitespace-nowrap text-xs text-cyan-200/80">
+            {data.nameZh}
+          </span>
         </Html>
       )}
     </group>

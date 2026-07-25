@@ -23,7 +23,20 @@ import {
   OORT_VISUAL_RADIUS_UNITS,
   oortVisibilityWeight,
 } from '@/utils/oort';
-import { continuousLevelForDistance } from '@/utils/scale';
+import { continuousLevelForDistance, eclipticToScene } from '@/utils/scale';
+import { getPlanetById } from '@/data/planets';
+import { equivalentDaysForPhase } from '@/utils/freezeGate';
+import {
+  DAYS_PER_YEAR,
+  heliocentricPosition,
+  meanAnomalyAtTime,
+  normalizeAngle,
+  orbitalPeriodYears,
+} from '@/utils/physics';
+import {
+  clearAllRenderedSatellitePhases,
+  setRenderedSatellitePhase,
+} from '@/utils/satellitePhase';
 
 describe('shellFocusTarget（太阳系外围球壳解析，R2-1）', () => {
   it('日球层顶：目标点为太阳系原点', () => {
@@ -88,6 +101,70 @@ describe('resolveFocusTarget 球壳分支与 null 兜底（R2-1）', () => {
   it('未知 id 仍返回 null（调用方兜底依据）', () => {
     expect(resolveFocusTarget('no-such-body', 0)).toBeNull();
     expect(resolveFocusTarget('sn-1', 0)).toBeNull();
+  });
+});
+
+describe('行星/彗星速率钳制期间按渲染相位解析（R2-3，P7 范式扩展）', () => {
+  afterEach(() => clearAllRenderedSatellitePhases());
+
+  it('地球注册渲染相位后目标位置随注册相位（与渲染一致），清除后回落精确相位', () => {
+    const simDays = 8000;
+    const exact = resolveFocusTarget('earth', simDays)!;
+    // 注册与精确相位偏差半圈的渲染相位（钳制中累计相位落后场景）
+    const earth = getPlanetById('earth')!;
+    const periodDays = orbitalPeriodYears(earth.orbit.semiMajorAxisAu) * DAYS_PER_YEAR;
+    const exactPhase = meanAnomalyAtTime(earth.orbit, simDays);
+    setRenderedSatellitePhase('earth', normalizeAngle(exactPhase + Math.PI));
+    const clamped = resolveFocusTarget('earth', simDays)!;
+    const dist = Math.hypot(
+      clamped.position.x - exact.position.x,
+      clamped.position.y - exact.position.y,
+      clamped.position.z - exact.position.z,
+    );
+    expect(dist).toBeGreaterThan(1); // 半圈偏差 → 目标点明显不同（跟随渲染位置）
+    // 注册相位对应的等效时间求值与直接按相位求值一致
+    const equivDays = equivalentDaysForPhase(
+      normalizeAngle(exactPhase + Math.PI),
+      earth.orbit.meanAnomalyAtEpochDeg,
+      periodDays,
+    );
+    const expected = eclipticToScene(heliocentricPosition(earth.orbit, equivDays));
+    expect(clamped.position.x).toBeCloseTo(expected.x, 8);
+    expect(clamped.position.z).toBeCloseTo(expected.z, 8);
+    // 清除注册（钳制解除）后回落共享时间轴精确求值
+    clearAllRenderedSatellitePhases();
+    const restored = resolveFocusTarget('earth', simDays)!;
+    expect(restored.position).toEqual(exact.position);
+  });
+
+  it('哈雷彗星注册渲染相位后同样按渲染相位解析', () => {
+    const simDays = 5000;
+    const exact = resolveFocusTarget('halley', simDays)!;
+    setRenderedSatellitePhase('halley', 1.0);
+    const clamped = resolveFocusTarget('halley', simDays)!;
+    expect(
+      Math.hypot(
+        clamped.position.x - exact.position.x,
+        clamped.position.y - exact.position.y,
+        clamped.position.z - exact.position.z,
+      ),
+    ).toBeGreaterThan(0);
+  });
+
+  it('钳制行星的卫星按父行星渲染相位解析（月球随地球渲染位置）', () => {
+    const simDays = 8000;
+    const exactMoon = resolveFocusTarget('moon', simDays)!;
+    const earth = getPlanetById('earth')!;
+    const exactPhase = meanAnomalyAtTime(earth.orbit, simDays);
+    setRenderedSatellitePhase('earth', normalizeAngle(exactPhase + Math.PI));
+    const clampedMoon = resolveFocusTarget('moon', simDays)!;
+    expect(
+      Math.hypot(
+        clampedMoon.position.x - exactMoon.position.x,
+        clampedMoon.position.y - exactMoon.position.y,
+        clampedMoon.position.z - exactMoon.position.z,
+      ),
+    ).toBeGreaterThan(1);
   });
 });
 

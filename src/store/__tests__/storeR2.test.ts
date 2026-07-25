@@ -145,3 +145,22 @@ describe('requestFlyTo 解析兜底（R2-1 §1.1-B）', () => {
     expect(s.anchorBodyId).toBe('earth');
   });
 });
+
+describe('行星速率钳制提示（R2-3："行星运动已减速显示"，与卫星文案区分）', () => {
+  it('默认关闭，可开可关', () => {
+    expect(useSimulationStore.getState().planetRateClampNotice).toBe(false);
+    useSimulationStore.getState().setPlanetRateClampNotice(true);
+    expect(useSimulationStore.getState().planetRateClampNotice).toBe(true);
+    useSimulationStore.getState().setPlanetRateClampNotice(false);
+    expect(useSimulationStore.getState().planetRateClampNotice).toBe(false);
+  });
+
+  it('与卫星提示（rateClampNotice）互相独立', () => {
+    useSimulationStore.getState().setPlanetRateClampNotice(true);
+    expect(useSimulationStore.getState().rateClampNotice).toBe(false);
+    useSimulationStore.getState().setRateClampNotice(true);
+    useSimulationStore.getState().setPlanetRateClampNotice(false);
+    expect(useSimulationStore.getState().rateClampNotice).toBe(true);
+    useSimulationStore.getState().setRateClampNotice(false);
+  });
+});

@@ -36,6 +36,8 @@ export function HudInfo(): JSX.Element {
   const selectedBodyId = useSimulationStore((s) => s.selectedBodyId);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const rateClampNotice = useSimulationStore((s) => s.rateClampNotice);
+  // R2-3：行星淡出区间速率钳制提示（文案与卫星区分）
+  const planetRateClampNotice = useSimulationStore((s) => s.planetRateClampNotice);
   const followBodyId = useSimulationStore((s) => s.followBodyId);
   const setFollowBody = useSimulationStore((s) => s.setFollowBody);
   const requestFlyTo = useSimulationStore((s) => s.requestFlyTo);
@@ -117,6 +119,9 @@ export function HudInfo(): JSX.Element {
         )}
         {rateClampNotice && (
           <p className="mt-1 text-amber-300/90">⚠ 快周期卫星运动已减速显示（防闪烁）</p>
+        )}
+        {planetRateClampNotice && (
+          <p className="mt-1 text-amber-300/90">⚠ 行星运动已减速显示（防闪烁）</p>
         )}
         {followBodyId && (
           <p className="mt-1 text-cyan-300/90">

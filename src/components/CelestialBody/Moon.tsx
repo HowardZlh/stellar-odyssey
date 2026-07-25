@@ -26,6 +26,7 @@ import {
   tidalLockedRotationAngle,
 } from '@/utils/satellites';
 import { rateClampFactor, timeCompressionForContinuousLevel } from '@/utils/time';
+import { planetFrozen } from '@/utils/freezeGate';
 import {
   clearRenderedSatellitePhase,
   setRenderedSatellitePhase,
@@ -167,8 +168,9 @@ export function Moon({ data, parentRadiusKm }: MoonProps): JSX.Element {
     // 速率钳制（需求 3.3）：视觉转速 > 0.5 圈/秒时降速显示
     const compression = timeCompressionForContinuousLevel(continuousLevel);
     const factor = rateClampFactor(data.orbit.periodDays, compression, speedMultiplier);
-    // 提示仅在卫星可见的层级显示（外层视角下太阳系内容已冻结隐藏）
-    const clamped = factor < 1 && continuousLevel <= 3.2;
+    // 提示仅在卫星可见的层级显示（外层视角下太阳系内容已冻结隐藏；
+    // R2-3：冻结判定收敛至 utils/freezeGate，与行星淡出-冻结同步）
+    const clamped = factor < 1 && !planetFrozen(continuousLevel);
     if (clamped !== clampedRef.current) {
       clampedRef.current = clamped;
       state.setRateClampNotice(clamped);

@@ -9,7 +9,26 @@ import { getMoonsByParent } from '@/data/moons';
 import { detailTextureUrl, normalMapUrl, textureUrl } from '@/data/textures';
 import { useSimulationStore } from '@/store';
 import { useBitmapTexture } from '@/hooks/useBitmapTexture';
-import { DEG_TO_RAD, heliocentricPosition, rotationAngleAtTime } from '@/utils/physics';
+import {
+  DAYS_PER_YEAR,
+  DEG_TO_RAD,
+  heliocentricPosition,
+  normalizeAngle,
+  orbitalPeriodYears,
+  rotationAngleAtTime,
+} from '@/utils/physics';
+import {
+  advanceClampedPhase,
+  equivalentDaysForPhase,
+  planetFrozen,
+  planetVisibilityWeight,
+  reportPlanetRateClamp,
+} from '@/utils/freezeGate';
+import { rateClampFactor, timeCompressionForContinuousLevel } from '@/utils/time';
+import {
+  clearRenderedSatellitePhase,
+  setRenderedSatellitePhase,
+} from '@/utils/satellitePhase';
 import { bodyDisplayRadius, eclipticToScene } from '@/utils/scale';
 import {
   dwarfDisplayRadius,
@@ -45,8 +64,6 @@ const TEXTURE_LOW_RES = 256;
 const TEXTURE_HIGH_RES = 1024;
 /** 进入该连续层级以下时升级高分辨率纹理 */
 const HIGH_RES_LEVEL_THRESHOLD = 1.6;
-/** 外层视角下内层运动退化阈值（需求 3.3）：冻结行星位置更新并隐藏 */
-const FREEZE_LEVEL_THRESHOLD = 3.2;
 /**
  * 真实位图纹理懒加载阈值（P3-2）：接近行星视角时开始预取
  * （进入 L1 前位图基本就绪；L2 远观使用程序化低清即可）
@@ -295,7 +312,8 @@ export function Planet({ data }: PlanetProps): JSX.Element {
   const showLabels = useSimulationStore((s) => s.showLabels);
   const selectBody = useSimulationStore((s) => s.selectBody);
   // Html 标签不随父级 visible 隐藏，需单独按层级门控（布尔选择器，变化时才重渲染）
-  const frozen = useSimulationStore((s) => s.continuousLevel > FREEZE_LEVEL_THRESHOLD);
+  // R2-3：冻结判定收敛至 utils/freezeGate（淡出完毕即冻结，L3 锚点前完成）
+  const frozen = useSimulationStore((s) => planetFrozen(s.continuousLevel));
   // 真实比例模式（需求 4.1）：半径按真实线性比例映射（对数压缩的真实开关）
   const realScaleMode = useSimulationStore((s) => s.realScaleMode);
   // 位图纹理懒加载门控（P3-2）：接近行星视角才请求；聚焦/跟随的行星优先。
@@ -319,6 +337,12 @@ export function Planet({ data }: PlanetProps): JSX.Element {
   const [labelHidden, setLabelHidden] = useState(false);
   const labelHiddenRef = useRef(false);
   const detailActiveRef = useRef(false);
+  // R2-3 行星速率钳制（淡出区间兜底）：累计相位 / 上帧模拟时间 / 钳制状态
+  const clampedPhaseRef = useRef<number | null>(null);
+  const lastSimDaysRef = useRef<number | null>(null);
+  const clampedRef = useRef(false);
+  // R2-3 标签透明度随淡出权重（Html 不随父级 visible/scale 隐藏，直改 DOM 无重渲染）
+  const labelElRef = useRef<HTMLSpanElement>(null);
 
   // 矮行星（P5 §3.2）：默认模式最小可见半径提升至可辨识水平（夸大登记于
   // utils/dwarfPlanets.ts）；真实比例模式与八大行星同规则线性映射
@@ -330,6 +354,11 @@ export function Planet({ data }: PlanetProps): JSX.Element {
   // 绕 Y 自转时长轴翻滚可见；真实比例/默认模式均生效
   const ellipsoidScale = data.id === 'haumea' ? haumeaEllipsoidScale(data.radiusKm) : null;
   const tiltRad = data.rotation.axialTiltDeg * DEG_TO_RAD;
+  // R2-3 速率钳制参数：公转周期由开普勒第三定律从半长轴导出（与轨道演算一致）
+  const periodDays = useMemo(
+    () => orbitalPeriodYears(data.orbit.semiMajorAxisAu) * DAYS_PER_YEAR,
+    [data.orbit.semiMajorAxisAu],
+  );
   const moons = useMemo(() => getMoonsByParent(data.id), [data.id]);
   const equatorialMoons = moons.filter((m) => m.referencePlane === 'planetEquator');
   const eclipticMoons = moons.filter((m) => m.referencePlane === 'ecliptic');
@@ -370,6 +399,20 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     const bodyId = data.id;
     return () => {
       getTextureManager().releaseDetail(bodyId);
+    };
+  }, [data.id]);
+
+  // R2-3：卸载时清除渲染相位注册与钳制提示上报
+  useEffect(() => {
+    const bodyId = data.id;
+    return () => {
+      clearRenderedSatellitePhase(bodyId);
+      if (clampedRef.current) {
+        clampedRef.current = false;
+        useSimulationStore
+          .getState()
+          .setPlanetRateClampNotice(reportPlanetRateClamp(bodyId, false));
+      }
     };
   }, [data.id]);
 
@@ -637,11 +680,29 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     const state = useSimulationStore.getState();
     const { simDays, continuousLevel } = state;
 
-    // 外层视角下内层运动退化（需求 3.3）：冻结演算，返回时按共享时间轴重求
+    // R2-3 外层视角下内层运动退化（需求 3.3）：硬阈值改为 2.6→3.0 渐变淡出
+    // （utils/freezeGate 统一收敛），淡出完毕即冻结演算并隐藏；返回 L2/L1 时
+    // 按共享时间轴重新求值（钳制相位累计一并重置，无时间跳变）。
+    // 淡出呈现登记：整组缩放收敛（该层级下行星为亚像素点，观感等效透明度
+    // 淡出，且无需给全部材质增加透明通道）；标签按同一权重做透明度淡出。
+    const weight = planetVisibilityWeight(continuousLevel);
     if (groupRef.current) {
-      const isFrozen = continuousLevel > FREEZE_LEVEL_THRESHOLD;
-      groupRef.current.visible = !isFrozen;
-      if (isFrozen) return;
+      groupRef.current.visible = weight > 0;
+      groupRef.current.scale.setScalar(Math.max(weight, 1e-6));
+    }
+    if (labelElRef.current) {
+      labelElRef.current.style.opacity = weight.toFixed(3);
+    }
+    if (weight === 0) {
+      if (clampedRef.current) {
+        clampedRef.current = false;
+        clearRenderedSatellitePhase(data.id);
+        const notice = reportPlanetRateClamp(data.id, false);
+        if (notice !== state.planetRateClampNotice) state.setPlanetRateClampNotice(notice);
+      }
+      clampedPhaseRef.current = null;
+      lastSimDaysRef.current = null;
+      return;
     }
 
     // 纹理 LOD 升级：首次进入行星视角时切换高分辨率
@@ -649,8 +710,47 @@ export function Planet({ data }: PlanetProps): JSX.Element {
       setHighRes(true);
     }
 
+    // R2-3 行星速率钳制兜底：淡出区间部分可见时视觉角速度 ≤0.5 圈/秒
+    // （与卫星一致，utils/time.rateClampFactor），钳制中按降速角速度累计
+    // 相位（无跳变），提示"行星运动已减速显示"（聚合上报防多天体互写抖动）
+    const compression = timeCompressionForContinuousLevel(continuousLevel);
+    const factor = rateClampFactor(periodDays, compression, state.speedMultiplier);
+    const clamped = factor < 1;
+    if (clamped !== clampedRef.current) {
+      clampedRef.current = clamped;
+      if (!clamped) clearRenderedSatellitePhase(data.id);
+      const notice = reportPlanetRateClamp(data.id, clamped);
+      if (notice !== state.planetRateClampNotice) state.setPlanetRateClampNotice(notice);
+    }
+    const meanMotion = (Math.PI * 2) / periodDays;
+    let orbitDays = simDays;
+    if (clamped) {
+      const exactPhase = normalizeAngle(
+        data.orbit.meanAnomalyAtEpochDeg * DEG_TO_RAD + meanMotion * simDays,
+      );
+      const last = lastSimDaysRef.current;
+      clampedPhaseRef.current = advanceClampedPhase(
+        last === null ? null : clampedPhaseRef.current,
+        exactPhase,
+        last === null ? 0 : simDays - last,
+        meanMotion,
+        factor,
+      );
+      // 渲染相位注册（P7 范式）：钳制期间相机跟随/飞往与渲染位置保持一致
+      setRenderedSatellitePhase(data.id, clampedPhaseRef.current);
+      // 等效时间：使开普勒求解入口得到与累计相位严格一致的位置
+      orbitDays = equivalentDaysForPhase(
+        clampedPhaseRef.current,
+        data.orbit.meanAnomalyAtEpochDeg,
+        periodDays,
+      );
+    } else {
+      clampedPhaseRef.current = null;
+    }
+    lastSimDaysRef.current = simDays;
+
     // 公转位置：求解开普勒方程（近日点快、远日点慢）
-    const ecliptic = heliocentricPosition(data.orbit, simDays);
+    const ecliptic = heliocentricPosition(data.orbit, orbitDays);
     const scene = eclipticToScene(ecliptic);
     if (groupRef.current) {
       groupRef.current.position.set(scene.x, scene.y, scene.z);
@@ -722,8 +822,9 @@ export function Planet({ data }: PlanetProps): JSX.Element {
         scene.z,
       );
     }
-    // 自转：绕倾斜后的自身轴，周期取绝对值（逆向由轴倾角 >90° 表达）
-    const rotation = rotationAngleAtTime(Math.abs(data.rotation.siderealPeriodHours), simDays);
+    // 自转：绕倾斜后的自身轴，周期取绝对值（逆向由轴倾角 >90° 表达）；
+    // R2-3：钳制中沿等效时间轴推进（与公转位置同一时间轴，防每帧随机角度闪烁）
+    const rotation = rotationAngleAtTime(Math.abs(data.rotation.siderealPeriodHours), orbitDays);
     if (bodyRef.current) {
       bodyRef.current.rotation.y = rotation;
     }
@@ -845,7 +946,9 @@ export function Planet({ data }: PlanetProps): JSX.Element {
           distanceFactor={60}
           style={{ pointerEvents: 'none' }}
         >
-          <span className="whitespace-nowrap text-xs text-gray-200/80">{data.nameZh}</span>
+          <span ref={labelElRef} className="whitespace-nowrap text-xs text-gray-200/80">
+            {data.nameZh}
+          </span>
         </Html>
       )}
     </group>

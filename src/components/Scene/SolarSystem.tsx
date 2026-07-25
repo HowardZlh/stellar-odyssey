@@ -3,6 +3,7 @@
 import { PLANETS } from '@/data/planets';
 import { ASTEROID_BELT, COMETS, DWARF_PLANETS, KUIPER_BELT } from '@/data/smallBodies';
 import { useSimulationStore } from '@/store';
+import { planetFrozen } from '@/utils/freezeGate';
 import { OrbitLine } from '@/components/Scene/OrbitLine';
 import { Belt } from '@/components/Scene/Belt';
 import { OortCloud } from '@/components/Scene/OortCloud';
@@ -19,8 +20,10 @@ import { Sun } from '@/components/CelestialBody/Sun';
  */
 export function SolarSystem(): JSX.Element {
   const showOrbitsSetting = useSimulationStore((s) => s.showOrbits);
-  // 外层视角下太阳系内容退化（与行星冻结阈值一致，需求 3.3）
-  const frozen = useSimulationStore((s) => s.continuousLevel > 3.2);
+  // R2-3 外层视角下太阳系内容退化（需求 3.3）：冻结判定收敛至 utils/freezeGate
+  // （淡出完毕即卸载轨道线）；淡出区间内轨道线透明度随行星权重同步渐隐
+  // （fadeWithPlanets，OrbitLine.tsx）。太阳本体保持可见（L3 标记热区依赖）
+  const frozen = useSimulationStore((s) => planetFrozen(s.continuousLevel));
   const showOrbits = showOrbitsSetting && !frozen;
 
   return (
@@ -28,7 +31,7 @@ export function SolarSystem(): JSX.Element {
       <Sun />
       {PLANETS.map((planet) => (
         <group key={planet.id}>
-          {showOrbits && <OrbitLine elements={planet.orbit} />}
+          {showOrbits && <OrbitLine elements={planet.orbit} fadeWithPlanets />}
           <Planet data={planet} />
         </group>
       ))}
@@ -36,7 +39,9 @@ export function SolarSystem(): JSX.Element {
       {/* 矮行星：冥王星（与海王星 2:3 共振）+ 阋神星/鸟神星/妊神星（可选需求） */}
       {DWARF_PLANETS.map((dwarf) => (
         <group key={dwarf.id}>
-          {showOrbits && <OrbitLine elements={dwarf.orbit} color="#aa99cc" opacity={0.45} />}
+          {showOrbits && (
+            <OrbitLine elements={dwarf.orbit} color="#aa99cc" opacity={0.45} fadeWithPlanets />
+          )}
           <Planet data={dwarf} />
         </group>
       ))}
@@ -44,7 +49,9 @@ export function SolarSystem(): JSX.Element {
       {/* 彗星（哈雷为逆行轨道，彗尾始终背向太阳） */}
       {COMETS.map((comet) => (
         <group key={comet.id}>
-          {showOrbits && <OrbitLine elements={comet.orbit} color="#7fc4dd" opacity={0.4} />}
+          {showOrbits && (
+            <OrbitLine elements={comet.orbit} color="#7fc4dd" opacity={0.4} fadeWithPlanets />
+          )}
           <Comet data={comet} />
         </group>
       ))}
