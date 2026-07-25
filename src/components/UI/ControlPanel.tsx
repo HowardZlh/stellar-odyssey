@@ -53,6 +53,9 @@ export function ControlPanel(): JSX.Element {
   const triggerCme = useSimulationStore((s) => s.triggerCme);
   const sunCutawayMode = useSimulationStore((s) => s.sunCutawayMode);
   const setSunCutawayMode = useSimulationStore((s) => s.setSunCutawayMode);
+  // R2-6 §6.1：G 键银心固定模式显式入口（此前仅快捷键，可发现性差）
+  const galacticFrameMode = useSimulationStore((s) => s.galacticFrameMode);
+  const toggleGalacticFrameMode = useSimulationStore((s) => s.toggleGalacticFrameMode);
   // R2-4 §4.1-C：演示按钮按视角域门控（选布尔值，仅域边界跨越时重渲染；
   // 耀斑/CME 同属太阳系域窗口共用一个判定；方案取"置灰 + tooltip 提示"）
   const solarDemoInScope = useSimulationStore((s) =>
@@ -101,6 +104,34 @@ export function ControlPanel(): JSX.Element {
             </button>
           ))}
         </div>
+      </section>
+
+      {/* 银河系视角参考系（R2-6 §6.1：G 键银心固定模式显式入口 + 说明） */}
+      <section className="mb-4">
+        <h2 className="mb-2 text-xs text-gray-400">银河系视角参考系（G 切换）</h2>
+        <button
+          type="button"
+          onClick={toggleGalacticFrameMode}
+          disabled={viewLevel !== 'L3'}
+          title={
+            viewLevel === 'L3'
+              ? '银心固定：银心居中不动，俯瞰太阳系沿波浪轨道绕银心公转'
+              : '请切换到银河系视角使用（快捷键 3）'
+          }
+          className={`w-full rounded px-2 py-1.5 text-xs ${
+            viewLevel !== 'L3'
+              ? 'cursor-not-allowed bg-white/5 text-gray-500'
+              : galacticFrameMode === 'galactic-center'
+                ? 'bg-emerald-400/90 text-black hover:bg-emerald-300'
+                : 'bg-white/10 text-gray-200 hover:bg-white/20'
+          }`}
+        >
+          {viewLevel !== 'L3'
+            ? '🌀 银心固定视角（银河系视角下可用）'
+            : galacticFrameMode === 'galactic-center'
+              ? '🌀 银心固定中（点按回到跟随太阳系）'
+              : '🌀 切换银心固定视角（观察太阳系公转）'}
+        </button>
       </section>
 
       {/* 时间控制 */}

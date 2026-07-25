@@ -31,7 +31,14 @@ import {
 } from "@/utils/galacticFrame";
 import { setObjectTreeRaycastEnabled } from "@/utils/raycastGate";
 import {
-  orbitFlowTickAngle,
+  ORBIT_GRADATION_COUNT,
+  gradationProgressLabel,
+  isMajorGradation,
+  markerBreathScale,
+  markerPulse01,
+  orbitGradationAngle,
+  pulseRingOpacity,
+  pulseRingScale,
   samplePredictionArc,
   verticalVisualGain,
 } from "@/utils/galacticMotionCues";
@@ -59,10 +66,17 @@ const TRAIL_CAPACITY = 400;
 const PREDICTION_REFRESH_MYR = 1.5;
 /** 预测弧段采样段数 */
 const PREDICTION_SEGMENTS = 96;
-/** 轨道流动刻度光点数（沿轨道均匀分布，整体以太阳角速度流动） */
-const FLOW_TICK_COUNT = 48;
 /** 聚焦权重提升过渡时长（秒），与 SpecialBodies 一致 */
 const FOCUS_BOOST_SECONDS = 0.5;
+/** You are here 标记基础尺寸（场景单位，脉动缩放的基准） */
+const MARKER_BASE_SCALE = 90;
+/**
+ * 尾迹/预测弧亮度（R2-6 §6.1 已走过/未来弧段对比调亮，视觉调优登记）：
+ * 尾迹不透明度 0.9→1.0、颜色系数整体上调；预测虚线 0.5→0.72 并提亮为
+ * #bfe4ff——已走过（暖绿实线渐隐）与未来（冷蓝虚线）对比在 L3 锚点可辨。
+ */
+const TRAIL_OPACITY = 1.0;
+const PREDICTION_OPACITY = 0.72;
 
 /**
  * 银河系场景（需求 3.1.2）：
@@ -206,7 +220,7 @@ export function Galaxy(): JSX.Element {
     const marker = new THREE.CanvasTexture(
       createGlowSpriteCanvas("#7fffd4", 128),
     );
-    // 圆形软边贴图（P6：消除方形粒子），供流动刻度 PointsMaterial 使用
+    // 圆形软边贴图（P6：消除方形粒子），供轨道银河年刻度 PointsMaterial 使用
     const flowTick = new THREE.CanvasTexture(
       createGlowSpriteCanvas("#ffffff", 64),
     );
@@ -216,6 +230,8 @@ export function Galaxy(): JSX.Element {
   const coreSpriteRef = useRef<THREE.Sprite>(null);
   const haloSpriteRef = useRef<THREE.Sprite>(null);
   const markerSpriteRef = useRef<THREE.Sprite>(null);
+  // 脉动波纹扩散环（R2-6 §6.1：当前位置雷达波纹高亮，与 You are here 联动）
+  const pulseRingRef = useRef<THREE.Sprite>(null);
 
   // ---------- 太阳系轨迹：历史尾迹 + 未来预测线 ----------
   const trail = useMemo(() => createTrailBuffer(TRAIL_CAPACITY), []);
@@ -253,9 +269,9 @@ export function Galaxy(): JSX.Element {
         ),
       );
       const mat = new THREE.LineDashedMaterial({
-        color: "#9fd8ff",
+        color: "#bfe4ff",
         transparent: true,
-        opacity: 0.5,
+        opacity: PREDICTION_OPACITY,
         dashSize: 18,
         gapSize: 12,
       });
@@ -270,29 +286,61 @@ export function Galaxy(): JSX.Element {
   const lastPredictionMyrRef = useRef<number | null>(null);
   const lastGainRef = useRef<number>(1);
 
-  // ---------- 轨道流动刻度（P6 §3.1.2）：沿轨道流动的光点，体现运动 ----------
-  const { flowGeometry, flowMaterial, flowPoints } = useMemo(() => {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute(
-      "position",
-      new THREE.BufferAttribute(new Float32Array(FLOW_TICK_COUNT * 3), 3),
-    );
-    geo.boundingSphere = new THREE.Sphere(
-      new THREE.Vector3(0, 0, 0),
-      SUN_GALACTIC_RADIUS_LY * SCENE_UNITS_PER_LY * 1.2,
-    );
-    const mat = new THREE.PointsMaterial({
-      color: "#7fd8ff",
-      size: 22,
-      map: glowTextures.flowTick,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      sizeAttenuation: true,
-    });
-    const pts = new THREE.Points(geo, mat);
-    pts.frustumCulled = false;
-    return { flowGeometry: geo, flowMaterial: mat, flowPoints: pts };
+  // ---------- 轨道银河年刻度（R2-6 §6.1）：银心系静止的进度"里程碑" ----------
+  // 差异登记（见 galacticMotionCues.ts 文件头）：P6 流动光点与太阳共转，
+  // 跟随模式下相对太阳方位恒定、运动线索弱；改为银心系静止刻度后，
+  // 跟随模式下刻度以太阳真实公转速度整体滑过场景原点（参照物滑动），
+  // 银心固定模式下脉动标记依次掠过静止刻度。位置固定 → 几何只建一次，
+  // 渲染循环零更新（仅调不透明度）。
+  const { gradationAssets, majorLabelPositions } = useMemo(() => {
+    const rUnits = SUN_GALACTIC_RADIUS_LY * SCENE_UNITS_PER_LY;
+    const minor: number[] = [];
+    const major: number[] = [];
+    const labels: { key: number; label: string; pos: [number, number, number] }[] = [];
+    for (let i = 0; i < ORBIT_GRADATION_COUNT; i += 1) {
+      const a = orbitGradationAngle(i);
+      // 与 sunGalacticPositionLy 一致：x=R·cosθ，z=−R·sinθ，y=0（平均轨道环）
+      const x = rUnits * Math.cos(a);
+      const z = -rUnits * Math.sin(a);
+      if (isMajorGradation(i)) {
+        major.push(x, 0, z);
+        labels.push({ key: i, label: gradationProgressLabel(i), pos: [x, 46, z] });
+      } else {
+        minor.push(x, 0, z);
+      }
+    }
+    const bounding = new THREE.Sphere(new THREE.Vector3(0, 0, 0), rUnits * 1.2);
+    const makePoints = (
+      positions: number[],
+      color: string,
+      size: number,
+    ): { geo: THREE.BufferGeometry; mat: THREE.PointsMaterial; pts: THREE.Points } => {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute(
+        "position",
+        new THREE.BufferAttribute(new Float32Array(positions), 3),
+      );
+      geo.boundingSphere = bounding.clone();
+      const mat = new THREE.PointsMaterial({
+        color,
+        size,
+        map: glowTextures.flowTick,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        sizeAttenuation: true,
+      });
+      const pts = new THREE.Points(geo, mat);
+      pts.frustumCulled = false;
+      return { geo, mat, pts };
+    };
+    return {
+      gradationAssets: {
+        minor: makePoints(minor, "#7fd8ff", 42),
+        major: makePoints(major, "#ffd27f", 92),
+      },
+      majorLabelPositions: labels,
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -324,8 +372,10 @@ export function Galaxy(): JSX.Element {
       trailMaterial.dispose();
       predictionGeometry.dispose();
       predictionMaterial.dispose();
-      flowGeometry.dispose();
-      flowMaterial.dispose();
+      gradationAssets.minor.geo.dispose();
+      gradationAssets.minor.mat.dispose();
+      gradationAssets.major.geo.dispose();
+      gradationAssets.major.mat.dispose();
       heightGeometry.dispose();
       heightMaterial.dispose();
       glowTextures.core.dispose();
@@ -340,8 +390,7 @@ export function Galaxy(): JSX.Element {
     trailMaterial,
     predictionGeometry,
     predictionMaterial,
-    flowGeometry,
-    flowMaterial,
+    gradationAssets,
     heightGeometry,
     heightMaterial,
     glowTextures,
@@ -380,7 +429,7 @@ export function Galaxy(): JSX.Element {
     lastGainRef.current = gain;
   };
 
-  useFrame((_, delta) => {
+  useFrame((frameState, delta) => {
     const state = useSimulationStore.getState();
     const { simDays, continuousLevel } = state;
     const group = groupRef.current;
@@ -468,7 +517,7 @@ export function Galaxy(): JSX.Element {
       pushTrailPoint(trail, tmpLocal.x, tmpLocal.y, tmpLocal.z);
       lastSampleMyrRef.current = myr;
     }
-    // 尾迹几何更新（尾端渐隐：颜色从暗到亮）
+    // 尾迹几何更新（尾端渐隐：颜色从暗到亮；R2-6 调亮登记见 TRAIL_OPACITY）
     const ordered = trailToOrderedArray(trail);
     const count = ordered.length / 3;
     const posAttr = trailGeometry.attributes.position as THREE.BufferAttribute;
@@ -478,15 +527,15 @@ export function Galaxy(): JSX.Element {
       const fade = count > 1 ? i / (count - 1) : 1;
       colAttr.setXYZ(
         i,
-        0.35 * fade + 0.05,
-        0.75 * fade + 0.08,
-        0.55 * fade + 0.1,
+        0.5 * fade + 0.08,
+        0.92 * fade + 0.08,
+        0.72 * fade + 0.12,
       );
     }
     posAttr.needsUpdate = true;
     colAttr.needsUpdate = true;
     trailGeometry.setDrawRange(0, count);
-    trailMaterial.opacity = 0.9 * weight;
+    trailMaterial.opacity = TRAIL_OPACITY * weight;
 
     // 预测线（非闭合弧段，虚线）：时间推进超阈值或垂直增益变化后滚动刷新
     const lastPrediction = lastPredictionMyrRef.current;
@@ -497,27 +546,28 @@ export function Galaxy(): JSX.Element {
     ) {
       refreshPrediction(myr, gain);
     }
-    predictionMaterial.opacity = 0.5 * weight;
+    predictionMaterial.opacity = PREDICTION_OPACITY * weight;
 
-    // 轨道流动刻度（P6 §3.1.2）：沿轨道以太阳实际角速度流动的光点，
-    // 跟随模式下使"银河系相对滑动"可感知；银心模式下与标记一同展示轨道内运动
-    const flowPos = flowGeometry.attributes.position as THREE.BufferAttribute;
-    const rUnits = SUN_GALACTIC_RADIUS_LY * SCENE_UNITS_PER_LY;
-    for (let i = 0; i < FLOW_TICK_COUNT; i += 1) {
-      const a = orbitFlowTickAngle(simDays, i, FLOW_TICK_COUNT);
-      // 与 sunGalacticPositionLy 一致：x=R·cosθ，z=−R·sinθ，y=0（沿平均轨道环）
-      flowPos.setXYZ(i, rUnits * Math.cos(a), 0, -rUnits * Math.sin(a));
-    }
-    flowPos.needsUpdate = true;
-    flowMaterial.opacity = 0.55 * weight;
+    // 轨道银河年刻度（R2-6 §6.1）：银心系静止的进度里程碑，位置零更新，
+    // 跟随模式下随组平移整体滑过原点（参照物滑动），仅调不透明度
+    gradationAssets.minor.mat.opacity = 0.7 * weight;
+    gradationAssets.major.mat.opacity = 0.9 * weight;
 
-    // You are here 标记与运动方向箭头
+    // You are here 标记与运动方向箭头 + 脉动高亮（R2-6 §6.1：
+    // 真实秒驱动的 UI 高亮节奏，与模拟时间无关，登记见 galacticMotionCues.ts）
+    const pulsePhase = markerPulse01(frameState.clock.elapsedTime);
     if (markerRef.current) {
       markerRef.current.position.copy(tmpLocal);
       const markerVisible = state.showYouAreHere && weight > 0.05;
       markerRef.current.visible = markerVisible;
       // Raycaster 不检查 visible：标记隐藏时禁用点选热区
       setObjectTreeRaycastEnabled(markerRef.current, markerVisible);
+    }
+    if (pulseRingRef.current) {
+      const ringScale = MARKER_BASE_SCALE * pulseRingScale(pulsePhase);
+      pulseRingRef.current.scale.set(ringScale, ringScale, 1);
+      (pulseRingRef.current.material as THREE.SpriteMaterial).opacity =
+        pulseRingOpacity(pulsePhase) * weight;
     }
     if (arrowRef.current) {
       // 运动方向：位置对时间的数值微分
@@ -542,6 +592,9 @@ export function Galaxy(): JSX.Element {
     if (markerSpriteRef.current) {
       (markerSpriteRef.current.material as THREE.SpriteMaterial).opacity =
         0.95 * weight;
+      // 呼吸脉动（R2-6 §6.1）：标记本体 ±12% 缩放呼吸，强化"当前位置"
+      const breath = MARKER_BASE_SCALE * markerBreathScale(pulsePhase);
+      markerSpriteRef.current.scale.set(breath, breath, 1);
     }
     // 高度指示线：标记（tmpLocal，含垂直增益）→ 银盘面投影点（y=0）
     const hPos = heightGeometry.attributes.position as THREE.BufferAttribute;
@@ -595,8 +648,25 @@ export function Galaxy(): JSX.Element {
       <primitive object={trailLine} />
       <primitive object={predictionLine} />
 
-      {/* 轨道流动刻度（P6 §3.1.2）：沿轨道流动的圆形软边光点 */}
-      <primitive object={flowPoints} />
+      {/* 轨道银河年刻度（R2-6 §6.1）：银心系静止的进度里程碑光点
+          （跟随模式下整体滑过原点体现"参照物滑动"），主刻度带进度标注 */}
+      <primitive object={gradationAssets.minor.pts} />
+      <primitive object={gradationAssets.major.pts} />
+      {inGalaxyRange &&
+        showYouAreHere &&
+        majorLabelPositions.map((item) => (
+          <Html
+            key={item.key}
+            position={item.pos}
+            center
+            distanceFactor={2600}
+            style={{ pointerEvents: "none" }}
+          >
+            <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-[10px] text-amber-200/80">
+              {item.label}
+            </span>
+          </Html>
+        ))}
 
       {/* 高度指示线（P6 §3.1.2）：You are here → 银盘面投影点 */}
       <primitive object={heightLine} />
@@ -623,10 +693,27 @@ export function Galaxy(): JSX.Element {
           <sphereGeometry args={[42, 12, 12]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} />
         </mesh>
-        <sprite ref={markerSpriteRef} scale={[90, 90, 1]}>
+        <sprite
+          ref={markerSpriteRef}
+          scale={[MARKER_BASE_SCALE, MARKER_BASE_SCALE, 1]}
+        >
           <spriteMaterial
             map={glowTextures.marker}
             transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </sprite>
+        {/* 脉动波纹扩散环（R2-6 §6.1）：周期 2.4s 的雷达波纹，
+            强化"轨道当前位置"高亮（随 You are here 开关联动显示/隐藏） */}
+        <sprite
+          ref={pulseRingRef}
+          scale={[MARKER_BASE_SCALE, MARKER_BASE_SCALE, 1]}
+        >
+          <spriteMaterial
+            map={glowTextures.marker}
+            transparent
+            opacity={0}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
           />

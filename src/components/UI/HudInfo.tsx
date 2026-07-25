@@ -52,6 +52,10 @@ export function HudInfo(): JSX.Element {
   const dismissSupernovaNotice = useSimulationStore((s) => s.dismissSupernovaNotice);
   const galacticFrameMode = useSimulationStore((s) => s.galacticFrameMode);
   const toggleGalacticFrameMode = useSimulationStore((s) => s.toggleGalacticFrameMode);
+  // R2-6 §6.1：G 键银心固定模式可发现性——首次切入 L3 一次性 toast 引导
+  const galacticFrameTipVisible = useSimulationStore((s) => s.galacticFrameTipVisible);
+  const showGalacticFrameTipOnce = useSimulationStore((s) => s.showGalacticFrameTipOnce);
+  const dismissGalacticFrameTip = useSimulationStore((s) => s.dismissGalacticFrameTip);
   // S2 太阳活动事件（§4.3 通知 + §4.5 信息面板扩展）
   const activeSolarFlare = useSimulationStore((s) => s.activeSolarFlare);
   const solarFlareNoticeVisible = useSimulationStore((s) => s.solarFlareNoticeVisible);
@@ -114,6 +118,19 @@ export function HudInfo(): JSX.Element {
     return () => clearInterval(id);
   }, []);
 
+  // R2-6 §6.1：首次进入 L3（锚点切换或连续缩放均更新 viewLevel）触发
+  // 一次性 G 键引导；12 秒未操作自动收起
+  useEffect(() => {
+    if (viewLevel === 'L3') {
+      showGalacticFrameTipOnce();
+    }
+  }, [viewLevel, showGalacticFrameTipOnce]);
+  useEffect(() => {
+    if (!galacticFrameTipVisible) return undefined;
+    const id = setTimeout(dismissGalacticFrameTip, 12000);
+    return () => clearTimeout(id);
+  }, [galacticFrameTipVisible, dismissGalacticFrameTip]);
+
   const selected = selectedBodyId ? getBodyInfoById(selectedBodyId) : undefined;
 
   return (
@@ -159,6 +176,33 @@ export function HudInfo(): JSX.Element {
 
       {/* 事件通知列（超新星/耀斑/CME，需求 3.1.5 与 S2 §4.3） */}
       <div className="absolute left-1/2 top-4 flex w-96 -translate-x-1/2 flex-col gap-2">
+        {/* R2-6 §6.1：首次切入 L3 的一次性 G 键引导 toast（12 秒自动收起） */}
+        {galacticFrameTipVisible && viewLevel === 'L3' && (
+          <div className="rounded-lg border border-emerald-400/40 bg-space-panel p-3 text-xs backdrop-blur">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-gray-200">
+                💡 按 <span className="font-semibold text-emerald-300">G</span>{' '}
+                切换<span className="text-emerald-300">银心固定视角</span>
+                ，俯瞰太阳系沿波浪轨道绕银心公转
+              </p>
+              <button
+                type="button"
+                onClick={dismissGalacticFrameTip}
+                className="shrink-0 text-gray-400 hover:text-white"
+                aria-label="关闭银心固定视角引导"
+              >
+                ✕
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={toggleGalacticFrameMode}
+              className="mt-2 rounded bg-emerald-400/90 px-2 py-1 text-black hover:bg-emerald-300"
+            >
+              🌀 立即切换（G）
+            </button>
+          </div>
+        )}
         {/* 超新星爆发事件通知（需求 3.1.5：UI 提示 + "飞往观看"按钮；
             R2-4 §4.1-B：仅超新星视角域（L3/L4，≥2.5）内显示，域外折叠为
             一行小字提醒——通知标志位不改动，回域内且事件仍活跃时恢复 */}
