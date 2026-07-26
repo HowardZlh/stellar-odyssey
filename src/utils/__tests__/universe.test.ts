@@ -134,43 +134,60 @@ describe('localGroupPositionsLy', () => {
   });
 });
 
-describe('satelliteGalaxyPositionLy', () => {
+describe('satelliteGalaxyPositionLy（R2-10 direction 自洽轨道）', () => {
   const D = 160000; // 大麦哲伦云距离约 16 万光年
   const PERIOD = 1500;
+  const X_DIR = { x: 1, y: 0, z: 0 };
 
-  it('t=0、phase0=0、incl=0 → (d, 0, 0)', () => {
-    const p = satelliteGalaxyPositionLy(D, PERIOD, 0, 0, 0);
-    expect(p.x).toBeCloseTo(D, 6);
-    expect(p.y).toBeCloseTo(0, 6);
-    expect(p.z).toBeCloseTo(0, 6);
+  it('t=0 → 首帧位置 = direction × distance（任意 direction/倾角）', () => {
+    const dir = { x: -0.2049, y: -0.9222, z: 0.3279 };
+    const len = Math.hypot(dir.x, dir.y, dir.z); // 内部归一化（数据 |v|≈1）
+    const p = satelliteGalaxyPositionLy(D, PERIOD, dir, 35, 0);
+    expect(p.x).toBeCloseTo((dir.x / len) * D, 4);
+    expect(p.y).toBeCloseTo((dir.y / len) * D, 4);
+    expect(p.z).toBeCloseTo((dir.z / len) * D, 4);
   });
 
-  it('四分之一周期后到 (0, 0, −d)（自 +y 俯视逆时针）', () => {
-    const p = satelliteGalaxyPositionLy(D, PERIOD, 0, 0, myrToDays(PERIOD / 4));
+  it('direction 内部归一化（非单位矢量输入等价）', () => {
+    const a = satelliteGalaxyPositionLy(D, PERIOD, { x: 2, y: 0, z: 0 }, 0, myrToDays(300));
+    const b = satelliteGalaxyPositionLy(D, PERIOD, X_DIR, 0, myrToDays(300));
+    expect(a.x).toBeCloseTo(b.x, 6);
+    expect(a.y).toBeCloseTo(b.y, 6);
+    expect(a.z).toBeCloseTo(b.z, 6);
+  });
+
+  it('direction=+x、incl=0：四分之一周期后到 (0, 0, −d)（自 +y 俯视逆时针）', () => {
+    const p = satelliteGalaxyPositionLy(D, PERIOD, X_DIR, 0, myrToDays(PERIOD / 4));
     expect(p.x).toBeCloseTo(0, 4);
     expect(p.y).toBeCloseTo(0, 4);
     expect(p.z).toBeCloseTo(-D, 4);
   });
 
-  it('倾角 90° 时轨道在 x-y 面（z≈0）', () => {
+  it('direction=+x、incl=90（极轨道）：轨道在 x-y 面（z≈0），半径恒定', () => {
     for (let t = 0; t <= PERIOD; t += PERIOD / 8) {
-      const p = satelliteGalaxyPositionLy(D, PERIOD, 0.3, 90, myrToDays(t));
+      const p = satelliteGalaxyPositionLy(D, PERIOD, X_DIR, 90, myrToDays(t));
       expect(p.z).toBeCloseTo(0, 4);
       expect(Math.hypot(p.x, p.y)).toBeCloseTo(D, 4);
     }
   });
 
-  it('初始相位 phase0 生效', () => {
-    const p = satelliteGalaxyPositionLy(D, PERIOD, Math.PI / 2, 0, 0);
-    expect(p.x).toBeCloseTo(0, 4);
-    expect(p.z).toBeCloseTo(-D, 4);
+  it('整周期回到起点（轨道闭合）', () => {
+    const dir = { x: 0.62, y: -0.55, z: 0.56 };
+    const p0 = satelliteGalaxyPositionLy(D, PERIOD, dir, 90, 0);
+    const p1 = satelliteGalaxyPositionLy(D, PERIOD, dir, 90, myrToDays(PERIOD));
+    expect(p1.x).toBeCloseTo(p0.x, 3);
+    expect(p1.y).toBeCloseTo(p0.y, 3);
+    expect(p1.z).toBeCloseTo(p0.z, 3);
   });
 
-  it('非法参数抛 RangeError（距离 ≤0、周期 ≤0）', () => {
-    expect(() => satelliteGalaxyPositionLy(0, PERIOD, 0, 0, 0)).toThrow(RangeError);
-    expect(() => satelliteGalaxyPositionLy(-1, PERIOD, 0, 0, 0)).toThrow(RangeError);
-    expect(() => satelliteGalaxyPositionLy(D, 0, 0, 0, 0)).toThrow(RangeError);
-    expect(() => satelliteGalaxyPositionLy(D, -100, 0, 0, 0)).toThrow(RangeError);
+  it('非法参数抛 RangeError（距离 ≤0、周期 ≤0、零方向矢量）', () => {
+    expect(() => satelliteGalaxyPositionLy(0, PERIOD, X_DIR, 0, 0)).toThrow(RangeError);
+    expect(() => satelliteGalaxyPositionLy(-1, PERIOD, X_DIR, 0, 0)).toThrow(RangeError);
+    expect(() => satelliteGalaxyPositionLy(D, 0, X_DIR, 0, 0)).toThrow(RangeError);
+    expect(() => satelliteGalaxyPositionLy(D, -100, X_DIR, 0, 0)).toThrow(RangeError);
+    expect(() =>
+      satelliteGalaxyPositionLy(D, PERIOD, { x: 0, y: 0, z: 0 }, 0, 0),
+    ).toThrow(RangeError);
   });
 });
 

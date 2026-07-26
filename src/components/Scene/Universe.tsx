@@ -12,6 +12,7 @@ import {
   LOCAL_GROUP_GALAXIES,
   M31_COMPANION_OFFSETS_LY,
   MAGELLANIC_STREAM,
+  SAGITTARIUS_STREAM,
   SATELLITE_GALAXY_ORBITS,
 } from '@/data/galaxies';
 import { useSimulationStore } from '@/store';
@@ -19,15 +20,19 @@ import { cosmicDistanceToSceneUnits, lyToSceneUnits, trapezoidWeight } from '@/u
 import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import { getSoftPointTexture } from '@/components/CelestialBody/sharedTextures';
 import {
+  M31_APPROACH_FLOW_COUNT,
   OBSERVABLE_UNIVERSE_RADIUS_LY,
   galaxyPlaneSizeUnits,
   generateCosmicWeb,
   hubbleScaleFactor,
+  m31ApproachFlow01,
   magellanicStreamPointsLy,
   mergeGlowOpacity01,
   mwM31MergeCountdownMyr,
   mwM31SeparationLy,
   satelliteGalaxyPositionLy,
+  satelliteOrbitPointsLy,
+  tidalStreamPointsLy,
 } from '@/utils/universe';
 import {
   claimGalaxyNearView,
@@ -164,19 +169,21 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
           m31Data.direction.z * d + lyToSceneUnits(offset.z),
         );
       }
-    } else if (galaxy.id === 'lmc' || galaxy.id === 'smc') {
-      // 卫星星系绕银河系运动
+    } else if (galaxy.id === 'lmc' || galaxy.id === 'smc' || galaxy.id === 'sagittarius-dwarf') {
+      // 卫星星系绕银河系运动（R2-10：direction 自洽轨道，t=0 位置 =
+      // direction×distance 与静态首帧一致；人马座矮星系极轨道缓慢运动）
       const orbit = SATELLITE_GALAXY_ORBITS[galaxy.id];
       const p = satelliteGalaxyPositionLy(
         galaxy.distanceLy,
         orbit.periodMyr,
-        orbit.phase0Rad,
+        galaxy.direction,
         orbit.inclinationDeg,
         simDays,
       );
       group.position.set(lyToSceneUnits(p.x), lyToSceneUnits(p.y), lyToSceneUnits(p.z));
     }
-    // 其余星系静态（初始 position）
+    // 其余星系静态（初始 position；M32/M110 随 M31、宇宙网静止属预期，
+    // 面板"运动（模拟）"行登记，R2-10）
 
     // ---- R2-8 近观门控（滞回状态机 utils/nearView.nearViewGateUpdate）----
     const focused =
@@ -314,6 +321,13 @@ export function Universe(): JSX.Element {
 
   // ---------- MW–M31 接近轨迹线（虚线预测线） ----------
   const m31 = useMemo(() => LOCAL_GROUP_GALAXIES.find((g) => g.id === 'm31'), []);
+  const lmc = useMemo(() => LOCAL_GROUP_GALAXIES.find((g) => g.id === 'lmc'), []);
+  const sgr = useMemo(
+    () => LOCAL_GROUP_GALAXIES.find((g) => g.id === 'sagittarius-dwarf'),
+    [],
+  );
+  /** 潮汐流上次采样的模拟时间（暂停时跳过重采样，渲染循环纪律） */
+  const lastStreamSimDaysRef = useRef(Number.NaN);
   const { approachGeometry, approachMaterial } = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(2 * 3), 3));
@@ -383,6 +397,92 @@ export function Universe(): JSX.Element {
     return line;
   }, [observableGeometry, observableMaterial]);
 
+  // ---------- 卫星星系轨道线（R2-10：与运动位置同源公式，随轨道线开关） ----------
+  const satelliteOrbitLines = useMemo(() => {
+    const segments = 256;
+    return (
+      Object.keys(SATELLITE_GALAXY_ORBITS) as Array<keyof typeof SATELLITE_GALAXY_ORBITS>
+    ).map((id) => {
+      const galaxy = LOCAL_GROUP_GALAXIES.find((g) => g.id === id)!;
+      const orbit = SATELLITE_GALAXY_ORBITS[id];
+      // 同源公式（utils/universe.satelliteOrbitPointsLy 与
+      // satelliteGalaxyPositionLy 共用 orbitPointLy，禁止两套参数）
+      const pts = satelliteOrbitPointsLy(
+        galaxy.distanceLy,
+        galaxy.direction,
+        orbit.inclinationDeg,
+        segments,
+      );
+      const positions = new Float32Array(pts.length * 3);
+      for (let i = 0; i < pts.length; i += 1) {
+        positions[i * 3] = lyToSceneUnits(pts[i].x);
+        positions[i * 3 + 1] = lyToSceneUnits(pts[i].y);
+        positions[i * 3 + 2] = lyToSceneUnits(pts[i].z);
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      // 细线（与麦哲伦星流的弥散粒子带视觉区分，R2-10 星流澄清）
+      const material = new THREE.LineBasicMaterial({
+        color: '#8fb0d8',
+        transparent: true,
+        opacity: 0,
+      });
+      const line = new THREE.Line(geometry, material);
+      line.frustumCulled = false;
+      return { id, geometry, material, line };
+    });
+  }, []);
+
+  // ---------- 人马座潮汐流（R2-10：前导臂+尾随臂稀疏星流，≤1,500 粒） ----------
+  const { sgrStreamGeometry, sgrStreamMaterial } = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute(
+      'position',
+      new THREE.BufferAttribute(new Float32Array(SAGITTARIUS_STREAM.pointCount * 3), 3),
+    );
+    const mat = new THREE.PointsMaterial({
+      color: SAGITTARIUS_STREAM.color,
+      size: 60,
+      map: getSoftPointTexture(),
+      transparent: true,
+      opacity: 0,
+      sizeAttenuation: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    return { sgrStreamGeometry: geo, sgrStreamMaterial: mat };
+  }, []);
+  const sgrStreamPoints = useMemo(() => {
+    const pts = new THREE.Points(sgrStreamGeometry, sgrStreamMaterial);
+    pts.frustumCulled = false;
+    return pts;
+  }, [sgrStreamGeometry, sgrStreamMaterial]);
+
+  // ---------- M31 接近进度流动光点（R2-10：复用流动刻度模式的 UI 节奏） ----------
+  const { flowGeometry, flowMaterial } = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute(
+      'position',
+      new THREE.BufferAttribute(new Float32Array(M31_APPROACH_FLOW_COUNT * 3), 3),
+    );
+    const mat = new THREE.PointsMaterial({
+      color: '#ffc890',
+      size: 160,
+      map: getSoftPointTexture(),
+      transparent: true,
+      opacity: 0,
+      sizeAttenuation: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    return { flowGeometry: geo, flowMaterial: mat };
+  }, []);
+  const flowPoints = useMemo(() => {
+    const pts = new THREE.Points(flowGeometry, flowMaterial);
+    pts.frustumCulled = false;
+    return pts;
+  }, [flowGeometry, flowMaterial]);
+
   // ---------- 麦哲伦星流（可选需求 3.1.3） ----------
   const { streamGeometry, streamMaterial } = useMemo(() => {
     const geo = new THREE.BufferGeometry();
@@ -426,14 +526,22 @@ export function Universe(): JSX.Element {
       observableMaterial.dispose();
       streamGeometry.dispose();
       streamMaterial.dispose();
+      sgrStreamGeometry.dispose();
+      sgrStreamMaterial.dispose();
+      flowGeometry.dispose();
+      flowMaterial.dispose();
+      for (const o of satelliteOrbitLines) {
+        o.geometry.dispose();
+        o.material.dispose();
+      }
       mergeGlowTexture.dispose();
     };
-  }, [webGeometry, webMaterial, approachGeometry, approachMaterial, boundaryGeometry, boundaryMaterial, observableGeometry, observableMaterial, streamGeometry, streamMaterial, mergeGlowTexture]);
+  }, [webGeometry, webMaterial, approachGeometry, approachMaterial, boundaryGeometry, boundaryMaterial, observableGeometry, observableMaterial, streamGeometry, streamMaterial, sgrStreamGeometry, sgrStreamMaterial, flowGeometry, flowMaterial, satelliteOrbitLines, mergeGlowTexture]);
 
   // R2-8：场景卸载时重置星系近观层 LRU 持有者注册表（防跨挂载残留）
   useEffect(() => () => resetGalaxyNearViewHolders(), []);
 
-  useFrame(() => {
+  useFrame((frameState) => {
     const state = useSimulationStore.getState();
     const group = groupRef.current;
     if (!group) return;
@@ -446,6 +554,15 @@ export function Universe(): JSX.Element {
     approachMaterial.opacity = 0.7 * weight;
     observableMaterial.opacity = 0.22 * weight;
     streamMaterial.opacity = 0.5 * weight;
+    sgrStreamMaterial.opacity = 0.42 * weight;
+    flowMaterial.opacity = 0.8 * weight;
+
+    // 卫星星系轨道线（R2-10）：随"轨道线开关"控制，细线低透明度
+    const orbitOpacity = state.showOrbits ? 0.32 * weight : 0;
+    for (const o of satelliteOrbitLines) {
+      o.material.opacity = orbitOpacity;
+      o.line.visible = orbitOpacity > 0.001;
+    }
 
     // 哈勃膨胀示意（可选需求 3.1.3）：宇宙网整体随时间膨胀，
     // 退行速度自然与距离成正比（v = H·d，哈勃定律）
@@ -453,15 +570,18 @@ export function Universe(): JSX.Element {
       webRef.current.scale.setScalar(hubbleScaleFactor(state.simDays));
     }
 
-    // 麦哲伦星流：沿 LMC 轨道向后拖尾（每帧更新，跟随 LMC 运动）
-    {
-      const lmcOrbit = SATELLITE_GALAXY_ORBITS.lmc;
-      const lmcData = LOCAL_GROUP_GALAXIES.find((g) => g.id === 'lmc');
+    // 潮汐流更新（仅模拟时间变化时重采样：暂停时零演算）
+    if (state.simDays !== lastStreamSimDaysRef.current) {
+      lastStreamSimDaysRef.current = state.simDays;
+
+      // 麦哲伦星流：沿 LMC 轨道向后拖尾（跟随 LMC 运动，同源公式）
+      const lmcData = lmc;
       if (lmcData) {
+        const lmcOrbit = SATELLITE_GALAXY_ORBITS.lmc;
         const streamPts = magellanicStreamPointsLy(
           lmcData.distanceLy,
           lmcOrbit.periodMyr,
-          lmcOrbit.phase0Rad,
+          lmcData.direction,
           lmcOrbit.inclinationDeg,
           state.simDays,
           MAGELLANIC_STREAM.pointCount,
@@ -478,6 +598,35 @@ export function Universe(): JSX.Element {
         }
         pos.needsUpdate = true;
       }
+
+      // 人马座潮汐流（R2-10）：沿极轨道前后延伸的稀疏星流（同源公式）
+      if (sgr) {
+        const sgrOrbit = SATELLITE_GALAXY_ORBITS['sagittarius-dwarf'];
+        const sgrPts = tidalStreamPointsLy(
+          sgr.distanceLy,
+          sgrOrbit.periodMyr,
+          sgr.direction,
+          sgrOrbit.inclinationDeg,
+          state.simDays,
+          SAGITTARIUS_STREAM.pointCount,
+          {
+            backMyr: SAGITTARIUS_STREAM.backMyr,
+            forwardMyr: SAGITTARIUS_STREAM.forwardMyr,
+            jitterFrac: SAGITTARIUS_STREAM.jitterFrac,
+            seed: SAGITTARIUS_STREAM.seed,
+          },
+        );
+        const pos = sgrStreamGeometry.attributes.position as THREE.BufferAttribute;
+        for (let i = 0; i < sgrPts.length; i += 1) {
+          pos.setXYZ(
+            i,
+            lyToSceneUnits(sgrPts[i].x),
+            lyToSceneUnits(sgrPts[i].y),
+            lyToSceneUnits(sgrPts[i].z),
+          );
+        }
+        pos.needsUpdate = true;
+      }
     }
 
     // 接近轨迹线端点更新：M31 当前位置 → 银河系（原点）
@@ -489,6 +638,19 @@ export function Universe(): JSX.Element {
       pos.setXYZ(1, 0, 0, 0);
       pos.needsUpdate = true;
       approachLine.computeLineDistances();
+
+      // 接近进度流动光点（R2-10）：自 M31 端流向银河系端，等相位间隔
+      // （真实秒驱动的 UI 节奏示意，流速非物理量——登记于 utils/universe.ts）
+      {
+        const flowPos = flowGeometry.attributes.position as THREE.BufferAttribute;
+        const elapsed = frameState.clock.elapsedTime;
+        for (let i = 0; i < M31_APPROACH_FLOW_COUNT; i += 1) {
+          const s = m31ApproachFlow01(elapsed, i);
+          const k = d * (1 - s);
+          flowPos.setXYZ(i, m31.direction.x * k, m31.direction.y * k, m31.direction.z * k);
+        }
+        flowPos.needsUpdate = true;
+      }
 
       // 碰撞倒计时提示
       if (mergeLabelRef.current) {
@@ -538,6 +700,17 @@ export function Universe(): JSX.Element {
 
       {/* 麦哲伦星流（可选需求）：LMC/SMC 被潮汐剥离的气体流 */}
       <primitive object={streamPoints} />
+
+      {/* 人马座潮汐流（R2-10）：沿极轨道前后延伸的稀疏星流（正被撕裂示意） */}
+      <primitive object={sgrStreamPoints} />
+
+      {/* 卫星星系轨道线（R2-10）：与运动位置同源公式的细线，随轨道线开关 */}
+      {satelliteOrbitLines.map((o) => (
+        <primitive key={o.id} object={o.line} />
+      ))}
+
+      {/* M31 接近进度流动光点（R2-10）：沿接近虚线流向银河系 */}
+      <primitive object={flowPoints} />
 
       {/* 银河系—仙女座合并辉光（可选需求：碰撞合并示意，接近后期显现） */}
       <sprite ref={mergeGlowRef} visible={false}>

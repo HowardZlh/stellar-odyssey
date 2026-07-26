@@ -9,7 +9,7 @@ import type { GalaxyData, GalaxyMorphology, MoonData, PlanetData } from '@/types
 import { PLANETS, SUN } from '@/data/planets';
 import { MOONS } from '@/data/moons';
 import { COMETS, DWARF_PLANETS, PLUTO } from '@/data/smallBodies';
-import { LOCAL_GROUP_GALAXIES, MILKY_WAY } from '@/data/galaxies';
+import { GALAXY_MOTION_NOTE_ZH, LOCAL_GROUP_GALAXIES, MILKY_WAY } from '@/data/galaxies';
 import { SPECIAL_BODIES } from '@/data/specialBodies';
 import {
   CORONAL_HEATING_NOTE_ZH,
@@ -172,15 +172,21 @@ function formatRadialVelocity(v: number): string {
   return v < 0 ? `接近 ${Math.abs(v)} km/s` : `退行 ${v} km/s`;
 }
 
-/** 星系信息行（R2-8 §8.1：补结构说明行——核球/盘/晕，随时可见含跟随近观语境） */
+/** 星系信息行（R2-8 §8.1：补结构说明行——核球/盘/晕，随时可见含跟随近观语境；
+ * R2-10：补"运动（模拟）"行——轨迹线与运动同源核对结论逐星系登记） */
 function galaxyLines(g: GalaxyData): BodyInfoLine[] {
-  return [
+  const lines: BodyInfoLine[] = [
     { label: '距离', value: formatLightYears(g.distanceLy) },
     { label: '直径', value: formatLightYears(g.diameterLy) },
     { label: '视向速度', value: formatRadialVelocity(g.radialVelocityKmS) },
     { label: '结构', value: GALAXY_STRUCTURE_NOTE_BY_MORPHOLOGY_ZH[g.morphology] },
-    { label: '描述', value: g.descriptionZh },
   ];
+  const motion = GALAXY_MOTION_NOTE_ZH[g.id];
+  if (motion) {
+    lines.push({ label: '运动（模拟）', value: motion });
+  }
+  lines.push({ label: '描述', value: g.descriptionZh });
+  return lines;
 }
 
 /** 构建全量目录（模块加载时一次性生成，均为纯数据） */

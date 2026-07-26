@@ -234,12 +234,14 @@ function galaxyScenePosition(galaxyId: string, simDays: number): Vec3 | null {
       z: m31.direction.z * d + lyToSceneUnits(offset.z),
     };
   }
-  if (galaxy.id === 'lmc' || galaxy.id === 'smc') {
+  if (galaxy.id === 'lmc' || galaxy.id === 'smc' || galaxy.id === 'sagittarius-dwarf') {
+    // R2-10：direction 自洽轨道（人马座矮星系极轨道缓慢运动纳入），
+    // 与 Universe.tsx 渲染同源公式
     const orbit = SATELLITE_GALAXY_ORBITS[galaxy.id];
     const p = satelliteGalaxyPositionLy(
       galaxy.distanceLy,
       orbit.periodMyr,
-      orbit.phase0Rad,
+      galaxy.direction,
       orbit.inclinationDeg,
       simDays,
     );
