@@ -95,7 +95,8 @@ describe('hubbleScaleFactor（哈勃膨胀示意）', () => {
 });
 
 describe('magellanicStreamPointsLy（麦哲伦星流）', () => {
-  const ARGS = [160000, 1500, 0.8, 35, 1e10, 60] as const;
+  const DIR = { x: -0.2049, y: -0.9222, z: 0.3279 } as const;
+  const ARGS = [160000, 1500, DIR, 35, 1e10, 60] as const;
 
   it('输出点数等于 count', () => {
     const points = magellanicStreamPointsLy(...ARGS);
@@ -105,14 +106,14 @@ describe('magellanicStreamPointsLy（麦哲伦星流）', () => {
   it('确定性：同参数输出一致、不同种子不同', () => {
     const a = magellanicStreamPointsLy(...ARGS);
     const b = magellanicStreamPointsLy(...ARGS);
-    const c = magellanicStreamPointsLy(160000, 1500, 0.8, 35, 1e10, 60, 999);
+    const c = magellanicStreamPointsLy(160000, 1500, DIR, 35, 1e10, 60, 999);
     expect(a).toEqual(b);
     expect(a).not.toEqual(c);
   });
 
-  it('首点靠近 LMC 当前轨道位置（抖动最小）', () => {
+  it('首点靠近 LMC 当前轨道位置（抖动最小，与运动位置同源）', () => {
     const points = magellanicStreamPointsLy(...ARGS);
-    const lmc = satelliteGalaxyPositionLy(160000, 1500, 0.8, 35, 1e10);
+    const lmc = satelliteGalaxyPositionLy(160000, 1500, DIR, 35, 1e10);
     const d = Math.hypot(points[0].x - lmc.x, points[0].y - lmc.y, points[0].z - lmc.z);
     // 首点抖动幅度 ≤ distance×0.04×0.3×√3
     expect(d).toBeLessThan(160000 * 0.04 * 0.3 * Math.sqrt(3) + 1e-6);
@@ -123,7 +124,7 @@ describe('magellanicStreamPointsLy（麦哲伦星流）', () => {
     const tail = satelliteGalaxyPositionLy(
       160000,
       1500,
-      0.8,
+      DIR,
       35,
       1e10 - MAGELLANIC_STREAM_TRAIL_MYR * DAYS_PER_MYR,
     );
@@ -134,8 +135,8 @@ describe('magellanicStreamPointsLy（麦哲伦星流）', () => {
   });
 
   it('非法采样点数抛出 RangeError', () => {
-    expect(() => magellanicStreamPointsLy(160000, 1500, 0.8, 35, 0, 1)).toThrow(RangeError);
-    expect(() => magellanicStreamPointsLy(160000, 1500, 0.8, 35, 0, 2.5)).toThrow(RangeError);
+    expect(() => magellanicStreamPointsLy(160000, 1500, DIR, 35, 0, 1)).toThrow(RangeError);
+    expect(() => magellanicStreamPointsLy(160000, 1500, DIR, 35, 0, 2.5)).toThrow(RangeError);
   });
 });
 

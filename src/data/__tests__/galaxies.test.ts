@@ -7,8 +7,10 @@ import {
   LOCAL_GROUP_GALAXIES,
   VIRGO_CLUSTER,
   LANIAKEA,
+  GALAXY_MOTION_NOTE_ZH,
   GREAT_ATTRACTOR_DIRECTION,
   LG_CMB_VELOCITY_KM_S,
+  SAGITTARIUS_STREAM,
   SATELLITE_GALAXY_ORBITS,
   getGalaxyById,
 } from '@/data/galaxies';
@@ -126,6 +128,27 @@ describe('卫星星系轨道可视化参数', () => {
     );
     expect(SATELLITE_GALAXY_ORBITS.lmc.inclinationDeg).toBe(35);
     expect(SATELLITE_GALAXY_ORBITS.smc.inclinationDeg).toBe(50);
+  });
+
+  it('人马座矮星系为极轨道且周期约 9 亿年（R2-10 示意登记）', () => {
+    expect(SATELLITE_GALAXY_ORBITS['sagittarius-dwarf'].inclinationDeg).toBe(90);
+    expect(SATELLITE_GALAXY_ORBITS['sagittarius-dwarf'].periodMyr).toBe(900);
+  });
+
+  it('人马座潮汐流参数：前导+尾随双向、粒子数 ≤1,500（预算登记）', () => {
+    expect(SAGITTARIUS_STREAM.backMyr).toBeGreaterThan(0);
+    expect(SAGITTARIUS_STREAM.forwardMyr).toBeGreaterThan(0);
+    expect(SAGITTARIUS_STREAM.pointCount).toBeLessThanOrEqual(1500);
+  });
+
+  it('L4 运动一致性登记：全部本星系群星系均有"运动（模拟）"说明', () => {
+    for (const g of LOCAL_GROUP_GALAXIES) {
+      expect(GALAXY_MOTION_NOTE_ZH[g.id]).toBeTruthy();
+    }
+    // 星流澄清（R2-10）：注明星流为历史路径上剥离的物质、非轨道线
+    expect(GALAXY_MOTION_NOTE_ZH.lmc).toContain('非轨道线');
+    expect(GALAXY_MOTION_NOTE_ZH.m32).toContain('随 M31');
+    expect(GALAXY_MOTION_NOTE_ZH.m110).toContain('随 M31');
   });
 });
 

@@ -3,13 +3,17 @@
  * 矮行星 / M31 伴星系（M32/M110）/ 新增特殊天体
  */
 
-import { M31_COMPANION_OFFSETS_LY, getGalaxyById } from '@/data/galaxies';
+import {
+  M31_COMPANION_OFFSETS_LY,
+  SATELLITE_GALAXY_ORBITS,
+  getGalaxyById,
+} from '@/data/galaxies';
 import { getDwarfPlanetById } from '@/data/smallBodies';
 import { MIN_VIEW_DISTANCE_UNITS, resolveFocusTarget } from '@/utils/cameraFocus';
 import { dwarfDisplayRadius } from '@/utils/dwarfPlanets';
 import { heliocentricPosition } from '@/utils/physics';
 import { cosmicDistanceToSceneUnits, eclipticToScene, lyToSceneUnits } from '@/utils/scale';
-import { mwM31SeparationLy } from '@/utils/universe';
+import { mwM31SeparationLy, satelliteGalaxyPositionLy } from '@/utils/universe';
 
 const SIM_DAYS = 8000;
 
@@ -67,14 +71,39 @@ describe('M31 伴星系目标解析（M32 / M110）', () => {
   });
 });
 
-describe('人马座矮星系目标解析', () => {
-  it('可解析且位于其方向射线上', () => {
+describe('人马座矮星系目标解析（R2-10：极轨道缓慢运动）', () => {
+  it('与渲染同源公式一致（satelliteGalaxyPositionLy）', () => {
     const target = resolveFocusTarget('sagittarius-dwarf', SIM_DAYS)!;
     const g = getGalaxyById('sagittarius-dwarf')!;
+    const orbit = SATELLITE_GALAXY_ORBITS['sagittarius-dwarf'];
+    const p = satelliteGalaxyPositionLy(
+      g.distanceLy,
+      orbit.periodMyr,
+      g.direction,
+      orbit.inclinationDeg,
+      SIM_DAYS,
+    );
+    expect(target.position.x).toBeCloseTo(lyToSceneUnits(p.x), 6);
+    expect(target.position.y).toBeCloseTo(lyToSceneUnits(p.y), 6);
+    expect(target.position.z).toBeCloseTo(lyToSceneUnits(p.z), 6);
+  });
+
+  it('t=0 首帧位置 = direction × distance（direction 一致性修复）', () => {
+    const target = resolveFocusTarget('sagittarius-dwarf', 0)!;
+    const g = getGalaxyById('sagittarius-dwarf')!;
     const d = cosmicDistanceToSceneUnits(g.distanceLy);
-    expect(target.position.x).toBeCloseTo(g.direction.x * d, 6);
-    expect(target.position.y).toBeCloseTo(g.direction.y * d, 6);
-    expect(target.position.z).toBeCloseTo(g.direction.z * d, 6);
+    // direction 为近似单位矢量（|v|≈1，内部归一化后与 d 相乘）
+    const len = Math.hypot(g.direction.x, g.direction.y, g.direction.z);
+    expect(target.position.x).toBeCloseTo((g.direction.x / len) * d, 4);
+    expect(target.position.y).toBeCloseTo((g.direction.y / len) * d, 4);
+    expect(target.position.z).toBeCloseTo((g.direction.z / len) * d, 4);
+  });
+
+  it('随时间产生可辨识位移（不再完全静止）', () => {
+    const a = resolveFocusTarget('sagittarius-dwarf', 0)!.position;
+    // 100 Myr 后（周期 900 Myr 的约 11%）
+    const b = resolveFocusTarget('sagittarius-dwarf', 100 * 365.25e6)!.position;
+    expect(Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z)).toBeGreaterThan(100);
   });
 });
 

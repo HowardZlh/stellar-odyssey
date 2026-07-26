@@ -187,12 +187,22 @@ export const GREAT_ATTRACTOR_DIRECTION: Vec3 = { x: -0.72, y: -0.35, z: 0.6 };
 export const LG_CMB_VELOCITY_KM_S = 620;
 
 /**
- * 卫星星系（LMC/SMC）绕银河系的轨道可视化参数
- * 注意：轨道周期为示意近似（真实轨道周期尚有较大不确定性，量级约十亿年）
+ * 卫星星系（LMC/SMC/人马座矮星系）绕银河系的轨道可视化参数
+ *
+ * R2-10：轨道自 direction × distance 起步（首帧位置与天区方位一致，
+ * phase0 移除）；inclinationDeg 为轨道平面姿态参数（0=贴近银道面，
+ * 90=极轨道，见 utils/universe.satelliteOrbitBasis）。
+ *
+ * 近似登记：
+ * - LMC/SMC 轨道周期为示意近似（真实轨道为高椭圆且周期尚有较大
+ *   不确定性，量级约 15–25 亿年）；
+ * - 人马座矮星系取极轨道（真实轨道接近极向，Ibata et al. 1994），
+ *   周期约 9 亿年示意（真实估计约 8.5–10 亿年，Law & Majewski 2010）。
  */
 export const SATELLITE_GALAXY_ORBITS = {
-  lmc: { periodMyr: 1500, phase0Rad: 0.5, inclinationDeg: 35 },
-  smc: { periodMyr: 2100, phase0Rad: 2.4, inclinationDeg: 50 },
+  lmc: { periodMyr: 1500, inclinationDeg: 35 },
+  smc: { periodMyr: 2100, inclinationDeg: 50 },
+  'sagittarius-dwarf': { periodMyr: 900, inclinationDeg: 90 },
 } as const;
 
 /**
@@ -221,6 +231,48 @@ export const MAGELLANIC_STREAM = {
   color: '#7fa8c8',
   dataSource: 'Nidever et al. (2010), ApJ；GASS 中性氢巡天',
 } as const;
+
+/**
+ * 人马座潮汐流可视化参数（R2-10：人马座矮星系"正被潮汐撕裂"的
+ * 视觉呼应——沿轨道前后延伸的稀疏星流）
+ *
+ * 真实人马座星流为被银河系潮汐剥离的恒星流，前导臂+尾随臂环绕
+ * 整个银河系（Ibata et al. 2001；Law & Majewski 2010 轨道模型）。
+ * 此处沿示意轨道前后各数亿年路径采样（近似登记）；粒子预算 360
+ * （需求上限 ≤1,500）。
+ */
+export const SAGITTARIUS_STREAM = {
+  nameZh: '人马座星流',
+  /** 采样点数（粒子预算登记：≤1,500） */
+  pointCount: 360,
+  /** 确定性种子 */
+  seed: 20260726,
+  /** 老年恒星流暖色调（与麦哲伦星流冷蓝气体区分） */
+  color: '#d8bd9a',
+  /** 尾随臂回溯时长（百万年） */
+  backMyr: 420,
+  /** 前导臂前伸时长（百万年） */
+  forwardMyr: 260,
+  /** 横向弥散比例（潮汐撕裂中，弥散大于麦哲伦星流） */
+  jitterFrac: 0.09,
+  dataSource: 'Ibata et al. (2001), ApJ；Law & Majewski (2010) 轨道模型',
+} as const;
+
+/**
+ * L4 星系运动一致性登记（R2-10 通用原则：轨迹线 ↔ 运动同源；
+ * 信息面板"运动（模拟）"行逐一说明，宇宙网静止登记见 HelpHint）
+ */
+export const GALAXY_MOTION_NOTE_ZH: Readonly<Record<string, string>> = {
+  m31: '沿接近虚线以约 110 km/s 靠近银河系（虚线上流动光点为进度示意，流速非物理量）',
+  m33: '位置静态（其空间运动未建模，属预期）',
+  lmc: '沿细线轨道绕银河系运动（圆轨道周期约 15 亿年，示意近似）；麦哲伦星流为历史路径上被潮汐剥离的气体（弥散粒子带，非轨道线）',
+  smc: '沿细线轨道绕银河系运动（圆轨道周期约 21 亿年，示意近似）',
+  m32: '随 M31 一同接近银河系（示意偏移，属预期）',
+  m110: '随 M31 一同接近银河系（示意偏移，属预期）',
+  'sagittarius-dwarf':
+    '沿极轨道缓慢绕银河系运动（周期约 9 亿年，示意近似）；潮汐流粒子沿轨道前后延伸，呼应"正被潮汐撕裂"',
+  m87: '位置静态（星系团尺度运动未建模，属预期）',
+};
 
 /**
  * 按 id 查找星系

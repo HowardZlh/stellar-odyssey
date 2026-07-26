@@ -130,6 +130,14 @@ describe('星系', () => {
       expect(getBodyInfoById(g.id)).toBeDefined();
     }
   });
+
+  it('R2-10：所有本星系群星系含"运动（模拟）"登记行（星流澄清/静止预期说明）', () => {
+    for (const g of LOCAL_GROUP_GALAXIES) {
+      expect(lineValue(getBodyInfoById(g.id)!, '运动（模拟）')).toBeTruthy();
+    }
+    expect(lineValue(getBodyInfoById('lmc')!, '运动（模拟）')).toContain('非轨道线');
+    expect(lineValue(getBodyInfoById('sagittarius-dwarf')!, '运动（模拟）')).toContain('极轨道');
+  });
 });
 
 describe('通用约束', () => {

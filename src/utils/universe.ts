@@ -121,17 +121,71 @@ export function localGroupPositionsLy(
 }
 
 /**
- * 卫星星系（大小麦哲伦云）绕银河系的圆轨道位置（光年，银河系中心系）
+ * 卫星星系轨道平面正交基（R2-10 direction 一致性修复）
  *
- * 角度 θ = phase0 + 2π·t/period；先在 x-z 面取 (d·cosθ, 0, −d·sinθ)
- * （自 +y 俯视逆时针），再绕 x 轴倾斜 inclinationDeg。
- * 真实麦哲伦云轨道为高椭圆且周期有争议（约 15–25 亿年），
- * 此处采用圆轨道示意（已登记为近似处理）。
+ * u = 归一化 direction（t=0 的径向单位矢量——首帧位置 = u·distance，
+ *     与数据登记的真实天区方位及静态首帧渲染位置严格一致，消除跳变）；
+ * v = t=0 处的轨道切向单位矢量：h = normalize(ŷ×u)（银道面内水平切向），
+ *     m = u×h（轨道面内"极向"切向），v = h·cos(incl) + m·sin(incl)。
+ *
+ * inclinationDeg 为轨道平面姿态参数（示意登记）：0° → 过 direction 且
+ * 尽可能贴近银道面的轨道；90° → 极轨道（轨道平面包含 direction 与银河系
+ * 极轴 ŷ）。direction ∥ ŷ 时水平切向退化，回退 h = x̂。
+ *
+ * @throws RangeError direction 为零矢量或含非有限分量
+ */
+export function satelliteOrbitBasis(
+  direction: Vec3,
+  inclinationDeg: number,
+): { u: Vec3; v: Vec3 } {
+  const len = Math.hypot(direction.x, direction.y, direction.z);
+  if (!Number.isFinite(len) || len === 0) {
+    throw new RangeError('卫星星系 direction 必须为非零有限矢量');
+  }
+  const u: Vec3 = { x: direction.x / len, y: direction.y / len, z: direction.z / len };
+  // h = normalize(ŷ × u) = normalize((u.z, 0, −u.x))
+  const hLen = Math.hypot(u.z, u.x);
+  const h: Vec3 =
+    hLen < 1e-9 ? { x: 1, y: 0, z: 0 } : { x: u.z / hLen, y: 0, z: -u.x / hLen };
+  // m = u × h（u ⊥ h 且均为单位矢量 → m 亦为单位矢量）
+  const m: Vec3 = {
+    x: u.y * h.z - u.z * h.y,
+    y: u.z * h.x - u.x * h.z,
+    z: u.x * h.y - u.y * h.x,
+  };
+  const incl = (inclinationDeg * Math.PI) / 180;
+  const cos = Math.cos(incl);
+  const sin = Math.sin(incl);
+  return {
+    u,
+    v: { x: h.x * cos + m.x * sin, y: h.y * cos + m.y * sin, z: h.z * cos + m.z * sin },
+  };
+}
+
+/** 轨道基下角度 θ 处的圆轨道点（位置/轨道线共用的唯一公式，禁止两套参数） */
+function orbitPointLy(distanceLy: number, u: Vec3, v: Vec3, thetaRad: number): Vec3 {
+  const c = Math.cos(thetaRad);
+  const s = Math.sin(thetaRad);
+  return {
+    x: distanceLy * (u.x * c + v.x * s),
+    y: distanceLy * (u.y * c + v.y * s),
+    z: distanceLy * (u.z * c + v.z * s),
+  };
+}
+
+/**
+ * 卫星星系（大小麦哲伦云/人马座矮星系）绕银河系的圆轨道位置
+ * （光年，银河系中心系）
+ *
+ * θ = 2π·t/period，p(t) = d·(u·cosθ + v·sinθ)——t=0 时 p = direction×distance
+ * （R2-10 direction 一致性修复，轨道从数据登记的天区方位起步）。
+ * 真实麦哲伦云轨道为高椭圆且周期有争议（约 15–25 亿年）、人马座矮星系
+ * 轨道周期约 8.5–10 亿年，此处采用圆轨道示意（已登记为近似处理）。
  */
 export function satelliteGalaxyPositionLy(
   distanceLy: number,
   periodMyr: number,
-  phase0Rad: number,
+  direction: Vec3,
   inclinationDeg: number,
   simDays: number,
 ): Vec3 {
@@ -141,16 +195,38 @@ export function satelliteGalaxyPositionLy(
   if (periodMyr <= 0) {
     throw new RangeError(`卫星星系轨道周期必须为正数，收到 ${periodMyr}`);
   }
-  const theta = phase0Rad + (Math.PI * 2 * simDaysToMyr(simDays)) / periodMyr;
-  const x = distanceLy * Math.cos(theta);
-  const z = -distanceLy * Math.sin(theta);
-  const incl = (inclinationDeg * Math.PI) / 180;
-  // 绕 x 轴旋转：y' = y·cos − z·sin，z' = y·sin + z·cos（此处 y = 0）
-  return {
-    x,
-    y: -z * Math.sin(incl),
-    z: z * Math.cos(incl),
-  };
+  const { u, v } = satelliteOrbitBasis(direction, inclinationDeg);
+  const theta = (Math.PI * 2 * simDaysToMyr(simDays)) / periodMyr;
+  return orbitPointLy(distanceLy, u, v, theta);
+}
+
+/**
+ * 卫星星系轨道线采样点（光年，银河系中心系，R2-10 卫星星系轨道线）
+ *
+ * 与 satelliteGalaxyPositionLy 共用同一 orbitPointLy 公式（同源，
+ * 禁止两套参数）——任意时刻的运动位置严格落在该轨道线上。
+ * 返回 segments+1 个点（首尾闭合）。
+ *
+ * @param segments 采样段数（≥ 3 的整数）
+ */
+export function satelliteOrbitPointsLy(
+  distanceLy: number,
+  direction: Vec3,
+  inclinationDeg: number,
+  segments: number,
+): Vec3[] {
+  if (distanceLy <= 0) {
+    throw new RangeError(`卫星星系距离必须为正数，收到 ${distanceLy}`);
+  }
+  if (!Number.isInteger(segments) || segments < 3) {
+    throw new RangeError(`轨道线采样段数必须为 ≥ 3 的整数，收到 ${segments}`);
+  }
+  const { u, v } = satelliteOrbitBasis(direction, inclinationDeg);
+  const points: Vec3[] = [];
+  for (let s = 0; s <= segments; s += 1) {
+    points.push(orbitPointLy(distanceLy, u, v, (s / segments) * Math.PI * 2));
+  }
+  return points;
 }
 
 // ---------------------------------------------------------------------------
@@ -224,42 +300,65 @@ export function hubbleScaleFactor(simDays: number, h0PerMyr = HUBBLE_H0_PER_MYR)
 /** 麦哲伦星流回溯时长（百万年）：气体流沿卫星星系轨道拖尾的示意长度 */
 export const MAGELLANIC_STREAM_TRAIL_MYR = 600;
 
+/** 潮汐流采样配置（R2-10：麦哲伦星流/人马座潮汐流共用） */
+export interface TidalStreamConfig {
+  /** 沿轨道向后回溯时长（百万年，尾随臂） */
+  backMyr: number;
+  /** 沿轨道向前延伸时长（百万年，前导臂；0 = 仅拖尾） */
+  forwardMyr: number;
+  /** 横向抖动幅度（相对轨道半径的比例） */
+  jitterFrac: number;
+  /** 确定性种子 */
+  seed: number;
+}
+
 /**
- * 麦哲伦星流采样点（光年，银河系中心系）
+ * 潮汐流采样点（光年，银河系中心系，R2-10 泛化）
  *
- * 真实麦哲伦星流为 LMC/SMC 受银河系潮汐剥离的中性氢气体流，
- * 横跨南天约 100°。此处沿卫星星系轨道向后回溯采样（拖尾示意，已登记），
- * 每个点加确定性横向抖动模拟气体弥散。
+ * 沿卫星星系轨道从 +forwardMyr（前导臂端）到 −backMyr（尾随臂端）
+ * 等时距采样（历史/未来路径上剥离的气体与恒星示意，已登记），
+ * 每个点加确定性横向抖动模拟弥散——离卫星星系越远弥散越大。
  *
- * @param count 采样点数（≥ 2）
+ * @param count 采样点数（≥ 2 的整数）
  */
-export function magellanicStreamPointsLy(
+export function tidalStreamPointsLy(
   distanceLy: number,
   periodMyr: number,
-  phase0Rad: number,
+  direction: Vec3,
   inclinationDeg: number,
   simDays: number,
   count: number,
-  seed = 20260725,
+  config: TidalStreamConfig,
 ): Vec3[] {
   if (count < 2 || !Number.isInteger(count)) {
     throw new RangeError(`采样点数必须为 ≥ 2 的整数，收到 ${count}`);
   }
-  const rand = createSeededRandom(seed);
+  if (config.backMyr < 0 || config.forwardMyr < 0 || config.backMyr + config.forwardMyr <= 0) {
+    throw new RangeError(
+      `潮汐流时长必须非负且总和为正，收到 back=${config.backMyr} forward=${config.forwardMyr}`,
+    );
+  }
+  if (config.jitterFrac < 0) {
+    throw new RangeError(`抖动比例不能为负，收到 ${config.jitterFrac}`);
+  }
+  const rand = createSeededRandom(config.seed);
+  const spanMyr = config.backMyr + config.forwardMyr;
+  const maxAbsMyr = Math.max(config.backMyr, config.forwardMyr);
   const points: Vec3[] = [];
   for (let i = 0; i < count; i += 1) {
     const t01 = i / (count - 1);
-    // 回溯时间：0（当前位置）→ MAGELLANIC_STREAM_TRAIL_MYR（尾端）
-    const backDays = t01 * MAGELLANIC_STREAM_TRAIL_MYR * DAYS_PER_MYR;
+    // 时间偏移：+forwardMyr（前导端）→ −backMyr（尾随端）
+    const offsetMyr = config.forwardMyr - t01 * spanMyr;
     const p = satelliteGalaxyPositionLy(
       distanceLy,
       periodMyr,
-      phase0Rad,
+      direction,
       inclinationDeg,
-      simDays - backDays,
+      simDays + offsetMyr * DAYS_PER_MYR,
     );
-    // 气体弥散：尾端抖动更大（潮汐剥离越久越弥散）
-    const jitter = distanceLy * 0.04 * (0.3 + t01);
+    // 弥散：离卫星星系当前位置越远（|offset| 越大）抖动越大
+    const dist01 = Math.abs(offsetMyr) / maxAbsMyr;
+    const jitter = distanceLy * config.jitterFrac * (0.3 + dist01);
     points.push({
       x: p.x + (rand() * 2 - 1) * jitter,
       y: p.y + (rand() * 2 - 1) * jitter,
@@ -267,6 +366,75 @@ export function magellanicStreamPointsLy(
     });
   }
   return points;
+}
+
+/**
+ * 麦哲伦星流采样点（光年，银河系中心系）
+ *
+ * 真实麦哲伦星流为 LMC/SMC 受银河系潮汐剥离的中性氢气体流，
+ * 横跨南天约 100°。此处沿卫星星系轨道向后回溯采样（拖尾示意，已登记；
+ * R2-10 起委托 tidalStreamPointsLy，与 LMC 运动位置同源）。
+ *
+ * @param count 采样点数（≥ 2）
+ */
+export function magellanicStreamPointsLy(
+  distanceLy: number,
+  periodMyr: number,
+  direction: Vec3,
+  inclinationDeg: number,
+  simDays: number,
+  count: number,
+  seed = 20260725,
+): Vec3[] {
+  return tidalStreamPointsLy(distanceLy, periodMyr, direction, inclinationDeg, simDays, count, {
+    backMyr: MAGELLANIC_STREAM_TRAIL_MYR,
+    forwardMyr: 0,
+    jitterFrac: 0.04,
+    seed,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// M31 接近进度流动光点（R2-10：对数距离压缩下"正在接近"的进度感）
+// ---------------------------------------------------------------------------
+
+/** 接近虚线上的流动光点数量 */
+export const M31_APPROACH_FLOW_COUNT = 6;
+
+/**
+ * 流动光点循环周期（真实秒）。
+ * UI 节奏示意（已登记）：真实接近速度（~110 km/s）经对数距离压缩后
+ * 不可感知，光点自 M31 端流向银河系端仅表达"正在接近"的方向与进度，
+ * 流速非物理量（同 Galaxy.tsx 流动刻度模式的 UI 高亮性质）。
+ */
+export const M31_APPROACH_FLOW_PERIOD_SEC = 7;
+
+/**
+ * 第 index 个流动光点在接近虚线上的归一化位置（[0,1) 循环）
+ *
+ * 0 = M31 当前位置端，1 = 银河系（原点）端；随真实经过秒数由
+ * M31 端流向银河系端，count 个光点等相位间隔分布。
+ */
+export function m31ApproachFlow01(
+  elapsedSeconds: number,
+  index: number,
+  count = M31_APPROACH_FLOW_COUNT,
+  periodSec = M31_APPROACH_FLOW_PERIOD_SEC,
+): number {
+  if (!Number.isFinite(elapsedSeconds)) {
+    throw new RangeError(`经过秒数必须为有限数，收到 ${elapsedSeconds}`);
+  }
+  if (!Number.isInteger(count) || count < 1) {
+    throw new RangeError(`光点数必须为 ≥1 的整数，收到 ${count}`);
+  }
+  if (!Number.isInteger(index) || index < 0 || index >= count) {
+    throw new RangeError(`光点索引必须在 [0, ${count}) 内，收到 ${index}`);
+  }
+  if (!(periodSec > 0)) {
+    throw new RangeError(`流动周期必须为正数，收到 ${periodSec}`);
+  }
+  const raw = elapsedSeconds / periodSec + index / count;
+  return raw - Math.floor(raw);
 }
 
 // ---------------------------------------------------------------------------
