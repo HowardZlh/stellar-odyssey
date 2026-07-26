@@ -71,18 +71,36 @@ const MW_M31_ACCEL_LY_PER_MYR2 =
   (MW_M31_MERGE_MYR * MW_M31_MERGE_MYR);
 
 /**
- * MW–M31 当前距离（光年）
+ * MW–M31 合并前接近曲线（光年，未钳制——同源公式唯一出处）
  *
  * 匀加速接近：d(t) = d0 − v0·t − ½·A·t²，保证 d(0)=2.5e6、d(4500 Myr)=0。
- * 返回值 clamp ≥ 0（合并后视为重合）；t < 0 允许回溯（无上限 clamp）。
+ * t > 4500 Myr 时为负值（抛物线延伸，无物理意义）——合并时刻之后的
+ * 演化语义由 utils/galaxyMerger.mwM31SignedSeparationLy 接管（R2-11：
+ * 首次穿越/回摆振荡/终态并合，替换旧 clamp≥0 的"原地重叠"停滞语义）。
  */
-export function mwM31SeparationLy(simDays: number): number {
+export function mwM31ApproachSeparationLy(simDays: number): number {
   const t = simDaysToMyr(simDays);
-  const d =
+  return (
     MW_M31_INITIAL_SEPARATION_LY -
     MW_M31_V0_LY_PER_MYR * t -
-    0.5 * MW_M31_ACCEL_LY_PER_MYR2 * t * t;
-  return Math.max(0, d);
+    0.5 * MW_M31_ACCEL_LY_PER_MYR2 * t * t
+  );
+}
+
+/** 合并时刻的接近速度（光年/Myr）：v(T) = v0 + A·T（R2-11 穿越速度登记） */
+export const MW_M31_V_AT_MERGE_LY_PER_MYR =
+  MW_M31_V0_LY_PER_MYR + MW_M31_ACCEL_LY_PER_MYR2 * MW_M31_MERGE_MYR;
+
+/**
+ * MW–M31 当前距离（光年，非负）
+ *
+ * 合并时刻前 = 接近曲线；合并后钳 0（"已并合"的一阶近似）。
+ * 渲染端位置解析请改用 galaxyMerger.mwM31SignedSeparationLy（R2-11，
+ * 合并后有回摆振荡）；本函数保留给"距离必须非负"的标量消费者
+ * （倒计时/质心分解等）。
+ */
+export function mwM31SeparationLy(simDays: number): number {
+  return Math.max(0, mwM31ApproachSeparationLy(simDays));
 }
 
 /**

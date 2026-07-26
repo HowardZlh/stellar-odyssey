@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
-import { MILKY_WAY } from "@/data/galaxies";
+import { LOCAL_GROUP_GALAXIES, MILKY_WAY } from "@/data/galaxies";
 import { isGalaxyAnchoredFocusId } from "@/data/specialBodies";
 import { useSimulationStore } from "@/store";
 import { DEG_TO_RAD } from "@/utils/physics";
@@ -45,6 +45,12 @@ import {
   resetRenderedGalacticFrame,
   setRenderedGalacticFrame,
 } from "@/utils/galacticFrame";
+import {
+  mergerEllipticalMix01,
+  mergerStarburst01,
+  mergerTidalDistortion01,
+  mwM31SignedSeparationLy,
+} from "@/utils/galaxyMerger";
 import { setObjectTreeRaycastEnabled } from "@/utils/raycastGate";
 import {
   ORBIT_GRADATION_COUNT,
@@ -81,6 +87,8 @@ import { Supernova } from "@/components/Scene/Supernova";
  * - 球状星团 +29×21 = 609（GLOBULAR_CLUSTER_COUNT × GLOBULAR_CLUSTER_STARS）；
  * - 本组件合计 43,609；L4 场景峰值 ≈ 43,609 + M13 基础星场 420
  *   + 星系近观层 ≤8,000（R2-8 LRU 容量 1）≈ 52,029，60 FPS 实测保持。
+ * - R2-11 合并演化：零新增粒子（潮汐扭曲/椭球终态/星暴均为既有银盘
+ *   粒子的顶点着色器 uniforms 调制，CPU 零逐粒子分配）。
  */
 const DISK_PARTICLE_COUNT = 40000;
 /** 3D 恒星银晕粒子数（R2-9 §9.1：2,000–4,000 区间） */
@@ -182,6 +190,13 @@ export function Galaxy(): JSX.Element {
         uBarOmega: { value: BAR_PATTERN_SPEED_RAD_PER_MYR },
         // R2-9 尘埃带侧视强度（0-1，CPU 每帧按视角求 dustLaneStrength）
         uDustLane: { value: 0 },
+        // R2-11 合并演化（utils/galaxyMerger 纯函数每帧求值，粒子零新增）：
+        // 潮汐扭曲强度 / 指向 M31 的组内本地单位矢量（含穿越侧符号）/
+        // 终态椭圆插值 / 星暴亮度
+        uTidal: { value: 0 },
+        uTidalDir: { value: new THREE.Vector3(1, 0, 0) },
+        uEll: { value: 0 },
+        uBurst: { value: 0 },
       },
       vertexShader: /* glsl */ `
         attribute float aRadiusLy;
@@ -196,6 +211,10 @@ export function Galaxy(): JSX.Element {
         uniform float uWaveContrast;
         uniform float uBarOmega;
         uniform float uDustLane;
+        uniform float uTidal;
+        uniform vec3 uTidalDir;
+        uniform float uEll;
+        uniform float uBurst;
         varying vec3 vColor;
         varying float vWave;
         varying float vDust;
@@ -213,6 +232,16 @@ export function Galaxy(): JSX.Element {
             aHeightLy,
             -aRadiusLy * sin(angle)
           ) * uUnitsPerLy;
+          // R2-11 终态椭球（Milkomeda）：盘面按半径比例增厚为椭球粒子云
+          // （目标轴比约 0.5，旋臂/团块调制随 uEll 抹平于亮度分支）
+          float hTargetLy = (aHeightLy / 500.0) * max(aRadiusLy, 6000.0) * 0.5;
+          pos.y = mix(pos.y, hTargetLy * uUnitsPerLy, uEll);
+          // R2-11 潮汐扭曲（穿越/回摆期）：沿 MW–M31 连线拉伸（外盘更强，
+          // 潮汐尾示意）+ 外盘朝伴星系侧整体偏置（潮汐桥示意）
+          float outer = smoothstep(0.15, 1.0, aRadiusLy / 50000.0);
+          float along = dot(pos, uTidalDir);
+          pos += uTidalDir * (along * uTidal * (0.2 + 0.85 * outer));
+          pos += uTidalDir * (uTidal * outer * 6000.0 * uUnitsPerLy);
           vColor = aColor;
           // 旋臂密度波（与 utils/galaxy.densityWaveBrightness 公式一致）：
           // 对数螺旋图案以恒定角速度 uPatternSpeed 刚性旋转，
@@ -235,6 +264,13 @@ export function Galaxy(): JSX.Element {
           float midplane = 1.0 - smoothstep(60.0, 380.0, abs(aHeightLy));
           vDust = uDustLane * midplane;
           vWave *= 1.0 - 0.85 * vDust;
+          // R2-11 星暴增亮（穿越时刻）+ 终态旋臂/团块/棒调制抹平
+          vWave *= 1.0 + 1.3 * uBurst;
+          vWave = mix(vWave, 1.05, uEll);
+          // R2-11 色调：终态偏老年恒星红黄；星暴短暂蓝白
+          float lum = dot(vColor, vec3(0.4, 0.45, 0.15));
+          vColor = mix(vColor, lum * vec3(1.3, 0.95, 0.62), uEll);
+          vColor = mix(vColor, vColor * vec3(0.8, 0.95, 1.5) + vec3(0.12), 0.6 * uBurst);
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
           // 远距离（L4）下限 1.2px，保证银河系整体形态仍可辨识
           gl_PointSize = clamp(aSize * (2600.0 / -mvPosition.z), 1.2, 6.0);
@@ -548,6 +584,18 @@ export function Galaxy(): JSX.Element {
 
   const tmpLocal = useMemo(() => new THREE.Vector3(), []);
   const tiltEuler = useMemo(() => new THREE.Euler(tiltRad, 0, 0), [tiltRad]);
+  // R2-11：指向 M31 的组内本地单位矢量（数据层世界方向经倾斜逆旋转，
+  // 常量只算一次；穿越侧符号每帧乘在 uniform 上）
+  const tidalDirLocal = useMemo(() => {
+    const m31 = LOCAL_GROUP_GALAXIES.find((g) => g.id === "m31");
+    return new THREE.Vector3(
+      m31?.direction.x ?? 1,
+      m31?.direction.y ?? 0,
+      m31?.direction.z ?? 0,
+    )
+      .normalize()
+      .applyEuler(new THREE.Euler(-tiltRad, 0, 0));
+  }, [tiltRad]);
   // 参考系切换线性过渡进度（0=跟随太阳系 → 1=银心固定），每帧向目标推进
   const frameProgressRef = useRef(0);
   // 聚焦权重提升进度（bug 修复：飞往/跟随 L3 特殊天体/超新星后目标不可见）：
@@ -663,7 +711,18 @@ export function Galaxy(): JSX.Element {
       camPos.z - group.position.z,
       tiltRad,
     );
-    const dustLane = dustLaneStrength(faceOn);
+    // R2-11 合并演化 uniforms（纯函数每帧求值，确定性/时间可逆；
+    // 粒子扰动全部在顶点着色器，CPU 零逐粒子分配）
+    const ellMix = mergerEllipticalMix01(simDays);
+    diskMaterial.uniforms.uEll.value = ellMix;
+    diskMaterial.uniforms.uTidal.value = mergerTidalDistortion01(simDays);
+    diskMaterial.uniforms.uBurst.value = mergerStarburst01(simDays);
+    (diskMaterial.uniforms.uTidalDir.value as THREE.Vector3)
+      .copy(tidalDirLocal)
+      .multiplyScalar(mwM31SignedSeparationLy(simDays) < 0 ? -1 : 1);
+
+    // 终态椭圆星系无尘埃带（气体在星暴中耗尽，随椭圆插值淡出）
+    const dustLane = dustLaneStrength(faceOn) * (1 - ellMix);
     diskMaterial.uniforms.uDustLane.value = dustLane;
     if (dustLaneRef.current) {
       const laneMat = dustLaneRef.current.material as THREE.MeshBasicMaterial;

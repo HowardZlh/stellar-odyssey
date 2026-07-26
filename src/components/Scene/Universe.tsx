@@ -29,11 +29,19 @@ import {
   magellanicStreamPointsLy,
   mergeGlowOpacity01,
   mwM31MergeCountdownMyr,
-  mwM31SeparationLy,
   satelliteGalaxyPositionLy,
   satelliteOrbitPointsLy,
   tidalStreamPointsLy,
 } from '@/utils/universe';
+import {
+  mergerEllipticalMix01,
+  mergerStage,
+  mergerStageLabelZh,
+  mergerStarburst01,
+  mergerTidalDistortion01,
+  mwM31SignedSeparationLy,
+  mwM31SignedSeparationSceneUnits,
+} from '@/utils/galaxyMerger';
 import {
   claimGalaxyNearView,
   galaxyNearViewEnterDistanceUnits,
@@ -93,6 +101,13 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
   const focusedNow = useSimulationStore(
     (s) => s.followBodyId === galaxy.id || s.flyToBodyId === galaxy.id,
   );
+  // R2-11：并入 Milkomeda 终态后隐藏 M31/伴星系标签（贴图已淡出，
+  // 布尔选择器仅在过渡中点跨越时重渲染）
+  const mergedAway = useSimulationStore(
+    (s) =>
+      (galaxy.id === 'm31' || galaxy.id === 'm32' || galaxy.id === 'm110') &&
+      mergerEllipticalMix01(s.simDays) >= 0.5,
+  );
 
   // ---- R2-8 近观门控状态（滞回 + 0.5s 淡入淡出 + LRU 保留） ----
   const [nearMounted, setNearMounted] = useState(false);
@@ -149,19 +164,19 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
 
     const { simDays } = state;
     if (galaxy.id === 'm31') {
-      // 银河系—仙女座相互接近（银河系中心参考系下沿连线靠近）
-      const separation = mwM31SeparationLy(simDays);
-      const d = cosmicDistanceToSceneUnits(separation);
+      // 银河系—仙女座相互接近 + 合并后回摆振荡（R2-11：签名分离距离，
+      // 穿越后 M31 在初始方向另一侧，utils/galaxyMerger 同源公式）
+      const d = mwM31SignedSeparationSceneUnits(simDays);
       group.position.set(
         galaxy.direction.x * d,
         galaxy.direction.y * d,
         galaxy.direction.z * d,
       );
     } else if (galaxy.id === 'm32' || galaxy.id === 'm110') {
-      // M31 伴星系（可选需求）：随 M31 一同接近银河系（示意偏移已登记）
+      // M31 伴星系（可选需求）：随 M31 一同接近/回摆（示意偏移已登记）
       const m31Data = LOCAL_GROUP_GALAXIES.find((g) => g.id === 'm31');
       if (m31Data) {
-        const d = cosmicDistanceToSceneUnits(mwM31SeparationLy(simDays));
+        const d = mwM31SignedSeparationSceneUnits(simDays);
         const offset = M31_COMPANION_OFFSETS_LY[galaxy.id];
         group.position.set(
           m31Data.direction.x * d + lyToSceneUnits(offset.x),
@@ -218,8 +233,21 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
       // billboard 面向相机（薄片修复，登记见组件头注释）；
       // 近观层激活时贴图交叉淡出（释放时随 near01 回落自动淡入）
       meshRef.current.quaternion.copy(camera.quaternion);
-      (meshRef.current.material as THREE.MeshBasicMaterial).opacity =
-        weight * (1 - near01Ref.current);
+      const mat = meshRef.current.material as THREE.MeshBasicMaterial;
+      let opacity = weight * (1 - near01Ref.current);
+      // R2-11 合并演化：M31 及伴星系随终态过渡淡出并入 Milkomeda
+      // （椭球终态由银河系粒子盘着色器承载）；M31 贴图穿越期潮汐拉伸 +
+      // 星暴时刻蓝白偏色（艺术化登记于 utils/galaxyMerger 文件头）
+      if (galaxy.id === 'm31' || galaxy.id === 'm32' || galaxy.id === 'm110') {
+        opacity *= 1 - mergerEllipticalMix01(state.simDays);
+        if (galaxy.id === 'm31') {
+          const tidal = mergerTidalDistortion01(state.simDays);
+          const burst = mergerStarburst01(state.simDays);
+          meshRef.current.scale.set(1 + 0.55 * tidal, 1 - 0.28 * tidal, 1);
+          mat.color.setRGB(1 - 0.22 * burst, 1 - 0.08 * burst, 1);
+        }
+      }
+      mat.opacity = opacity;
     }
   });
 
@@ -255,7 +283,7 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
       {nearMounted && (
         <GalaxyNearViewLayer galaxy={galaxy} getOpacity={getNearOpacity} />
       )}
-      {showLabels && inRange && !focusedNow && (
+      {showLabels && inRange && !focusedNow && !mergedAway && (
         <Html
           position={[0, sizeUnits * 0.55, 0]}
           center
@@ -630,18 +658,26 @@ export function Universe(): JSX.Element {
     }
 
     // 接近轨迹线端点更新：M31 当前位置 → 银河系（原点）
+    // R2-11：合并时刻后进入演化序列（穿越/回摆/终态），签名距离同源公式
     if (m31) {
-      const separation = mwM31SeparationLy(state.simDays);
-      const d = cosmicDistanceToSceneUnits(separation);
-      const pos = approachGeometry.attributes.position as THREE.BufferAttribute;
-      pos.setXYZ(0, m31.direction.x * d, m31.direction.y * d, m31.direction.z * d);
-      pos.setXYZ(1, 0, 0, 0);
-      pos.needsUpdate = true;
-      approachLine.computeLineDistances();
+      const stage = mergerStage(state.simDays);
+      const approaching = stage === 'approaching';
+      const d = mwM31SignedSeparationSceneUnits(state.simDays);
+      const separation = Math.abs(mwM31SignedSeparationLy(state.simDays));
 
-      // 接近进度流动光点（R2-10）：自 M31 端流向银河系端，等相位间隔
-      // （真实秒驱动的 UI 节奏示意，流速非物理量——登记于 utils/universe.ts）
-      {
+      // 接近虚线/流动光点仅接近段有意义（穿越后语义失效，隐藏；
+      // 时间回退到合并前自动恢复——确定性可逆）
+      approachLine.visible = approaching;
+      flowPoints.visible = approaching;
+      if (approaching) {
+        const pos = approachGeometry.attributes.position as THREE.BufferAttribute;
+        pos.setXYZ(0, m31.direction.x * d, m31.direction.y * d, m31.direction.z * d);
+        pos.setXYZ(1, 0, 0, 0);
+        pos.needsUpdate = true;
+        approachLine.computeLineDistances();
+
+        // 接近进度流动光点（R2-10）：自 M31 端流向银河系端，等相位间隔
+        // （真实秒驱动的 UI 节奏示意，流速非物理量——登记于 utils/universe.ts）
         const flowPos = flowGeometry.attributes.position as THREE.BufferAttribute;
         const elapsed = frameState.clock.elapsedTime;
         for (let i = 0; i < M31_APPROACH_FLOW_COUNT; i += 1) {
@@ -652,19 +688,23 @@ export function Universe(): JSX.Element {
         flowPos.needsUpdate = true;
       }
 
-      // 碰撞倒计时提示
+      // 碰撞倒计时 / 合并演化阶段提示（R2-11 HUD 标签联动）
       if (mergeLabelRef.current) {
+        const stageLabel = mergerStageLabelZh(state.simDays);
         const countdown = mwM31MergeCountdownMyr(state.simDays);
         mergeLabelRef.current.textContent =
-          countdown > 0
+          stageLabel === null
             ? `银河系—仙女座相互接近（~110 km/s），约 ${(countdown / 1000).toFixed(1)} 十亿年后碰撞合并`
-            : '银河系—仙女座已合并（模拟时间超过预计碰撞时刻）';
+            : `银河系—仙女座合并演化：${stageLabel}`;
       }
 
-      // 合并辉光（可选需求：碰撞合并过程示意）——两星系接近后期
-      // 在两者之间显现并增强的并合辉光
+      // 合并辉光（碰撞合并过程示意）——接近后期在两者之间显现增强；
+      // R2-11：穿越时刻星暴蓝白闪亮（气体压缩触发恒星形成，艺术化登记），
+      // 终态过渡为 Milkomeda 核心暖色辉光
       if (mergeGlowRef.current) {
         const glow = mergeGlowOpacity01(separation);
+        const burst = mergerStarburst01(state.simDays);
+        const ellMix = mergerEllipticalMix01(state.simDays);
         mergeGlowRef.current.visible = glow > 0.001;
         const mid = d * 0.5;
         mergeGlowRef.current.position.set(
@@ -672,10 +712,16 @@ export function Universe(): JSX.Element {
           m31.direction.y * mid,
           m31.direction.z * mid,
         );
-        const s = 2600 + 1800 * glow;
+        const s = (2600 + 1800 * glow) * (1 + 0.9 * burst + 0.35 * ellMix);
         mergeGlowRef.current.scale.set(s, s, 1);
-        (mergeGlowRef.current.material as THREE.SpriteMaterial).opacity =
-          0.75 * glow * weight;
+        const glowMat = mergeGlowRef.current.material as THREE.SpriteMaterial;
+        glowMat.opacity = Math.min(1, 0.75 * glow * weight * (1 + 0.6 * burst));
+        // 色调：星暴蓝白（压 R/G 抬相对蓝）→ 终态老年恒星暖红黄（压 B）
+        glowMat.color.setRGB(
+          1 - 0.25 * burst,
+          1 - 0.1 * burst - 0.12 * ellMix,
+          1 - 0.35 * ellMix,
+        );
       }
     }
     // 本星系群整体本动仅作矢量指示，不移动场景（需求 3.1.3，避免坐标漂移）

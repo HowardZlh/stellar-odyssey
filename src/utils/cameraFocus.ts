@@ -54,9 +54,9 @@ import { renderedGalacticFrame } from '@/utils/galacticFrame';
 import { ECLIPTIC_GALACTIC_TILT_DEG, sunGalacticPositionLy } from '@/utils/galaxy';
 import {
   galaxyPlaneSizeUnits,
-  mwM31SeparationLy,
   satelliteGalaxyPositionLy,
 } from '@/utils/universe';
+import { mwM31SignedSeparationSceneUnits } from '@/utils/galaxyMerger';
 
 /** 飞往/跟随目标：场景坐标 + 建议观察距离 */
 export interface FocusTarget {
@@ -219,14 +219,15 @@ function galaxyScenePosition(galaxyId: string, simDays: number): Vec3 | null {
   const galaxy = LOCAL_GROUP_GALAXIES.find((g) => g.id === galaxyId);
   if (!galaxy) return null;
   if (galaxy.id === 'm31') {
-    const d = cosmicDistanceToSceneUnits(mwM31SeparationLy(simDays));
+    // R2-11：签名分离距离（合并后回摆振荡，与 Universe.tsx 渲染同源）
+    const d = mwM31SignedSeparationSceneUnits(simDays);
     return { x: galaxy.direction.x * d, y: galaxy.direction.y * d, z: galaxy.direction.z * d };
   }
   if (galaxy.id === 'm32' || galaxy.id === 'm110') {
     // M31 伴星系：随 M31 一同移动（示意偏移已登记于 data/galaxies.ts）
     const m31 = LOCAL_GROUP_GALAXIES.find((g) => g.id === 'm31');
     if (!m31) return null;
-    const d = cosmicDistanceToSceneUnits(mwM31SeparationLy(simDays));
+    const d = mwM31SignedSeparationSceneUnits(simDays);
     const offset = M31_COMPANION_OFFSETS_LY[galaxy.id];
     return {
       x: m31.direction.x * d + lyToSceneUnits(offset.x),
