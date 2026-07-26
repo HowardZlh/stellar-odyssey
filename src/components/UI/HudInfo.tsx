@@ -18,6 +18,11 @@ import {
 } from '@/utils/cycleScopes';
 import { eventNoticeVisibleInScope, eventOutOfScopeSummaryZh } from '@/utils/eventScopes';
 import { galacticFrameHudLabel } from '@/utils/galacticFrame';
+import {
+  MERGER_FATE_NOTE_ZH,
+  MERGER_SOURCE_NOTE_ZH,
+  mergerNoticeZh,
+} from '@/utils/galaxyMerger';
 import { galacticYearProgress, sunGalacticPositionLy } from '@/utils/galaxy';
 import { formatSceneScaleLabel } from '@/utils/scale';
 import { sunActivityStatusLines } from '@/utils/solarActivity';
@@ -93,10 +98,20 @@ export function HudInfo(): JSX.Element {
   const [galacticText, setGalacticText] = useState('');
   // S3 §4.4：太阳活动周期状态行（低频刷新，随快进演变）
   const [cycleLine, setCycleLine] = useState<{ label: string; value: string } | null>(null);
+  // R2-11：银河系—仙女座合并演化科普卡片（L4 且模拟时间越过合并时刻时显示；
+  // 时间回退（恢复预览前时间）后卡片随之消失——纯模拟时间驱动）
+  const [mergerCard, setMergerCard] = useState<{ stageZh: string; tauMyr: number } | null>(
+    null,
+  );
+  const [mergerCardDismissed, setMergerCardDismissed] = useState(false);
   useEffect(() => {
     const update = (): void => {
       const state = useSimulationStore.getState();
       setSimDateText(formatSimDate(state.simDays));
+      // R2-11 合并演化卡片（仅宇宙视角；合并前为 null）
+      const notice = state.viewLevel === 'L4' ? mergerNoticeZh(state.simDays) : null;
+      setMergerCard(notice);
+      if (notice === null) setMergerCardDismissed(false);
       // 尺度标尺：相机距离按当前层级的尺度映射解释（AU / 光年 / Mpc）
       setScaleText(formatSceneScaleLabel(state.cameraDistanceUnits, state.continuousLevel));
       // 银河年进度 + 太阳当前银盘面高度（L3 显示，P6 §3.1.2 垂直振荡指示）
@@ -203,6 +218,32 @@ export function HudInfo(): JSX.Element {
             </button>
           </div>
         )}
+        {/* R2-11：银河系—仙女座合并演化科普卡片（L4 且越过合并时刻；
+            阶段标签随模拟时间推进更新，时间回退自动消失） */}
+        {mergerCard && !mergerCardDismissed && (
+          <div className="rounded-lg border border-sky-400/40 bg-space-panel p-3 text-xs backdrop-blur">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-sky-300">
+                🌌 银河系—仙女座合并演化
+              </p>
+              <button
+                type="button"
+                onClick={() => setMergerCardDismissed(true)}
+                className="text-gray-400 hover:text-white"
+                aria-label="关闭合并演化卡片"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="mt-1 text-gray-200">
+              {mergerCard.stageZh}（合并时刻后约 {(mergerCard.tauMyr / 100).toFixed(1)}{' '}
+              亿年）
+            </p>
+            <p className="mt-1 leading-4 text-gray-300">{MERGER_FATE_NOTE_ZH}</p>
+            <p className="mt-1 text-[10px] text-gray-500">{MERGER_SOURCE_NOTE_ZH}</p>
+          </div>
+        )}
+
         {/* 超新星爆发事件通知（需求 3.1.5：UI 提示 + "飞往观看"按钮；
             R2-4 §4.1-B：仅超新星视角域（L3/L4，≥2.5）内显示，域外折叠为
             一行小字提醒——通知标志位不改动，回域内且事件仍活跃时恢复 */}
