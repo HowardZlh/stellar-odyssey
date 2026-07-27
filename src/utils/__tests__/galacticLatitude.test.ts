@@ -269,7 +269,7 @@ describe('渲染/解析同源（R3-6 §6.1-D：展开状态下飞往/跟随落�
     expect(expanded.position.y).not.toBeCloseTo(base.position.y, 1);
   });
 
-  it('sgr-a-star（银心原点）与超新星坐标解析不受展开增益影响', () => {
+  it('sgr-a-star（银心原点）与 galacticPointToSceneUnits 不受展开增益影响（R3-7 口径：超新星随盘 morph 在 supernovaFocusTarget 层施加，本换算函数不变）', () => {
     const simDays = 8.4e9;
     setRenderedGalacticFrame(0, 1, 1);
     const sgrBase = resolveFocusTarget('sgr-a-star', simDays)!;

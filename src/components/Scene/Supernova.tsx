@@ -20,7 +20,14 @@ import {
   supernovaVisualState,
 } from "@/utils/supernova";
 import { nebulaExpansionScale } from "@/utils/specialBodies";
-import { advanceFrameTransition } from "@/utils/galacticFrame";
+import {
+  advanceFrameTransition,
+  renderedGalacticFrame,
+} from "@/utils/galacticFrame";
+import {
+  diskMorphWeight,
+  morphGalacticYLy,
+} from "@/utils/galacticLatitude";
 import { setObjectTreeRaycastEnabled } from "@/utils/raycastGate";
 import { createGlowSpriteCanvas } from "@/components/CelestialBody/proceduralTextures";
 import { getNebulaTexture } from "@/components/CelestialBody/nebulaTextures";
@@ -93,6 +100,28 @@ function effectiveSnWeight(
 /** 可交互阈值：淡入权重低于该值时禁用 raycast（隐形对象不拦截点击） */
 const INTERACTIVE_WEIGHT = 0.05;
 
+/**
+ * 超新星随盘 morph 后的组内 y（场景单位，R3-7 §7.1-B 行为变更）：
+ * 超新星位于旋臂内属盘语境，V 展开时随银盘粒子一起抬升——y 通道经
+ * morphGalacticYLy（与盘粒子 shader 公式逐字镜像），morph 权重由
+ * R3-6 生效展开增益派生（renderedGalacticFrame 注册表，与渲染/解析同源，
+ * cameraFocus.supernovaFocusTarget 消费同一公式）。每帧标量运算零分配。
+ */
+function morphedSnYUnits(positionLy: {
+  x: number;
+  y: number;
+  z: number;
+}): number {
+  const morph01 = diskMorphWeight(renderedGalacticFrame().expandGain);
+  return (
+    morphGalacticYLy(
+      positionLy.y,
+      Math.hypot(positionLy.x, positionLy.z),
+      morph01,
+    ) * SCENE_UNITS_PER_LY
+  );
+}
+
 /** 冲击波最大半径（场景单位；约 800 光年的示意尺度，已登记视觉夸大） */
 const SHOCK_MAX_RADIUS_UNITS = 800 * SCENE_UNITS_PER_LY;
 
@@ -138,6 +167,8 @@ function Remnant({ event }: { event: SupernovaEvent }): JSX.Element {
         weight > INTERACTIVE_WEIGHT,
       );
       if (!groupRef.current.visible) return;
+      // R3-7：遗迹随盘 morph（V 展开时 y 通道抬升，x/z 不动）
+      groupRef.current.position.y = morphedSnYUnits(event.positionLy);
     }
     if (nebulaRef.current) {
       const s = size * nebulaExpansionScale(clock.elapsedTime, 120, 0.08);
@@ -206,6 +237,7 @@ function Remnant({ event }: { event: SupernovaEvent }): JSX.Element {
 
 /** 活跃事件：四阶段动画（增亮 → 冲击波扩张 → 衰减 → 遗迹交接） */
 function ActiveSupernova({ event }: { event: SupernovaEvent }): JSX.Element {
+  const groupRef = useRef<THREE.Group>(null);
   const flashRef = useRef<THREE.Sprite>(null);
   const shellRef = useRef<THREE.Mesh>(null);
   const rimRef = useRef<THREE.Mesh>(null);
@@ -226,6 +258,11 @@ function ActiveSupernova({ event }: { event: SupernovaEvent }): JSX.Element {
     const weight = effectiveSnWeight(event.id, boostRef, delta);
     const elapsedSec = (Date.now() - event.startedAtMs) / 1000;
     const state = supernovaVisualState(elapsedSec, event.durationSec);
+
+    // R3-7：活跃事件随盘 morph（V 展开时 y 通道抬升，x/z 不动）
+    if (groupRef.current) {
+      groupRef.current.position.y = morphedSnYUnits(event.positionLy);
+    }
 
     // 动画完成：归档为永久遗迹（一次性）
     if (state.phase === "remnant" && !archivedRef.current) {
@@ -267,6 +304,7 @@ function ActiveSupernova({ event }: { event: SupernovaEvent }): JSX.Element {
 
   return (
     <group
+      ref={groupRef}
       position={[
         event.positionLy.x * SCENE_UNITS_PER_LY,
         event.positionLy.y * SCENE_UNITS_PER_LY,

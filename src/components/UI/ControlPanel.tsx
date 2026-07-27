@@ -263,7 +263,8 @@ export function ControlPanel(): JSX.Element {
               />
             </label>
             <p className="text-[10px] leading-4 text-gray-500">
-              银河系视角特殊天体垂直高度按增益展开（观察辅助的视觉夸大，
+              银河系整体随增益 morph 为扁旋转椭球体（银盘粒子/超新星随盘
+              抬升、特殊天体垂直高度按增益展开；观察辅助的视觉夸大，
               指示线标注为未放大的银纬推算高度）
             </p>
           </div>
