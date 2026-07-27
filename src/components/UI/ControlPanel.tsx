@@ -106,7 +106,12 @@ export function ControlPanel(): JSX.Element {
 
   return (
     <div className="absolute left-4 top-4 w-64 select-none rounded-lg bg-space-panel p-4 text-sm backdrop-blur">
-      <h1 className="mb-3 text-base font-semibold text-space-accent">星系运动可视化</h1>
+      <h1 className="mb-3 text-base font-semibold text-space-accent">
+        星海奥德赛
+        <span className="ml-1.5 align-middle text-[10px] font-normal tracking-wide text-gray-400">
+          Stellar Odyssey
+        </span>
+      </h1>
 
       {/* 视角锚点 */}
       <section className="mb-4">

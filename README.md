@@ -1,4 +1,118 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🌌 星海奥德赛 Stellar Odyssey
+
+> **从行星表面到宇宙尽头的一次滚轮之旅。**
+> 一个基于 React + Three.js 的多层级天体运动 3D 可视化系统：真实开普勒轨道驱动的太阳系、
+> 棒旋结构的银河系、星系碰撞演化的宇宙尺度——四个层级由滚轮连续缩放无缝贯通，
+> 配以随尺度渐变的空间音效，是一场科学数据驱动的沉浸式宇宙遨游。
+
+![tech](https://img.shields.io/badge/Next.js-14-black) ![tech](https://img.shields.io/badge/React-18-61dafb) ![tech](https://img.shields.io/badge/Three.js-R3F-049ef4) ![tech](https://img.shields.io/badge/TypeScript-strict-3178c6) ![tests](https://img.shields.io/badge/tests-1949%20passed-brightgreen) ![coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen)
+
+---
+
+## ✨ 亮点特性
+
+### 🔭 四层级连续缩放遨游
+- **行星视角 → 太阳系视角 → 银河系视角 → 宇宙视角**，按 `1`–`4` 一键切换，或用**滚轮从行星表面一路拉远到可观测宇宙边界**（半径约 465 亿光年），无需任何点击切换
+- 缩放过程中内容 LOD 淡入淡出、时间压缩比对数插值、背景色与音景实时混合，HUD 显示当前尺度标尺（AU / 光年 / Mpc 自动切换）
+
+### 🪐 真实物理驱动的太阳系
+- 八大行星完整**开普勒轨道六要素**（NASA JPL 数据），求解开普勒方程满足匀面速度定律；初始相位基于 J2000 历元——**打开应用时行星位置与真实当前日期一致**
+- 金星逆向自转、天王星 97.8° 侧躺、哈雷彗星 162° 逆行高离心率轨道近日点疾驰、小行星带/柯伊伯带每粒子独立开普勒剪切
+- 20+ 卫星：月球潮汐锁定、伽利略四卫星 1:2:4 共振、ISS/哈勃/天宫 glTF 精细模型近观
+
+### ☀️ 太阳活动系统
+- 近观可见**米粒组织、黑子（11 年周期蝴蝶图纬度迁移）、日珥、光斑**；较差自转（赤道 25.4 天 / 极区 34 天）
+- **耀斑与 CME（日冕物质抛射）**事件链：泊松自动触发 + 手动演示，CME 抵达地球触发极光增强
+- **太阳内部剖面**：1/4 切除视图，核心/辐射区/对流区可点选科普
+
+### 🌀 银河系与深空
+- 3D 棒旋结构（4 万粒子银盘 + 密度波旋臂 + 尘埃带 + 银晕），太阳系沿波浪轨道绕银心公转（银河年约 2.3 亿年，"You are here" 标记）
+- 20+ 特殊天体基于真实原型：人马座 A* 黑洞（引力透镜 + 多普勒吸积盘）、蟹状脉冲星灯塔扫束、天狼星双星互绕、猎户座星云、昴星团、马头星云、类星体 3C 273……
+- **超新星爆炸**四阶段动画（Sedov-Taylor 冲击波扩张 → 遗迹归档）；**垂直展开模式**（`V`）将整个银盘 morph 为椭球体观察真实银纬分布
+
+### 🌠 宇宙尺度演化
+- 本星系群 → 室女座星系团 → 拉尼亚凯亚超星系团 → 宇宙网大尺度结构
+- **银河系—仙女座碰撞合并快进预览**：12 秒穿越 45 亿年，完整呈现首次穿越 → 潮汐扭曲 → 星暴 → 终态椭圆星系 Milkomeda
+- 哈勃膨胀示意、麦哲伦星流、可观测宇宙边界
+
+### 🎧 沉浸式体验
+- **Web Audio 程序化合成空间音效**：四层级音景随缩放等功率交叉混合，太阳轰鸣与黑洞嗡鸣 3D 定位（真空无声，音效为艺术化设计并已登记）
+- 任意天体**点选 → 飞往 → 跟随**（2.5 秒平滑运镜），`[` / `]` 按视角域巡游序列逐个打卡
+- **真实比例模式**（`R`）：如实呈现"真实比例下行星几乎不可见"的尺度事实
+- 控制面板选项按视角作用域智能显隐，Bloom 泛光后处理，60 FPS 满帧目标
+
+---
+
+## 🚀 快速开始
+
+```bash
+# 安装依赖
+npm install
+
+# 启动开发服务器（http://localhost:3000）
+npm run dev
+
+# 生产构建与启动
+npm run build
+npm run start
+```
+
+打开浏览器后：**滚轮缩放**体验连续遨游，按 `1`–`4` 切换四大视角，**点击任意天体**查看信息并飞往观察。完整操作见 [docs/getting-started.md](docs/getting-started.md)。
+
+> 建议使用支持 WebGL 2 的现代浏览器（Chrome / Edge / Firefox / Safari）。
+
+## 📖 文档与教程
+
+| 文档 | 内容 |
+|---|---|
+| [docs/getting-started.md](docs/getting-started.md) | 快速上手：安装运行、第一次遨游的推荐路线 |
+| [docs/view-guide.md](docs/view-guide.md) | 四视角导览：每个层级能看什么、怎么玩 |
+| [docs/controls.md](docs/controls.md) | 交互与快捷键完整参考、控制面板选项说明 |
+| [docs/events-guide.md](docs/events-guide.md) | 动态事件演示：耀斑 / CME / 超新星 / 星系合并预览 |
+| [docs/science-notes.md](docs/science-notes.md) | 科学性说明：真实数据来源与艺术化处理登记 |
+| [docs/development.md](docs/development.md) | 开发指南：架构、测试、代码规范 |
+
+## 🛠 技术栈
+
+| 领域 | 技术 |
+|---|---|
+| 框架 | Next.js 14 · React 18 · TypeScript（strict） |
+| 3D 渲染 | Three.js · React Three Fiber · 自定义 GLSL shader（对数深度缓冲跨尺度渲染） |
+| 状态管理 | Zustand |
+| 音频 | Web Audio API（程序化合成 + PannerNode 3D 定位） |
+| UI | Tailwind CSS |
+| 测试 | Jest + React Testing Library（1949 用例 / 112 套件，覆盖率 gate ≥90%） |
+
+## 📂 项目结构
+
+```
+src/
+├── components/          # React 组件
+│   ├── Scene/          # 3D 场景（银河系/宇宙/超新星/星场……）
+│   ├── CelestialBody/  # 天体（太阳/行星/卫星/彗星/特殊天体……）
+│   ├── Camera/         # 相机控制与运镜
+│   ├── UI/             # 控制面板/HUD/信息面板/通知
+│   └── Audio/          # 空间音效
+├── data/               # 天体数据（NASA JPL/SIMBAD 等来源逐项登记）
+├── hooks/              # 自定义 Hooks（快捷键/相机/音效）
+├── utils/              # 纯函数逻辑（物理计算/尺度管理/事件域……单测覆盖）
+├── types/              # TypeScript 类型定义
+└── store/              # Zustand 全局状态
+```
+
+## 🧪 开发命令
+
+```bash
+npm test               # 运行全部单元测试
+npm run test:coverage  # 测试覆盖率（gate ≥90%）
+npm run type-check     # TypeScript 类型检查
+npm run lint           # ESLint 检查
+npm run format         # Prettier 格式化
+```
+
+## 🔬 科学性承诺
+
+所有天体物理参数基于真实科学数据（NASA JPL、SIMBAD、NED、USGS Astrogeology 等，数据来源在代码与信息面板中逐项登记）；轨道计算使用开普勒定律；**所有艺术化处理（尺寸夸大、时间压缩、音效设计等）均在应用内说明与代码注释中明确登记**。详见 [docs/science-notes.md](docs/science-notes.md)。
 
 ## 素材许可（Attribution）
 
@@ -48,37 +162,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
     `src/components/CelestialBody/satelliteGeometry.ts`）；
   - 全部模型仅近观懒加载（首屏无模型网络请求），加载失败静默降级为程序化几何组合。
 
-## Getting Started
+## 📄 需求与变更记录
 
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- 需求文档：[REQUIREMENTS.md](REQUIREMENTS.md)（含逐项实现状态与差异登记）
+- 变更记录：[CHANGELOG.md](CHANGELOG.md)（Keep a Changelog 格式）
