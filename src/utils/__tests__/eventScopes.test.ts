@@ -7,6 +7,7 @@ import {
   FLY_TO_DISCARD_EXEMPT_SEC,
   MERGER_EVENT_MIN_LEVEL,
   SOLAR_EVENT_MAX_LEVEL,
+  SUPERNOVA_EVENT_MAX_LEVEL,
   SUPERNOVA_EVENT_MIN_LEVEL,
   VIEW_TRANSITION_DISCARD_EXEMPT_SEC,
   eventAutoTriggerAllowed,
@@ -32,12 +33,13 @@ describe('eventScopeWindow：事件 → 视角域窗口映射（§4.1-A）', () 
     expect(SOLAR_EVENT_MAX_LEVEL).toBe(2.4);
   });
 
-  it('超新星窗口为 [2.5, 4]，对齐 Supernova 淡入起点', () => {
+  it('超新星窗口为 [2.5, 3.5]（R3-5 收窄，L3 专属），对齐 Supernova 淡入起点与平台终点', () => {
     expect(eventScopeWindow('supernova')).toEqual({
       minLevel: SUPERNOVA_EVENT_MIN_LEVEL,
-      maxLevel: 4,
+      maxLevel: SUPERNOVA_EVENT_MAX_LEVEL,
     });
     expect(SUPERNOVA_EVENT_MIN_LEVEL).toBe(2.5);
+    expect(SUPERNOVA_EVENT_MAX_LEVEL).toBe(3.5);
   });
 
   it('合并预览窗口为 [3.6, 4]（L4 视角段）', () => {
@@ -50,6 +52,10 @@ describe('eventScopeWindow：事件 → 视角域窗口映射（§4.1-A）', () 
 
   it('太阳活动域上缘与超新星域下缘互补无重叠（2.4 / 2.5 之间无双活跃区）', () => {
     expect(SOLAR_EVENT_MAX_LEVEL).toBeLessThan(SUPERNOVA_EVENT_MIN_LEVEL);
+  });
+
+  it('超新星域上缘与合并预览域下缘互补无重叠（3.5 / 3.6，R3-5）', () => {
+    expect(SUPERNOVA_EVENT_MAX_LEVEL).toBeLessThan(MERGER_EVENT_MIN_LEVEL);
   });
 });
 
@@ -65,11 +71,13 @@ describe('eventInScope：闭区间边界判定', () => {
     }
   });
 
-  it('超新星：2.5（含）起为真，2.49 及以下为假', () => {
+  it('超新星：[2.5, 3.5] 闭区间（R3-5），3.51 起与 L4 为假', () => {
     expect(eventInScope('supernova', 2.49)).toBe(false);
     expect(eventInScope('supernova', 2.5)).toBe(true);
     expect(eventInScope('supernova', 3)).toBe(true);
-    expect(eventInScope('supernova', 4)).toBe(true);
+    expect(eventInScope('supernova', 3.5)).toBe(true);
+    expect(eventInScope('supernova', 3.51)).toBe(false);
+    expect(eventInScope('supernova', 4)).toBe(false);
     expect(eventInScope('supernova', 1)).toBe(false);
     expect(eventInScope('supernova', 2)).toBe(false);
   });
@@ -103,13 +111,13 @@ describe('三层门控（§4.1-D）：自动触发域 / 通知可见域 / 按钮
     }
   });
 
-  it('L1-L4 锚点矩阵：耀斑/CME 仅 L1/L2 可触发，超新星仅 L3/L4，合并仅 L4', () => {
+  it('L1-L4 锚点矩阵：耀斑/CME 仅 L1/L2 可触发，超新星仅 L3（R3-5），合并仅 L4', () => {
     // 锚点连续层级：L1=1, L2=2, L3=3, L4=4（store LEVEL_TO_CONTINUOUS）
     const expectMatrix: Record<ScopedEventKind, boolean[]> = {
       flare: [true, true, false, false],
       cme: [true, true, false, false],
       cmeArrival: [true, true, false, false],
-      supernova: [false, false, true, true],
+      supernova: [false, false, true, false],
       merger: [false, false, false, true],
     };
     const anchors = [1, 2, 3, 4];
