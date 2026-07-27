@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
 import * as THREE from 'three';
+import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
 import type { CometData } from '@/types';
 import { useSimulationStore } from '@/store';
 import {
@@ -256,6 +256,13 @@ export function Comet({ data }: CometProps): JSX.Element {
   const camera = useThree((s) => s.camera);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const showLabels = useSimulationStore((s) => s.showLabels);
+  // R3-4 §4.1-D：跟随/飞往本彗星时隐藏自身标签（与行星/L3 特殊天体机制对称）
+  const focused = useSimulationStore(
+    (s) => s.followBodyId === data.id || s.flyToBodyId === data.id,
+  );
+  // R3-4 §4.1-D：近距隐藏（P7 同款距离规则，相机贴近彗核时标签让位）
+  const [labelHidden, setLabelHidden] = useState(false);
+  const labelHiddenRef = useRef(false);
   // Html 标签不随父级 visible 隐藏，需单独按层级门控
   // R2-3：冻结判定收敛至 utils/freezeGate（与行星同步淡出-冻结）
   const frozen = useSimulationStore((s) => planetFrozen(s.continuousLevel));
@@ -465,6 +472,12 @@ export function Comet({ data }: CometProps): JSX.Element {
 
     // P4 彗核近观门控（仅 L1 近观渲染细节几何/纹理）
     const distToComet = camera.position.distanceTo(group.position);
+    // R3-4：近距标签避让（P7 同款，Moon 阈值风格 max(1.2, 半径×6)）
+    const hideLabel = distToComet < Math.max(1.2, NUCLEUS_RADIUS_UNITS * 6);
+    if (hideLabel !== labelHiddenRef.current) {
+      labelHiddenRef.current = hideLabel;
+      setLabelHidden(hideLabel);
+    }
     const gate = detailGateUpdate(
       nearViewRef.current,
       distToComet,
@@ -598,12 +611,17 @@ export function Comet({ data }: CometProps): JSX.Element {
       {/* 尘埃尾：黄白色宽短粒子流，沿轨道后方二次弯曲（P4 公式不变） */}
       <points ref={dustTailRef} geometry={dustTail.geometry} material={dustTail.material} />
 
-      {showLabels && !frozen && (
-        <Html position={[0, 0.8, 0]} center distanceFactor={60} style={{ pointerEvents: 'none' }}>
+      {showLabels && !frozen && !focused && !labelHidden && (
+        // R3-4：近距反向缩放钳制 + 焦点/近距隐藏（治理缺口补齐，§4.1-D）
+        <ClampedHtmlLabel
+          position={[0, 0.8, 0]}
+          distanceFactor={60}
+          style={{ pointerEvents: 'none' }}
+        >
           <span ref={labelElRef} className="whitespace-nowrap text-xs text-cyan-200/80">
             {data.nameZh}
           </span>
-        </Html>
+        </ClampedHtmlLabel>
       )}
     </group>
   );

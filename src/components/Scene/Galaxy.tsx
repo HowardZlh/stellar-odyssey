@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Html } from "@react-three/drei";
+import { ClampedHtmlLabel } from "@/components/Scene/ClampedHtmlLabel";
 import * as THREE from "three";
 import { LOCAL_GROUP_GALAXIES, MILKY_WAY } from "@/data/galaxies";
 import { isGalaxyAnchoredFocusId } from "@/data/specialBodies";
@@ -913,17 +913,17 @@ export function Galaxy(): JSX.Element {
       {inGalaxyRange &&
         showYouAreHere &&
         majorLabelPositions.map((item) => (
-          <Html
+          // R3-4：近距反向缩放钳制（开关归属维持现状，用户确认项 2）
+          <ClampedHtmlLabel
             key={item.key}
             position={item.pos}
-            center
             distanceFactor={2600}
             style={{ pointerEvents: "none" }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-[10px] text-amber-200/80">
               {item.label}
             </span>
-          </Html>
+          </ClampedHtmlLabel>
         ))}
 
       {/* 高度指示线（P6 §3.1.2）：You are here → 银盘面投影点 */}
@@ -988,16 +988,16 @@ export function Galaxy(): JSX.Element {
           ]}
         />
         {inGalaxyRange && (
-          <Html
+          // R3-4：近距反向缩放钳制（开关归属维持现状，用户确认项 2）
+          <ClampedHtmlLabel
             position={[0, 60, 0]}
-            center
             distanceFactor={2600}
             style={{ pointerEvents: "none" }}
           >
             <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-emerald-300">
               你在这里（太阳系）
             </span>
-          </Html>
+          </ClampedHtmlLabel>
         )}
       </group>
     </group>

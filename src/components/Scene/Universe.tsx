@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
+import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
 import * as THREE from 'three';
 import type { GalaxyData } from '@/types';
 import {
@@ -284,14 +284,14 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
         <GalaxyNearViewLayer galaxy={galaxy} getOpacity={getNearOpacity} />
       )}
       {showLabels && inRange && !focusedNow && !mergedAway && (
-        <Html
+        // R3-4：近距反向缩放钳制（焦点隐藏 R2-8 保留）
+        <ClampedHtmlLabel
           position={[0, sizeUnits * 0.55, 0]}
-          center
           distanceFactor={9000}
           style={{ pointerEvents: 'none' }}
         >
           <span className="whitespace-nowrap text-xs text-gray-200/80">{galaxy.nameZh}</span>
-        </Html>
+        </ClampedHtmlLabel>
       )}
     </group>
   );
@@ -771,13 +771,13 @@ export function Universe(): JSX.Element {
       {/* MW–M31 接近轨迹（虚线） + 碰撞提示 */}
       <primitive object={approachLine} />
       {showLabels && inRange && m31 && (
-        <Html
+        // R3-4：近距反向缩放钳制（子元素既有 ref 直改逻辑不受影响）
+        <ClampedHtmlLabel
           position={[
             m31.direction.x * 6000,
             m31.direction.y * 6000 + 500,
             m31.direction.z * 6000,
           ]}
-          center
           distanceFactor={12000}
           style={{ pointerEvents: 'none' }}
         >
@@ -785,7 +785,7 @@ export function Universe(): JSX.Element {
             ref={mergeLabelRef}
             className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-orange-200"
           />
-        </Html>
+        </ClampedHtmlLabel>
       )}
 
       {/* 本星系群整体本动矢量（可开关；仅矢量指示，不移动场景） */}
@@ -805,20 +805,19 @@ export function Universe(): JSX.Element {
               420,
             ]}
           />
-          <Html
+          <ClampedHtmlLabel
             position={[
               GREAT_ATTRACTOR_DIRECTION.x * 4600,
               GREAT_ATTRACTOR_DIRECTION.y * 4600,
               GREAT_ATTRACTOR_DIRECTION.z * 4600,
             ]}
-            center
             distanceFactor={12000}
             style={{ pointerEvents: 'none' }}
           >
             <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-amber-200">
               本星系群本动 ~{LG_CMB_VELOCITY_KM_S} km/s（朝巨引源/沙普利方向，相对 CMB）
             </span>
-          </Html>
+          </ClampedHtmlLabel>
         </group>
       )}
 
@@ -832,42 +831,39 @@ export function Universe(): JSX.Element {
       {/* 可观测宇宙边界示意（可选需求：约 465 亿光年，距离对数压缩） */}
       <primitive object={observableLine} />
       {showLabels && inRange && (
-        <Html
+        <ClampedHtmlLabel
           position={[observableRadius * 0.7, -900, observableRadius * 0.3]}
-          center
           distanceFactor={14000}
           style={{ pointerEvents: 'none' }}
         >
           <span className="whitespace-nowrap text-xs text-rose-300/60">
             可观测宇宙边界示意（半径约 465 亿光年）
           </span>
-        </Html>
+        </ClampedHtmlLabel>
       )}
       {showLabels && inRange && (
-        <Html
+        <ClampedHtmlLabel
           position={[laniakeaRadius * 0.72, 800, 0]}
-          center
           distanceFactor={14000}
           style={{ pointerEvents: 'none' }}
         >
           <span className="whitespace-nowrap text-xs text-purple-300/70">
             {LANIAKEA.nameZh}边界示意（直径约 5.2 亿光年）
           </span>
-        </Html>
+        </ClampedHtmlLabel>
       )}
       {showLabels && inRange && (
-        <Html
+        <ClampedHtmlLabel
           position={[
             GREAT_ATTRACTOR_DIRECTION.x * greatAttractorDistance,
             GREAT_ATTRACTOR_DIRECTION.y * greatAttractorDistance,
             GREAT_ATTRACTOR_DIRECTION.z * greatAttractorDistance,
           ]}
-          center
           distanceFactor={14000}
           style={{ pointerEvents: 'none' }}
         >
           <span className="whitespace-nowrap text-xs text-amber-300/70">{LANIAKEA.greatAttractorZh}</span>
-        </Html>
+        </ClampedHtmlLabel>
       )}
     </group>
   );
