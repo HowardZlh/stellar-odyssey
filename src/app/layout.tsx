@@ -4,10 +4,35 @@ import Script from 'next/script';
 import './globals.css';
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://stellar.guushu.com'),
   title: '星海奥德赛 Stellar Odyssey — 从行星表面到宇宙尽头的 3D 遨游',
   description:
     '基于 React + Three.js 的多层级天体运动可视化系统：滚轮从行星表面一路拉远到可观测宇宙边界，' +
     '真实开普勒轨道、太阳活动、银河系棒旋结构与星系碰撞演化，配以空间音效的科学教育遨游体验',
+  // 站点图标（public/ 下静态资源：SVG 矢量 + ICO 回退 + iOS 主屏）
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: '32x32' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+    apple: '/apple-touch-icon.png',
+  },
+  // 社交分享卡片（Open Graph / Twitter Card）
+  openGraph: {
+    title: '星海奥德赛 Stellar Odyssey',
+    description: '从行星表面到宇宙尽头的一次滚轮之旅——科学数据驱动的沉浸式 3D 宇宙遨游',
+    url: 'https://stellar.guushu.com',
+    siteName: '星海奥德赛 Stellar Odyssey',
+    locale: 'zh_CN',
+    type: 'website',
+    images: [{ url: '/og-image.png', width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: '星海奥德赛 Stellar Odyssey',
+    description: '从行星表面到宇宙尽头的一次滚轮之旅——科学数据驱动的沉浸式 3D 宇宙遨游',
+    images: ['/og-image.png'],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }): JSX.Element {

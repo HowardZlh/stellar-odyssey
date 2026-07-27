@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### 新增
+
+- 设计站点品牌 icon（深空蓝紫背景 + 恒星与轨道遨游意象，SVG 矢量源 `public/icon.svg`）并生成完整 favicon 套件（favicon.ico / apple-touch-icon / 192 / 512 PNG），浏览器标签页与 iOS 主屏不再显示默认图标；同步登记 Open Graph / Twitter Card 元信息与 1200×630 分享卡片图（`public/og-image.png`），分享到社交平台时显示标题、描述与预览图
+- 新增自定义 404 页面（`src/app/not-found.tsx`，静态导出为 `404.html`）：深空星野 + 科幻文案「你已漂流到已知宇宙之外」，10 秒倒计时自动返回首页（location.replace 不留浏览历史）+「立即返回星图」按钮，替代 GitHub Pages 默认 404 页面；含渲染/倒计时/跳转单测
+- README 新增在线体验入口（stellar.guushu.com badge 与快速开始引导）与三段效果演示 GIF（四层级连续缩放遨游 / 太阳耀斑与 CME 事件链 / 银河系—仙女座碰撞合并预览，`docs/media/`，Playwright 无头录制 + ffmpeg 调色板压缩生成）
+
 ### 改进
 
 - 事件通知最短展示时长（用户反馈：通知显示太短来不及点击）：耀斑/CME/CME 抵达通知的收起与事件生命周期解耦——事件先于 15 真实秒完成时，通知驻留满 15 秒再自动收起（此前高时间压缩比下耀斑 1.6 模拟天可能不足 2 真实秒，通知随事件完成瞬间消失）；事件持续更久则仍随事件收起，手动关闭与离域丢弃不受下限约束；通知卡片渲染改用触发时快照（`solarFlareNoticeInfo`/`cmeNoticeInfo`），事件置空后级别/速度等信息仍完整展示；CME 抵达通知新增自动收起（极光增强结束且展示满 15 秒，此前仅能手动关闭）
