@@ -11,6 +11,7 @@
 
 - 集成 Cloudflare Web Analytics（RUM beacon 手动嵌码于全局布局）：统计真实访客的访问量/来源/地域/设备与 Core Web Vitals，无 cookie 隐私友好，仅作用于 stellar.guushu.com 本站
 - 设定开源协议为 GNU AGPL-3.0（新增 LICENSE 全文与 package.json license 字段）：个人/教育/科研用途自由使用，商业闭源集成需联系作者获取商业授权（双许可模式）；README 新增「开源协议」一节说明代码协议与素材许可的边界
+- 建立贡献者许可协议（CLA）体系保障双许可模式：新增 CLA.md（许可授予型 ICLA，参考 Project Harmony——贡献者保留版权，授予维护者含商业条款的再许可权，维护者对等承诺贡献始终保持开源可用）、CONTRIBUTING.md（贡献流程/门禁要求/代码规范/CLA 签署说明）与 CLA 签署机器人 workflow（contributor-assistant/github-action，PR 评论签署、记录存于 cla-signatures 分支、owner 与 bot 白名单豁免），cla 检查纳入分支保护 required status checks——未签署 CLA 的外部 PR 无法合并；README 新增「参与贡献」一节
 
 ## [0.1.0] - 2026-07-27
 
