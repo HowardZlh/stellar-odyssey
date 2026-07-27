@@ -7,10 +7,6 @@
 
 ## [Unreleased]
 
-### 发布流程
-
-- 将内部提示词文档（`*_PROMPT.md`，共 4 个）从 git 版本库移除并加入 `.gitignore`，本地文件保留、后续不再随仓库公开
-
 ### 新增
 
 - 集成 Cloudflare Web Analytics（RUM beacon 手动嵌码于全局布局）：统计真实访客的访问量/来源/地域/设备与 Core Web Vitals，无 cookie 隐私友好，仅作用于 stellar.guushu.com 本站
