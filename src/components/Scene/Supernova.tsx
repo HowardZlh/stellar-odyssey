@@ -51,9 +51,16 @@ function eventSpinRad(id: string): number {
   return ((h % 628) / 628) * Math.PI * 2;
 }
 
-/** 超新星可视范围（与银河系内容一致的 LOD 门控，起点为 L2/L3 边界 2.5） */
+/**
+ * 超新星可视范围（起点为 L2/L3 边界 2.5；R3-5 上缘收窄）：满值平台终点
+ * 3.5 与事件视角域上缘（SUPERNOVA_EVENT_MAX_LEVEL）对齐，淡出延伸至
+ * L4 锚点 4.0 处归零——宇宙视角零可见，与"L4 下活跃事件按 R3-3 硬隔离
+ * 丢弃"一致（淡出段 3.5–4.0 内特效部分可见但事件将在离域 1 秒后丢弃，
+ * 与太阳事件 2.4→3.0 淡出模式相同）。永久遗迹共用本窗口（行为变更登记：
+ * 超新星内容整体收敛为银河系视角专属，L4 下遗迹不再显示，状态保留）。
+ */
 function snFadeWeight(continuousLevel: number): number {
-  return trapezoidWeight(continuousLevel, 2.5, 2.9, 4.5, 5);
+  return trapezoidWeight(continuousLevel, 2.5, 2.9, 3.5, 4.0);
 }
 
 /** 聚焦权重提升过渡时长（秒），与 SpecialBodies/Galaxy 一致 */

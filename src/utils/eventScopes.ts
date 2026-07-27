@@ -3,9 +3,9 @@
  * IMPROVEMENT_REQUIREMENTS_2 §R2-4 / IMPROVEMENT_REQUIREMENTS_3 §R3-3）
  *
  * 各视角只呈现本视角域的动态事件：太阳耀斑/CME/CME 抵达属太阳系尺度
- * （L1/L2），超新星属银河系尺度（L3/L4），银河系—仙女座合并预览属宇宙
- * 尺度（L4）。本模块建立事件 → 连续层级窗口的映射，并提供门控判定，
- * 供组件按需接入：
+ * （L1/L2），超新星属银河系尺度（L3，R3-5 起不含 L4），银河系—仙女座
+ * 合并预览属宇宙尺度（L4）。本模块建立事件 → 连续层级窗口的映射，并
+ * 提供门控判定，供组件按需接入：
  *
  * - 自动触发域：`SunActivity.tsx`（耀斑/CME 泊松触发）与 `Supernova.tsx`
  *   （超新星泊松触发）显式限定触发层级——此前耀斑/CME 在 L3/L4 停摆仅是
@@ -28,8 +28,13 @@
  * 窗口边界依据（与既有渲染门控对齐，避免"通知可见但特效不可见"）：
  * - 太阳活动事件 ≤2.4：SunActivity levelWeight 梯形平台上缘
  *   trapezoidWeight(level, 0.5, 0.9, 2.4, 3.0) 的满值段终点；
- * - 超新星 ≥2.5：Supernova snFadeWeight 淡入起点（L2/L3 边界）；
- * - 合并预览 ≥3.6：L4 视角段（星系间距/辉光演化仅宇宙视角可辨）。
+ * - 超新星 [2.5, 3.5]（R3-5 收窄，原 ≥2.5 含 L4）：下缘为 Supernova
+ *   snFadeWeight 淡入起点（L2/L3 边界），上缘为其满值平台终点——超新星
+ *   为单恒星尺度事件，宇宙视角（L4）下星系间尺度不宜再弹超新星通知，
+ *   L4 下活跃超新星按 R3-3 硬隔离丢弃（特效淡出窗口同步收窄至 L4 锚点
+ *   4.0 处归零，与太阳事件"域上缘=平台终点、淡出延伸到下一锚点"模式一致）；
+ * - 合并预览 ≥3.6：L4 视角段（星系间距/辉光演化仅宇宙视角可辨）；
+ *   超新星域上缘 3.5 与合并预览下缘 3.6 互补无重叠。
  */
 
 /** 受视角域门控的动态事件类别 */
@@ -40,6 +45,12 @@ export const SOLAR_EVENT_MAX_LEVEL = 2.4;
 
 /** 超新星事件视角域下缘（含），对齐 Supernova 淡入起点 */
 export const SUPERNOVA_EVENT_MIN_LEVEL = 2.5;
+
+/**
+ * 超新星事件视角域上缘（含，R3-5）：对齐 Supernova snFadeWeight 满值
+ * 平台终点——银河系视角（L3）专属事件，宇宙视角（L4）域外丢弃。
+ */
+export const SUPERNOVA_EVENT_MAX_LEVEL = 3.5;
 
 /** 合并预览视角域下缘（含），L4 视角段 */
 export const MERGER_EVENT_MIN_LEVEL = 3.6;
@@ -58,7 +69,7 @@ const EVENT_SCOPE_WINDOWS: Record<ScopedEventKind, EventScopeWindow> = {
   flare: { minLevel: LEVEL_FLOOR, maxLevel: SOLAR_EVENT_MAX_LEVEL },
   cme: { minLevel: LEVEL_FLOOR, maxLevel: SOLAR_EVENT_MAX_LEVEL },
   cmeArrival: { minLevel: LEVEL_FLOOR, maxLevel: SOLAR_EVENT_MAX_LEVEL },
-  supernova: { minLevel: SUPERNOVA_EVENT_MIN_LEVEL, maxLevel: LEVEL_CEIL },
+  supernova: { minLevel: SUPERNOVA_EVENT_MIN_LEVEL, maxLevel: SUPERNOVA_EVENT_MAX_LEVEL },
   merger: { minLevel: MERGER_EVENT_MIN_LEVEL, maxLevel: LEVEL_CEIL },
 };
 

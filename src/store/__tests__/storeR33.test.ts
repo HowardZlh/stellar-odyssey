@@ -166,12 +166,22 @@ describe('R3-3 超新星离域丢弃（不归档遗迹、既有遗迹保留，�
     expect(s.supernovaRemnants[0].id).toBe('sn-1');
   });
 
-  it('域内（L3/L4）活跃超新星不受计时影响', () => {
+  it('域内（L3）活跃超新星不受计时影响', () => {
     useSimulationStore.setState({ continuousLevel: 3 });
     useSimulationStore.getState().triggerSupernova({ x: 100, y: 0, z: 0 }, 25, 12, 0);
     useSimulationStore.getState().tick(5);
     expect(useSimulationStore.getState().activeSupernova).not.toBeNull();
     expect(useSimulationStore.getState().supernovaOutOfScopeSec).toBe(0);
+  });
+
+  it('R3-5：L4（宇宙视角）为超新星域外——缩到 L4 >1 秒活跃超新星被丢弃', () => {
+    useSimulationStore.setState({ continuousLevel: 3, viewLevel: 'L3' });
+    useSimulationStore.getState().triggerSupernova({ x: 100, y: 0, z: 0 }, 25, 12, 0);
+    useSimulationStore.setState({ continuousLevel: 4 });
+    useSimulationStore.getState().tick(1.1);
+    const s = useSimulationStore.getState();
+    expect(s.activeSupernova).toBeNull();
+    expect(s.supernovaNoticeVisible).toBe(false);
   });
 });
 
