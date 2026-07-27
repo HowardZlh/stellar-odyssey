@@ -1,5 +1,7 @@
 'use client';
 
+
+import type { JSX } from 'react';
 import { useEffect, useState } from 'react';
 import type { ViewLevel } from '@/types';
 import { CAMERA_VIEWS } from '@/data/cameraViews';

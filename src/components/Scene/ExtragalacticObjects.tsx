@@ -1,5 +1,7 @@
 'use client';
 
+
+import type { JSX } from 'react';
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
@@ -84,7 +86,7 @@ function RelativisticJet({ direction, lengthUnits, color, bilateral, baseOpacity
         }
       `,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [color, baseOpacity]);
   useEffect(() => () => jetMaterial.dispose(), [jetMaterial]);
 

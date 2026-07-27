@@ -1,5 +1,7 @@
 'use client';
 
+
+import type { JSX } from 'react';
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';

@@ -1,5 +1,7 @@
 'use client';
 
+
+import type { JSX } from 'react';
 /**
  * 确定性星场背景 + 恒星闪烁（P3-5，需求 §4.6）
  *

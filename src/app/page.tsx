@@ -1,5 +1,7 @@
 'use client';
 
+
+import type { JSX } from 'react';
 import dynamic from 'next/dynamic';
 
 // 3D 场景仅客户端渲染（Three.js 依赖 WebGL）

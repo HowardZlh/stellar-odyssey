@@ -1,5 +1,7 @@
 'use client';
 
+
+import type { JSX } from 'react';
 import { useEffect, useState } from 'react';
 import type { LoadProgress } from '@/utils/loadProgress';
 import { getTextureManager } from '@/components/CelestialBody/textureManager';
