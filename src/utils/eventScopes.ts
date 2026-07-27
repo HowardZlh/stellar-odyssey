@@ -191,3 +191,39 @@ export function eventDiscardDue(elapsedSec: number): boolean {
   }
   return elapsedSec >= EVENT_DISCARD_GRACE_SEC;
 }
+
+/**
+ * 事件通知最短展示时长（真实秒）：通知展示与事件生命周期解耦——
+ * 耀斑/CME 的事件时长按模拟时间推进，高时间压缩比下真实展示可能
+ * 不足两秒，用户来不及点击"飞往观看/查看详情"。事件先于该时长完成时，
+ * 通知继续驻留到最短展示时长再自动收起；事件持续更久则随事件收起
+ * （原语义保留）。手动关闭与离域丢弃（EVENT_DISCARD_GRACE_SEC）不受
+ * 此下限约束，始终立即生效。
+ */
+export const EVENT_NOTICE_MIN_VISIBLE_REAL_SEC = 15;
+
+/**
+ * 通知展示计时推进（真实秒，不受暂停/时间压缩比影响）：按帧时长累加，
+ * 上钳到最短展示时长（到顶后保持恒值，避免无界增长引发每帧状态变更，
+ * 与 outOfScopeElapsedUpdate 同模式）。
+ */
+export function noticeAgeUpdate(prevAgeSec: number, dtSec: number): number {
+  if (!Number.isFinite(prevAgeSec) || prevAgeSec < 0) {
+    throw new RangeError(`通知展示计时必须为非负有限数，收到 ${prevAgeSec}`);
+  }
+  if (!Number.isFinite(dtSec) || dtSec < 0) {
+    throw new RangeError(`帧时长必须为非负有限数，收到 ${dtSec}`);
+  }
+  return Math.min(prevAgeSec + dtSec, EVENT_NOTICE_MIN_VISIBLE_REAL_SEC);
+}
+
+/**
+ * 通知自动收起判定：事件已结束且展示计时达到最短展示时长。
+ * 事件进行中通知始终保留（原"通知随事件生命周期"语义不变）。
+ */
+export function noticeAutoHideDue(ageSec: number, eventEnded: boolean): boolean {
+  if (!Number.isFinite(ageSec)) {
+    throw new RangeError(`通知展示计时必须为有限数，收到 ${ageSec}`);
+  }
+  return eventEnded && ageSec >= EVENT_NOTICE_MIN_VISIBLE_REAL_SEC;
+}
