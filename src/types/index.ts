@@ -342,6 +342,13 @@ export interface SolarFlareEvent {
   cmeLinked: boolean;
 }
 
+/**
+ * 耀斑通知卡片快照：通知展示与事件生命周期解耦（最短展示时长机制，
+ * utils/eventScopes.EVENT_NOTICE_MIN_VISIBLE_REAL_SEC）——事件完成后
+ * activeSolarFlare 置空，通知卡片仍需展示级别等信息，故触发时快照。
+ */
+export type SolarFlareNoticeInfo = Pick<SolarFlareEvent, 'flareClass' | 'magnitude' | 'cmeLinked'>;
+
 /** 日冕物质抛射事件（S2 §4.3-3） */
 export interface CmeEvent {
   /** 事件 id（cme-<序号>） */
@@ -355,6 +362,9 @@ export interface CmeEvent {
   /** 是否朝向地球（通知附加地磁暴科普） */
   earthDirected: boolean;
 }
+
+/** CME 通知卡片快照（语义同 SolarFlareNoticeInfo） */
+export type CmeNoticeInfo = Pick<CmeEvent, 'speedKmS' | 'earthDirected'>;
 
 /** 超新星事件（需求 3.1.5 动态事件） */
 export interface SupernovaEvent {
