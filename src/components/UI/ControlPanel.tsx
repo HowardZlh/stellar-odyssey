@@ -1,5 +1,7 @@
 'use client';
 
+
+import type { JSX } from 'react';
 import { VIEW_LEVELS } from '@/types';
 import { CAMERA_VIEWS } from '@/data/cameraViews';
 import { useSimulationStore } from '@/store';

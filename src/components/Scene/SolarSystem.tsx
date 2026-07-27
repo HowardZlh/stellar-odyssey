@@ -1,5 +1,7 @@
 'use client';
 
+
+import type { JSX } from 'react';
 import { PLANETS } from '@/data/planets';
 import { ASTEROID_BELT, COMETS, DWARF_PLANETS, KUIPER_BELT } from '@/data/smallBodies';
 import { useSimulationStore } from '@/store';

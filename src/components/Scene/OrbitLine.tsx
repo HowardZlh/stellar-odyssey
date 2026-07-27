@@ -1,5 +1,7 @@
 'use client';
 
+
+import type { JSX } from 'react';
 import { useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';

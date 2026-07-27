@@ -1,5 +1,7 @@
 'use client';
 
+
+import type { JSX } from 'react';
 import { useSimulationStore } from '@/store';
 import { getBodyInfoById } from '@/data/catalog';
 import {

@@ -1,5 +1,7 @@
 'use client';
 
+
+import type { JSX } from 'react';
 import { useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { CAMERA_VIEWS } from '@/data/cameraViews';

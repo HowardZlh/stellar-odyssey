@@ -1,5 +1,7 @@
 "use client";
 
+
+import type { JSX } from 'react';
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { ClampedHtmlLabel } from "@/components/Scene/ClampedHtmlLabel";

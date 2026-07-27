@@ -1,5 +1,7 @@
 'use client';
 
+
+import type { JSX } from 'react';
 /**
  * L4 星系近观 3D 粒子层组件（R2-8，IMPROVEMENT_REQUIREMENTS_2 §R2-8）
  *

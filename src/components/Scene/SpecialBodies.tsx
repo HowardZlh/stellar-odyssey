@@ -1,5 +1,7 @@
 "use client";
 
+
+import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { ClampedHtmlLabel } from "@/components/Scene/ClampedHtmlLabel";
@@ -198,7 +200,7 @@ function StellarSurface({
         }
       `,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [color, limbU, cellScale, convection, rednessStrength]);
 
   useEffect(() => () => material.dispose(), [material]);
@@ -234,7 +236,7 @@ const FOCUS_BOOST_SECONDS = 0.5;
  */
 function useGalacticPlacement(
   body: SpecialBodyData,
-  groupRef: React.RefObject<THREE.Group>,
+  groupRef: React.RefObject<THREE.Group | null>,
 ): () => number {
   const weightRef = useRef(0);
   const boostRef = useRef(0);
@@ -308,7 +310,7 @@ const NEAR_VIEW_TMP_VEC = new THREE.Vector3();
  */
 function useNearViewGate(
   body: SpecialBodyData,
-  groupRef: React.RefObject<THREE.Group>,
+  groupRef: React.RefObject<THREE.Group | null>,
 ): { nearActive: boolean; getNear01: () => number } {
   const [nearActive, setNearActive] = useState(false);
   const mountedRef = useRef(false);

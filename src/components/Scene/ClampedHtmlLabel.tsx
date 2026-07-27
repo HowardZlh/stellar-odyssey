@@ -1,5 +1,7 @@
 'use client';
 
+
+import type { JSX } from 'react';
 /**
  * 标签近距钳制共用组件（R3-4，IMPROVEMENT_REQUIREMENTS_3 §4.1-B）
  *
