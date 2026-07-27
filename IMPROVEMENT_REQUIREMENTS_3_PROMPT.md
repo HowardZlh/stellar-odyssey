@@ -2,7 +2,7 @@
 
 > **用法**：将对应代码块内的提示词**整段复制**发给 Agent 即可，无需任何调整——提示词已自包含：需求出处、关键实现锚点、实现要点、验收标准与完整收尾流程。
 > **权威需求定义**：`IMPROVEMENT_REQUIREMENTS_3.md`（提示词内简称"需求文档"）。
-> R3-1～R3-7 已全部交付（见 CHANGELOG 与需求文档总览表）；本文件提示词仅作历史存档。
+> R3-1～R3-7 已交付（见 CHANGELOG 与需求文档总览表）；当前待实现：**R3-8**（其余提示词仅作历史存档）。
 
 ---
 
@@ -105,3 +105,66 @@ R3-6 只展开了 13 个特殊天体；用户期望**整个银河系从圆盘变
 ## 省 token 建议
 - 锚点已给全（含精确行号与现有代码原文），直接 Read 目标符号附近小范围，勿全量探索/勿整读 Galaxy.tsx（1,000+ 行）/Supernova.tsx；先写纯函数与单测再接组件；morph 公式/映射值直接采信本提示词与需求文档 §7.0-§7.1。
 ````
+
+---
+
+## R3-8：控制面板功能选项按视角作用域整理（域外隐藏）
+
+````markdown
+# 任务：实现 R3-8 控制面板功能选项按视角作用域整理（视角专属选项域外隐藏 + V 键 L3 门控）
+
+权威需求定义见 `IMPROVEMENT_REQUIREMENTS_3.md` 的 **§R3-8（含 §8.0 现状核实表与用户确认项 5 条）**。开工前只读该节，无需通读全文。
+
+
+## 背景与方案（已调研并经用户确认，直接采信，勿重新探索）
+控制面板选项过多：只有全局选项才应跨视角常显，视角专属选项应只在对应视角下显示并可用。用户确认：**域外隐藏（非置灰，含事件演示按钮，推翻 R2-4 置灰方案）**；真实比例归全局；卫星轨道线归 L1；V 快捷键补 L3 门控；**域外已开启状态与场景效果全部保留（只整理 UI 显示，零渲染行为变更——store/场景组件一行不改）**。
+
+
+## 作用域归类（唯一事实来源，直接照抄）
+| 作用域 | 选项 |
+|---|---|
+| 全局（恒显） | 轨道线(O) / 天体标签(L) / 真实比例 / 泛光 / 性能监控（+视角切换、模拟速度、音效区块不动） |
+| L1 行星 | 卫星轨道线 |
+| L1+L2 | 耀斑演示 / CME 演示（既有太阳事件域 ≤2.4 覆盖两视角） |
+| L2 太阳系 | 太阳内部剖面 |
+| L3 银河系 | 银心固定参考系(G)整个 section / 垂直展开(V)+增益滑块 / You are here 标记 / 超新星演示 |
+| L4 宇宙 | 速度矢量箭头 / 合并预览+“恢复预览前时间”按钮 |
+
+
+## 关键实现锚点（行号漂移时以符号名为准）
+- **判定源 = `viewLevel`**（勿用 continuousLevel）：滚轮缩放经 store `syncZoomLevel`/`syncCameraDistance`（`src/store/index.ts` :552-592）已自动同步 viewLevel，跟随/飞往期间层级锁定 → 跟随 L3 天体拉近时选项不闪变（已核实，直接采信）。
+- **纯函数先行**：新建 `src/utils/panelScopes.ts`——`PANEL_OPTION_SCOPES: Record<PanelOptionId, readonly ViewLevel[]>` 注册表 + `panelOptionVisible(optionId, viewLevel)`（未知 id 抛 RangeError）。选项 id 建议：`orbits/labels/realScale/bloom/performance/satelliteOrbits/flareDemo/cmeDemo/sunCutaway/galacticFrame/verticalExpand/youAreHere/supernovaDemo/velocityVectors/mergerDemo`。ViewLevel 类型在 `src/types`（'L1'|'L2'|'L3'|'L4'）。
+- **ControlPanel.tsx（`src/components/UI/ControlPanel.tsx`，唯一需改的组件）**：已订阅 `viewLevel`（:22）。改造点：
+  - 银心固定 section :119-145：仅 L3 渲染整个 section，**删除**现有 `disabled={viewLevel !== 'L3'}` 置灰分支与“银河系视角下可用”文案；
+  - 显示区 :199-315 各 label 按 `panelOptionVisible` 条件渲染：卫星轨道线 :218-225、You are here :226-233、速度矢量 :234-241、垂直展开+滑块 :242-271、太阳剖面 :286-298；轨道线/标签/真实比例/泛光/性能监控恒显，相对顺序不变、不加新分组标题；
+  - 动态事件演示 section :317-406：超新星 :321-337 仅 L3、耀斑 :339-357 与 CME :358-376 仅 L1/L2、合并预览 :380-396 与恢复按钮 :397-405 仅 L4；**删除**各按钮的域外置灰分支文案（`eventDemoDisabledHintZh` 相关三元分支），但**保留**按钮内部既有 disabled 逻辑（活跃事件进行中/剖面模式/`eventDemoEnabled` 连续层级校验——可见性与可用性双层，eventScopes 域窗口语义不动）；无可用按钮时分区标题一并隐藏（当前四锚点各有至少一钮，规则登记备防）。
+- **V 键门控**：`src/hooks/useKeyboardShortcuts.ts` V 分支 :73-77 补 `if (state.viewLevel === 'L3')`（与 G 键 :66-72 同模式）；文件头注释 :22-23 改为“仅 L3 生效，与面板选项可见性一致”。O/L/R 保持全局。
+- **HelpHint（`src/components/UI/HelpHint.tsx`）**：V 说明补“（银河系视角下生效）”。
+
+
+## 硬性约束
+- **store 与全部场景组件（Galaxy/Sun/Moon/Universe 等）零改动**——所有开关状态与场景效果域外保留（确认项 5：V 开启切 L4 银河系仍呈椭球属 R3-7 登记语义，不动）。
+- `utils/eventScopes.ts` 不改（演示按钮 disabled 校验保留原样）。
+- 面板过滤只做条件渲染，不引入新状态/副作用/动画。
+
+
+## 验收标准（需求文档 §8.2，逐条回写）
+1. 四视角面板内容：L1 = 全局5项+卫星轨道线+耀斑/CME 演示；L2 = 全局+太阳剖面+耀斑/CME；L3 = 全局+银心固定区块+垂直展开(含滑块)+You are here+超新星演示；L4 = 全局+速度矢量+合并预览(含恢复按钮)。
+2. 域外隐藏非置灰（面板明显缩短）；切换视角即时增减。
+3. 状态保留：L3 开垂直展开 → 切 L4 复选框消失但椭球仍在 → 回 L3 复选框仍勾选、滑块值不变。
+4. V 键仅 L3 生效；G/O/L/R 不变；跟随 L3 天体拉近（viewLevel 锁定）期间 L3 选项不消失。
+5. `panelScopes` 单测：15 选项 × L1–L4 可见性矩阵逐格断言、全局项四视角恒真、未知 id RangeError；既有单测零回退、覆盖率 gate ≥90% 保持。
+
+
+## 收尾流程（按序执行，缺一不可）
+1. `npm test` / `npm run type-check` / `npm run lint` / `npm run build` 全绿（dev 服务器用 3100 端口，勿占 3000）。
+2. 无头 Chrome 目验并截图登记（Chrome 路径 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`，参数 `--headless=new --use-angle=metal --window-size=1280,800`；CDP 驱动参考 r36/r37v 脚本模式，按 1/2/3/4 键切视角）：四视角面板逐一截图核对增减项、L3 开 V 后切 L4 再回 L3 状态保留、L4 按 V 无效核对。
+3. 更新 `CHANGELOG.md` 的 `[Unreleased]` 区段（置灰改隐藏 + V 键门控属行为变更）。
+4. `IMPROVEMENT_REQUIREMENTS_3.md` §R3-8 各条 🔲 回写 ✅/🔶（实现差异逐条登记）；REQUIREMENTS.md §3.5.1/§3.5.3 同步；IMPROVEMENT_REQUIREMENTS_2.md §R2-4 登记“置灰方案已被 R3-8 域外隐藏取代”；R3-6“V 键无层级门控”差异登记修正。
+5. Git 遵循 AGENTS.md：开工前先询问用户是否新建分支；完成后仅本地 commit，再询问是否创建 PR；禁止直接提交 master。
+
+
+## 省 token 建议
+- 改动面极小（ControlPanel.tsx + useKeyboardShortcuts.ts + HelpHint.tsx + 新建 panelScopes.ts 及其单测），锚点行号已给全，直接 Read 目标区段，勿全仓探索、勿读任何场景组件；作用域表直接照抄本提示词；先写纯函数与单测再接 UI。
+````
+
