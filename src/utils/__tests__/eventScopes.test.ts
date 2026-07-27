@@ -15,9 +15,12 @@ import {
   eventDemoEnabled,
   eventDiscardDue,
   eventInScope,
+  EVENT_NOTICE_MIN_VISIBLE_REAL_SEC,
   eventNoticeVisibleInScope,
   eventScopeNameZh,
   eventScopeWindow,
+  noticeAgeUpdate,
+  noticeAutoHideDue,
   outOfScopeElapsedUpdate,
   type ScopedEventKind,
 } from '@/utils/eventScopes';
@@ -217,5 +220,38 @@ describe('R3-3 §3.1-A：离域计时与丢弃判定纯函数', () => {
       expect(() => eventDiscardDue(bad)).toThrow(RangeError);
     }
     expect(() => outOfScopeElapsedUpdate(0, false, -0.016)).toThrow(RangeError);
+  });
+});
+
+describe('事件通知最短展示时长纯函数（通知展示与事件生命周期解耦）', () => {
+  it('最短展示时长为 15 真实秒', () => {
+    expect(EVENT_NOTICE_MIN_VISIBLE_REAL_SEC).toBe(15);
+  });
+
+  it('展示计时按帧时长累加，上钳到最短展示时长（到顶恒值防每帧变更）', () => {
+    expect(noticeAgeUpdate(0, 0.5)).toBe(0.5);
+    expect(noticeAgeUpdate(14.9, 0.5)).toBe(EVENT_NOTICE_MIN_VISIBLE_REAL_SEC);
+    expect(noticeAgeUpdate(EVENT_NOTICE_MIN_VISIBLE_REAL_SEC, 1)).toBe(
+      EVENT_NOTICE_MIN_VISIBLE_REAL_SEC,
+    );
+  });
+
+  it('自动收起判定：事件结束且计时满时长才收起', () => {
+    // 事件进行中：任何计时都不收起（通知随事件生命周期语义保留）
+    expect(noticeAutoHideDue(EVENT_NOTICE_MIN_VISIBLE_REAL_SEC, false)).toBe(false);
+    // 事件已结束但未满最短展示时长：驻留（用户来得及点击）
+    expect(noticeAutoHideDue(EVENT_NOTICE_MIN_VISIBLE_REAL_SEC - 0.1, true)).toBe(false);
+    // 事件已结束且满时长：收起
+    expect(noticeAutoHideDue(EVENT_NOTICE_MIN_VISIBLE_REAL_SEC, true)).toBe(true);
+  });
+
+  it('非法输入抛 RangeError', () => {
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(() => noticeAgeUpdate(bad, 0.016)).toThrow(RangeError);
+      expect(() => noticeAgeUpdate(0, bad)).toThrow(RangeError);
+      expect(() => noticeAutoHideDue(bad, true)).toThrow(RangeError);
+    }
+    expect(() => noticeAgeUpdate(-1, 0.016)).toThrow(RangeError);
+    expect(() => noticeAgeUpdate(0, -0.016)).toThrow(RangeError);
   });
 });

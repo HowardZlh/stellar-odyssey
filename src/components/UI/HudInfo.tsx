@@ -62,9 +62,14 @@ export function HudInfo(): JSX.Element {
   // S2 太阳活动事件（§4.3 通知 + §4.5 信息面板扩展）
   const activeSolarFlare = useSimulationStore((s) => s.activeSolarFlare);
   const solarFlareNoticeVisible = useSimulationStore((s) => s.solarFlareNoticeVisible);
+  // 通知卡片渲染用快照（非 activeSolarFlare/activeCme）：事件先于最短
+  // 展示时长（EVENT_NOTICE_MIN_VISIBLE_REAL_SEC）完成时通知驻留，
+  // 快照保证事件置空后卡片信息仍可渲染
+  const solarFlareNoticeInfo = useSimulationStore((s) => s.solarFlareNoticeInfo);
   const dismissSolarFlareNotice = useSimulationStore((s) => s.dismissSolarFlareNotice);
   const activeCme = useSimulationStore((s) => s.activeCme);
   const cmeNoticeVisible = useSimulationStore((s) => s.cmeNoticeVisible);
+  const cmeNoticeInfo = useSimulationStore((s) => s.cmeNoticeInfo);
   const dismissCmeNotice = useSimulationStore((s) => s.dismissCmeNotice);
   const cmeArrivalNoticeVisible = useSimulationStore((s) => s.cmeArrivalNoticeVisible);
   const dismissCmeArrivalNotice = useSimulationStore((s) => s.dismissCmeArrivalNotice);
@@ -286,13 +291,15 @@ export function HudInfo(): JSX.Element {
         )}
 
         {/* 太阳耀斑事件通知（S2 §4.3-2：级别 + "飞往观看"；
-            R2-4 §4.1-B：仅太阳系视角域（L1/L2，≤2.4）内显示 */}
-        {solarNoticeInScope && solarFlareNoticeVisible && activeSolarFlare && (
+            R2-4 §4.1-B：仅太阳系视角域（L1/L2，≤2.4）内显示；
+            渲染用快照——事件先于最短展示时长完成时通知驻留到
+            EVENT_NOTICE_MIN_VISIBLE_REAL_SEC 再自动收起 */}
+        {solarNoticeInScope && solarFlareNoticeVisible && solarFlareNoticeInfo && (
           <div className="rounded-lg border border-orange-400/40 bg-space-panel p-3 text-xs backdrop-blur">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-orange-300">
-                ☀️ 太阳耀斑爆发（{activeSolarFlare.flareClass}
-                {activeSolarFlare.magnitude.toFixed(1)} 级）！
+                ☀️ 太阳耀斑爆发（{solarFlareNoticeInfo.flareClass}
+                {solarFlareNoticeInfo.magnitude.toFixed(1)} 级）！
               </p>
               <button
                 type="button"
@@ -305,7 +312,7 @@ export function HudInfo(): JSX.Element {
             </div>
             <p className="mt-1 text-gray-300">
               活动区（黑子群附近）发生磁重联能量释放
-              {activeSolarFlare.cmeLinked && '，预计伴随日冕物质抛射（CME）'}
+              {solarFlareNoticeInfo.cmeLinked && '，预计伴随日冕物质抛射（CME）'}
             </p>
             <p className="mt-1 text-[10px] text-gray-500">{FLARE_ENERGY_NOTE_ZH}</p>
             <div className="mt-2 flex gap-2">
@@ -333,12 +340,13 @@ export function HudInfo(): JSX.Element {
         )}
 
         {/* CME 事件通知（S2 §4.3-3：朝地球时附加地磁暴科普；
-            R2-4 §4.1-B：仅太阳系视角域（L1/L2，≤2.4）内显示 */}
-        {solarNoticeInScope && cmeNoticeVisible && activeCme && (
+            R2-4 §4.1-B：仅太阳系视角域（L1/L2，≤2.4）内显示；
+            渲染用快照，语义同耀斑通知 */}
+        {solarNoticeInScope && cmeNoticeVisible && cmeNoticeInfo && (
           <div className="rounded-lg border border-rose-400/40 bg-space-panel p-3 text-xs backdrop-blur">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-rose-300">
-                🌊 日冕物质抛射（CME）！约 {Math.round(activeCme.speedKmS)} km/s
+                🌊 日冕物质抛射（CME）！约 {Math.round(cmeNoticeInfo.speedKmS)} km/s
               </p>
               <button
                 type="button"
@@ -351,9 +359,9 @@ export function HudInfo(): JSX.Element {
             </div>
             <p className="mt-1 text-gray-300">
               大团等离子体从日冕喷出，呈扩张壳层飞离太阳
-              {activeCme.earthDirected && '——本次抛射朝向地球！'}
+              {cmeNoticeInfo.earthDirected && '——本次抛射朝向地球！'}
             </p>
-            {activeCme.earthDirected && (
+            {cmeNoticeInfo.earthDirected && (
               <p className="mt-1 text-[10px] text-amber-300/90">⚠ {CME_GEOMAGNETIC_NOTE_ZH}</p>
             )}
             <div className="mt-2 flex gap-2">
