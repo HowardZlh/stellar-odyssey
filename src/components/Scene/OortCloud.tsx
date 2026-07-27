@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
+import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
 import * as THREE from 'three';
 import { useSimulationStore } from '@/store';
 import {
@@ -101,16 +101,16 @@ export function OortCloud(): JSX.Element {
         }}
       />
       {showLabels && inRange && (
-        <Html
+        // R3-4：跟随期间保持可见但近距反向缩放钳制不遮挡
+        <ClampedHtmlLabel
           position={[labelPos.x, labelPos.y, labelPos.z]}
-          center
           distanceFactor={2600}
           style={{ pointerEvents: 'none' }}
         >
           <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-slate-300/80">
             奥尔特云外边界（示意，实际 2,000–100,000 AU）
           </span>
-        </Html>
+        </ClampedHtmlLabel>
       )}
     </group>
   );

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Html } from "@react-three/drei";
+import { ClampedHtmlLabel } from "@/components/Scene/ClampedHtmlLabel";
 import * as THREE from "three";
 import type { SpecialBodyData } from "@/types";
 import {
@@ -418,16 +418,16 @@ function BodyLabel({
   );
   if (!showLabels || !inRange || focused) return null;
   return (
-    <Html
+    // R3-4：近距反向缩放钳制（非焦点标签只钳制不隐藏，焦点隐藏 R2-7 保留）
+    <ClampedHtmlLabel
       position={[0, sizeUnits * 1.3, 0]}
-      center
       distanceFactor={2600}
       style={{ pointerEvents: "none" }}
     >
       <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-sky-200/90">
         {body.nameZh}
       </span>
-    </Html>
+    </ClampedHtmlLabel>
   );
 }
 
@@ -1270,18 +1270,18 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
             opacity={0.7}
           />
         </sprite>
-        {/* R2-7 近观两星身份标注（大小/颜色对比 + 名称可辨） */}
+        {/* R2-7 近观两星身份标注（大小/颜色对比 + 名称可辨）；
+            R3-4：近观专用标注只钳制不隐藏（用户确认项 3） */}
         {nearActive && showLabels && (
-          <Html
+          <ClampedHtmlLabel
             position={[0, size * 0.62, 0]}
-            center
             distanceFactor={26}
             style={{ pointerEvents: "none" }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-sky-100/90">
               天狼星A · 主序星
             </span>
-          </Html>
+          </ClampedHtmlLabel>
         )}
       </group>
       {/* 天狼星B：白矮星（极小、白蓝色致密高亮点 + 衍射芒线，高密度在信息面板强调） */}
@@ -1306,16 +1306,15 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
           />
         </sprite>
         {nearActive && showLabels && (
-          <Html
+          <ClampedHtmlLabel
             position={[0, size * 0.32, 0]}
-            center
             distanceFactor={26}
             style={{ pointerEvents: "none" }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-blue-200/90">
               天狼星B · 白矮星
             </span>
-          </Html>
+          </ClampedHtmlLabel>
         )}
       </group>
       <BodyLabel body={body} sizeUnits={size} />

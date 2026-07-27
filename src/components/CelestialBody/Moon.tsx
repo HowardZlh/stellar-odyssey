@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
+import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
 import * as THREE from 'three';
 import type { MoonData, OrbitalElements } from '@/types';
 import { useSimulationStore } from '@/store';
@@ -403,14 +403,14 @@ export function Moon({ data, parentRadiusKm }: MoonProps): JSX.Element {
           // P7 §3.5 标签避让：近观模型激活或相机贴近时隐藏本体标签
           // （近距离下 Html distanceFactor 缩放会放大遮挡模型；名称已由
           // HUD 跟随模式与天体切换控件显示），退出近观后恢复
-          <Html
+          // R3-4：近距反向缩放钳制（跟随兄弟卫星放大时本标签不再变大）
+          <ClampedHtmlLabel
             position={[0, bodyRadius + 0.15, 0]}
-            center
             distanceFactor={16}
             style={{ pointerEvents: 'none' }}
           >
             <span className="whitespace-nowrap text-[10px] text-gray-300/70">{data.nameZh}</span>
-          </Html>
+          </ClampedHtmlLabel>
         )}
       </group>
     </group>

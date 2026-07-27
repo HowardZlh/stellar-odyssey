@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { PlanetData } from '@/types';
 import { getMoonsByParent } from '@/data/moons';
@@ -40,6 +39,7 @@ import { FLOW_VISUAL_GAIN, flowShaderPhase } from '@/utils/jupiterFlow';
 import { detailGateUpdateScoped, detailStrength01 } from '@/utils/planetDetail';
 import { focusBodyIdForDetail, planetDetailScopeAllowed } from '@/utils/bodyCycle';
 import { getMoonById } from '@/data/moons';
+import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
 import { auroraEnhancement01 } from '@/utils/solarActivity';
 import {
   RING_SHADOW_STRENGTH,
@@ -940,16 +940,16 @@ export function Planet({ data }: PlanetProps): JSX.Element {
       ))}
 
       {showLabels && !frozen && !labelHidden && (
-        <Html
+        // R3-4：近距反向缩放钳制（标签不随放大铺屏），近距隐藏（P7）保留
+        <ClampedHtmlLabel
           position={[0, radius + 0.6, 0]}
-          center
           distanceFactor={60}
           style={{ pointerEvents: 'none' }}
         >
           <span ref={labelElRef} className="whitespace-nowrap text-xs text-gray-200/80">
             {data.nameZh}
           </span>
-        </Html>
+        </ClampedHtmlLabel>
       )}
     </group>
   );

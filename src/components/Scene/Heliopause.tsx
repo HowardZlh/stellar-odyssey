@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
+import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
 import * as THREE from 'three';
 import { useSimulationStore } from '@/store';
 import {
@@ -139,26 +139,25 @@ function HeliopauseNearStructure({
       {/* 结构分层标注（近观激活期间可辨识三层结构） */}
       {showLabels && (
         <>
-          <Html
+          {/* R3-4：近观专用标注只钳制不隐藏（用户确认项 3） */}
+          <ClampedHtmlLabel
             position={[0, tsRadius * 0.72, 0]}
-            center
             distanceFactor={520}
             style={{ pointerEvents: 'none' }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-amber-300/85">
               终端激波（示意，约 {TERMINATION_SHOCK_REAL_DISTANCE_AU} AU）
             </span>
-          </Html>
-          <Html
+          </ClampedHtmlLabel>
+          <ClampedHtmlLabel
             position={[sheathMidRadius * 0.8, -sheathMidRadius * 0.3, 0]}
-            center
             distanceFactor={520}
             style={{ pointerEvents: 'none' }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-orange-200/80">
               日鞘（渐变区）
             </span>
-          </Html>
+          </ClampedHtmlLabel>
         </>
       )}
       {/* 旅行者 1/2 号位置标记：辉光点 + 点选热区 + 标注（点选科普卡片） */}
@@ -188,11 +187,11 @@ function HeliopauseNearStructure({
             <meshBasicMaterial transparent opacity={0} depthWrite={false} />
           </mesh>
           {showLabels && focusedMarkerId !== m.id && (
-            <Html position={[0, 22, 0]} center distanceFactor={480} style={{ pointerEvents: 'none' }}>
+            <ClampedHtmlLabel position={[0, 22, 0]} distanceFactor={480} style={{ pointerEvents: 'none' }}>
               <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-amber-200/90">
                 {m.nameZh}（{m.crossedYear} 穿越）
               </span>
-            </Html>
+            </ClampedHtmlLabel>
           )}
         </group>
       ))}
@@ -304,16 +303,16 @@ export function Heliopause(): JSX.Element {
       />
       {nearActive && <HeliopauseNearStructure getNear01={() => near01Ref.current} />}
       {showLabels && inRange && (
-        <Html
+        // R3-4：跟随期间保持可见（R2-1 语义保留）但近距反向缩放钳制不遮挡结构
+        <ClampedHtmlLabel
           position={[0, HELIOPAUSE_VISUAL_RADIUS_UNITS * 0.82, 0]}
-          center
           distanceFactor={900}
           style={{ pointerEvents: 'none' }}
         >
           <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-sky-300/80">
             日球层顶（示意，实际约 120 AU）
           </span>
-        </Html>
+        </ClampedHtmlLabel>
       )}
     </group>
   );
