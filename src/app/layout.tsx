@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
 import type { Metadata } from 'next';
+import Script from 'next/script';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -12,7 +13,15 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }): JSX.Element {
   return (
     <html lang="zh-CN">
-      <body className="bg-space-dark text-gray-100 antialiased">{children}</body>
+      <body className="bg-space-dark text-gray-100 antialiased">
+        {children}
+        {/* Cloudflare Web Analytics（RUM beacon，手动嵌码：仅统计本站，隐私友好无 cookie） */}
+        <Script
+          src="https://static.cloudflareinsights.com/beacon.min.js"
+          strategy="afterInteractive"
+          data-cf-beacon='{"token": "57f4fc115f504054a82eddfc2e78c36d"}'
+        />
+      </body>
     </html>
   );
 }
