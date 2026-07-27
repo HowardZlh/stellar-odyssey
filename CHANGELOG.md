@@ -10,6 +10,7 @@
 ### 新增
 
 - 集成 Cloudflare Web Analytics（RUM beacon 手动嵌码于全局布局）：统计真实访客的访问量/来源/地域/设备与 Core Web Vitals，无 cookie 隐私友好，仅作用于 stellar.guushu.com 本站
+- 设定开源协议为 GNU AGPL-3.0（新增 LICENSE 全文与 package.json license 字段）：个人/教育/科研用途自由使用，商业闭源集成需联系作者获取商业授权（双许可模式）；README 新增「开源协议」一节说明代码协议与素材许可的边界
 
 ## [0.1.0] - 2026-07-27
 
