@@ -167,6 +167,10 @@ npm run format         # Prettier 格式化
 - 需求文档：[REQUIREMENTS.md](REQUIREMENTS.md)（含逐项实现状态与差异登记）
 - 变更记录：[CHANGELOG.md](CHANGELOG.md)（Keep a Changelog 格式）
 
+## 🤝 参与贡献
+
+欢迎 issue 与 PR！请先阅读 [贡献指南](CONTRIBUTING.md)——代码贡献需签署 [CLA](CLA.md)（许可授予型，你保留自己贡献的版权），以维持本项目 AGPL-3.0 + 商业授权的双许可模式。
+
 ## ⚖️ 开源协议
 
 本项目代码以 [GNU AGPL-3.0](LICENSE) 协议开源：
