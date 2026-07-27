@@ -166,3 +166,11 @@ npm run format         # Prettier 格式化
 
 - 需求文档：[REQUIREMENTS.md](REQUIREMENTS.md)（含逐项实现状态与差异登记）
 - 变更记录：[CHANGELOG.md](CHANGELOG.md)（Keep a Changelog 格式）
+
+## ⚖️ 开源协议
+
+本项目代码以 [GNU AGPL-3.0](LICENSE) 协议开源：
+
+- **个人学习、教育教学、科研用途**：自由使用、修改与分发（遵循 AGPL 条款）
+- **商业闭源集成**（如展馆展项、商业产品嵌入等不愿以 AGPL 开源衍生代码的场景）：请联系作者获取商业授权
+- 纹理、3D 模型等素材的许可归属见上方「素材许可（Attribution）」一节，不适用代码协议
