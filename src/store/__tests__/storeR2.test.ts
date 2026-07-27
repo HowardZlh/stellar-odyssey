@@ -42,12 +42,13 @@ describe('setViewLevel 显式锚点切换自动关闭信息面板（R2-1 §1.1-A
     expect(s.selectedSolarFeature).toBeNull();
   });
 
-  it('切换到 L1（飞往锚定天体分支）同样清空选中', () => {
+  it('切换到 L1（飞往锚定天体分支）：简介面板跟随锚定天体（R3-2 行为变更）', () => {
     useSimulationStore.getState().selectBody('heliopause');
     useSimulationStore.setState({ selectedSolarFeature: SAMPLE_SOLAR_FEATURE });
     useSimulationStore.getState().setViewLevel('L1');
     const s = useSimulationStore.getState();
-    expect(s.selectedBodyId).toBeNull();
+    // R3-2：按 1 = 切换到锚定天体，面板显示该天体（不再清空）
+    expect(s.selectedBodyId).toBe(DEFAULT_ANCHOR_BODY_ID);
     expect(s.selectedSolarFeature).toBeNull();
     // L1 分支原有行为不回退：仍飞往并跟随锚定天体
     expect(s.followBodyId).toBe(DEFAULT_ANCHOR_BODY_ID);

@@ -404,8 +404,9 @@ export const useSimulationStore = create<SimulationState>((set) => ({
           flyToBodyId: state.anchorBodyId,
           flyToRequestId: state.flyToRequestId + 1,
           followBodyId: state.anchorBodyId,
-          // R2-1 §1.1-A：显式锚点切换自动关闭信息面板（清空选中）
-          selectedBodyId: null,
+          // R3-2：按 1 = 切换到锚定天体，简介面板跟随显示该天体
+          // （R2-1"关闭面板"语义仅保留给 L2-L4 固定锚点——无目标天体）
+          selectedBodyId: state.anchorBodyId,
           selectedSolarFeature: null,
         };
       }
@@ -509,11 +510,16 @@ export const useSimulationStore = create<SimulationState>((set) => ({
       // 日球层顶飞往 → galaxy 域 + L3）。太阳保持当前域（防 L1/L2
       // 耀斑通知"飞往太阳"误改写银河系域记忆/层级，登记于 cycleScopes）
       const nextScope = scopeForFocusBody(id, state.cycleScope);
+      // R3-2：飞往 = 切换到该天体，简介面板跟随显示（超新星事件无
+      // 信息目录条目，维持现状不改写选中）
+      const isSupernova = id.startsWith('sn-');
       return {
         flyToBodyId: id,
         flyToRequestId: state.flyToRequestId + 1,
         // 飞抵后保持锁定该天体（跟随模式），运镜期间同样按目标跟踪
         followBodyId: id,
+        selectedBodyId: isSupernova ? state.selectedBodyId : id,
+        selectedSolarFeature: isSupernova ? state.selectedSolarFeature : null,
         cycleScope: nextScope,
         viewLevel: SCOPE_HOME_LEVEL[nextScope],
         // 行星域天体（行星/矮行星/彗星/卫星）记为 L1 锚定天体（会话内记忆）
@@ -558,6 +564,10 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         flyToBodyId: next,
         flyToRequestId: state.flyToRequestId + 1,
         followBodyId: next,
+        // R3-2：巡游切换（上一个/下一个/[/]/面板 ←→，含未跟随时的
+        // 起始锚定）= 切换到该天体，简介面板跟随显示
+        selectedBodyId: next,
+        selectedSolarFeature: null,
         // R3 需求 2：巡游期间离散层级锁定为域主层级
         viewLevel: SCOPE_HOME_LEVEL[scope],
         ...(scope === 'system' || scope === 'solar'
