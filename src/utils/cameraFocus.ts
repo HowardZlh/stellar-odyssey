@@ -274,14 +274,19 @@ function specialBodyFocusTarget(body: SpecialBodyData, simDays: number): FocusTa
   }
   // sun-relative：随太阳共转（跟随模式下世界坐标 = tiltX·(offset·unitsPerLy)，
   // 与 simDays 无关）。太阳 y 分量乘垂直增益，与 SpecialBodies.useGalacticPlacement
-  // 的渲染位置一致（P6 自查修复：增益不一致导致特殊天体解析位置垂直漂移）
+  // 的渲染位置一致（P6 自查修复：增益不一致导致特殊天体解析位置垂直漂移）；
+  // offset.y 乘垂直展开增益（R3-6：与渲染同源，展开状态下飞往/跟随落点正确）
   const offset = body.offsetLy;
   if (!offset) return null;
   const sun = sunGalacticPositionLy(simDays);
-  const gain = renderedGalacticFrame().verticalGain;
+  const { verticalGain: gain, expandGain } = renderedGalacticFrame();
   return {
     position: galacticPointToSceneUnits(
-      { x: sun.x + offset.x, y: sun.y * gain + offset.y, z: sun.z + offset.z },
+      {
+        x: sun.x + offset.x,
+        y: sun.y * gain + offset.y * expandGain,
+        z: sun.z + offset.z,
+      },
       simDays,
     ),
     viewDistanceUnits: Math.max(

@@ -627,14 +627,15 @@ export const M13_EXCLUSION_RADIUS_LY = 4000;
 
 /**
  * M13（L3 特殊天体条目 m13-cluster）t=0 银心系位置（光年）：
- * 太阳 t=0 位于 (R☉, 0, 0)，M13 为太阳系相对偏移 (−2100, +6200, −5200)
- * （data/specialBodies.ts 同源数值，单测断言一致）。M13 随太阳共转（近似
- * 已在 SpecialBodies 登记），排除区按 t=0 位置留白（登记近似）。
+ * 太阳 t=0 位于 (R☉, 0, 0)，M13 为太阳系相对偏移 (−2100, +4858, −5200)
+ * （data/specialBodies.ts 同源数值，单测断言一致；R3-6 §6.1-A：y 按真实
+ * 银纬 b ≈ +40.9° 重定，仍在银晕中）。M13 随太阳共转（近似已在
+ * SpecialBodies 登记），排除区按 t=0 位置留白（登记近似）。
  */
 export function m13GalactocentricT0Ly(): Vec3 {
   return {
     x: SUN_GALACTIC_RADIUS_LY - 2100,
-    y: 6200,
+    y: 4858,
     z: -5200,
   };
 }

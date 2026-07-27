@@ -4,6 +4,11 @@ import { VIEW_LEVELS } from '@/types';
 import { CAMERA_VIEWS } from '@/data/cameraViews';
 import { useSimulationStore } from '@/store';
 import { eventDemoDisabledHintZh, eventDemoEnabled } from '@/utils/eventScopes';
+import {
+  GALAXY_EXPAND_GAIN_MAX,
+  GALAXY_EXPAND_GAIN_MIN,
+  GALAXY_EXPAND_GAIN_STEP,
+} from '@/utils/galacticLatitude';
 import { SN_DEFAULT_DURATION_SEC } from '@/utils/supernova';
 import { rollSupernovaParams } from '@/components/Scene/Supernova';
 import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunActivity';
@@ -36,6 +41,11 @@ export function ControlPanel(): JSX.Element {
   const setShowVelocityVectors = useSimulationStore((s) => s.setShowVelocityVectors);
   const realScaleMode = useSimulationStore((s) => s.realScaleMode);
   const setRealScaleMode = useSimulationStore((s) => s.setRealScaleMode);
+  // R3-6：银河系视角天体垂直展开（V 键）+ 增益滑块
+  const galaxyVerticalExpand = useSimulationStore((s) => s.galaxyVerticalExpand);
+  const setGalaxyVerticalExpand = useSimulationStore((s) => s.setGalaxyVerticalExpand);
+  const galaxyExpandGain = useSimulationStore((s) => s.galaxyExpandGain);
+  const setGalaxyExpandGain = useSimulationStore((s) => s.setGalaxyExpandGain);
   const activeSupernova = useSimulationStore((s) => s.activeSupernova);
   const triggerSupernova = useSimulationStore((s) => s.triggerSupernova);
   const showPerformance = useSimulationStore((s) => s.showPerformance);
@@ -229,6 +239,35 @@ export function ControlPanel(): JSX.Element {
           />
           速度矢量箭头
         </label>
+        <label className="mb-1 flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={galaxyVerticalExpand}
+            onChange={(e) => setGalaxyVerticalExpand(e.target.checked)}
+          />
+          垂直展开（V）
+        </label>
+        {galaxyVerticalExpand && (
+          <div className="mb-1 pl-5">
+            <label className="flex items-center gap-2 text-[10px] text-gray-400">
+              增益 ×{galaxyExpandGain.toFixed(1)}
+              <input
+                type="range"
+                min={GALAXY_EXPAND_GAIN_MIN}
+                max={GALAXY_EXPAND_GAIN_MAX}
+                step={GALAXY_EXPAND_GAIN_STEP}
+                value={galaxyExpandGain}
+                onChange={(e) => setGalaxyExpandGain(Number(e.target.value))}
+                className="flex-1"
+                aria-label="垂直展开增益（1–6）"
+              />
+            </label>
+            <p className="text-[10px] leading-4 text-gray-500">
+              银河系视角特殊天体垂直高度按增益展开（观察辅助的视觉夸大，
+              指示线标注为未放大的银纬推算高度）
+            </p>
+          </div>
+        )}
         <label className="mb-1 flex items-center gap-2 text-xs">
           <input
             type="checkbox"

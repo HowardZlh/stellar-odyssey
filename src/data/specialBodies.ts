@@ -13,6 +13,9 @@
  * - sun-relative 天体的 offsetLy 为视觉夸大的示意偏移（真实距离仅数光年至
  *   数千光年，在 L3 尺度 0.05 单位/光年下不可分辨），真实距离在
  *   realDistanceLy 与信息面板中如实标注；
+ * - offsetLy.y 按真实银纬推算（R3-6 §6.1-A）：y = round(√(x²+z²) × tan(b))，
+ *   b 为该天体真实银纬（来源 SIMBAD，逐天体注释登记）——"从太阳看的方向
+ *   按真实银纬、水平距离（x/z）仍为视觉示意"口径；
  * - visualRadiusLy 为可视化尺寸，非真实半径；
  * - 特殊天体随太阳一起绕银心共转（近似：太阳邻域恒星与太阳共转）。
  */
@@ -37,7 +40,8 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     typeZh: "红巨星（红超巨星）",
     level: "L3",
     positionMode: "sun-relative",
-    offsetLy: { x: 2600, y: 450, z: -1900 },
+    // 银纬 b ≈ −9.0°（SIMBAD α Ori）：y = round(3220 × tan(−9.0°)) = −510
+    offsetLy: { x: 2600, y: -510, z: -1900 },
     realDistanceLy: 640,
     visualRadiusLy: 260,
     color: "#ff6a3c",
@@ -59,7 +63,8 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     typeZh: "蓝超巨星",
     level: "L3",
     positionMode: "sun-relative",
-    offsetLy: { x: -3200, y: -350, z: 2500 },
+    // 银纬 b ≈ −25.1°（SIMBAD β Ori）：y = round(4061 × tan(−25.1°)) = −1902
+    offsetLy: { x: -3200, y: -1902, z: 2500 },
     realDistanceLy: 860,
     visualRadiusLy: 190,
     color: "#a9c8ff",
@@ -79,7 +84,8 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     typeZh: "双星系统（主序星 + 白矮星）",
     level: "L3",
     positionMode: "sun-relative",
-    offsetLy: { x: 1300, y: 250, z: 2900 },
+    // 银纬 b ≈ −8.9°（SIMBAD α CMa）：y = round(3178 × tan(−8.9°)) = −498
+    offsetLy: { x: 1300, y: -498, z: 2900 },
     realDistanceLy: 8.6,
     visualRadiusLy: 110,
     color: "#eef4ff",
@@ -101,7 +107,8 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     typeZh: "中子星/脉冲星（超新星遗迹中心）",
     level: "L3",
     positionMode: "sun-relative",
-    offsetLy: { x: -4300, y: 550, z: -3100 },
+    // 银纬 b ≈ −5.8°（SIMBAD PSR B0531+21 / M1）：y = round(5301 × tan(−5.8°)) = −538
+    offsetLy: { x: -4300, y: -538, z: -3100 },
     realDistanceLy: 6500,
     visualRadiusLy: 210,
     color: "#9fd8ff",
@@ -145,7 +152,8 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     typeZh: "发射星云",
     level: "L3",
     positionMode: "sun-relative",
-    offsetLy: { x: 3700, y: -250, z: 1600 },
+    // 银纬 b ≈ −19.4°（SIMBAD M42）：y = round(4031 × tan(−19.4°)) = −1420
+    offsetLy: { x: 3700, y: -1420, z: 1600 },
     realDistanceLy: 1350,
     visualRadiusLy: 240,
     color: "#ff9bb5",
@@ -167,7 +175,8 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     typeZh: "行星状星云",
     level: "L3",
     positionMode: "sun-relative",
-    offsetLy: { x: -1600, y: 850, z: 3700 },
+    // 银纬 b ≈ +14.0°（SIMBAD M57）：y = round(4031 × tan(+14.0°)) = +1005
+    offsetLy: { x: -1600, y: 1005, z: 3700 },
     realDistanceLy: 2300,
     visualRadiusLy: 150,
     color: "#7fe8d8",
@@ -188,7 +197,8 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     typeZh: "球状星团（银晕）",
     level: "L3",
     positionMode: "sun-relative",
-    offsetLy: { x: -2100, y: 6200, z: -5200 },
+    // 银纬 b ≈ +40.9°（SIMBAD M13）：y = round(5608 × tan(+40.9°)) = +4858（高悬银晕）
+    offsetLy: { x: -2100, y: 4858, z: -5200 },
     realDistanceLy: 22200,
     visualRadiusLy: 320,
     color: "#ffd9a0",
@@ -209,7 +219,8 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     typeZh: "恒星级黑洞（X射线双星）",
     level: "L3",
     positionMode: "sun-relative",
-    offsetLy: { x: 1900, y: 750, z: -2700 },
+    // 银纬 b ≈ +3.1°（SIMBAD Cyg X-1）：y = round(3302 × tan(+3.1°)) = +179
+    offsetLy: { x: 1900, y: 179, z: -2700 },
     realDistanceLy: 7200,
     visualRadiusLy: 130,
     color: "#9fc8ff",
@@ -232,7 +243,8 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     typeZh: "沃尔夫-拉叶星（大质量恒星晚期）",
     level: "L3",
     positionMode: "sun-relative",
-    offsetLy: { x: -2700, y: 350, z: -4200 },
+    // 银纬 b ≈ +3.3°（SIMBAD WR 124）：y = round(4993 × tan(+3.3°)) = +288
+    offsetLy: { x: -2700, y: 288, z: -4200 },
     realDistanceLy: 21000,
     visualRadiusLy: 170,
     color: "#cfe0ff",
@@ -255,7 +267,8 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     typeZh: "造父变星（脉动变星）",
     level: "L3",
     positionMode: "sun-relative",
-    offsetLy: { x: 3100, y: 950, z: 3300 },
+    // 银纬 b ≈ +0.5°（SIMBAD δ Cep）：y = round(4528 × tan(+0.5°)) = +40
+    offsetLy: { x: 3100, y: 40, z: 3300 },
     realDistanceLy: 887,
     visualRadiusLy: 150,
     color: "#ffe9b8",
@@ -281,7 +294,8 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     typeZh: "疏散星团",
     level: "L3",
     positionMode: "sun-relative",
-    offsetLy: { x: -1500, y: -550, z: -3400 },
+    // 银纬 b ≈ −23.5°（SIMBAD M45）：y = round(3716 × tan(−23.5°)) = −1616
+    offsetLy: { x: -1500, y: -1616, z: -3400 },
     realDistanceLy: 444,
     visualRadiusLy: 260,
     color: "#bcd7ff",
@@ -303,7 +317,8 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     typeZh: "暗星云（分子云剪影）",
     level: "L3",
     positionMode: "sun-relative",
-    offsetLy: { x: 3950, y: 100, z: 2450 },
+    // 银纬 b ≈ −16.8°（SIMBAD Barnard 33）：y = round(4648 × tan(−16.8°)) = −1403
+    offsetLy: { x: 3950, y: -1403, z: 2450 },
     realDistanceLy: 1375,
     visualRadiusLy: 190,
     color: "#2a2030",

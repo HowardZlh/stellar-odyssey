@@ -190,14 +190,15 @@ describe('渲染位姿注册表（bug 修复：飞往/跟随 L3 天体与渲染�
 
   it('默认（未注册）为 w=0、gain=1（历史跟随模式行为）', () => {
     resetRenderedGalacticFrame();
-    expect(renderedGalacticFrame()).toEqual({ weight: 0, verticalGain: 1 });
+    // R3-6：注册表扩展展开增益字段（默认 1 = 不展开）
+    expect(renderedGalacticFrame()).toEqual({ weight: 0, verticalGain: 1, expandGain: 1 });
   });
 
   it('set/read/reset 生效', () => {
     setRenderedGalacticFrame(0.5, 6);
-    expect(renderedGalacticFrame()).toEqual({ weight: 0.5, verticalGain: 6 });
+    expect(renderedGalacticFrame()).toEqual({ weight: 0.5, verticalGain: 6, expandGain: 1 });
     resetRenderedGalacticFrame();
-    expect(renderedGalacticFrame()).toEqual({ weight: 0, verticalGain: 1 });
+    expect(renderedGalacticFrame()).toEqual({ weight: 0, verticalGain: 1, expandGain: 1 });
   });
 
   it('权重越界 / 增益 <1 抛 RangeError', () => {

@@ -252,9 +252,10 @@ describe('R2-9 球状星团系统 generateGlobularClusters', () => {
   });
 
   it('m13GalactocentricT0Ly 与 data/specialBodies m13-cluster 偏移同源', () => {
+    // R3-6 §6.1-A：y 按真实银纬 b ≈ +40.9° 重定（6200 → 4858，仍在银晕中）
     const m13 = m13GalactocentricT0Ly();
     expect(m13.x).toBeCloseTo(SUN_GALACTIC_RADIUS_LY - 2100, 6);
-    expect(m13.y).toBe(6200);
+    expect(m13.y).toBe(4858);
     expect(m13.z).toBe(-5200);
   });
 

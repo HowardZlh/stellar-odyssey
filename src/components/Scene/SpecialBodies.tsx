@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { ClampedHtmlLabel } from "@/components/Scene/ClampedHtmlLabel";
 import * as THREE from "three";
-import type { SpecialBodyData } from "@/types";
+import type { SpecialBodyData, Vec3 } from "@/types";
 import {
   PULSAR_VISUAL_SPIN_PERIOD_SEC,
   SIRIUS_MASS_RATIO,
@@ -14,9 +14,16 @@ import {
 import { useSimulationStore } from "@/store";
 import { SCENE_UNITS_PER_LY, trapezoidWeight } from "@/utils/scale";
 import { setObjectTreeRaycastEnabled } from "@/utils/raycastGate";
-import { advanceFrameTransition } from "@/utils/galacticFrame";
+import {
+  advanceFrameTransition,
+  renderedGalacticFrame,
+} from "@/utils/galacticFrame";
 import { isHeliopauseNearFocusId } from "@/utils/heliopause";
 import { verticalVisualGain } from "@/utils/galacticMotionCues";
+import {
+  heightLabelText,
+  heightLineDropUnits,
+} from "@/utils/galacticLatitude";
 import { sunGalacticPositionLy } from "@/utils/galaxy";
 import { createSeededRandom } from "@/utils/random";
 import {
@@ -274,12 +281,15 @@ function useGalacticPlacement(
     // 随太阳共转（近似处理已登记）：位置 = 太阳银心系位置 + 固定偏移。
     // 太阳 y 分量乘垂直视觉增益，与 Galaxy 组偏移一致（P6 自查修复）：
     // 否则跟随模式下组偏移按增益后 y 平移、此处按原始 y 定位，特殊天体
-    // 会相对太阳系产生 ±(gain−1)·300 ly 的垂直振荡漂移
+    // 会相对太阳系产生 ±(gain−1)·300 ly 的垂直振荡漂移。
+    // offset.y 乘垂直展开增益（R3-6：Galaxy.tsx 每帧缓动后写入注册表，
+    // 渲染与 cameraFocus 解析同源；与太阳振荡增益互不相乘）
     const sun = sunGalacticPositionLy(state.simDays);
     const gain = verticalVisualGain(state.realScaleMode);
+    const expandGain = renderedGalacticFrame().expandGain;
     group.position.set(
       (sun.x + offset.x) * SCENE_UNITS_PER_LY,
-      (sun.y * gain + offset.y) * SCENE_UNITS_PER_LY,
+      (sun.y * gain + offset.y * expandGain) * SCENE_UNITS_PER_LY,
       (sun.z + offset.z) * SCENE_UNITS_PER_LY,
     );
   });
@@ -2300,6 +2310,150 @@ function ClusterNearStarField({
   return <points geometry={geometry} material={material} />;
 }
 
+// ---------------------------------------------------------------------------
+// 高度指示线（R3-6 §6.1-C）：展开开启且 showLabels 时，每个 sun-relative
+// 特殊天体显示"天体 → 银盘面（组内 y=0）投影点"虚线 + 高度标注。
+// 标注为银纬推算的真实高度（未乘展开增益，登记）；sgr-a-star（银心原点，
+// 无 offset）不参与。位置公式与 useGalacticPlacement 镜像同源。
+// ---------------------------------------------------------------------------
+
+/** 参与高度指示线的天体（12 个 sun-relative L3 特殊天体） */
+const HEIGHT_INDICATOR_BODIES = SPECIAL_BODIES.filter(
+  (b): b is SpecialBodyData & { offsetLy: Vec3 } =>
+    b.level === "L3" &&
+    b.positionMode === "sun-relative" &&
+    b.offsetLy !== undefined,
+);
+
+/** 指示线虚线样式（场景单位；盘半径 ~2,635 单位尺度下可辨） */
+const HEIGHT_LINE_DASH_UNITS = 14;
+const HEIGHT_LINE_GAP_UNITS = 9;
+
+/** 挂载门（R3-6）：展开开启且标签开启时才挂载（关闭即卸载/隐藏） */
+function HeightIndicators(): JSX.Element | null {
+  const active = useSimulationStore(
+    (s) => s.galaxyVerticalExpand && s.showLabels,
+  );
+  if (!active) return null;
+  return <HeightIndicatorsInner />;
+}
+
+function HeightIndicatorsInner(): JSX.Element {
+  // 标签挂载窗口与 BodyLabel 一致（2.5–3.9）；跟随/飞往目标隐藏自身标注
+  // （R2-7 同款语义：近距下标签遮挡近观细节）
+  const inRange = useSimulationStore(
+    (s) => s.continuousLevel > 2.5 && s.continuousLevel < 3.9,
+  );
+  const focusedId = useSimulationStore(
+    (s) => s.followBodyId ?? s.flyToBodyId,
+  );
+  const groupsRef = useRef<(THREE.Group | null)[]>([]);
+  // 虚线资产（预分配 position/lineDistance 属性，渲染循环零分配：
+  // 不调用 computeLineDistances——其每次调用都会新建属性数组）
+  const assets = useMemo(
+    () =>
+      HEIGHT_INDICATOR_BODIES.map(() => {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute(
+          "position",
+          new THREE.BufferAttribute(new Float32Array(2 * 3), 3),
+        );
+        geo.setAttribute(
+          "lineDistance",
+          new THREE.BufferAttribute(new Float32Array(2), 1),
+        );
+        const mat = new THREE.LineDashedMaterial({
+          color: "#7fffd4",
+          dashSize: HEIGHT_LINE_DASH_UNITS,
+          gapSize: HEIGHT_LINE_GAP_UNITS,
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+        });
+        const line = new THREE.Line(geo, mat);
+        line.frustumCulled = false;
+        return { geo, mat, line };
+      }),
+    [],
+  );
+  useEffect(
+    () => () => {
+      for (const asset of assets) {
+        asset.geo.dispose();
+        asset.mat.dispose();
+      }
+    },
+    [assets],
+  );
+  useFrame(() => {
+    const state = useSimulationStore.getState();
+    const weight = specialFadeWeight(state.continuousLevel);
+    const visible = weight > 0.05;
+    const sun = sunGalacticPositionLy(state.simDays);
+    const gain = verticalVisualGain(state.realScaleMode);
+    const expandGain = renderedGalacticFrame().expandGain;
+    for (let i = 0; i < HEIGHT_INDICATOR_BODIES.length; i += 1) {
+      const group = groupsRef.current[i];
+      if (!group) continue;
+      group.visible = visible;
+      if (!visible) continue;
+      const offset = HEIGHT_INDICATOR_BODIES[i].offsetLy;
+      // 与 useGalacticPlacement 同源：天体本地位置的 y 通道含展开增益
+      group.position.set(
+        (sun.x + offset.x) * SCENE_UNITS_PER_LY,
+        (sun.y * gain + offset.y * expandGain) * SCENE_UNITS_PER_LY,
+        (sun.z + offset.z) * SCENE_UNITS_PER_LY,
+      );
+      const drop = heightLineDropUnits(
+        sun.y,
+        gain,
+        offset.y,
+        expandGain,
+        SCENE_UNITS_PER_LY,
+      );
+      const asset = assets[i];
+      const pos = asset.geo.attributes.position as THREE.BufferAttribute;
+      pos.setXYZ(1, 0, drop, 0);
+      pos.needsUpdate = true;
+      const dist = asset.geo.attributes.lineDistance as THREE.BufferAttribute;
+      dist.setX(1, Math.abs(drop));
+      dist.needsUpdate = true;
+      asset.mat.opacity = 0.55 * weight;
+    }
+  });
+  return (
+    <group name="height-indicators">
+      {HEIGHT_INDICATOR_BODIES.map((body, i) => (
+        <group
+          key={body.id}
+          ref={(g) => {
+            groupsRef.current[i] = g;
+          }}
+          visible={false}
+        >
+          <primitive object={assets[i].line} />
+          {inRange && focusedId !== body.id && (
+            // R3-4 近距钳制标签：真实推算高度 ±ly（不乘展开增益，登记）
+            <ClampedHtmlLabel
+              position={[
+                0,
+                -body.visualRadiusLy * SCENE_UNITS_PER_LY * 1.3,
+                0,
+              ]}
+              distanceFactor={2600}
+              style={{ pointerEvents: "none" }}
+            >
+              <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-[10px] text-emerald-200/90">
+                {heightLabelText(body.offsetLy.y)}
+              </span>
+            </ClampedHtmlLabel>
+          )}
+        </group>
+      ))}
+    </group>
+  );
+}
+
 /**
  * L3 特殊天体总装（需求 3.1.5）：渲染于 Galaxy 组内（银心系本地坐标），
  * 随银河系组变换保持与旋臂/太阳系位置一致（嵌套一致性 3.1.4）。
@@ -2338,6 +2492,8 @@ export function SpecialBodies(): JSX.Element {
             return null;
         }
       })}
+      {/* 高度指示线（R3-6）：展开开启且 showLabels 时显示 */}
+      <HeightIndicators />
     </group>
   );
 }
