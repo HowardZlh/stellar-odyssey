@@ -1,0 +1,98 @@
+# PR 质量与漏洞门禁
+# 触发：针对 main 的 Pull Request
+# 门禁项：构建 / 单元测试（含覆盖率 gate ≥90%，由 jest.config.mjs 强制）+ 类型检查 / high 及 critical 漏洞拦截
+# 三个 job 的 name（build / test / vulnerability-check）被分支保护 ruleset 引用为 required status checks，勿随意改名
+name: PR Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (static export)
+        run: npm run build
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Unit tests with coverage gate (>=90%)
+        run: npm run test:coverage
+
+  vulnerability-check:
+    name: vulnerability-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 软信号：GitHub Dependency Review（对 PR 引入的依赖变更做 high 及以上告警）
+      # continue-on-error 与参考实现保持一致，硬门禁由下方 npm audit 兜底
+      - name: Dependency review
+        id: dependency_review
+        uses: actions/dependency-review-action@v4
+        continue-on-error: true
+        with:
+          fail-on-severity: high
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 硬门禁：生产依赖存在 high/critical 已知漏洞即失败（基于 package-lock.json，无需安装依赖）
+      - name: High/Critical vulnerability gate (production dependencies)
+        run: |
+          echo "Checking production dependencies for high/critical vulnerabilities..."
+          npm audit --omit=dev --audit-level=high
+
+      # 完整报告（含 dev 依赖、全部严重级别），仅作排查参考，不作为门禁
+      - name: Full audit report (informational)
+        if: always()
+        run: |
+          npm audit --json > npm-audit-report.json || true
+          echo "Full audit summary (all severities, including devDependencies):"
+          npm audit || true
+
+      - name: Upload audit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr-npm-audit-results
+          path: npm-audit-report.json
