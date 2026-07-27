@@ -5,7 +5,27 @@
 > 棒旋结构的银河系、星系碰撞演化的宇宙尺度——四个层级由滚轮连续缩放无缝贯通，
 > 配以随尺度渐变的空间音效，是一场科学数据驱动的沉浸式宇宙遨游。
 
-![tech](https://img.shields.io/badge/Next.js-14-black) ![tech](https://img.shields.io/badge/React-18-61dafb) ![tech](https://img.shields.io/badge/Three.js-R3F-049ef4) ![tech](https://img.shields.io/badge/TypeScript-strict-3178c6) ![tests](https://img.shields.io/badge/tests-1949%20passed-brightgreen) ![coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen)
+<p align="center">
+  <a href="https://stellar.guushu.com"><strong>🚀 立即在线体验 → stellar.guushu.com</strong></a>
+</p>
+
+[![live](https://img.shields.io/badge/在线体验-stellar.guushu.com-4d9fff)](https://stellar.guushu.com) ![tech](https://img.shields.io/badge/Next.js-14-black) ![tech](https://img.shields.io/badge/React-18-61dafb) ![tech](https://img.shields.io/badge/Three.js-R3F-049ef4) ![tech](https://img.shields.io/badge/TypeScript-strict-3178c6) ![tests](https://img.shields.io/badge/tests-1949%20passed-brightgreen) ![coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen)
+
+---
+
+## 🎬 效果演示
+
+**四层级连续缩放遨游**：滚轮从地球近观一路拉远，穿越太阳系、银河系，直抵可观测宇宙边界——
+
+![四层级连续缩放遨游](docs/media/zoom-journey.gif)
+
+**太阳活动事件链**：触发太阳耀斑 → 飞往近观米粒组织与黑子 → 日冕物质抛射（CME）朝地球扑来——
+
+![太阳耀斑与 CME 事件演示](docs/media/solar-events.gif)
+
+**银河系—仙女座碰撞合并快进预览**：十几秒穿越 45 亿年，见证两大星系首次穿越、潮汐扭曲直至合并——
+
+![银河系—仙女座碰撞合并预览](docs/media/galaxy-merger.gif)
 
 ---
 
@@ -44,6 +64,10 @@
 ---
 
 ## 🚀 快速开始
+
+**在线体验**：直接访问 [stellar.guushu.com](https://stellar.guushu.com)，无需安装。
+
+**本地运行**：
 
 ```bash
 # 安装依赖

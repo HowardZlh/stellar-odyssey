@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- 星海奥德赛 Stellar Odyssey 站点图标：深空蓝紫背景 + 恒星与轨道遨游意象 -->
+  <defs>
+    <radialGradient id="bg" cx="35%" cy="28%" r="95%">
+      <stop offset="0%" stop-color="#1c2b5e"/>
+      <stop offset="50%" stop-color="#111739"/>
+      <stop offset="100%" stop-color="#06081a"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffd66b" stop-opacity="0.55"/>
+      <stop offset="60%" stop-color="#ff9d3c" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#ff9d3c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sun" cx="42%" cy="38%" r="65%">
+      <stop offset="0%" stop-color="#fff8dc"/>
+      <stop offset="45%" stop-color="#ffd66b"/>
+      <stop offset="100%" stop-color="#ff8c2e"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7aa8ff"/>
+      <stop offset="100%" stop-color="#b48cff"/>
+    </linearGradient>
+    <radialGradient id="planet" cx="35%" cy="32%" r="75%">
+      <stop offset="0%" stop-color="#c9f1ff"/>
+      <stop offset="55%" stop-color="#63d8ff"/>
+      <stop offset="100%" stop-color="#2f7fd6"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="104" fill="url(#bg)"/>
+
+  <!-- 星野 -->
+  <g fill="#ffffff">
+    <circle cx="92" cy="88" r="5" opacity="0.9"/>
+    <circle cx="418" cy="72" r="4" opacity="0.75"/>
+    <circle cx="452" cy="180" r="3" opacity="0.6"/>
+    <circle cx="70" cy="300" r="3.5" opacity="0.65"/>
+    <circle cx="150" cy="426" r="4" opacity="0.8"/>
+    <circle cx="392" cy="440" r="5" opacity="0.85"/>
+    <circle cx="330" cy="120" r="2.5" opacity="0.5"/>
+    <circle cx="210" cy="70" r="2.5" opacity="0.5"/>
+    <circle cx="452" cy="330" r="2.5" opacity="0.5"/>
+    <circle cx="58" cy="180" r="2.5" opacity="0.45"/>
+  </g>
+
+  <!-- 中央恒星光晕 -->
+  <circle cx="256" cy="256" r="170" fill="url(#glow)"/>
+
+  <g transform="rotate(-25 256 256)">
+    <!-- 轨道后半段（被恒星遮挡） -->
+    <path d="M 66 256 A 190 78 0 0 1 446 256" fill="none"
+          stroke="url(#ring)" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+    <!-- 中央恒星 -->
+    <circle cx="256" cy="256" r="72" fill="url(#sun)"/>
+    <!-- 轨道前半段（遮挡恒星） -->
+    <path d="M 66 256 A 190 78 0 0 0 446 256" fill="none"
+          stroke="url(#ring)" stroke-width="14" stroke-linecap="round"/>
+    <!-- 轨道上的行星（遨游者） -->
+    <circle cx="351" cy="323" r="26" fill="url(#planet)"/>
+  </g>
+</svg>
