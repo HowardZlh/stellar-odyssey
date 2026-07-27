@@ -1,6 +1,6 @@
 # 改进需求文档（第三批，R3 迭代）
 
-> **文档版本**: 1.9（R3-3～R3-7 已交付；R3-8 控制面板功能选项按视角作用域整理（域外隐藏）需求登记，待实现——实现提示词见 IMPROVEMENT_REQUIREMENTS_3_PROMPT.md）
+> **文档版本**: 2.0（R3-3～R3-8 全部交付；R3-8 控制面板功能选项按视角作用域整理（域外隐藏 + V 键 L3 门控）已实现回写）
 > **参考文档**: REQUIREMENTS.md v2.8、IMPROVEMENT_REQUIREMENTS_2.md v1.1（R2-4 事件视角域软隔离）、AGENTS.md
 > **状态标记**: ✅ 已完成 / 🔶 部分完成 / 🔲 未实现
 > **调研说明**: §0.2 现状分析中的文件与行号已经代码调研核实（2026-07），实现时若行号漂移以符号名为准。
@@ -17,7 +17,7 @@
 | R3-5 | P1 | 超新星事件视角域收窄至 L3（L4 不再触发/通知，域外丢弃） | 本批反馈 | R3-3 | ✅ |
 | R3-6 | P1 | 银河系视角天体垂直展开（银纬修正默认 + 展开开关/滑块 + 高度指示线） | 本批反馈 | R3-4（标签钳制） | ✅ |
 | R3-7 | P1 | 银河系整体垂直展开（银盘粒子 morph 为扁旋转椭球体 + 超新星随盘 + 银晕增亮/尘埃带渐隐） | 本批反馈（R3-6 复盘） | R3-6 | ✅ |
-| R3-8 | P1 | 控制面板功能选项按视角作用域整理（视角专属选项域外隐藏 + V 键 L3 门控） | 本批反馈 | R2-4（演示按钮门控）/R3-6（V 开关） | 🔲 |
+| R3-8 | P1 | 控制面板功能选项按视角作用域整理（视角专属选项域外隐藏 + V 键 L3 门控） | 本批反馈 | R2-4（演示按钮门控）/R3-6（V 开关） | ✅ |
 
 > 优先级依据：P0 = 交互正确性缺陷（域外事件残留提醒频繁闪现 / 标签近距放大遮挡画面，干扰用户）。
 
@@ -215,7 +215,7 @@ R2-4 已交付事件视角域**软隔离**（`src/utils/eventScopes.ts`）：事
 - ✅ 修正后行为回归：`utils/galaxy.m13GalactocentricT0Ly` 同源更新为 y=4858（球状星团排除区）、galaxyR29 单测断言更新；相机解析按 offsetLy 动态取值零改动（M13 6,200 → 4,858，"银晕中"事实不变，|y| > 4,000 单测断言）
 
 **B. 展开模式状态与纯逻辑**
-- ✅ store 新增：`galaxyVerticalExpand: boolean`（默认 false）+ `galaxyExpandGain: number`（滑块值，范围 **[1, 6]**、默认 **3**，setter 经 `clampExpandGain` 钳制、非有限抛 RangeError）+ `setGalaxyVerticalExpand`/`toggleGalaxyVerticalExpand`/`setGalaxyExpandGain`；快捷键 `V` 切换开关（`useKeyboardShortcuts`）——🔶 差异登记：V 键未按 G 键模式做 L3 层级门控（任意视角均切换状态），因展开仅作用于特殊天体可见窗口 2.5–3.9、其余视角零视觉影响（登记于快捷键注释），域外按 V 无害
+- ✅ store 新增：`galaxyVerticalExpand: boolean`（默认 false）+ `galaxyExpandGain: number`（滑块值，范围 **[1, 6]**、默认 **3**，setter 经 `clampExpandGain` 钳制、非有限抛 RangeError）+ `setGalaxyVerticalExpand`/`toggleGalaxyVerticalExpand`/`setGalaxyExpandGain`；快捷键 `V` 切换开关（`useKeyboardShortcuts`）——✅ 差异已消除（R3-8 修正）：V 键已按 G 键模式补 L3 层级门控（非 L3 按下无效，与面板选项可见性一致；R3-6 交付时未做门控的登记口径由 R3-8 取代）
 - ✅ 展开增益纯逻辑（`utils/galacticLatitude.ts`）：开关线性进度 `advanceFrameTransition`（1 秒）经 `easeInOutCubic` 缓动后在 1 与滑块平滑值间插值（`effectiveExpandGain`，开/关约 1 秒完成、与滑块值大小无关）；滑块拖动经 `advanceExpandGainValue` 恒速平滑跟随（全量程 [1,6] 约 1 秒，消除 0.5 步进位置跳变）；应用点为 `useGalacticPlacement` 的 y 通道 `y = (sun.y × gain + offset.y × expandGain) × SCENE_UNITS_PER_LY`（太阳振荡 ×10 增益机制不变、互不相乘）；帧过渡由 Galaxy.tsx 每帧推进并写入注册表，SpecialBodies 消费——🔶 差异登记：useFrame 执行顺序下消费端至多滞后 1 帧，平滑过渡中不可辨
 - ✅ **范围界定（登记）**：仅 13 个特殊天体参与展开（sgr-a-star 银心原点无 offset 实际不动）；银盘粒子/旋臂/超新星事件与遗迹/太阳系标记不展开（**R3-7 起口径更新**：银盘粒子与超新星随同一增益 morph 为扁旋转椭球体，太阳系标记仍不参与）；展开为观察辅助视觉夸大，登记于 `utils/galacticLatitude.ts` 文件头 + store/注册表注释 + HelpHint 登记文案
 
@@ -335,7 +335,7 @@ R2-4 已交付事件视角域**软隔离**（`src/utils/eventScopes.ts`）：事
 ## 8.1 需求
 
 **A. 作用域注册表（纯函数，单一事实来源）**
-- 🔲 新建 `src/utils/panelScopes.ts`：导出面板选项 id → 可见视角集合的注册表 `PANEL_OPTION_SCOPES` 与判定纯函数 `panelOptionVisible(optionId, viewLevel)`（未知 optionId 抛 RangeError）；归类：
+- ✅ 新建 `src/utils/panelScopes.ts`：导出面板选项 id → 可见视角集合的注册表 `PANEL_OPTION_SCOPES` 与判定纯函数 `panelOptionVisible(optionId, viewLevel)`（未知 optionId 抛 RangeError）；归类：
   - **全局**（任何视角显示）：orbits（轨道线）/ labels（天体标签）/ realScale（真实比例）/ bloom（泛光）/ performance（性能监控）——视角切换、模拟速度、音效区块不属显示开关、保持常显
   - **L1 行星视角**：satelliteOrbits（卫星轨道线）
   - **L1+L2**：flareDemo / cmeDemo（既有太阳事件域窗口 ≤2.4 覆盖两视角）
@@ -344,30 +344,30 @@ R2-4 已交付事件视角域**软隔离**（`src/utils/eventScopes.ts`）：事
   - **L4 宇宙视角**：velocityVectors（速度矢量箭头）/ mergerDemo（合并预览，含"恢复预览前时间"按钮）
 
 **B. ControlPanel 按视角过滤（域外隐藏）**
-- 🔲 视角专属选项域外**整体不渲染**（非 disabled 置灰）；判定源 = `viewLevel`（滚轮缩放自动同步、跟随期间锁定，见 §8.0）
-- 🔲 "银河系视角参考系（G 切换）"整个 section 仅 L3 渲染（删除现有非 L3 置灰按钮分支）
-- 🔲 "动态事件演示" section 按当前视角只渲染域内按钮（L1/L2 → 耀斑+CME、L3 → 超新星、L4 → 合并预览+恢复按钮）；无可用项时分区标题一并隐藏（当前四锚点视角各有至少一钮，标题恒显，规则仍登记备防）；按钮内部既有 disabled 逻辑（活跃事件进行中/剖面模式/`eventDemoEnabled` 连续层级域校验）全部保留（可见性与可用性双层，域窗口语义不动）
-- 🔲 显示区选项顺序保持现状相对顺序（全局项 + 当前视角专属项混排过滤，不引入新分组标题）
+- ✅ 视角专属选项域外**整体不渲染**（非 disabled 置灰）；判定源 = `viewLevel`（滚轮缩放自动同步、跟随期间锁定，见 §8.0）
+- ✅ "银河系视角参考系（G 切换）"整个 section 仅 L3 渲染（删除现有非 L3 置灰按钮分支）
+- ✅ "动态事件演示" section 按当前视角只渲染域内按钮（L1/L2 → 耀斑+CME、L3 → 超新星、L4 → 合并预览+恢复按钮）；无可用项时分区标题一并隐藏（当前四锚点视角各有至少一钮，标题恒显，规则仍登记备防）；按钮内部既有 disabled 逻辑（活跃事件进行中/剖面模式/`eventDemoEnabled` 连续层级域校验）全部保留（可见性与可用性双层，域窗口语义不动）
+- ✅ 显示区选项顺序保持现状相对顺序（全局项 + 当前视角专属项混排过滤，不引入新分组标题）
 
 **C. 快捷键 V 补 L3 门控（行为变更）**
-- 🔲 `useKeyboardShortcuts.ts` V 分支（:73-77）补 `if (state.viewLevel === 'L3')` 门控（与 G 键 :66-72 同模式）；文件头注释 :22-23 同步（删除"其余视角切换状态但无视觉影响"登记、改为"仅 L3 生效，与面板选项可见性一致"）；O/L/R 保持全局
+- ✅ `useKeyboardShortcuts.ts` V 分支（:73-77）补 `if (state.viewLevel === 'L3')` 门控（与 G 键 :66-72 同模式）；文件头注释 :22-23 同步（删除"其余视角切换状态但无视觉影响"登记、改为"仅 L3 生效，与面板选项可见性一致"）；O/L/R 保持全局
 
 **D. 登记与文案**
-- 🔲 行为变更登记：R2-4 §4.1-C"演示按钮置灰 + tooltip"方案被本需求"域外隐藏"取代（IMPROVEMENT_REQUIREMENTS_2.md §R2-4 登记口径同步）；R3-6"V 键无层级门控"差异登记修正
-- 🔲 零渲染行为变更登记：所有开关状态与场景效果域外保留（确认项 5）；HelpHint 快捷键说明 V 补"银河系视角下生效"
+- ✅ 行为变更登记：R2-4 §4.1-C"演示按钮置灰 + tooltip"方案被本需求"域外隐藏"取代（IMPROVEMENT_REQUIREMENTS_2.md §R2-4 登记口径同步）；R3-6"V 键无层级门控"差异登记修正
+- ✅ 零渲染行为变更登记：所有开关状态与场景效果域外保留（确认项 5）；HelpHint 快捷键说明 V 补"银河系视角下生效"
 
 **E. 测试与回归**
-- 🔲 纯函数单测：`panelScopes` 注册表矩阵（每选项 × L1–L4 可见性逐格断言）、未知 id RangeError、全局项四视角恒真
-- 🔲 既有行为零回退：事件演示按钮 disabled 逻辑单测不动（eventScopes 不改）；store 状态与场景组件零改动
-- 🔲 覆盖率 gate ≥90% 保持；type-check/lint/build 全绿；CHANGELOG [Unreleased] 登记（置灰改隐藏 + V 键门控属行为变更）；REQUIREMENTS.md §3.5.1/§3.5.3 同步
+- ✅ 纯函数单测：`panelScopes` 注册表矩阵（每选项 × L1–L4 可见性逐格断言）、未知 id RangeError、全局项四视角恒真（`panelScopes.test.ts` 64 例，含注册表-判定同源断言，panelScopes.ts 覆盖率 100%）
+- ✅ 既有行为零回退：事件演示按钮 disabled 逻辑单测不动（eventScopes 不改；`eventDemoDisabledHintZh` 保留于 eventScopes.ts 供域外提示语义登记，ControlPanel 不再消费）；store 状态与场景组件零改动
+- ✅ 覆盖率 gate ≥90% 保持（全量 1949 用例/112 套件通过）；type-check/lint/build 全绿；CHANGELOG [Unreleased] 登记（置灰改隐藏 + V 键门控属行为变更）；REQUIREMENTS.md §3.5.1/§3.5.3 同步
 
 ## 8.2 验收标准
 
-- 🔲 L1 面板显示：全局 5 项 + 卫星轨道线 + 耀斑/CME 演示；无垂直展开/太阳剖面/You are here/速度矢量/银心固定区块/超新星与合并演示
-- 🔲 L2 面板显示：全局 5 项 + 太阳内部剖面 + 耀斑/CME 演示；无卫星轨道线等其他视角专属项
-- 🔲 L3 面板显示：全局 5 项 + 银心固定参考系区块 + 垂直展开（含滑块）+ You are here + 超新星演示
-- 🔲 L4 面板显示：全局 5 项 + 速度矢量箭头 + 合并预览（含恢复按钮）
-- 🔲 域外隐藏而非置灰（面板高度明显缩短）；切换视角选项即时增减、无闪烁残留
-- 🔲 状态保留：L3 开启垂直展开 → 切 L4 复选框消失但银河系仍呈椭球 → 回 L3 复选框仍勾选、滑块值不变；太阳剖面/其他开关同理
-- 🔲 V 键仅 L3 生效（L1/L2/L4 按下无任何状态变化）；G/O/L/R 行为不变；跟随 L3 天体拉近（viewLevel 锁定）期间 L3 选项不消失
-- 🔲 单测全通过、覆盖率 gate ≥90% 保持；无头 Chrome 目验四视角面板逐一截图核对
+- ✅ L1 面板显示：全局 5 项 + 卫星轨道线 + 耀斑/CME 演示；无垂直展开/太阳剖面/You are here/速度矢量/银心固定区块/超新星与合并演示
+- ✅ L2 面板显示：全局 5 项 + 太阳内部剖面 + 耀斑/CME 演示；无卫星轨道线等其他视角专属项
+- ✅ L3 面板显示：全局 5 项 + 银心固定参考系区块 + 垂直展开（含滑块）+ You are here + 超新星演示
+- ✅ L4 面板显示：全局 5 项 + 速度矢量箭头 + 合并预览（含恢复按钮）
+- ✅ 域外隐藏而非置灰（面板高度明显缩短）；切换视角选项即时增减、无闪烁残留
+- ✅ 状态保留：L3 开启垂直展开 → 切 L4 复选框消失但银河系仍呈椭球 → 回 L3 复选框仍勾选、滑块值不变；太阳剖面/其他开关同理（无头 Chrome DOM 断言：勾选 true/滑块 ×3.0 往返保持）
+- ✅ V 键仅 L3 生效（L1/L2/L4 按下无任何状态变化；无头 Chrome L4 按 V 后回 L3 状态不变核对）；G/O/L/R 行为不变；跟随 L3 天体拉近（viewLevel 锁定）期间 L3 选项不消失（判定源 viewLevel 锁定机制保证，§8.0 已核实）
+- ✅ 单测全通过（1949 用例/112 套件）、覆盖率 gate ≥90% 保持；无头 Chrome 目验四视角面板逐一截图核对（Metal 1280×800，截图 r38-01～08，DOM 断言 16/16 通过）

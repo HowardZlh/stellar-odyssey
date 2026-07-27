@@ -19,8 +19,8 @@ const LEVEL_KEYS: Record<string, ViewLevel> = {
  * [ ] 视角域序列上一个/下一个天体（P4 行星序列；R2-5 §5.1-B 泛化至
  * 全部视角域按域路由：L1/L2 行星 / L3 银河系 / L4 宇宙）/
  * G 银河系视角参考系切换（跟随太阳系 ↔ 银心固定，P6，需求 3.1.1，仅 L3 生效）/
- * V 银河系视角天体垂直展开开关（R3-6，仅影响 L3 银河系组特殊天体，
- * 可见窗口 2.5–3.9 天然限定，其余视角切换状态但无视觉影响，登记）
+ * V 银河系视角垂直展开开关（R3-6/R3-8：仅 L3 生效，与面板选项
+ * 可见性一致；域外已开启的展开状态与场景效果保留）
  */
 export function useKeyboardShortcuts(): void {
   useEffect(() => {
@@ -72,8 +72,10 @@ export function useKeyboardShortcuts(): void {
           break;
         case 'v':
         case 'V':
-          // 银河系视角天体垂直展开（R3-6；特殊天体可见窗口天然限定 L3 语境）
-          state.toggleGalaxyVerticalExpand();
+          // 银河系视角垂直展开（R3-6；R3-8 补 L3 门控，与 G 键同模式）
+          if (state.viewLevel === 'L3') {
+            state.toggleGalaxyVerticalExpand();
+          }
           break;
         case '[':
           // 视角域序列上一个（R2-5 §5.1-B：按当前视角域路由）

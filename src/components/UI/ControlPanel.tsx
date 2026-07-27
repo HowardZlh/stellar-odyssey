@@ -3,7 +3,8 @@
 import { VIEW_LEVELS } from '@/types';
 import { CAMERA_VIEWS } from '@/data/cameraViews';
 import { useSimulationStore } from '@/store';
-import { eventDemoDisabledHintZh, eventDemoEnabled } from '@/utils/eventScopes';
+import { eventDemoEnabled } from '@/utils/eventScopes';
+import { panelOptionVisible, type PanelOptionId } from '@/utils/panelScopes';
 import {
   GALAXY_EXPAND_GAIN_MAX,
   GALAXY_EXPAND_GAIN_MIN,
@@ -17,6 +18,10 @@ import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunAc
  * 控制面板（需求 3.5.1）：视角锚点 / 模拟速度 / 音效 / 轨道线与标签开关 /
  * 真实比例模式（P2）/ 超新星手动演示（P2，需求 3.1.5 触发方式）/
  * 太阳耀斑与 CME 手动演示 + 太阳剖面模式开关（S2 §4.1/§4.3/§4.5）
+ *
+ * R3-8：视角专属选项按 panelScopes 注册表域外隐藏（非置灰，取代 R2-4
+ * 置灰方案）；判定源 = viewLevel（跟随期间层级锁定选项不闪变）。
+ * 仅整理 UI 显示——域外已开启的开关状态与场景效果全部保留。
  */
 export function ControlPanel(): JSX.Element {
   const viewLevel = useSimulationStore((s) => s.viewLevel);
@@ -66,8 +71,9 @@ export function ControlPanel(): JSX.Element {
   // R2-6 §6.1：G 键银心固定模式显式入口（此前仅快捷键，可发现性差）
   const galacticFrameMode = useSimulationStore((s) => s.galacticFrameMode);
   const toggleGalacticFrameMode = useSimulationStore((s) => s.toggleGalacticFrameMode);
-  // R2-4 §4.1-C：演示按钮按视角域门控（选布尔值，仅域边界跨越时重渲染；
-  // 耀斑/CME 同属太阳系域窗口共用一个判定；方案取"置灰 + tooltip 提示"）
+  // 演示按钮可见性/可用性双层（R3-8）：可见性按 viewLevel 域外隐藏（panelScopes），
+  // 可用性保留 R2-4 既有 eventDemoEnabled 连续层级域校验（eventScopes 域窗口语义不动；
+  // 选布尔值，仅域边界跨越时重渲染；耀斑/CME 同属太阳系域窗口共用一个判定）
   const solarDemoInScope = useSimulationStore((s) =>
     eventDemoEnabled('flare', s.continuousLevel),
   );
@@ -77,6 +83,13 @@ export function ControlPanel(): JSX.Element {
   const mergerDemoInScope = useSimulationStore((s) =>
     eventDemoEnabled('merger', s.continuousLevel),
   );
+
+  // R3-8：视角专属选项可见性判定（单一事实来源 panelScopes 注册表）
+  const visible = (id: PanelOptionId): boolean => panelOptionVisible(id, viewLevel);
+  // 无可用演示按钮时"动态事件演示"分区标题一并隐藏（当前四视角各有
+  // 至少一钮恒真，规则登记备防作用域表调整）
+  const anyDemoVisible =
+    visible('supernovaDemo') || visible('flareDemo') || visible('cmeDemo') || visible('mergerDemo');
 
   const handleSupernovaDemo = (): void => {
     const params = rollSupernovaParams();
@@ -116,33 +129,27 @@ export function ControlPanel(): JSX.Element {
         </div>
       </section>
 
-      {/* 银河系视角参考系（R2-6 §6.1：G 键银心固定模式显式入口 + 说明） */}
-      <section className="mb-4">
-        <h2 className="mb-2 text-xs text-gray-400">银河系视角参考系（G 切换）</h2>
-        <button
-          type="button"
-          onClick={toggleGalacticFrameMode}
-          disabled={viewLevel !== 'L3'}
-          title={
-            viewLevel === 'L3'
-              ? '银心固定：银心居中不动，俯瞰太阳系沿波浪轨道绕银心公转'
-              : '请切换到银河系视角使用（快捷键 3）'
-          }
-          className={`w-full rounded px-2 py-1.5 text-xs ${
-            viewLevel !== 'L3'
-              ? 'cursor-not-allowed bg-white/5 text-gray-500'
-              : galacticFrameMode === 'galactic-center'
+      {/* 银河系视角参考系（R2-6 §6.1：G 键银心固定模式显式入口 + 说明；
+          R3-8：整个 section 仅 L3 渲染，域外隐藏） */}
+      {visible('galacticFrame') && (
+        <section className="mb-4">
+          <h2 className="mb-2 text-xs text-gray-400">银河系视角参考系（G 切换）</h2>
+          <button
+            type="button"
+            onClick={toggleGalacticFrameMode}
+            title="银心固定：银心居中不动，俯瞰太阳系沿波浪轨道绕银心公转"
+            className={`w-full rounded px-2 py-1.5 text-xs ${
+              galacticFrameMode === 'galactic-center'
                 ? 'bg-emerald-400/90 text-black hover:bg-emerald-300'
                 : 'bg-white/10 text-gray-200 hover:bg-white/20'
-          }`}
-        >
-          {viewLevel !== 'L3'
-            ? '🌀 银心固定视角（银河系视角下可用）'
-            : galacticFrameMode === 'galactic-center'
+            }`}
+          >
+            {galacticFrameMode === 'galactic-center'
               ? '🌀 银心固定中（点按回到跟随太阳系）'
               : '🌀 切换银心固定视角（观察太阳系公转）'}
-        </button>
-      </section>
+          </button>
+        </section>
+      )}
 
       {/* 时间控制 */}
       <section className="mb-4">
@@ -215,59 +222,69 @@ export function ControlPanel(): JSX.Element {
           />
           天体标签（L）
         </label>
-        <label className="mb-1 flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={showSatelliteOrbits}
-            onChange={(e) => setShowSatelliteOrbits(e.target.checked)}
-          />
-          卫星轨道线
-        </label>
-        <label className="mb-1 flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={showYouAreHere}
-            onChange={(e) => setShowYouAreHere(e.target.checked)}
-          />
-          You are here 标记
-        </label>
-        <label className="mb-1 flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={showVelocityVectors}
-            onChange={(e) => setShowVelocityVectors(e.target.checked)}
-          />
-          速度矢量箭头
-        </label>
-        <label className="mb-1 flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={galaxyVerticalExpand}
-            onChange={(e) => setGalaxyVerticalExpand(e.target.checked)}
-          />
-          垂直展开（V）
-        </label>
-        {galaxyVerticalExpand && (
-          <div className="mb-1 pl-5">
-            <label className="flex items-center gap-2 text-[10px] text-gray-400">
-              增益 ×{galaxyExpandGain.toFixed(1)}
+        {visible('satelliteOrbits') && (
+          <label className="mb-1 flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={showSatelliteOrbits}
+              onChange={(e) => setShowSatelliteOrbits(e.target.checked)}
+            />
+            卫星轨道线
+          </label>
+        )}
+        {visible('youAreHere') && (
+          <label className="mb-1 flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={showYouAreHere}
+              onChange={(e) => setShowYouAreHere(e.target.checked)}
+            />
+            You are here 标记
+          </label>
+        )}
+        {visible('velocityVectors') && (
+          <label className="mb-1 flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={showVelocityVectors}
+              onChange={(e) => setShowVelocityVectors(e.target.checked)}
+            />
+            速度矢量箭头
+          </label>
+        )}
+        {visible('verticalExpand') && (
+          <>
+            <label className="mb-1 flex items-center gap-2 text-xs">
               <input
-                type="range"
-                min={GALAXY_EXPAND_GAIN_MIN}
-                max={GALAXY_EXPAND_GAIN_MAX}
-                step={GALAXY_EXPAND_GAIN_STEP}
-                value={galaxyExpandGain}
-                onChange={(e) => setGalaxyExpandGain(Number(e.target.value))}
-                className="flex-1"
-                aria-label="垂直展开增益（1–6）"
+                type="checkbox"
+                checked={galaxyVerticalExpand}
+                onChange={(e) => setGalaxyVerticalExpand(e.target.checked)}
               />
+              垂直展开（V）
             </label>
-            <p className="text-[10px] leading-4 text-gray-500">
-              银河系整体随增益 morph 为扁旋转椭球体（银盘粒子/超新星随盘
-              抬升、特殊天体垂直高度按增益展开；观察辅助的视觉夸大，
-              指示线标注为未放大的银纬推算高度）
-            </p>
-          </div>
+            {galaxyVerticalExpand && (
+              <div className="mb-1 pl-5">
+                <label className="flex items-center gap-2 text-[10px] text-gray-400">
+                  增益 ×{galaxyExpandGain.toFixed(1)}
+                  <input
+                    type="range"
+                    min={GALAXY_EXPAND_GAIN_MIN}
+                    max={GALAXY_EXPAND_GAIN_MAX}
+                    step={GALAXY_EXPAND_GAIN_STEP}
+                    value={galaxyExpandGain}
+                    onChange={(e) => setGalaxyExpandGain(Number(e.target.value))}
+                    className="flex-1"
+                    aria-label="垂直展开增益（1–6）"
+                  />
+                </label>
+                <p className="text-[10px] leading-4 text-gray-500">
+                  银河系整体随增益 morph 为扁旋转椭球体（银盘粒子/超新星随盘
+                  抬升、特殊天体垂直高度按增益展开；观察辅助的视觉夸大，
+                  指示线标注为未放大的银纬推算高度）
+                </p>
+              </div>
+            )}
+          </>
         )}
         <label className="mb-1 flex items-center gap-2 text-xs">
           <input
@@ -283,18 +300,22 @@ export function ControlPanel(): JSX.Element {
             可飞往/跟随后近距离观察
           </p>
         )}
-        <label className="mb-1 flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={sunCutawayMode}
-            onChange={(e) => setSunCutawayMode(e.target.checked)}
-          />
-          太阳内部剖面（1/4 切除视图）
-        </label>
-        {sunCutawayMode && (
-          <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
-            剖面下核心/辐射区/对流区可点选查看科普；外部活动特效已暂时淡出
-          </p>
+        {visible('sunCutaway') && (
+          <>
+            <label className="mb-1 flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={sunCutawayMode}
+                onChange={(e) => setSunCutawayMode(e.target.checked)}
+              />
+              太阳内部剖面（1/4 切除视图）
+            </label>
+            {sunCutawayMode && (
+              <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
+                剖面下核心/辐射区/对流区可点选查看科普；外部活动特效已暂时淡出
+              </p>
+            )}
+          </>
         )}
         <label className="mb-1 flex items-center gap-2 text-xs">
           <input
@@ -314,96 +335,92 @@ export function ControlPanel(): JSX.Element {
         </label>
       </section>
 
-      {/* 特殊天体演示（需求 3.1.5：支持用户在设置中手动触发超新星） */}
-      <section className="mt-4">
-        <h2 className="mb-2 text-xs text-gray-400">动态事件演示</h2>
-        {/* R2-4 §4.1-C：视角域外置灰禁用 + tooltip"请切换到 XX 视角触发" */}
-        <button
-          type="button"
-          onClick={handleSupernovaDemo}
-          disabled={activeSupernova !== null || !supernovaDemoInScope}
-          title={supernovaDemoInScope ? undefined : eventDemoDisabledHintZh('supernova')}
-          className={`w-full rounded px-2 py-1.5 text-xs ${
-            activeSupernova || !supernovaDemoInScope
-              ? 'cursor-not-allowed bg-white/5 text-gray-500'
-              : 'bg-amber-400/20 text-amber-200 hover:bg-amber-400/30'
-          }`}
-        >
-          {activeSupernova
-            ? '💥 超新星爆发进行中…'
-            : supernovaDemoInScope
-              ? '💥 触发超新星演示（旋臂内随机）'
-              : `💥 超新星演示（${eventDemoDisabledHintZh('supernova')}）`}
-        </button>
-        {/* 太阳耀斑/CME 手动演示（S2 §4.3-2/3 触发方式） */}
-        <button
-          type="button"
-          onClick={handleFlareDemo}
-          disabled={activeSolarFlare !== null || sunCutawayMode || !solarDemoInScope}
-          title={solarDemoInScope ? undefined : eventDemoDisabledHintZh('flare')}
-          className={`mt-2 w-full rounded px-2 py-1.5 text-xs ${
-            activeSolarFlare || sunCutawayMode || !solarDemoInScope
-              ? 'cursor-not-allowed bg-white/5 text-gray-500'
-              : 'bg-orange-400/20 text-orange-200 hover:bg-orange-400/30'
-          }`}
-        >
-          {activeSolarFlare
-            ? `☀️ 耀斑进行中（${activeSolarFlare.flareClass}${activeSolarFlare.magnitude.toFixed(1)} 级）…`
-            : sunCutawayMode
-              ? '☀️ 触发太阳耀斑演示（剖面模式下不可用）'
-              : solarDemoInScope
-                ? '☀️ 触发太阳耀斑演示（活动区随机）'
-                : `☀️ 耀斑演示（${eventDemoDisabledHintZh('flare')}）`}
-        </button>
-        <button
-          type="button"
-          onClick={handleCmeDemo}
-          disabled={activeCme !== null || sunCutawayMode || !solarDemoInScope}
-          title={solarDemoInScope ? undefined : eventDemoDisabledHintZh('cme')}
-          className={`mt-2 w-full rounded px-2 py-1.5 text-xs ${
-            activeCme || sunCutawayMode || !solarDemoInScope
-              ? 'cursor-not-allowed bg-white/5 text-gray-500'
-              : 'bg-rose-400/20 text-rose-200 hover:bg-rose-400/30'
-          }`}
-        >
-          {activeCme
-            ? `🌊 CME 进行中（${Math.round(activeCme.speedKmS)} km/s）…`
-            : sunCutawayMode
-              ? '🌊 触发 CME 演示（剖面模式下不可用）'
-              : solarDemoInScope
-                ? '🌊 触发日冕物质抛射（CME）演示'
-                : `🌊 CME 演示（${eventDemoDisabledHintZh('cme')}）`}
-        </button>
-        {/* 银河系—仙女座碰撞合并快进预览（可选需求 3.1.3；
-            R2-4 §4.1-C：按默认方案改为域外置灰——此前点击会由
-            startMergePreview 自动切到 L4，行为变更已登记需求文档 */}
-        <button
-          type="button"
-          onClick={startMergePreview}
-          disabled={mergePreviewActive || !mergerDemoInScope}
-          title={mergerDemoInScope ? undefined : eventDemoDisabledHintZh('merger')}
-          className={`mt-2 w-full rounded px-2 py-1.5 text-xs ${
-            mergePreviewActive || !mergerDemoInScope
-              ? 'cursor-not-allowed bg-white/5 text-gray-500'
-              : 'bg-sky-400/20 text-sky-200 hover:bg-sky-400/30'
-          }`}
-        >
-          {mergePreviewActive
-            ? '⏩ 合并预览进行中…'
-            : mergerDemoInScope
-              ? '⏩ 预览银河系—仙女座碰撞合并'
-              : `⏩ 合并预览（${eventDemoDisabledHintZh('merger')}）`}
-        </button>
-        {mergePreviewReturnSimDays !== null && !mergePreviewActive && (
-          <button
-            type="button"
-            onClick={restoreFromMergePreview}
-            className="mt-2 w-full rounded bg-white/10 px-2 py-1.5 text-xs text-gray-200 hover:bg-white/20"
-          >
-            ⏪ 恢复预览前时间
-          </button>
-        )}
-      </section>
+      {/* 特殊天体演示（需求 3.1.5：支持用户在设置中手动触发超新星）
+          R3-8：按钮按视角域外隐藏（取代 R2-4 置灰 + tooltip）；按钮内部
+          既有 disabled 逻辑（活跃事件/剖面模式/eventDemoEnabled 连续层级
+          域校验）保留——可见性与可用性双层 */}
+      {anyDemoVisible && (
+        <section className="mt-4">
+          <h2 className="mb-2 text-xs text-gray-400">动态事件演示</h2>
+          {visible('supernovaDemo') && (
+            <button
+              type="button"
+              onClick={handleSupernovaDemo}
+              disabled={activeSupernova !== null || !supernovaDemoInScope}
+              className={`w-full rounded px-2 py-1.5 text-xs ${
+                activeSupernova || !supernovaDemoInScope
+                  ? 'cursor-not-allowed bg-white/5 text-gray-500'
+                  : 'bg-amber-400/20 text-amber-200 hover:bg-amber-400/30'
+              }`}
+            >
+              {activeSupernova ? '💥 超新星爆发进行中…' : '💥 触发超新星演示（旋臂内随机）'}
+            </button>
+          )}
+          {/* 太阳耀斑/CME 手动演示（S2 §4.3-2/3 触发方式） */}
+          {visible('flareDemo') && (
+            <button
+              type="button"
+              onClick={handleFlareDemo}
+              disabled={activeSolarFlare !== null || sunCutawayMode || !solarDemoInScope}
+              className={`w-full rounded px-2 py-1.5 text-xs ${
+                activeSolarFlare || sunCutawayMode || !solarDemoInScope
+                  ? 'cursor-not-allowed bg-white/5 text-gray-500'
+                  : 'bg-orange-400/20 text-orange-200 hover:bg-orange-400/30'
+              }`}
+            >
+              {activeSolarFlare
+                ? `☀️ 耀斑进行中（${activeSolarFlare.flareClass}${activeSolarFlare.magnitude.toFixed(1)} 级）…`
+                : sunCutawayMode
+                  ? '☀️ 触发太阳耀斑演示（剖面模式下不可用）'
+                  : '☀️ 触发太阳耀斑演示（活动区随机）'}
+            </button>
+          )}
+          {visible('cmeDemo') && (
+            <button
+              type="button"
+              onClick={handleCmeDemo}
+              disabled={activeCme !== null || sunCutawayMode || !solarDemoInScope}
+              className={`mt-2 w-full rounded px-2 py-1.5 text-xs ${
+                activeCme || sunCutawayMode || !solarDemoInScope
+                  ? 'cursor-not-allowed bg-white/5 text-gray-500'
+                  : 'bg-rose-400/20 text-rose-200 hover:bg-rose-400/30'
+              }`}
+            >
+              {activeCme
+                ? `🌊 CME 进行中（${Math.round(activeCme.speedKmS)} km/s）…`
+                : sunCutawayMode
+                  ? '🌊 触发 CME 演示（剖面模式下不可用）'
+                  : '🌊 触发日冕物质抛射（CME）演示'}
+            </button>
+          )}
+          {/* 银河系—仙女座碰撞合并快进预览（可选需求 3.1.3） */}
+          {visible('mergerDemo') && (
+            <>
+              <button
+                type="button"
+                onClick={startMergePreview}
+                disabled={mergePreviewActive || !mergerDemoInScope}
+                className={`w-full rounded px-2 py-1.5 text-xs ${
+                  mergePreviewActive || !mergerDemoInScope
+                    ? 'cursor-not-allowed bg-white/5 text-gray-500'
+                    : 'bg-sky-400/20 text-sky-200 hover:bg-sky-400/30'
+                }`}
+              >
+                {mergePreviewActive ? '⏩ 合并预览进行中…' : '⏩ 预览银河系—仙女座碰撞合并'}
+              </button>
+              {mergePreviewReturnSimDays !== null && !mergePreviewActive && (
+                <button
+                  type="button"
+                  onClick={restoreFromMergePreview}
+                  className="mt-2 w-full rounded bg-white/10 px-2 py-1.5 text-xs text-gray-200 hover:bg-white/20"
+                >
+                  ⏪ 恢复预览前时间
+                </button>
+              )}
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 }
