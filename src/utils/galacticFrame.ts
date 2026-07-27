@@ -186,23 +186,40 @@ export function advanceFrameTransition(
 export interface RenderedGalacticFrame {
   /** 银心固定权重 ∈ [0,1]（缓动后的实际应用值） */
   weight: number;
-  /** 垂直振荡视觉增益 ≥1（真实比例模式为 1） */
+  /** 垂直振荡视觉增益 ≥1（真实比例模式为 1；仅作用于太阳 y） */
   verticalGain: number;
+  /**
+   * 天体垂直展开增益 ≥1（R3-6 §6.1-D：过渡缓动后的实际应用值，
+   * 仅乘在 sun-relative 特殊天体的 offsetLy.y 上，与 verticalGain 互不相乘；
+   * sgr-a-star（银心原点）与超新星事件（positionLy 银心系）不参与展开）
+   */
+  expandGain: number;
 }
 
-const DEFAULT_RENDERED_FRAME: RenderedGalacticFrame = { weight: 0, verticalGain: 1 };
+const DEFAULT_RENDERED_FRAME: RenderedGalacticFrame = {
+  weight: 0,
+  verticalGain: 1,
+  expandGain: 1,
+};
 
 let renderedFrame: RenderedGalacticFrame = DEFAULT_RENDERED_FRAME;
 
 /** 写入当前帧实际应用的参考系位姿参数（Galaxy.tsx 每帧调用） */
-export function setRenderedGalacticFrame(weight: number, verticalGain: number): void {
+export function setRenderedGalacticFrame(
+  weight: number,
+  verticalGain: number,
+  expandGain = 1,
+): void {
   if (!Number.isFinite(weight) || weight < 0 || weight > 1) {
     throw new RangeError(`银心固定权重必须在 [0,1] 内，收到 ${weight}`);
   }
   if (!Number.isFinite(verticalGain) || verticalGain < 1) {
     throw new RangeError(`垂直增益必须 ≥1，收到 ${verticalGain}`);
   }
-  renderedFrame = { weight, verticalGain };
+  if (!Number.isFinite(expandGain) || expandGain < 1) {
+    throw new RangeError(`展开增益必须 ≥1，收到 ${expandGain}`);
+  }
+  renderedFrame = { weight, verticalGain, expandGain };
 }
 
 /** 读取当前渲染位姿参数（未注册返回默认 w=0、gain=1，即历史跟随模式行为） */

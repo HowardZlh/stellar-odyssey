@@ -36,6 +36,7 @@ import {
 } from '@/utils/eventScopes';
 import { daysSinceJ2000 } from '@/utils/physics';
 import type { GalacticFrameMode } from '@/utils/galacticFrame';
+import { GALAXY_EXPAND_GAIN_DEFAULT, clampExpandGain } from '@/utils/galacticLatitude';
 import { continuousLevelForDistance, discreteLevelFromContinuous } from '@/utils/scale';
 import { CME_SPEED_KM_S_MAX, CME_SPEED_KM_S_MIN, FLARE_DURATION_DAYS } from '@/utils/solarActivity';
 import type { SunCutawayLayerId } from '@/utils/sunCutaway';
@@ -111,6 +112,15 @@ export interface SimulationState {
    * G 键切换，切换时 2 秒平滑过渡。
    */
   galacticFrameMode: GalacticFrameMode;
+  /**
+   * 银河系视角天体垂直展开开关（R3-6 §6.1-B，默认关）：开启后 L3 特殊天体
+   * offsetLy.y 乘展开增益（约 1 秒平滑过渡）并显示高度指示线。观察辅助的
+   * 视觉夸大（登记于 utils/galacticLatitude.ts）；仅影响 L3 银河系组特殊
+   * 天体（可见窗口 2.5–3.9 天然限定，L1/L2/L4 零视觉影响）。V 键切换。
+   */
+  galaxyVerticalExpand: boolean;
+  /** 展开增益滑块值（R3-6 §6.1-B：范围 [1,6]、默认 3、步进 0.5） */
+  galaxyExpandGain: number;
   /**
    * G 键银心固定模式一次性引导提示可见（R2-6 §6.1：首次切入 L3 时 toast
    * 提示"按 G 切换银心固定视角观察太阳系公转"，会话内仅一次）
@@ -230,6 +240,12 @@ export interface SimulationState {
   toggleRealScaleMode: () => void;
   setGalacticFrameMode: (mode: GalacticFrameMode) => void;
   toggleGalacticFrameMode: () => void;
+  /** 设置垂直展开开关（R3-6，V 键/面板复选框） */
+  setGalaxyVerticalExpand: (on: boolean) => void;
+  /** 切换垂直展开开关（V 键） */
+  toggleGalaxyVerticalExpand: () => void;
+  /** 设置展开增益滑块值（钳制到 [1,6]） */
+  setGalaxyExpandGain: (gain: number) => void;
   /**
    * 首次进入 L3 时展示 G 键引导提示（R2-6 §6.1：会话内仅一次；
    * 已看过或已处于银心固定模式时不再展示）
@@ -419,6 +435,8 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   cycleScope: 'solar',
   realScaleMode: false,
   galacticFrameMode: 'follow',
+  galaxyVerticalExpand: false,
+  galaxyExpandGain: GALAXY_EXPAND_GAIN_DEFAULT,
   galacticFrameTipVisible: false,
   galacticFrameTipSeen: false,
   activeSupernova: null,
@@ -695,6 +713,13 @@ export const useSimulationStore = create<SimulationState>((set) => ({
       galacticFrameTipVisible: false,
       galacticFrameTipSeen: true,
     })),
+
+  setGalaxyVerticalExpand: (on) => set({ galaxyVerticalExpand: on }),
+
+  toggleGalaxyVerticalExpand: () =>
+    set((state) => ({ galaxyVerticalExpand: !state.galaxyVerticalExpand })),
+
+  setGalaxyExpandGain: (gain) => set({ galaxyExpandGain: clampExpandGain(gain) }),
 
   showGalacticFrameTipOnce: () =>
     set((state) => {

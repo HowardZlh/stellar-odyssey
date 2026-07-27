@@ -1,6 +1,6 @@
 # 改进需求文档（第三批，R3 迭代）
 
-> **文档版本**: 1.5（R3-3/R3-4/R3-5 已交付；R3-6 银河系天体垂直展开需求登记，待实现——实现提示词见 IMPROVEMENT_REQUIREMENTS_3_PROMPT.md）
+> **文档版本**: 1.6（R3-3/R3-4/R3-5/R3-6 已交付；R3-6 银河系天体垂直展开交付回写）
 > **参考文档**: REQUIREMENTS.md v2.8、IMPROVEMENT_REQUIREMENTS_2.md v1.1（R2-4 事件视角域软隔离）、AGENTS.md
 > **状态标记**: ✅ 已完成 / 🔶 部分完成 / 🔲 未实现
 > **调研说明**: §0.2 现状分析中的文件与行号已经代码调研核实（2026-07），实现时若行号漂移以符号名为准。
@@ -15,7 +15,7 @@
 | R3-3 | P0 | 动态事件视角域硬隔离（域外事件直接丢弃，零残留展示） | 本批反馈 | R2-4 | ✅ |
 | R3-4 | P0 | 标签屏幕尺寸统一治理（近距反向缩放钳制 + 治理缺口补齐） | 本批反馈 | — | ✅ |
 | R3-5 | P1 | 超新星事件视角域收窄至 L3（L4 不再触发/通知，域外丢弃） | 本批反馈 | R3-3 | ✅ |
-| R3-6 | P1 | 银河系视角天体垂直展开（银纬修正默认 + 展开开关/滑块 + 高度指示线） | 本批反馈 | R3-4（标签钳制） | 🔲 |
+| R3-6 | P1 | 银河系视角天体垂直展开（银纬修正默认 + 展开开关/滑块 + 高度指示线） | 本批反馈 | R3-4（标签钳制） | ✅ |
 
 > 优先级依据：P0 = 交互正确性缺陷（域外事件残留提醒频繁闪现 / 标签近距放大遮挡画面，干扰用户）。
 
@@ -197,7 +197,7 @@ R2-4 已交付事件视角域**软隔离**（`src/utils/eventScopes.ts`）：事
 ## 6.1 需求
 
 **A. 数据修正：offsetLy.y 按真实银纬重定（默认生效，科学基础）**
-- 🔲 12 个 `sun-relative` 天体（sgr-a-star 为银心原点不参与）`offsetLy.y` 重定为 `round(√(x²+z²) × tan(b))`——保持"从太阳看的真实银纬方向、距离示意"口径（x/z 水平示意值不动）；逐天体登记 b 值与来源（SIMBAD 银经银纬，实现时核对）：
+- ✅ 12 个 `sun-relative` 天体（sgr-a-star 为银心原点不参与）`offsetLy.y` 重定为 `round(√(x²+z²) × tan(b))`——保持"从太阳看的真实银纬方向、距离示意"口径（x/z 水平示意值不动）；逐天体登记 b 值与来源（SIMBAD 银经银纬，实现时核对）：
 
   | 天体 id | 银纬 b（约） | 天体 id | 银纬 b（约） |
   |---|---|---|---|
@@ -208,34 +208,34 @@ R2-4 已交付事件视角域**软隔离**（`src/utils/eventScopes.ts`）：事
   | orion-nebula | −19.4° | pleiades | −23.5° |
   | ring-nebula | +14.0° | horsehead | −16.8° |
 
-- 🔲 换算收敛为纯函数（建议 `utils/galacticLatitude.ts` 或并入既有模块）：`offsetYFromLatitude(horizontalLy, latitudeDeg)`，非法输入（非有限/|b|≥90°）抛 `RangeError`，单测覆盖
-- 🔲 `specialBodies.ts` 文件头登记口径更新："y 按真实银纬推算（b 来源 SIMBAD），水平距离仍为视觉示意"；每个天体数据注释附 b 值
-- 🔲 修正后行为回归：既有依赖 offsetLy 的单测/相机解析按新值更新（M13 由 6,200 → ≈4,860，"银晕中"事实不变）
+- ✅ 换算收敛为纯函数 `utils/galacticLatitude.ts` `offsetYFromLatitude(horizontalLy, latitudeDeg)`，非法输入（非有限/|b|≥90°/水平距离为负）抛 `RangeError`，单测覆盖（galacticLatitude.test.ts，含 12 天体数据表交叉断言：offsetLy.y 逐一等于 offsetYFromLatitude(√(x²+z²), b)）
+- ✅ `specialBodies.ts` 文件头登记口径更新（近似处理登记区新增 R3-6 条目）；每个天体 offsetLy 上方注释附 b 值、SIMBAD 来源与换算式（如 `b ≈ +40.9°（SIMBAD M13）：y = round(5608 × tan(+40.9°)) = +4858`）
+- ✅ 修正后行为回归：`utils/galaxy.m13GalactocentricT0Ly` 同源更新为 y=4858（球状星团排除区）、galaxyR29 单测断言更新；相机解析按 offsetLy 动态取值零改动（M13 6,200 → 4,858，"银晕中"事实不变，|y| > 4,000 单测断言）
 
 **B. 展开模式状态与纯逻辑**
-- 🔲 store 新增：`galaxyVerticalExpand: boolean`（默认 false）+ `galaxyExpandGain: number`（滑块值，范围 **[1, 6]**、默认 **3**，setter 钳制范围）+ 对应 action；快捷键 `V` 切换开关（`useKeyboardShortcuts`），仅影响 L3 银河系组内容（特殊天体可见窗口 2.5–3.9 天然限定，其余视角无视觉影响，登记）
-- 🔲 展开增益纯逻辑：当前生效增益从 1（关）到 `galaxyExpandGain`（开）**约 1 秒平滑过渡**（复用 `advanceFrameTransition` 帧过渡模式），滑块拖动期间同样平滑跟随；应用点为 `useGalacticPlacement` 的 y 通道：`y = (sun.y × VERTICAL_VISUAL_GAIN + offset.y × expandGain) × SCENE_UNITS_PER_LY`（太阳振荡 ×10 增益机制不变、互不相乘）
-- 🔲 **范围界定（登记）**：仅 13 个特殊天体参与展开；银盘粒子/旋臂/超新星事件与遗迹/太阳系标记不展开（盘语境内容，展开会与旋臂视觉脱节）；展开为观察辅助视觉夸大，登记于模块文件头（AGENTS.md 数据准确性要求）
+- ✅ store 新增：`galaxyVerticalExpand: boolean`（默认 false）+ `galaxyExpandGain: number`（滑块值，范围 **[1, 6]**、默认 **3**，setter 经 `clampExpandGain` 钳制、非有限抛 RangeError）+ `setGalaxyVerticalExpand`/`toggleGalaxyVerticalExpand`/`setGalaxyExpandGain`；快捷键 `V` 切换开关（`useKeyboardShortcuts`）——🔶 差异登记：V 键未按 G 键模式做 L3 层级门控（任意视角均切换状态），因展开仅作用于特殊天体可见窗口 2.5–3.9、其余视角零视觉影响（登记于快捷键注释），域外按 V 无害
+- ✅ 展开增益纯逻辑（`utils/galacticLatitude.ts`）：开关线性进度 `advanceFrameTransition`（1 秒）经 `easeInOutCubic` 缓动后在 1 与滑块平滑值间插值（`effectiveExpandGain`，开/关约 1 秒完成、与滑块值大小无关）；滑块拖动经 `advanceExpandGainValue` 恒速平滑跟随（全量程 [1,6] 约 1 秒，消除 0.5 步进位置跳变）；应用点为 `useGalacticPlacement` 的 y 通道 `y = (sun.y × gain + offset.y × expandGain) × SCENE_UNITS_PER_LY`（太阳振荡 ×10 增益机制不变、互不相乘）；帧过渡由 Galaxy.tsx 每帧推进并写入注册表，SpecialBodies 消费——🔶 差异登记：useFrame 执行顺序下消费端至多滞后 1 帧，平滑过渡中不可辨
+- ✅ **范围界定（登记）**：仅 13 个特殊天体参与展开（sgr-a-star 银心原点无 offset 实际不动）；银盘粒子/旋臂/超新星事件与遗迹/太阳系标记不展开；展开为观察辅助视觉夸大，登记于 `utils/galacticLatitude.ts` 文件头 + store/注册表注释 + HelpHint 登记文案
 
 **C. UI：控制面板 + 高度指示线**
-- 🔲 ControlPanel 显示选项区新增"垂直展开（V）"复选框；开启时显示增益滑块（×1–×6，步进 0.5，默认 ×3，实时生效）
-- 🔲 展开开启时每个特殊天体显示**高度指示线**：天体 → 银盘面（y=0）投影点虚线 + 高度标注（显示银纬推算的真实高度如"+950 ly"/"−1,400 ly"，正负区分盘上/盘下；标注值为未乘展开增益的真实推算值，登记）——复用 Galaxy.tsx `heightLine`（P6）虚线模式与 `ClampedHtmlLabel`（R3-4）标注钳制；关闭展开即隐藏；随 `showLabels` 开关联动
-- 🔲 HelpHint 快捷键说明补 `V`
+- ✅ ControlPanel 显示选项区新增"垂直展开（V）"复选框；开启时显示增益滑块（×1–×6，步进 0.5，默认 ×3，实时生效 + 视觉夸大说明文案）
+- ✅ 展开开启时每个 sun-relative 特殊天体显示**高度指示线**：天体 → 银盘面（组内 y=0）投影点虚线 + 高度标注（"+4,858 ly"/"−1,616 ly"，正负区分盘上/盘下；标注值为未乘展开增益的真实推算值 `heightLabelText`，登记）——`ClampedHtmlLabel`（R3-4）标注钳制复用；关闭展开即卸载隐藏；随 `showLabels` 开关联动。🔶 差异登记：a) Galaxy `heightLine`（P6）实为 LineBasicMaterial 实线，本项按需求"虚线"改用 LineDashedMaterial（预分配 position/lineDistance 属性手动更新，避免 computeLineDistances 每帧分配），"天体→盘面投影"模式同款；b) 跟随/飞往目标自身的 ±ly 标注隐藏（R2-7 近距标签语义对齐）；c) 指示线随层级门控淡出、不参与聚焦提升权重（跟随天体跌入 L2 区间时线随银河系组语境淡出）
+- ✅ HelpHint 快捷键说明补 `V`（含科学性登记：方向按真实银纬、展开为观察辅助视觉夸大、标注为未放大推算高度）
 
 **D. 渲染/解析一致性**
-- 🔲 相机跟随/飞往与空间音效按展开后位置解析：`renderedGalacticFrame` 注册表（`utils/galacticFrame.ts`）扩展"当前生效展开增益"字段，`Galaxy.tsx`/`SpecialBodies.tsx` 每帧写入，`cameraFocus.galacticPointToSceneUnits`/`specialBodyFocusTarget` 消费——渲染与解析同源（单测断言同一增益下两路径 y 一致）；sgr-a-star（银心原点）与超新星事件解析不受影响
-- 🔲 展开过渡期间跟随目标不跳变（每帧重解析，与既有跟随机制一致）
+- ✅ 相机跟随/飞往与空间音效按展开后位置解析：`renderedGalacticFrame` 注册表扩展 `expandGain` 字段（默认 1，setter 校验 ≥1），`Galaxy.tsx` 每帧缓动后写入（SpecialBodies 只读消费不重复写入——单写者模式，差异登记），`cameraFocus.specialBodyFocusTarget` 消费（offset.y × expandGain）——渲染与解析同源（单测独立镜像渲染路径 computeGalacticFramePose + tiltAroundX，断言同一增益下两路径逐分量一致，含银心固定 w=1 + 太阳增益 ×10 + 展开 ×4.5 组合）；sgr-a-star（银心原点）与超新星事件解析不受影响（单测断言 expandGain 1→6 位置不变）；`galacticPointToSceneUnits` 本身不变（超新星等银心系坐标不展开）
+- ✅ 展开过渡期间跟随目标不跳变（每帧重解析，与既有跟随机制一致；渲染与解析读同一注册表值）
 
 **E. 测试与回归**
-- 🔲 纯函数单测：银纬→y 换算（含边界/非法输入）、增益平滑过渡、滑块钳制、指示线端点；渲染/解析同源断言
-- 🔲 既有受影响断言更新（offsetLy 新值）；覆盖率 gate ≥90% 保持；type-check/lint/build 全绿
-- 🔲 CHANGELOG [Unreleased] 登记（数据修正属行为变更务必登记）；REQUIREMENTS.md 受影响小节同步
+- ✅ 纯函数单测（`galacticLatitude.test.ts` 29 例 + `storeR36.test.ts` 4 例）：银纬→y 换算（12 天体数据表交叉/b=0/边界/非法输入）、增益平滑过渡（恒速收敛/不越过/双向/全量程 1 秒）、滑块钳制（含 store setter）、生效增益（进度 0 恒 1/进度 1 等于滑块值/单调）、指示线端点（镜像公式/盘上下符号/非法输入）、标注文案（千分位/正负号）；渲染/解析同源断言（见 §D）
+- ✅ 既有受影响断言更新（galaxyR29 M13 y=4858、galacticFrameP6 注册表 expandGain 字段）；全量 1862 用例/110 套件通过，覆盖率 gate ≥90% 保持（语句 98.18%/分支 97.88%/函数 98.99%/行 99.49%，galacticLatitude.ts 100%）；type-check/lint/build 全绿
+- ✅ CHANGELOG [Unreleased] 新增区登记（数据修正行为变更 + 展开开关 + 指示线 + 同源解析）；REQUIREMENTS.md §3.1.5 同步（版本升 3.2）
 
 ## 6.2 验收标准
 
-- 🔲 L3 默认（未展开）：天体高度即银纬推算值——猎户座星云/昴星团/参宿七明显低于盘面、M13 高悬银晕，与旧版对比立体感提升；数据注释逐天体附 b 值与来源
-- 🔲 按 V 或面板开关开启展开：约 1 秒平滑过渡，天体垂直位置按滑块倍率（默认 ×3）展开，高度指示线（虚线 + ±ly 标注）出现
-- 🔲 滑块 1–6 拖动实时平滑生效，无跳变
-- 🔲 展开状态下飞往/跟随任一特殊天体：运镜落点正确、跟随无错位（渲染/解析同源）
-- 🔲 关闭展开恢复银纬真实高度；L1/L2/L4 无任何视觉影响；银盘粒子/超新星/太阳振荡不受展开影响
-- 🔲 60 FPS 不跌破；单测全通过、覆盖率 gate ≥90% 保持
+- ✅ L3 默认（未展开）：天体高度即银纬推算值——猎户座星云/昴星团/参宿七低于盘面、M13 高悬银晕（无头 Chrome 目验截图 r36-01；盘上下符号单测断言）；数据注释逐天体附 b 值与 SIMBAD 来源
+- ✅ 按 V 或面板开关开启展开：约 1 秒平滑过渡，天体垂直位置按滑块倍率（默认 ×3）展开，高度指示线（虚线 + ±ly 标注）出现（无头 Chrome 目验：r36-02 展开态、r36-09 M13 指示线特写、12 个 ±ly 标注 DOM 逐一核对 +4,858/−1,902/−1,616 ly 等）
+- ✅ 滑块 1–6 拖动实时平滑生效，无跳变（恒速平滑跟随单测断言；无头 Chrome 目验 ×6/×1 两档截图 r36-03/04，M13 高度随增益渐次分离）
+- ✅ 展开状态下飞往/跟随任一特殊天体：运镜落点正确、跟随无错位（渲染/解析同源单测；无头 Chrome 目验展开 ×3 下巡游至 M13 与猎户座星云，目标居中、信息面板正确，截图 r36-05/06）
+- ✅ 关闭展开恢复银纬真实高度（无头 Chrome 目验 r36-07）；L1/L2/L4 无视觉影响（特殊天体可见窗口 2.5–3.9 天然限定 + 生效增益仅乘 offset.y）；银盘粒子/超新星/太阳振荡不受展开影响（超新星/银心解析不变单测断言）
+- ✅ 60 FPS 不跌破（无头 Chrome Metal 1280×800 实测：L3 默认/展开/跟随 M13/关闭恢复均 60 FPS）；单测全通过（1862 用例/110 套件）、覆盖率 gate ≥90% 保持

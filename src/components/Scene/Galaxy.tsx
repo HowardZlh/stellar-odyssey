@@ -66,6 +66,11 @@ import {
 } from "@/utils/galacticMotionCues";
 import { easeInOutCubic } from "@/utils/animation";
 import {
+  GALAXY_EXPAND_TRANSITION_SECONDS,
+  advanceExpandGainValue,
+  effectiveExpandGain,
+} from "@/utils/galacticLatitude";
+import {
   createTrailBuffer,
   clearTrail,
   pushTrailPoint,
@@ -598,6 +603,11 @@ export function Galaxy(): JSX.Element {
   }, [tiltRad]);
   // 参考系切换线性过渡进度（0=跟随太阳系 → 1=银心固定），每帧向目标推进
   const frameProgressRef = useRef(0);
+  // R3-6 垂直展开：开关线性过渡进度（0=关 → 1=开，约 1 秒）+ 滑块值平滑跟随
+  const expandProgressRef = useRef(0);
+  const expandGainValueRef = useRef(
+    useSimulationStore.getState().galaxyExpandGain,
+  );
   // 聚焦权重提升进度（bug 修复：飞往/跟随 L3 特殊天体/超新星后目标不可见）：
   // 这些目标距场景原点仅 150–400 单位，飞抵后连续层级跌入 L2 区间，
   // 银河系内容按层级门控会完全淡出。跟随期间组权重提升至 1（0.5 秒平滑），
@@ -698,9 +708,27 @@ export function Galaxy(): JSX.Element {
       pose.groupOffset.y,
       pose.groupOffset.z,
     );
+    // R3-6 垂直展开生效增益：开关约 1 秒平滑过渡（advanceFrameTransition 模式）
+    // + 滑块拖动平滑跟随；仅乘在特殊天体 offsetLy.y 上（SpecialBodies 消费）
+    expandProgressRef.current = advanceFrameTransition(
+      expandProgressRef.current,
+      state.galaxyVerticalExpand ? 1 : 0,
+      delta,
+      GALAXY_EXPAND_TRANSITION_SECONDS,
+    );
+    expandGainValueRef.current = advanceExpandGainValue(
+      expandGainValueRef.current,
+      state.galaxyExpandGain,
+      delta,
+    );
+    const expandGain = effectiveExpandGain(
+      expandGainValueRef.current,
+      expandProgressRef.current,
+    );
+
     // 渲染位姿注册（bug 修复）：cameraFocus/SpatialAudio 按本帧实际应用的
-    // 银心固定权重与垂直增益解析 L3 天体场景坐标，保证飞往/跟随与渲染一致
-    setRenderedGalacticFrame(w, gain);
+    // 银心固定权重/垂直增益/展开增益解析 L3 天体场景坐标，保证飞往/跟随与渲染一致
+    setRenderedGalacticFrame(w, gain, expandGain);
 
     // R2-9 视角因子：相机相对银心方向 → 正视程度（纯函数，倾斜逆旋转）
     // 驱动 1) 尘埃带侧视暗带强度；2) 核球辉光 sprite 椭球轴比
