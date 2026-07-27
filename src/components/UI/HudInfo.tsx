@@ -12,7 +12,7 @@ import {
 } from '@/data/sunStructure';
 import { useSimulationStore } from '@/store';
 import { scopeCyclePositionLabel } from '@/utils/cycleScopes';
-import { eventNoticeVisibleInScope, eventOutOfScopeSummaryZh } from '@/utils/eventScopes';
+import { eventNoticeVisibleInScope } from '@/utils/eventScopes';
 import { galacticFrameHudLabel } from '@/utils/galacticFrame';
 import {
   MERGER_FATE_NOTE_ZH,
@@ -404,28 +404,9 @@ export function HudInfo(): JSX.Element {
           </div>
         )}
 
-        {/* R2-4 §4.1-B 方案 b：域外活跃事件折叠为一行小字提醒（逐事件一行，
-            与完整通知一一对应；事件状态照常推进，切回域内通知恢复） */}
-        {!supernovaNoticeInScope && supernovaNoticeVisible && activeSupernova && (
-          <p className="rounded border border-white/10 bg-space-panel/80 px-2 py-1 text-center text-[10px] text-gray-400 backdrop-blur">
-            {eventOutOfScopeSummaryZh('supernova')}
-          </p>
-        )}
-        {!solarNoticeInScope && solarFlareNoticeVisible && activeSolarFlare && (
-          <p className="rounded border border-white/10 bg-space-panel/80 px-2 py-1 text-center text-[10px] text-gray-400 backdrop-blur">
-            {eventOutOfScopeSummaryZh('flare')}
-          </p>
-        )}
-        {!solarNoticeInScope && cmeNoticeVisible && activeCme && (
-          <p className="rounded border border-white/10 bg-space-panel/80 px-2 py-1 text-center text-[10px] text-gray-400 backdrop-blur">
-            {eventOutOfScopeSummaryZh('cme')}
-          </p>
-        )}
-        {!solarNoticeInScope && cmeArrivalNoticeVisible && (
-          <p className="rounded border border-white/10 bg-space-panel/80 px-2 py-1 text-center text-[10px] text-gray-400 backdrop-blur">
-            {eventOutOfScopeSummaryZh('cmeArrival')}
-          </p>
-        )}
+        {/* R3-3 硬隔离：域外零事件 UI——R2-4 方案 b"域外折叠一行小字提醒"
+            已废止（域外活跃事件由 store.tick 在 1 秒宽限期后直接丢弃，
+            高时间压缩比下不再频繁闪现），登记于 IMPROVEMENT_REQUIREMENTS_3 §3.1-C */}
       </div>
 
       {/* S3 §4.5：黑子群/日珥点选科普卡片（含"可容纳 N 个地球"动态换算） */}

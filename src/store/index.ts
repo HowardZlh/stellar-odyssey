@@ -27,6 +27,13 @@ import {
 } from '@/utils/cycleScopes';
 import type { CycleScope } from '@/utils/cycleScopes';
 import { resolveFocusTarget } from '@/utils/cameraFocus';
+import {
+  FLY_TO_DISCARD_EXEMPT_SEC,
+  VIEW_TRANSITION_DISCARD_EXEMPT_SEC,
+  eventDiscardDue,
+  eventInScope,
+  outOfScopeElapsedUpdate,
+} from '@/utils/eventScopes';
 import { daysSinceJ2000 } from '@/utils/physics';
 import type { GalacticFrameMode } from '@/utils/galacticFrame';
 import { continuousLevelForDistance, discreteLevelFromContinuous } from '@/utils/scale';
@@ -167,6 +174,20 @@ export interface SimulationState {
   mergePreviewProgress01: number;
   /** 合并预览起点模拟时间（预览取消/结束后可恢复） */
   mergePreviewReturnSimDays: number | null;
+  /**
+   * R3-3 硬隔离：太阳活动事件（耀斑/CME/CME 抵达，共用同一视角域窗口）
+   * 离域计时（真实秒）。0 = 域内；负值 = 运镜豁免窗口剩余；达
+   * EVENT_DISCARD_GRACE_SEC（1 秒）时 tick 丢弃全部太阳活动事件状态。
+   */
+  solarEventsOutOfScopeSec: number;
+  /** R3-3：超新星事件离域计时（真实秒，语义同上；遗迹不受丢弃影响） */
+  supernovaOutOfScopeSec: number;
+  /** R3-3：合并预览离域计时（真实秒，语义同上；到期恢复预览前时间） */
+  mergerOutOfScopeSec: number;
+  /** R3-3：离域计时已消费的锚点切换代次（变更帧写入运镜豁免） */
+  eventScopeSeenTransitionId: number;
+  /** R3-3：离域计时已消费的飞往请求代次（变更帧写入运镜豁免） */
+  eventScopeSeenFlyToId: number;
 
   // actions
   tick: (realDeltaSeconds: number) => void;
@@ -304,6 +325,72 @@ export function initialSimDays(now: Date = new Date()): number {
 
 const LEVEL_TO_CONTINUOUS: Record<ViewLevel, number> = { L1: 1, L2: 2, L3: 3, L4: 4 };
 
+/**
+ * R3-3 事件视角域硬隔离（IMPROVEMENT_REQUIREMENTS_3 §3.1-B）：每帧推进
+ * 事件离域计时并执行到期丢弃，返回需合入本帧的状态增量。
+ *
+ * - 运镜豁免：viewTransitionId / flyToRequestId 变更帧将计时器写入负豁免
+ *   窗口（锚点切换 2 秒 / 飞往 2.5 秒），运镜路径瞬间穿越域边界不误丢弃；
+ * - 丢弃语义：清空事件全部关联状态（耀斑/CME 含在途抵达链与极光整链；
+ *   超新星不归档遗迹、既有遗迹保留；合并预览等价"恢复预览前时间"）；
+ *   计数器不回退，id 单调性保持；回域内不恢复被丢弃的事件；
+ * - 零开销路径：无活跃事件时丢弃分支只做空判定；计时器域内恒 0、域外
+ *   上钳到宽限期，稳态帧增量为空对象。
+ */
+function eventScopeDiscardUpdates(
+  state: SimulationState,
+  dtSec: number,
+): Partial<SimulationState> {
+  const updates: Partial<SimulationState> = {};
+  let solar = state.solarEventsOutOfScopeSec;
+  let supernova = state.supernovaOutOfScopeSec;
+  let merger = state.mergerOutOfScopeSec;
+  if (state.viewTransitionId !== state.eventScopeSeenTransitionId) {
+    solar = Math.min(solar, -VIEW_TRANSITION_DISCARD_EXEMPT_SEC);
+    supernova = Math.min(supernova, -VIEW_TRANSITION_DISCARD_EXEMPT_SEC);
+    merger = Math.min(merger, -VIEW_TRANSITION_DISCARD_EXEMPT_SEC);
+    updates.eventScopeSeenTransitionId = state.viewTransitionId;
+  }
+  if (state.flyToRequestId !== state.eventScopeSeenFlyToId) {
+    solar = Math.min(solar, -FLY_TO_DISCARD_EXEMPT_SEC);
+    supernova = Math.min(supernova, -FLY_TO_DISCARD_EXEMPT_SEC);
+    merger = Math.min(merger, -FLY_TO_DISCARD_EXEMPT_SEC);
+    updates.eventScopeSeenFlyToId = state.flyToRequestId;
+  }
+  const level = state.continuousLevel;
+  solar = outOfScopeElapsedUpdate(solar, eventInScope('flare', level), dtSec);
+  supernova = outOfScopeElapsedUpdate(supernova, eventInScope('supernova', level), dtSec);
+  merger = outOfScopeElapsedUpdate(merger, eventInScope('merger', level), dtSec);
+  if (solar !== state.solarEventsOutOfScopeSec) updates.solarEventsOutOfScopeSec = solar;
+  if (supernova !== state.supernovaOutOfScopeSec) updates.supernovaOutOfScopeSec = supernova;
+  if (merger !== state.mergerOutOfScopeSec) updates.mergerOutOfScopeSec = merger;
+  if (eventDiscardDue(solar)) {
+    if (state.activeSolarFlare) updates.activeSolarFlare = null;
+    if (state.solarFlareNoticeVisible) updates.solarFlareNoticeVisible = false;
+    if (state.activeCme) updates.activeCme = null;
+    if (state.cmeNoticeVisible) updates.cmeNoticeVisible = false;
+    if (state.cmeArrivalSimDays !== null) updates.cmeArrivalSimDays = null;
+    if (state.auroraStartedAtSimDays !== null) updates.auroraStartedAtSimDays = null;
+    if (state.cmeArrivalNoticeVisible) updates.cmeArrivalNoticeVisible = false;
+  }
+  if (eventDiscardDue(supernova)) {
+    // 进行中的爆发动画直接终止、不归档为遗迹；supernovaRemnants 保留
+    // （用户确认项 1：遗迹是场景装饰，非"进行中事件"）
+    if (state.activeSupernova) updates.activeSupernova = null;
+    if (state.supernovaNoticeVisible) updates.supernovaNoticeVisible = false;
+  }
+  if (eventDiscardDue(merger) && state.mergePreviewActive) {
+    // 等价 restoreFromMergePreview（用户确认项 2）；预览自然结束后仅存的
+    // mergePreviewReturnSimDays（"恢复预览前时间"按钮状态）非进行中事件，
+    // 不受离域丢弃影响
+    updates.mergePreviewActive = false;
+    updates.mergePreviewProgress01 = 0;
+    updates.simDays = state.mergePreviewReturnSimDays ?? state.simDays;
+    updates.mergePreviewReturnSimDays = null;
+  }
+  return updates;
+}
+
 export const useSimulationStore = create<SimulationState>((set) => ({
   simDays: initialSimDays(),
   paused: false,
@@ -355,26 +442,42 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   mergePreviewActive: false,
   mergePreviewProgress01: 0,
   mergePreviewReturnSimDays: null,
+  solarEventsOutOfScopeSec: 0,
+  supernovaOutOfScopeSec: 0,
+  mergerOutOfScopeSec: 0,
+  eventScopeSeenTransitionId: 0,
+  eventScopeSeenFlyToId: 0,
 
   tick: (realDeltaSeconds) =>
     set((state) => {
-      // 合并预览进行中：模拟时间按缓动插值快进到合并时刻（可选需求 3.1.3）
-      if (state.mergePreviewActive) {
-        if (realDeltaSeconds < 0) {
-          throw new RangeError(`时间增量不能为负，收到 ${realDeltaSeconds}`);
-        }
+      if (realDeltaSeconds < 0) {
+        throw new RangeError(`时间增量不能为负，收到 ${realDeltaSeconds}`);
+      }
+      // R3-3 硬隔离：事件离域计时推进 + 到期丢弃（真实时间驱动、不受
+      // 暂停影响——丢弃语义随视角而非模拟时间；合并预览被丢弃时增量
+      // 含 simDays 回跳恢复）
+      const discard = eventScopeDiscardUpdates(state, realDeltaSeconds);
+      // 合并预览进行中（且本帧未被丢弃）：模拟时间按缓动插值快进到
+      // 合并时刻（可选需求 3.1.3）
+      if (state.mergePreviewActive && discard.mergePreviewActive !== false) {
         const progress = Math.min(
           1,
           state.mergePreviewProgress01 + realDeltaSeconds / MERGE_PREVIEW_DURATION_SEC,
         );
         return {
+          ...discard,
           simDays: mergePreviewSimDays(state.mergePreviewReturnSimDays ?? state.simDays, progress),
           mergePreviewProgress01: progress,
           // 到达合并时刻后预览结束（保留 returnSimDays 供恢复）
           mergePreviewActive: progress < 1,
         };
       }
+      if (discard.simDays !== undefined) {
+        // 合并预览被离域丢弃：模拟时间已回跳到预览前时刻，本帧不再推进
+        return discard;
+      }
       return {
+        ...discard,
         simDays: advanceSimTimeContinuous(
           state.simDays,
           realDeltaSeconds,

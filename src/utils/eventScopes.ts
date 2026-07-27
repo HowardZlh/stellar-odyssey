@@ -1,20 +1,26 @@
 /**
- * 动态事件视角域隔离纯逻辑（R2-4，IMPROVEMENT_REQUIREMENTS_2 §R2-4，用户反馈点 4）
+ * 动态事件视角域隔离纯逻辑（R2-4 软隔离 + R3-3 硬隔离，
+ * IMPROVEMENT_REQUIREMENTS_2 §R2-4 / IMPROVEMENT_REQUIREMENTS_3 §R3-3）
  *
  * 各视角只呈现本视角域的动态事件：太阳耀斑/CME/CME 抵达属太阳系尺度
  * （L1/L2），超新星属银河系尺度（L3/L4），银河系—仙女座合并预览属宇宙
- * 尺度（L4）。本模块建立事件 → 连续层级窗口的映射，并提供三层门控判定
- * （自动触发域 / 通知可见域 / 演示按钮可用域），供组件按需接入：
+ * 尺度（L4）。本模块建立事件 → 连续层级窗口的映射，并提供门控判定，
+ * 供组件按需接入：
  *
  * - 自动触发域：`SunActivity.tsx`（耀斑/CME 泊松触发）与 `Supernova.tsx`
  *   （超新星泊松触发）显式限定触发层级——此前耀斑/CME 在 L3/L4 停摆仅是
  *   `timeJumped`（Δ>50 天）守卫在高时间压缩比下的副作用，非显式设计；
  *   超新星在 L1/L2 不触发也仅是时间压缩比过小（ΔMyr≈0）的概率副作用。
  * - 通知可见域：`HudInfo.tsx` 事件通知列按域过滤——域外隐藏完整通知卡片
- *   并折叠为一行小字提醒（方案 b，见 eventOutOfScopeSummaryZh），事件
- *   状态照常推进，回到域内且事件仍活跃（notice 标志未被用户关闭）时恢复。
+ *   （R3-3 硬隔离后域外零事件 UI；R2-4 方案 b"折叠一行小字提醒"已废止）。
  * - 按钮可用域：`ControlPanel.tsx` 演示按钮域外置灰禁用 + tooltip 提示
  *   （方案"置灰 + 提示"，未选"点击自动切视角"，差异登记于需求文档）。
+ * - 丢弃层（R3-3 §3.1-A）：离开事件视角域持续超过宽限期（1 真实秒，与
+ *   模拟时间压缩比无关、不受暂停影响——丢弃语义随视角而非模拟时间）后，
+ *   活跃事件被 store.tick 直接丢弃（清空全部关联状态、超新星不归档遗迹、
+ *   合并预览恢复预览前时间）；回到域内不恢复，等待下一次自然触发。
+ *   锚点切换/飞往运镜期间计时豁免（运镜路径瞬间穿越域边界不误丢弃，
+ *   尤其合并预览启动自动切 L4 的 2 秒运镜途中连续层级 <3.6）。
  *
  * 三层窗口当前取值一致（同一事件同一窗口），但语义独立成函数，便于
  * 未来分层微调与逐层单测（需求 §4.1-D"三层窗口"）。
@@ -122,19 +128,55 @@ export function eventDemoDisabledHintZh(kind: ScopedEventKind): string {
 }
 
 /**
- * 域外活跃事件的折叠一行提醒文案（§4.1-B 方案 b，保证用户不错过演示）。
+ * 丢弃宽限期（R3-3 §3.1-A，真实秒）：连续层级离开事件视角域窗口并
+ * 持续超过该时长才执行丢弃；宽限期内折返域内则计时清零、事件保留
+ * （防连续滚轮缩放瞬间穿越域边界误丢弃，用户确认项 3）。
  */
-export function eventOutOfScopeSummaryZh(kind: ScopedEventKind): string {
-  switch (kind) {
-    case 'flare':
-      return `☀ 太阳耀斑进行中（切回${eventScopeNameZh(kind)}查看）`;
-    case 'cme':
-      return `🌊 日冕物质抛射（CME）进行中（切回${eventScopeNameZh(kind)}查看）`;
-    case 'cmeArrival':
-      return `🌌 CME 抵达地球极光增强进行中（切回${eventScopeNameZh(kind)}查看）`;
-    case 'supernova':
-      return `💥 超新星爆发进行中（切换到${eventScopeNameZh(kind)}查看）`;
-    case 'merger':
-      return `⏩ 合并预览进行中（切换到${eventScopeNameZh(kind)}查看）`;
+export const EVENT_DISCARD_GRACE_SEC = 1;
+
+/**
+ * 锚点切换运镜豁免窗口（真实秒）：viewTransitionId 递增后按此时长
+ * 豁免离域计时（锚点过渡动画 2 秒，data/cameraViews.ts VIEW_TRANSITION_SECONDS）。
+ */
+export const VIEW_TRANSITION_DISCARD_EXEMPT_SEC = 2;
+
+/**
+ * 飞往运镜豁免窗口（真实秒）：flyToRequestId 递增后按此时长豁免离域
+ * 计时（飞往运镜 2.5 秒，utils/cameraFocus.ts FLY_TO_SECONDS）。
+ */
+export const FLY_TO_DISCARD_EXEMPT_SEC = 2.5;
+
+/**
+ * 离域计时推进（R3-3 §3.1-A 纯函数）：域内恒归零（含清除运镜豁免的
+ * 剩余负值——域内无待丢弃事件，豁免语义自然失效）；域外按帧时长累加，
+ * 上钳到宽限期（到期后保持恒值，避免无界增长引发每帧状态变更）。
+ *
+ * 运镜豁免通过将计时器置为负豁免窗口实现（store 在 viewTransitionId /
+ * flyToRequestId 变更时写入 -EXEMPT_SEC），累加自负值起步，运镜期间
+ * 到不了宽限阈值。锚点间过渡路径的连续层级单调，域边界至多穿越一次，
+ * "域内归零取消剩余豁免"不会导致运镜中途误丢弃（登记于文件头）。
+ */
+export function outOfScopeElapsedUpdate(
+  prevElapsedSec: number,
+  inScope: boolean,
+  dtSec: number,
+): number {
+  if (!Number.isFinite(prevElapsedSec)) {
+    throw new RangeError(`离域计时必须为有限数，收到 ${prevElapsedSec}`);
   }
+  if (!Number.isFinite(dtSec) || dtSec < 0) {
+    throw new RangeError(`帧时长必须为非负有限数，收到 ${dtSec}`);
+  }
+  if (inScope) return 0;
+  return Math.min(prevElapsedSec + dtSec, EVENT_DISCARD_GRACE_SEC);
+}
+
+/**
+ * 丢弃到期判定（R3-3 §3.1-A）：离域计时达到宽限期即丢弃。
+ */
+export function eventDiscardDue(elapsedSec: number): boolean {
+  if (!Number.isFinite(elapsedSec)) {
+    throw new RangeError(`离域计时必须为有限数，收到 ${elapsedSec}`);
+  }
+  return elapsedSec >= EVENT_DISCARD_GRACE_SEC;
 }
