@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-28
+
 ### 新增
 
 - 设计站点品牌 icon（深空蓝紫背景 + 恒星与轨道遨游意象，SVG 矢量源 `public/icon.svg`）并生成完整 favicon 套件（favicon.ico / apple-touch-icon / 192 / 512 PNG），浏览器标签页与 iOS 主屏不再显示默认图标；同步登记 Open Graph / Twitter Card 元信息与 1200×630 分享卡片图（`public/og-image.png`），分享到社交平台时显示标题、描述与预览图
@@ -16,9 +18,14 @@
 ### 改进
 
 - 事件通知最短展示时长（用户反馈：通知显示太短来不及点击）：耀斑/CME/CME 抵达通知的收起与事件生命周期解耦——事件先于 15 真实秒完成时，通知驻留满 15 秒再自动收起（此前高时间压缩比下耀斑 1.6 模拟天可能不足 2 真实秒，通知随事件完成瞬间消失）；事件持续更久则仍随事件收起，手动关闭与离域丢弃不受下限约束；通知卡片渲染改用触发时快照（`solarFlareNoticeInfo`/`cmeNoticeInfo`），事件置空后级别/速度等信息仍完整展示；CME 抵达通知新增自动收起（极光增强结束且展示满 15 秒，此前仅能手动关闭）
-- 集成 Cloudflare Web Analytics（RUM beacon 手动嵌码于全局布局）：统计真实访客的访问量/来源/地域/设备与 Core Web Vitals，无 cookie 隐私友好，仅作用于 stellar.guushu.com 本站
 - 设定开源协议为 GNU AGPL-3.0（新增 LICENSE 全文与 package.json license 字段）：个人/教育/科研用途自由使用，商业闭源集成需联系作者获取商业授权（双许可模式）；README 新增「开源协议」一节说明代码协议与素材许可的边界
 - 建立贡献者许可协议（CLA）体系保障双许可模式：新增 CLA.md（许可授予型 ICLA，参考 Project Harmony——贡献者保留版权，授予维护者含商业条款的再许可权，维护者对等承诺贡献始终保持开源可用）、CONTRIBUTING.md（贡献流程/门禁要求/代码规范/CLA 签署说明）与 CLA 签署机器人 workflow（contributor-assistant/github-action，PR 评论签署、记录存于 cla-signatures 分支、owner 与 bot 白名单豁免），cla 检查纳入分支保护 required status checks——未签署 CLA 的外部 PR 无法合并；README 新增「参与贡献」一节
+
+## [0.1.1] - 2026-07-27
+
+### 改进
+
+- 集成 Cloudflare Web Analytics（RUM beacon 手动嵌码于全局布局）：统计真实访客的访问量/来源/地域/设备与 Core Web Vitals，无 cookie 隐私友好，仅作用于 stellar.guushu.com 本站
 
 ## [0.1.0] - 2026-07-27
 
