@@ -8,8 +8,10 @@
 import { create } from 'zustand';
 import type {
   CmeEvent,
+  CmeNoticeInfo,
   SolarFlareClass,
   SolarFlareEvent,
+  SolarFlareNoticeInfo,
   SupernovaEvent,
   Vec3,
   ViewLevel,
@@ -32,6 +34,8 @@ import {
   VIEW_TRANSITION_DISCARD_EXEMPT_SEC,
   eventDiscardDue,
   eventInScope,
+  noticeAgeUpdate,
+  noticeAutoHideDue,
   outOfScopeElapsedUpdate,
 } from '@/utils/eventScopes';
 import { daysSinceJ2000 } from '@/utils/physics';
@@ -142,12 +146,27 @@ export interface SimulationState {
   solarFlareCounter: number;
   /** 耀斑事件通知可见（级别 + "飞往观看"按钮） */
   solarFlareNoticeVisible: boolean;
+  /**
+   * 耀斑通知卡片快照（通知展示与事件生命周期解耦：事件先于最短展示
+   * 时长完成时 activeSolarFlare 已置空，卡片仍需展示级别信息）
+   */
+  solarFlareNoticeInfo: SolarFlareNoticeInfo | null;
+  /**
+   * 耀斑通知展示计时（真实秒，上钳 EVENT_NOTICE_MIN_VISIBLE_REAL_SEC）：
+   * 事件先于最短展示时长完成时通知驻留到时长再自动收起（高时间压缩比
+   * 下事件真实时长可能不足两秒，用户来不及点击——通知展示按真实时间）
+   */
+  solarFlareNoticeAgeSec: number;
   /** 当前活跃 CME 事件（S2 §4.3-3；粒子缓冲复用，同一时刻至多一个） */
   activeCme: CmeEvent | null;
   /** CME 事件累计计数（生成事件 id） */
   cmeCounter: number;
   /** CME 事件通知可见（朝地球时附加地磁暴科普） */
   cmeNoticeVisible: boolean;
+  /** CME 通知卡片快照（语义同 solarFlareNoticeInfo） */
+  cmeNoticeInfo: CmeNoticeInfo | null;
+  /** CME 通知展示计时（真实秒，语义同 solarFlareNoticeAgeSec） */
+  cmeNoticeAgeSec: number;
   /**
    * 朝地球 CME 预计抵达地球的模拟时间（S3 §4.3-3；null 为无在途 CME）。
    * 抵达后触发地球极区极光增强示意 + "已抵达"通知。
@@ -157,6 +176,11 @@ export interface SimulationState {
   auroraStartedAtSimDays: number | null;
   /** CME 已抵达地球通知可见 */
   cmeArrivalNoticeVisible: boolean;
+  /**
+   * CME 抵达通知展示计时（真实秒）：极光增强结束（auroraStartedAtSimDays
+   * 置空）且展示满最短时长后自动收起（原先仅手动关闭/离域丢弃会收起）
+   */
+  cmeArrivalNoticeAgeSec: number;
   /**
    * 点选的太阳表面特征（S3 §4.5：黑子群/日珥单独点选热区科普卡片）；
    * null 为未选。value 由 HudInfo 展示（含"可容纳 N 个地球"动态换算）。
@@ -383,11 +407,16 @@ function eventScopeDiscardUpdates(
   if (eventDiscardDue(solar)) {
     if (state.activeSolarFlare) updates.activeSolarFlare = null;
     if (state.solarFlareNoticeVisible) updates.solarFlareNoticeVisible = false;
+    if (state.solarFlareNoticeInfo) updates.solarFlareNoticeInfo = null;
+    if (state.solarFlareNoticeAgeSec !== 0) updates.solarFlareNoticeAgeSec = 0;
     if (state.activeCme) updates.activeCme = null;
     if (state.cmeNoticeVisible) updates.cmeNoticeVisible = false;
+    if (state.cmeNoticeInfo) updates.cmeNoticeInfo = null;
+    if (state.cmeNoticeAgeSec !== 0) updates.cmeNoticeAgeSec = 0;
     if (state.cmeArrivalSimDays !== null) updates.cmeArrivalSimDays = null;
     if (state.auroraStartedAtSimDays !== null) updates.auroraStartedAtSimDays = null;
     if (state.cmeArrivalNoticeVisible) updates.cmeArrivalNoticeVisible = false;
+    if (state.cmeArrivalNoticeAgeSec !== 0) updates.cmeArrivalNoticeAgeSec = 0;
   }
   if (eventDiscardDue(supernova)) {
     // 进行中的爆发动画直接终止、不归档为遗迹；supernovaRemnants 保留
@@ -403,6 +432,69 @@ function eventScopeDiscardUpdates(
     updates.mergePreviewProgress01 = 0;
     updates.simDays = state.mergePreviewReturnSimDays ?? state.simDays;
     updates.mergePreviewReturnSimDays = null;
+  }
+  return updates;
+}
+
+/**
+ * 事件通知最短展示时长推进（IMPROVEMENT：高时间压缩比下耀斑/CME 事件
+ * 真实时长可能不足两秒，通知随事件完成立即消失，用户来不及点击）：
+ * 每帧按真实时间推进可见通知的展示计时，事件已结束且计时满
+ * EVENT_NOTICE_MIN_VISIBLE_REAL_SEC（15 真实秒）时自动收起。
+ *
+ * - 事件持续超过最短时长：通知随事件完成即刻收起（tick 下一帧判定，
+ *   原"通知随事件生命周期"语义保留）；
+ * - 手动关闭（dismiss*）与离域丢弃（discard 增量）不受下限约束；
+ * - 超新星通知不走本机制：动画时长本就 ≥10 真实秒（SN_MIN_DURATION_SEC），
+ *   且"飞往观看"目标在归档后不可解析，通知随 activeSupernova 消失合理；
+ * - 零开销路径：无可见通知时仅做布尔判定；计时到顶后保持恒值，
+ *   稳态帧增量为空对象。
+ */
+function eventNoticeLingerUpdates(
+  state: SimulationState,
+  discard: Partial<SimulationState>,
+  dtSec: number,
+): Partial<SimulationState> {
+  const updates: Partial<SimulationState> = {};
+  // 本帧被离域丢弃的通知不再推进计时（discard 已清零关联状态）
+  const flareVisible =
+    discard.solarFlareNoticeVisible === undefined
+      ? state.solarFlareNoticeVisible
+      : discard.solarFlareNoticeVisible;
+  if (flareVisible) {
+    const age = noticeAgeUpdate(state.solarFlareNoticeAgeSec, dtSec);
+    if (noticeAutoHideDue(age, state.activeSolarFlare === null)) {
+      updates.solarFlareNoticeVisible = false;
+      updates.solarFlareNoticeInfo = null;
+      updates.solarFlareNoticeAgeSec = 0;
+    } else if (age !== state.solarFlareNoticeAgeSec) {
+      updates.solarFlareNoticeAgeSec = age;
+    }
+  }
+  const cmeVisible =
+    discard.cmeNoticeVisible === undefined ? state.cmeNoticeVisible : discard.cmeNoticeVisible;
+  if (cmeVisible) {
+    const age = noticeAgeUpdate(state.cmeNoticeAgeSec, dtSec);
+    if (noticeAutoHideDue(age, state.activeCme === null)) {
+      updates.cmeNoticeVisible = false;
+      updates.cmeNoticeInfo = null;
+      updates.cmeNoticeAgeSec = 0;
+    } else if (age !== state.cmeNoticeAgeSec) {
+      updates.cmeNoticeAgeSec = age;
+    }
+  }
+  const arrivalVisible =
+    discard.cmeArrivalNoticeVisible === undefined
+      ? state.cmeArrivalNoticeVisible
+      : discard.cmeArrivalNoticeVisible;
+  if (arrivalVisible) {
+    const age = noticeAgeUpdate(state.cmeArrivalNoticeAgeSec, dtSec);
+    if (noticeAutoHideDue(age, state.auroraStartedAtSimDays === null)) {
+      updates.cmeArrivalNoticeVisible = false;
+      updates.cmeArrivalNoticeAgeSec = 0;
+    } else if (age !== state.cmeArrivalNoticeAgeSec) {
+      updates.cmeArrivalNoticeAgeSec = age;
+    }
   }
   return updates;
 }
@@ -446,12 +538,17 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   activeSolarFlare: null,
   solarFlareCounter: 0,
   solarFlareNoticeVisible: false,
+  solarFlareNoticeInfo: null,
+  solarFlareNoticeAgeSec: 0,
   activeCme: null,
   cmeCounter: 0,
   cmeNoticeVisible: false,
+  cmeNoticeInfo: null,
+  cmeNoticeAgeSec: 0,
   cmeArrivalSimDays: null,
   auroraStartedAtSimDays: null,
   cmeArrivalNoticeVisible: false,
+  cmeArrivalNoticeAgeSec: 0,
   selectedSolarFeature: null,
   sunCutawayMode: false,
   sunCutawayLayer: null,
@@ -475,6 +572,8 @@ export const useSimulationStore = create<SimulationState>((set) => ({
       // 暂停影响——丢弃语义随视角而非模拟时间；合并预览被丢弃时增量
       // 含 simDays 回跳恢复）
       const discard = eventScopeDiscardUpdates(state, realDeltaSeconds);
+      // 事件通知最短展示时长推进（真实时间驱动，与丢弃计时同帧合入）
+      const linger = eventNoticeLingerUpdates(state, discard, realDeltaSeconds);
       // 合并预览进行中（且本帧未被丢弃）：模拟时间按缓动插值快进到
       // 合并时刻（可选需求 3.1.3）
       if (state.mergePreviewActive && discard.mergePreviewActive !== false) {
@@ -484,6 +583,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         );
         return {
           ...discard,
+          ...linger,
           simDays: mergePreviewSimDays(state.mergePreviewReturnSimDays ?? state.simDays, progress),
           mergePreviewProgress01: progress,
           // 到达合并时刻后预览结束（保留 returnSimDays 供恢复）
@@ -492,10 +592,11 @@ export const useSimulationStore = create<SimulationState>((set) => ({
       }
       if (discard.simDays !== undefined) {
         // 合并预览被离域丢弃：模拟时间已回跳到预览前时刻，本帧不再推进
-        return discard;
+        return { ...discard, ...linger };
       }
       return {
         ...discard,
+        ...linger,
         simDays: advanceSimTimeContinuous(
           state.simDays,
           realDeltaSeconds,
@@ -784,16 +885,26 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         activeSolarFlare: event,
         solarFlareCounter: counter,
         solarFlareNoticeVisible: true,
+        // 快照通知展示信息（事件先于最短展示时长完成时卡片仍可渲染）
+        solarFlareNoticeInfo: {
+          flareClass: event.flareClass,
+          magnitude: event.magnitude,
+          cmeLinked: event.cmeLinked,
+        },
+        solarFlareNoticeAgeSec: 0,
       };
     }),
 
   completeSolarFlare: () =>
     set((state) => {
       if (!state.activeSolarFlare) return state;
-      return { activeSolarFlare: null, solarFlareNoticeVisible: false };
+      // 通知不随事件完成立即收起：由 tick 按最短展示时长
+      // （EVENT_NOTICE_MIN_VISIBLE_REAL_SEC）判定自动收起
+      return { activeSolarFlare: null };
     }),
 
-  dismissSolarFlareNotice: () => set({ solarFlareNoticeVisible: false }),
+  dismissSolarFlareNotice: () =>
+    set({ solarFlareNoticeVisible: false, solarFlareNoticeInfo: null, solarFlareNoticeAgeSec: 0 }),
 
   triggerCme: (params) =>
     set((state) => {
@@ -809,16 +920,24 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         startedAtSimDays: params.startedAtSimDays,
         earthDirected: params.earthDirected,
       };
-      return { activeCme: event, cmeCounter: counter, cmeNoticeVisible: true };
+      return {
+        activeCme: event,
+        cmeCounter: counter,
+        cmeNoticeVisible: true,
+        cmeNoticeInfo: { speedKmS: event.speedKmS, earthDirected: event.earthDirected },
+        cmeNoticeAgeSec: 0,
+      };
     }),
 
   completeCme: () =>
     set((state) => {
       if (!state.activeCme) return state;
-      return { activeCme: null, cmeNoticeVisible: false };
+      // 通知收起交由 tick 按最短展示时长判定（同 completeSolarFlare）
+      return { activeCme: null };
     }),
 
-  dismissCmeNotice: () => set({ cmeNoticeVisible: false }),
+  dismissCmeNotice: () =>
+    set({ cmeNoticeVisible: false, cmeNoticeInfo: null, cmeNoticeAgeSec: 0 }),
 
   scheduleCmeArrival: (arrivalSimDays) => set({ cmeArrivalSimDays: arrivalSimDays }),
 
@@ -829,6 +948,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         cmeArrivalSimDays: null,
         auroraStartedAtSimDays: atSimDays,
         cmeArrivalNoticeVisible: true,
+        cmeArrivalNoticeAgeSec: 0,
       };
     }),
 
@@ -838,7 +958,8 @@ export const useSimulationStore = create<SimulationState>((set) => ({
       return { auroraStartedAtSimDays: null };
     }),
 
-  dismissCmeArrivalNotice: () => set({ cmeArrivalNoticeVisible: false }),
+  dismissCmeArrivalNotice: () =>
+    set({ cmeArrivalNoticeVisible: false, cmeArrivalNoticeAgeSec: 0 }),
 
   setSelectedSolarFeature: (feature) => set({ selectedSolarFeature: feature }),
 
