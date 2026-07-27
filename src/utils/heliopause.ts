@@ -74,6 +74,37 @@ export function heliopauseVisibilityWeight(continuousLevel: number, focused: boo
   );
 }
 
+/**
+ * 日球层顶球壳点选（raycast）开启的连续层级上限（R3 需求 3）：
+ * 进入银河系视角（L3，连续层级 ≥ 2.5）后球壳禁用 raycast——
+ * 球壳为 BackSide 大球（半径 380 单位）且点击后 stopPropagation，
+ * 可见度淡出窗口（≤3.0）与 L3 区间（2.5–3.5）重叠时会拦截其后方
+ * L3 天体（与太阳系外天体同尺度混叠）的点击。
+ */
+export const HELIOPAUSE_RAYCAST_LEVEL_MAX = 2.5;
+
+/**
+ * 日球层顶球壳是否参与 raycast（R3 需求 3）：
+ * - 跟随/飞往日球层顶或旅行者标记期间（focused）恒开启（近观可点）；
+ * - 常态要求可见度权重 > 0.05（近乎隐形时不拦截点击，原有行为）
+ *   且连续层级 < 2.5（L2 太阳系视角内保留点选科普；进入 L3 银河系
+ *   视角后禁用，不再遮挡太阳系外天体的点击）。
+ */
+export function heliopauseRaycastEnabled(
+  continuousLevel: number,
+  focused: boolean,
+  visibilityWeight: number,
+): boolean {
+  if (!Number.isFinite(continuousLevel)) {
+    throw new RangeError(`连续层级必须为有限数，收到 ${continuousLevel}`);
+  }
+  if (!Number.isFinite(visibilityWeight)) {
+    throw new RangeError(`可见度权重必须为有限数，收到 ${visibilityWeight}`);
+  }
+  if (focused) return true;
+  return visibilityWeight > 0.05 && continuousLevel < HELIOPAUSE_RAYCAST_LEVEL_MAX;
+}
+
 // ---------------------------------------------------------------------------
 // R2-7 §7.1-A：近观三层结构（终端激波 → 日鞘 → 日球层顶）
 // ---------------------------------------------------------------------------

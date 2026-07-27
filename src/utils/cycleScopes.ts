@@ -1,14 +1,29 @@
 /**
- * 通用天体切换序列框架（R2-5，IMPROVEMENT_REQUIREMENTS_2 §R2-5，用户反馈点 5 + 点 1 后半）
+ * 通用天体切换序列框架（R2-5，IMPROVEMENT_REQUIREMENTS_2 §R2-5；
+ * R3 视角域切换重构：行星域拆分为 行星系统（L1）/ 太阳系（L2）两个子域，
+ * 并引入"巡游期间视角层级锁定"语义）
  *
- * 纯逻辑模块（供单元测试）：在 P4 行星序列（utils/bodyCycle.ts，20 天体）
- * 基础上，为 L3（银河系）与 L4（宇宙）视角建立各自的"上一个/下一个"
- * 巡游序列，并提供视角域判定 / 域内循环 / 序列外回落 / 位置标签。
+ * 纯逻辑模块（供单元测试）：为四个视角域建立各自的"上一个/下一个"
+ * 巡游序列，并提供 域-层级映射 / 域内循环 / 序列外回落 / 位置标签 /
+ * 飞往目标的域归类。
  *
- * ── 序列成员登记（§5.1-A，成员 id 以 data 文件实际定义为准）────────────
- * L1/L2 行星域：复用 BODY_CYCLE_SEQUENCE（20 天体，现状保持，行为不回退）。
+ * ── 四个视角域（R3）─────────────────────────────────────────────────────
+ * system   行星视角（L1）：当前行星系统内循环（行星本体 + 其自然/人造卫星，
+ *          bodyCycle.planetSystemSequence 动态序列；无卫星时 UI 隐藏切换按钮）
+ * solar    太阳系视角（L2）：行星 + 矮行星 + 彗星（15 天体，按半长轴升序，
+ *          bodyCycle.SOLAR_CYCLE_SEQUENCE；不含卫星）
+ * galaxy   银河系视角（L3）：15 站巡游序列（成员登记见下）
+ * universe 宇宙视角（L4）：8 站巡游序列（成员登记见下）
  *
- * L3 银河系域（15 成员，按"太阳系出发 → 银心 → 恒星类 → 星云类 → 星团类"组织）：
+ * ── 视角层级锁定（R3 需求 2）───────────────────────────────────────────
+ * 跟随/飞往巡游天体期间，离散层级 viewLevel 锁定为所属域的主层级
+ * （system=L1 / solar=L2 / galaxy=L3 / universe=L4），不再随
+ * 相机-场景原点距离自动漂移（如跟随阋神星 67.9 AU 时层级读数跳 L3、
+ * 跟随猎户座星云时读数跌回 L2 的问题）；用户按 1-4/层级按钮显式切换
+ * 或 Esc 取消跟随后恢复距离驱动。连续层级 continuousLevel 仍按相机
+ * 距离同步（LOD/音景/时间压缩等平滑行为不变）。
+ *
+ * ── L3 银河系域（15 成员，按"太阳系出发 → 银心 → 恒星类 → 星云类 → 星团类"组织）──
  *   1. sun               太阳（太阳系出发标记，与 "You are here" 联动语境）
  *   2. heliopause        日球层顶（R2-1 交付的可飞往外边界，太阳系告别站）
  *   3. sgr-a-star        银心人马座 A*（超大质量黑洞）
@@ -25,7 +40,7 @@
  *  14. pleiades          昴星团（疏散星团）
  *  15. m13-cluster       武仙座 M13（球状星团）
  *
- * L4 宇宙域（8 成员，按"银河系 → 卫星星系 → 本星系群 → 河外深空"组织）：
+ * ── L4 宇宙域（8 成员，按"银河系 → 卫星星系 → 本星系群 → 河外深空"组织）──
  *   1. milky-way         银河系
  *   2. lmc               大麦哲伦云
  *   3. smc               小麦哲伦云
@@ -37,17 +52,27 @@
  *
  * ── 实现差异登记 ─────────────────────────────────────────────────────────
  * - 需求中 M32/M110 为"可选子条目"，未纳入 L4 主序列（保持巡游节奏，
- *   两者仍可经点选/飞往访问）；触须星系/透镜弧/GRB 亦未纳入（需求未列）。
- * - 域判定以"跟随天体的序列归属"优先（与 cycleControlVisible 的语义补充
- *   一致：跟随海王星时层级读数为 L2 但语义仍是行星域；跟随太阳/日球层顶
- *   时近观层级读数会降至 L1/L2，但语义上属 L3 巡游），无跟随时按连续
- *   层级区间划分（<2.5 行星域 / <3.5 银河系域 / 其余宇宙域）。
+ *   两者仍可经点选/飞往访问，飞往时归入 universe 域并锁定 L4）。
+ * - 当前生效域改为显式状态（store.cycleScope），不再按"跟随天体归属 +
+ *   连续层级区间"推断——太阳系巡游中跟随行星（近观距离对应 L1 读数）
+ *   仍保持 solar 域，序列不混入卫星；银河系/宇宙巡游同理保持各自域。
+ * - 太阳的域归类特殊：既是 L3 序列出发站又是太阳系中心，飞往太阳保持
+ *   当前域（银河系巡游中 → galaxy；行星/太阳系语境 → 保持原域）。
  */
 
-import { BODY_CYCLE_SEQUENCE, DEFAULT_ANCHOR_BODY_ID } from '@/utils/bodyCycle';
+import type { ViewLevel } from '@/types';
+import {
+  DEFAULT_ANCHOR_BODY_ID,
+  SOLAR_CYCLE_SEQUENCE,
+  planetSystemIdForBody,
+  planetSystemSequence,
+} from '@/utils/bodyCycle';
+import { getMoonById } from '@/data/moons';
+import { getGalaxyById, MILKY_WAY } from '@/data/galaxies';
+import { getSpecialBodyById } from '@/data/specialBodies';
 
-/** 视角域 id：行星（L1/L2）/ 银河系（L3）/ 宇宙（L4） */
-export type CycleScope = 'planet' | 'galaxy' | 'universe';
+/** 视角域 id：行星系统（L1）/ 太阳系（L2）/ 银河系（L3）/ 宇宙（L4） */
+export type CycleScope = 'system' | 'solar' | 'galaxy' | 'universe';
 
 /** L3 银河系域巡游序列（成员登记见文件头） */
 export const GALAXY_CYCLE_SEQUENCE: readonly string[] = [
@@ -80,95 +105,134 @@ export const UNIVERSE_CYCLE_SEQUENCE: readonly string[] = [
   'quasar-3c273',
 ];
 
-/** 各域序列（行星域复用 P4 序列，现状保持） */
-export const SCOPE_SEQUENCES: Readonly<Record<CycleScope, readonly string[]>> = {
-  planet: BODY_CYCLE_SEQUENCE,
-  galaxy: GALAXY_CYCLE_SEQUENCE,
-  universe: UNIVERSE_CYCLE_SEQUENCE,
+/** 各域主层级（R3 需求 2：巡游期间离散层级锁定为所属域主层级） */
+export const SCOPE_HOME_LEVEL: Readonly<Record<CycleScope, ViewLevel>> = {
+  system: 'L1',
+  solar: 'L2',
+  galaxy: 'L3',
+  universe: 'L4',
 };
 
+/** 离散层级 → 视角域（锚点切换/自由缩放跨级时同步当前域） */
+export function scopeForLevel(level: ViewLevel): CycleScope {
+  switch (level) {
+    case 'L1':
+      return 'system';
+    case 'L2':
+      return 'solar';
+    case 'L3':
+      return 'galaxy';
+    default:
+      return 'universe';
+  }
+}
+
 /**
- * 各域回落默认天体（§5.1-A：当前 id 不在序列内时回落；
+ * 各域回落默认天体（当前 id 不在序列内时回落；
  * 行星域沿用 DEFAULT_ANCHOR_BODY_ID=earth，L3 默认人马座 A*，L4 默认 M31）
  */
 export const SCOPE_DEFAULT_BODY: Readonly<Record<CycleScope, string>> = {
-  planet: DEFAULT_ANCHOR_BODY_ID,
+  system: DEFAULT_ANCHOR_BODY_ID,
+  solar: DEFAULT_ANCHOR_BODY_ID,
   galaxy: 'sgr-a-star',
   universe: 'm31',
 };
 
 /** 各域中文名（HUD/帮助文案用） */
 export const SCOPE_NAME_ZH: Readonly<Record<CycleScope, string>> = {
-  planet: '行星巡游',
+  system: '行星巡游',
+  solar: '太阳系巡游',
   galaxy: '银河系巡游',
   universe: '宇宙巡游',
 };
 
-/** 天体在指定域序列内的索引（0 起）；不在序列内返回 -1 */
-export function scopeBodyIndex(scope: CycleScope, bodyId: string): number {
-  return SCOPE_SEQUENCES[scope].indexOf(bodyId);
+/**
+ * 域内序列（system 域为当前天体所在行星系统的动态序列，
+ * 其余域为固定序列）
+ */
+export function sequenceForScope(scope: CycleScope, currentBodyId: string): readonly string[] {
+  switch (scope) {
+    case 'system':
+      return planetSystemSequence(planetSystemIdForBody(currentBodyId));
+    case 'solar':
+      return SOLAR_CYCLE_SEQUENCE;
+    case 'galaxy':
+      return GALAXY_CYCLE_SEQUENCE;
+    default:
+      return UNIVERSE_CYCLE_SEQUENCE;
+  }
 }
 
-/** 天体是否属于指定域序列 */
+/** 天体是否属于指定域序列（system 域按其所在行星系统序列判定） */
 export function isScopeCycleBody(scope: CycleScope, bodyId: string): boolean {
-  return scopeBodyIndex(scope, bodyId) !== -1;
+  return sequenceForScope(scope, bodyId).includes(bodyId);
 }
 
 /**
- * 天体所属的域（按 行星 → 银河系 → 宇宙 优先级；三域序列成员互不重叠，
- * 优先级仅为防御）；不属于任何域序列返回 null
- */
-export function scopeOfBody(bodyId: string): CycleScope | null {
-  if (isScopeCycleBody('planet', bodyId)) return 'planet';
-  if (isScopeCycleBody('galaxy', bodyId)) return 'galaxy';
-  if (isScopeCycleBody('universe', bodyId)) return 'universe';
-  return null;
-}
-
-/**
- * 当前生效的视角域（§5.1-A 接口）：
- * 1) 正在跟随域序列内天体时以该天体归属为准（跟随期间相机贴近目标，
- *    连续层级读数会偏离锚点，语义补充与 cycleControlVisible 一致）；
- * 2) 无跟随（或跟随序列外天体，如卫星/超新星事件）时按连续层级区间：
- *    <2.5 行星域（L1/L2）/ <3.5 银河系域（L3）/ 其余宇宙域（L4）。
- */
-export function scopeForViewLevel(
-  continuousLevel: number,
-  followBodyId: string | null,
-): CycleScope {
-  if (!Number.isFinite(continuousLevel)) {
-    throw new RangeError(`连续层级必须为有限数，收到 ${continuousLevel}`);
-  }
-  if (followBodyId !== null) {
-    const scope = scopeOfBody(followBodyId);
-    if (scope !== null) return scope;
-  }
-  if (continuousLevel < 2.5) return 'planet';
-  if (continuousLevel < 3.5) return 'galaxy';
-  return 'universe';
-}
-
-/**
- * 域内循环切换（§5.1-A 接口，与 cycleBodyId 同构）：返回上一个
- * （direction=-1）/下一个（+1）天体 id；当前 id 不在该域序列内时
- * 回落到域默认天体（不产生位移，先锚定再切换）。
+ * 域内循环切换：返回上一个（direction=-1）/下一个（+1）天体 id。
+ * - solar 域：当前为卫星时先映射到其所属行星再循环（如锚定 ISS 时
+ *   按太阳系序列从地球继续）；
+ * - 当前 id 不在该域序列内时回落到域默认天体（不产生位移，先锚定再切换）；
+ * - system 域单成员系统（无卫星行星）原地不动（UI 已隐藏切换按钮）。
  */
 export function cycleBodyIdInScope(
   scope: CycleScope,
   currentId: string,
   direction: 1 | -1,
 ): string {
-  const seq = SCOPE_SEQUENCES[scope];
-  const idx = seq.indexOf(currentId);
+  const mapped = scope === 'solar' ? planetSystemIdForBody(currentId) : currentId;
+  const seq = sequenceForScope(scope, mapped);
+  const idx = seq.indexOf(mapped);
   if (idx === -1) return SCOPE_DEFAULT_BODY[scope];
   return seq[(idx + direction + seq.length) % seq.length];
 }
 
 /**
- * 域内序列位置标签（HUD 显示，如"3/15"）；不在该域序列内返回 null
+ * 域内序列位置标签（HUD 显示，如"3/15"）；不在该域序列内、
+ * 或序列不足 2 个成员（无卫星行星的 system 域，UI 隐藏切换按钮）返回 null
  */
 export function scopeCyclePositionLabel(scope: CycleScope, bodyId: string): string | null {
-  const idx = scopeBodyIndex(scope, bodyId);
-  if (idx === -1) return null;
-  return `${idx + 1}/${SCOPE_SEQUENCES[scope].length}`;
+  const seq = sequenceForScope(scope, bodyId);
+  const idx = seq.indexOf(bodyId);
+  if (idx === -1 || seq.length < 2) return null;
+  return `${idx + 1}/${seq.length}`;
+}
+
+/**
+ * 飞往目标的域归类（R3：requestFlyTo 据此切换当前域并锁定对应层级）：
+ * - 超新星事件（sn-*）→ galaxy（事件位于银河系尺度坐标）
+ * - 卫星（自然/人造）→ system（显示行星系统语境）
+ * - 行星/矮行星/彗星 → 太阳系巡游中保持 solar，否则 system
+ *   （R3 需求 2：显示行星时固定在行星视角）
+ * - 太阳 → 保持当前域（宇宙域例外回落 galaxy，太阳在 L4 无近观语义）
+ * - L3 序列成员 / 旅行者标记 → galaxy
+ * - L4 序列成员 / 星系（含 M32/M110 等序列外星系）→ universe
+ * - 其余特殊天体按其数据层级归域；未知 id 保持当前域
+ */
+export function scopeForFocusBody(bodyId: string, currentScope: CycleScope): CycleScope {
+  if (bodyId.startsWith('sn-')) return 'galaxy';
+  if (getMoonById(bodyId)) return 'system';
+  if (SOLAR_CYCLE_SEQUENCE.includes(bodyId)) {
+    return currentScope === 'solar' ? 'solar' : 'system';
+  }
+  if (bodyId === 'sun') {
+    return currentScope === 'universe' ? 'galaxy' : currentScope;
+  }
+  if (
+    GALAXY_CYCLE_SEQUENCE.includes(bodyId) ||
+    bodyId === 'voyager-1' ||
+    bodyId === 'voyager-2'
+  ) {
+    return 'galaxy';
+  }
+  if (
+    UNIVERSE_CYCLE_SEQUENCE.includes(bodyId) ||
+    bodyId === MILKY_WAY.id ||
+    getGalaxyById(bodyId) !== undefined
+  ) {
+    return 'universe';
+  }
+  const special = getSpecialBodyById(bodyId);
+  if (special) return special.level === 'L4' ? 'universe' : 'galaxy';
+  return currentScope;
 }

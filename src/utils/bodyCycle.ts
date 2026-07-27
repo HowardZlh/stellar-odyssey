@@ -1,84 +1,74 @@
 /**
- * 行星视角天体切换序列（P4，需求 §3.2.4；P5 §3.3 扩展至 16 天体；
- * P7 §3.4 纳入人造卫星扩展至 20 天体）
+ * 行星域天体切换序列（P4，需求 §3.2.4；R3 视角域切换重构）
  *
  * 纯逻辑模块（供单元测试）：
- * - 固定循环序列：八大行星（水星→海王星）+ 月球（插于地球之后）+
- *   4 颗人造卫星（P7：插于月球之后——国际空间站 → 天宫 → 哈勃 → 静止轨道卫星）+
- *   5 颗矮行星（按半长轴排序插入：谷神星 2.77 AU 位于火星与木星之间；
- *   冥王星 39.5 / 妊神星 43.1 / 鸟神星 45.8 / 阋神星 67.9 AU 排于海王星后）+
- *   两颗彗星（置于序列末尾，便于观察彗尾角度变化）
- * - 上一颗/下一颗循环切换、序列位置标签（"3/20"）
- * - L1 锚点行为（需求变更）：进入 L1 = 飞往并跟随序列当前天体
+ * - 太阳系视角（L2）序列 SOLAR_CYCLE_SEQUENCE：八大行星 + 5 颗矮行星 +
+ *   2 颗彗星，统一按轨道半长轴升序排列（不含卫星/人造卫星——
+ *   R3 需求：太阳系视角的上一个/下一个只在行星、矮行星、彗星之间切换）。
+ * - 行星视角（L1）序列 planetSystemSequence：当前行星系统内循环——
+ *   行星本体 + 其自然卫星与人造卫星（按绕行半长轴升序；
+ *   R3 需求：行星视角的上一个/下一个只切换当前行星内相关天体）。
+ *   无卫星的行星系统序列仅含自身（UI 隐藏切换按钮）。
+ * - L1 锚点行为（需求变更）：进入 L1 = 飞往并跟随锚定天体
  *   （默认地球，会话内记忆上次锚定天体）
  */
 
 import type { ViewLevel } from '@/types';
+import { PLANETS } from '@/data/planets';
+import { COMETS, DWARF_PLANETS } from '@/data/smallBodies';
+import { getMoonById, getMoonsByParent } from '@/data/moons';
 
-/** 切换序列（固定循环，需求 §3.2.4 / P5 §3.3 / P7 §3.4：20 天体） */
-export const BODY_CYCLE_SEQUENCE: readonly string[] = [
-  'mercury',
-  'venus',
-  'earth',
-  'moon',
-  'iss',
-  'tiangong',
-  'hubble',
-  'geo-satellite',
-  'mars',
-  'ceres',
-  'jupiter',
-  'saturn',
-  'uranus',
-  'neptune',
-  'pluto',
-  'haumea',
-  'makemake',
-  'eris',
-  'halley',
-  'encke',
-];
+/**
+ * 太阳系视角（L2）切换序列：行星 + 矮行星 + 彗星，按半长轴升序混排
+ * （由真实轨道数据计算，恩克彗星 2.22 AU 位于火星与谷神星之间、
+ * 哈雷彗星 17.8 AU 位于土星与天王星之间）
+ */
+export const SOLAR_CYCLE_SEQUENCE: readonly string[] = [
+  ...PLANETS,
+  ...DWARF_PLANETS,
+  ...COMETS,
+]
+  .slice()
+  .sort((a, b) => a.orbit.semiMajorAxisAu - b.orbit.semiMajorAxisAu)
+  .map((body) => body.id);
 
 /** L1 锚点默认天体（需求 §3.2.4：默认地球） */
 export const DEFAULT_ANCHOR_BODY_ID = 'earth';
 
-/** 天体是否在切换序列内 */
+/**
+ * 天体是否属于行星域（可作为 L1 锚定天体）：
+ * 行星/矮行星/彗星（太阳系序列成员）或任意卫星（自然/人造）
+ */
 export function isCycleBody(bodyId: string): boolean {
-  return BODY_CYCLE_SEQUENCE.includes(bodyId);
-}
-
-/** 序列索引（0 起）；不在序列内返回 -1 */
-export function bodyCycleIndex(bodyId: string): number {
-  return BODY_CYCLE_SEQUENCE.indexOf(bodyId);
+  return SOLAR_CYCLE_SEQUENCE.includes(bodyId) || getMoonById(bodyId) !== undefined;
 }
 
 /**
- * 循环切换：返回上一颗（direction=-1）/下一颗（+1）天体 id。
- * 当前 id 不在序列内时回落到默认天体（不产生位移，先锚定再切换）。
+ * 天体所属行星系统 id：卫星（自然/人造）归属其行星，其余归属自身
  */
-export function cycleBodyId(currentId: string, direction: 1 | -1): string {
-  const idx = bodyCycleIndex(currentId);
-  if (idx === -1) return DEFAULT_ANCHOR_BODY_ID;
-  const n = BODY_CYCLE_SEQUENCE.length;
-  return BODY_CYCLE_SEQUENCE[(idx + direction + n) % n];
+export function planetSystemIdForBody(bodyId: string): string {
+  return getMoonById(bodyId)?.parentId ?? bodyId;
 }
 
 /**
- * 序列位置标签（HUD 显示，如"11/20"）；不在序列内返回 null
+ * 行星视角（L1）系统内切换序列：行星本体 + 其卫星（自然/人造，
+ * 按绕行半长轴升序）。systemId 不是太阳系序列成员（行星/矮行星/彗星）
+ * 时返回空序列（如太阳/星系等无行星系统语义的天体）。
  */
-export function bodyCyclePositionLabel(bodyId: string): string | null {
-  const idx = bodyCycleIndex(bodyId);
-  if (idx === -1) return null;
-  return `${idx + 1}/${BODY_CYCLE_SEQUENCE.length}`;
+export function planetSystemSequence(systemId: string): readonly string[] {
+  if (!SOLAR_CYCLE_SEQUENCE.includes(systemId)) return [];
+  const companions = getMoonsByParent(systemId)
+    .slice()
+    .sort((a, b) => a.orbit.semiMajorAxisKm - b.orbit.semiMajorAxisKm)
+    .map((m) => m.id);
+  return [systemId, ...companions];
 }
 
 /**
- * 切换控件可见性（需求 §3.2.4：控件仅 L1 层级显示）
+ * 切换控件可见性（需求 §3.2.4）：L1 层级或正在跟随行星域天体时可见
  *
- * 说明（实现差异登记）：连续层级由"相机-场景原点距离"换算，跟随外行星
- * （如海王星，30 AU ≈ 300 场景单位）时层级读数为 L2 但语义上仍是
- * "行星近观"。因此当正在跟随序列内天体时控件保持可见；
- * 切换到 L2-L4 锚点会按现有逻辑取消跟随，控件随之隐藏。
+ * 说明（R3 语义变更登记）：跟随行星域天体期间离散层级已锁定为进入
+ * 巡游时的层级（不再随相机-原点距离漂移），本判定保留跟随分支作为防御。
  */
 export function cycleControlVisible(viewLevel: ViewLevel, followBodyId: string | null): boolean {
   if (viewLevel === 'L1') return true;

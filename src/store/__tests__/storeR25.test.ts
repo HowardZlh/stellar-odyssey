@@ -11,6 +11,7 @@ function resetStore(): void {
   useSimulationStore.setState({
     viewLevel: 'L3',
     continuousLevel: 3,
+    cycleScope: 'galaxy',
     viewTransitionId: 0,
     followBodyId: null,
     flyToBodyId: null,
@@ -66,11 +67,12 @@ describe('cycleScopeBody：L3 银河系域（§5.1-B）', () => {
     expect(s.flyToRequestId).toBe(15);
   });
 
-  it('飞抵太阳后层级读数降至 L1 仍按银河系域继续（遍历不断链）', () => {
-    // 模拟飞抵太阳后相机贴近：连续层级 1.2、跟随 sun
+  it('飞抵太阳后（连续层级读数降低）仍按银河系域继续且离散层级锁定 L3（R3）', () => {
+    // 模拟飞抵太阳后相机贴近：连续层级 1.2、跟随 sun（巡游域保持 galaxy）
     useSimulationStore.setState({ continuousLevel: 1.2, followBodyId: 'sun' });
     useSimulationStore.getState().cycleScopeBody(1);
     expect(useSimulationStore.getState().followBodyId).toBe('heliopause');
+    expect(useSimulationStore.getState().viewLevel).toBe('L3');
   });
 
   it('跟随序列外天体（超新星事件）时点击：飞往域记忆天体', () => {
@@ -88,7 +90,7 @@ describe('cycleScopeBody：L3 银河系域（§5.1-B）', () => {
 describe('cycleScopeBody：L4 宇宙域（§5.1-B）', () => {
   beforeEach(() => {
     resetStore();
-    useSimulationStore.setState({ viewLevel: 'L4', continuousLevel: 4 });
+    useSimulationStore.setState({ viewLevel: 'L4', continuousLevel: 4, cycleScope: 'universe' });
   });
 
   it('未跟随时点击：飞往域记忆天体（初始 m31）', () => {
@@ -115,18 +117,20 @@ describe('cycleScopeBody：L4 宇宙域（§5.1-B）', () => {
   });
 });
 
-describe('cycleScopeBody：行星域委托（现状保持，行为不回退）', () => {
+describe('cycleScopeBody：行星域（R3 四域重构）', () => {
   beforeEach(() => {
     resetStore();
-    useSimulationStore.setState({ viewLevel: 'L1', continuousLevel: 1 });
+    useSimulationStore.setState({ viewLevel: 'L1', continuousLevel: 1, cycleScope: 'system' });
   });
 
-  it('与 cycleAnchorBody 行为一致：沿锚定天体序列前进并更新锚定', () => {
+  it('L1 未跟随时先飞往锚定天体（不跳步），跟随后沿系统序列前进', () => {
+    useSimulationStore.getState().cycleScopeBody(1);
+    expect(useSimulationStore.getState().followBodyId).toBe('earth');
     useSimulationStore.getState().cycleScopeBody(1);
     const s = useSimulationStore.getState();
-    expect(s.anchorBodyId).toBe('moon');
-    expect(s.flyToBodyId).toBe('moon');
-    expect(s.followBodyId).toBe('moon');
+    expect(s.anchorBodyId).toBe('tiangong');
+    expect(s.flyToBodyId).toBe('tiangong');
+    expect(s.followBodyId).toBe('tiangong');
   });
 
   it('不改写 L3/L4 域记忆', () => {
@@ -135,15 +139,18 @@ describe('cycleScopeBody：行星域委托（现状保持，行为不回退）',
     expect(useSimulationStore.getState().universeAnchorBodyId).toBe('m31');
   });
 
-  it('跟随外行星层级读数 L2 时仍为行星域（语义补充保持）', () => {
+  it('太阳系巡游（solar 域）跟随海王星：下一个为冥王星（不含卫星，R3 需求 1）', () => {
     useSimulationStore.setState({
       viewLevel: 'L2',
       continuousLevel: 2.2,
+      cycleScope: 'solar',
       followBodyId: 'neptune',
       anchorBodyId: 'neptune',
     });
     useSimulationStore.getState().cycleScopeBody(1);
     expect(useSimulationStore.getState().followBodyId).toBe('pluto');
+    // R3 需求 2：太阳系巡游期间层级锁定 L2
+    expect(useSimulationStore.getState().viewLevel).toBe('L2');
   });
 });
 
@@ -159,6 +166,7 @@ describe('requestFlyTo 各域记忆联动（§5.1-B 防跨域误写）', () => {
     useSimulationStore.setState({
       viewLevel: 'L2',
       continuousLevel: 2,
+      cycleScope: 'solar',
       galaxyAnchorBodyId: 'orion-nebula',
     });
     useSimulationStore.getState().requestFlyTo('sun');
@@ -167,7 +175,7 @@ describe('requestFlyTo 各域记忆联动（§5.1-B 防跨域误写）', () => {
   });
 
   it('L4 语境飞往星系：记录宇宙域记忆', () => {
-    useSimulationStore.setState({ viewLevel: 'L4', continuousLevel: 4 });
+    useSimulationStore.setState({ viewLevel: 'L4', continuousLevel: 4, cycleScope: 'universe' });
     useSimulationStore.getState().requestFlyTo('m87');
     expect(useSimulationStore.getState().universeAnchorBodyId).toBe('m87');
   });
