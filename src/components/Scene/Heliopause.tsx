@@ -14,6 +14,7 @@ import {
   TERMINATION_SHOCK_REAL_DISTANCE_AU,
   VOYAGER_MARKERS,
   heliopauseLayerColor01,
+  heliopauseRaycastEnabled,
   heliopauseVisibilityWeight,
   heliosheathShellRadiusUnits,
   isHeliopauseNearFocusId,
@@ -279,8 +280,14 @@ export function Heliopause(): JSX.Element {
     // 近观期间外边界壳增亮（三层结构中"日球层顶外边界"更可辨）
     material.opacity =
       HELIOPAUSE_MAX_OPACITY * weight + HELIOPAUSE_NEAR_OPACITY_BOOST * near01Ref.current;
+    // R3 需求 3：L3 银河系视角（连续层级 ≥ 2.5）下球壳禁用 raycast，
+    // 不再拦截其后方太阳系外天体（L3 特殊天体/奥尔特云等）的点击；
+    // L2 内保留点选科普，跟随/飞往日球层顶或旅行者期间恒可点
     if (meshRef.current) {
-      setObjectTreeRaycastEnabled(meshRef.current, weight > 0.05);
+      setObjectTreeRaycastEnabled(
+        meshRef.current,
+        heliopauseRaycastEnabled(continuousLevel, focused, weight),
+      );
     }
   });
 

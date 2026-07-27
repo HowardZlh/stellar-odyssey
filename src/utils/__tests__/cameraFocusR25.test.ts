@@ -6,11 +6,8 @@
  */
 
 import { resolveFocusTarget, viewDistanceForRadius } from '@/utils/cameraFocus';
-import {
-  GALAXY_CYCLE_SEQUENCE,
-  SCOPE_SEQUENCES,
-  UNIVERSE_CYCLE_SEQUENCE,
-} from '@/utils/cycleScopes';
+import { GALAXY_CYCLE_SEQUENCE, UNIVERSE_CYCLE_SEQUENCE } from '@/utils/cycleScopes';
+import { SOLAR_CYCLE_SEQUENCE, planetSystemSequence } from '@/utils/bodyCycle';
 import { MILKY_WAY } from '@/data/galaxies';
 import { getSpecialBodyById } from '@/data/specialBodies';
 import { SCENE_UNITS_PER_LY } from '@/utils/scale';
@@ -52,8 +49,8 @@ describe('域序列全部成员可解析（§5.2：遍历一整圈不因兜底�
     expect(target!.viewDistanceUnits).toBeGreaterThan(0);
   });
 
-  it('行星域全部成员仍可解析（现状不回退）', () => {
-    for (const id of SCOPE_SEQUENCES.planet) {
+  it('行星域全部成员仍可解析（太阳系序列 + 各行星系统序列，现状不回退）', () => {
+    for (const id of SOLAR_CYCLE_SEQUENCE.flatMap((sysId) => planetSystemSequence(sysId))) {
       expect(resolveFocusTarget(id, 1234.5)).not.toBeNull();
     }
   });

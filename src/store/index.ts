@@ -14,13 +14,18 @@ import type {
   Vec3,
   ViewLevel,
 } from '@/types';
-import { DEFAULT_ANCHOR_BODY_ID, cycleBodyId, isCycleBody } from '@/utils/bodyCycle';
+import { DEFAULT_ANCHOR_BODY_ID, isCycleBody, planetSystemIdForBody } from '@/utils/bodyCycle';
 import {
+  GALAXY_CYCLE_SEQUENCE,
   SCOPE_DEFAULT_BODY,
+  SCOPE_HOME_LEVEL,
+  UNIVERSE_CYCLE_SEQUENCE,
   cycleBodyIdInScope,
   isScopeCycleBody,
-  scopeForViewLevel,
+  scopeForFocusBody,
+  scopeForLevel,
 } from '@/utils/cycleScopes';
+import type { CycleScope } from '@/utils/cycleScopes';
 import { resolveFocusTarget } from '@/utils/cameraFocus';
 import { daysSinceJ2000 } from '@/utils/physics';
 import type { GalacticFrameMode } from '@/utils/galacticFrame';
@@ -84,6 +89,12 @@ export interface SimulationState {
   galaxyAnchorBodyId: string;
   /** L4 宇宙域上次锚定天体（R2-5 §5.1-B，默认仙女座 M31） */
   universeAnchorBodyId: string;
+  /**
+   * 当前生效的视角巡游域（R3 显式状态）：行星系统（L1）/太阳系（L2）/
+   * 银河系（L3）/宇宙（L4）。锚点切换与自由缩放跨级时随离散层级同步；
+   * 跟随/飞往巡游天体期间保持不变（配合层级锁定，序列不跨域漂移）。
+   */
+  cycleScope: CycleScope;
   /** 真实比例模式（需求 4.1：视觉夸大的真实比例开关，P2） */
   realScaleMode: boolean;
   /**
@@ -189,14 +200,9 @@ export interface SimulationState {
   /** 请求飞往天体（平滑运镜，到达后自动进入跟随模式） */
   requestFlyTo: (id: string) => void;
   /**
-   * 行星视角天体循环切换（P4，需求 3.2.4）：
-   * 沿固定序列切换上一颗（-1）/下一颗（+1），飞往并跟随新天体
-   */
-  cycleAnchorBody: (direction: 1 | -1) => void;
-  /**
-   * 通用视角域天体循环切换（R2-5 §5.1-B）：按当前视角域（行星/银河系/
-   * 宇宙）沿域序列切换上一个（-1）/下一个（+1）并飞往跟随；行星域行为
-   * 与 cycleAnchorBody 一致（不回退）；L3/L4 域未跟随时先飞往记忆天体
+   * 通用视角域天体循环切换（R2-5 §5.1-B；R3 四域重构）：按当前巡游域
+   * （行星系统/太阳系/银河系/宇宙）沿域序列切换上一个（-1）/下一个（+1）
+   * 并飞往跟随，离散层级锁定为该域主层级；未跟随时先飞往域记忆天体
    */
   cycleScopeBody: (direction: 1 | -1) => void;
   setRealScaleMode: (enabled: boolean) => void;
@@ -322,6 +328,8 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   anchorBodyId: DEFAULT_ANCHOR_BODY_ID,
   galaxyAnchorBodyId: SCOPE_DEFAULT_BODY.galaxy,
   universeAnchorBodyId: SCOPE_DEFAULT_BODY.universe,
+  // 初始视角为 L2 太阳系锚点，对应太阳系巡游域
+  cycleScope: 'solar',
   realScaleMode: false,
   galacticFrameMode: 'follow',
   galacticFrameTipVisible: false,
@@ -392,6 +400,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         return {
           viewLevel: level,
           continuousLevel: LEVEL_TO_CONTINUOUS[level],
+          cycleScope: scopeForLevel(level),
           flyToBodyId: state.anchorBodyId,
           flyToRequestId: state.flyToRequestId + 1,
           followBodyId: state.anchorBodyId,
@@ -406,6 +415,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
       return {
         viewLevel: level,
         continuousLevel: LEVEL_TO_CONTINUOUS[level],
+        cycleScope: scopeForLevel(level),
         viewTransitionId: state.viewTransitionId + 1,
         // 锚点切换取消跟随/飞往（相机回到固定锚点，需求 3.2.4：L2-L4 取消跟随）
         followBodyId: null,
@@ -420,18 +430,30 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   syncZoomLevel: (continuousLevel) =>
     set((state) => {
       const clamped = Math.min(4, Math.max(1, continuousLevel));
-      const level = discreteLevelFromContinuous(clamped);
+      // R3 需求 2 层级锁定：跟随/飞往期间离散层级与巡游域保持不变
+      // （不随相机-原点距离漂移），仅同步连续层级
+      const locked = state.followBodyId !== null || state.flyToBodyId !== null;
+      const level = locked ? state.viewLevel : discreteLevelFromContinuous(clamped);
       if (state.continuousLevel === clamped && state.viewLevel === level) {
         return state;
       }
       // 连续缩放不触发锚点过渡动画（viewTransitionId 不变）
-      return { continuousLevel: clamped, viewLevel: level };
+      return {
+        continuousLevel: clamped,
+        viewLevel: level,
+        cycleScope: locked ? state.cycleScope : scopeForLevel(level),
+      };
     }),
 
   syncCameraDistance: (distanceUnits, updateViewLevel = true) =>
     set((state) => {
       const clamped = Math.min(4, Math.max(1, continuousLevelForDistance(distanceUnits)));
-      const level = updateViewLevel ? discreteLevelFromContinuous(clamped) : state.viewLevel;
+      // R3 需求 2 层级锁定：跟随/飞往期间离散层级与巡游域锁定为进入
+      // 巡游时的值（跟随阋神星不再跳 L3、跟随猎户座星云不再跌回 L2），
+      // 直到用户按 1-4/层级按钮显式切换或 Esc 取消跟随
+      const locked = state.followBodyId !== null || state.flyToBodyId !== null;
+      const level =
+        updateViewLevel && !locked ? discreteLevelFromContinuous(clamped) : state.viewLevel;
       if (
         state.cameraDistanceUnits === distanceUnits &&
         state.continuousLevel === clamped &&
@@ -439,7 +461,12 @@ export const useSimulationStore = create<SimulationState>((set) => ({
       ) {
         return state;
       }
-      return { cameraDistanceUnits: distanceUnits, continuousLevel: clamped, viewLevel: level };
+      return {
+        cameraDistanceUnits: distanceUnits,
+        continuousLevel: clamped,
+        viewLevel: level,
+        cycleScope: updateViewLevel && !locked ? scopeForLevel(level) : state.cycleScope,
+      };
     }),
 
   setShowOrbits: (show) => set({ showOrbits: show }),
@@ -477,72 +504,67 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         ? state.activeSupernova?.id === id || state.supernovaRemnants.some((r) => r.id === id)
         : resolveFocusTarget(id, state.simDays, state.realScaleMode) !== null;
       if (!resolvable) return state;
-      // R2-5 §5.1-B 各域序列位置记忆：L3/L4 域仅在"该域当前生效"时记录，
-      // 防跨域误写（如 L1/L2 耀斑通知"飞往太阳"不得改写银河系域记忆——
-      // 太阳虽是 L3 序列出发站，但此时语境是太阳系视角）
-      const activeScope = scopeForViewLevel(state.continuousLevel, state.followBodyId);
+      // R3：飞往目标按域归类切换当前巡游域，并将离散层级锁定为该域
+      // 主层级（如 L2 点选卫星飞往 → system 域 + L1 行星视角；点选
+      // 日球层顶飞往 → galaxy 域 + L3）。太阳保持当前域（防 L1/L2
+      // 耀斑通知"飞往太阳"误改写银河系域记忆/层级，登记于 cycleScopes）
+      const nextScope = scopeForFocusBody(id, state.cycleScope);
       return {
         flyToBodyId: id,
         flyToRequestId: state.flyToRequestId + 1,
         // 飞抵后保持锁定该天体（跟随模式），运镜期间同样按目标跟踪
         followBodyId: id,
-        // 序列内天体记为 L1 锚定天体（会话内记忆，需求 3.2.4）
+        cycleScope: nextScope,
+        viewLevel: SCOPE_HOME_LEVEL[nextScope],
+        // 行星域天体（行星/矮行星/彗星/卫星）记为 L1 锚定天体（会话内记忆）
         anchorBodyId: isCycleBody(id) ? id : state.anchorBodyId,
         galaxyAnchorBodyId:
-          activeScope === 'galaxy' && isScopeCycleBody('galaxy', id)
+          nextScope === 'galaxy' && GALAXY_CYCLE_SEQUENCE.includes(id)
             ? id
             : state.galaxyAnchorBodyId,
         universeAnchorBodyId:
-          activeScope === 'universe' && isScopeCycleBody('universe', id)
+          nextScope === 'universe' && UNIVERSE_CYCLE_SEQUENCE.includes(id)
             ? id
             : state.universeAnchorBodyId,
       };
     }),
 
-  cycleAnchorBody: (direction) =>
-    set((state) => {
-      const next = cycleBodyId(state.anchorBodyId, direction);
-      return {
-        anchorBodyId: next,
-        flyToBodyId: next,
-        flyToRequestId: state.flyToRequestId + 1,
-        followBodyId: next,
-      };
-    }),
-
   cycleScopeBody: (direction) =>
     set((state) => {
-      const scope = scopeForViewLevel(state.continuousLevel, state.followBodyId);
-      if (scope === 'planet') {
-        // 行星域：与 cycleAnchorBody 完全一致（P4 现状保持，行为不回退）
-        const next = cycleBodyId(state.anchorBodyId, direction);
-        return {
-          anchorBodyId: next,
-          flyToBodyId: next,
-          flyToRequestId: state.flyToRequestId + 1,
-          followBodyId: next,
-        };
-      }
-      const remembered =
-        scope === 'galaxy' ? state.galaxyAnchorBodyId : state.universeAnchorBodyId;
+      const scope = state.cycleScope;
       const followingInScope =
         state.followBodyId !== null && isScopeCycleBody(scope, state.followBodyId);
-      // §5.1-B：跟随域内天体时沿序列切换；未跟随时点击即飞往记忆天体
-      // （初始为域默认：L3=sgr-a-star / L4=m31），开始游览不产生跳步
-      const next = followingInScope
-        ? cycleBodyIdInScope(scope, state.followBodyId!, direction)
-        : remembered;
+      // 跟随域内天体时沿序列切换；未跟随时点击即飞往域记忆天体
+      // （行星域=锚定天体；L3=sgr-a-star / L4=m31 起始），不产生跳步
+      let next: string;
+      if (followingInScope) {
+        next = cycleBodyIdInScope(scope, state.followBodyId!, direction);
+      } else if (scope === 'system' || scope === 'solar') {
+        // 行星域回落到锚定天体（solar 域锚定为卫星时映射到其所属行星），
+        // 不产生位移——先锚定再切换的语义由"下一次调用"完成
+        const mapped =
+          scope === 'solar' ? planetSystemIdForBody(state.anchorBodyId) : state.anchorBodyId;
+        next = isScopeCycleBody(scope, mapped) ? mapped : SCOPE_DEFAULT_BODY[scope];
+      } else {
+        next = scope === 'galaxy' ? state.galaxyAnchorBodyId : state.universeAnchorBodyId;
+      }
       // 与 requestFlyTo 相同的解析兜底（防未来序列成员解析失败进入假跟随）
       if (resolveFocusTarget(next, state.simDays, state.realScaleMode) === null) {
         return state;
       }
+      // R3 需求 1：system 域单成员系统（无卫星行星）无从切换，原地不动
+      if (followingInScope && next === state.followBodyId) return state;
       return {
         flyToBodyId: next,
         flyToRequestId: state.flyToRequestId + 1,
         followBodyId: next,
-        ...(scope === 'galaxy'
-          ? { galaxyAnchorBodyId: next }
-          : { universeAnchorBodyId: next }),
+        // R3 需求 2：巡游期间离散层级锁定为域主层级
+        viewLevel: SCOPE_HOME_LEVEL[scope],
+        ...(scope === 'system' || scope === 'solar'
+          ? { anchorBodyId: next }
+          : scope === 'galaxy'
+            ? { galaxyAnchorBodyId: next }
+            : { universeAnchorBodyId: next }),
       };
     }),
 
@@ -709,6 +731,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
         // 切换到宇宙视角观看（与 setViewLevel 一致的锚点过渡）
         viewLevel: 'L4',
         continuousLevel: LEVEL_TO_CONTINUOUS.L4,
+        cycleScope: 'universe' as CycleScope,
         viewTransitionId: state.viewTransitionId + 1,
         followBodyId: null,
         flyToBodyId: null,

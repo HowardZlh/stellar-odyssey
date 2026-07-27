@@ -11,11 +11,7 @@ import {
   getSunLayerById,
 } from '@/data/sunStructure';
 import { useSimulationStore } from '@/store';
-import {
-  isScopeCycleBody,
-  scopeCyclePositionLabel,
-  scopeForViewLevel,
-} from '@/utils/cycleScopes';
+import { scopeCyclePositionLabel } from '@/utils/cycleScopes';
 import { eventNoticeVisibleInScope, eventOutOfScopeSummaryZh } from '@/utils/eventScopes';
 import { galacticFrameHudLabel } from '@/utils/galacticFrame';
 import {
@@ -86,10 +82,8 @@ export function HudInfo(): JSX.Element {
   const sunCutawayLayer = useSimulationStore((s) => s.sunCutawayLayer);
   const setSunCutawayLayer = useSimulationStore((s) => s.setSunCutawayLayer);
   // R2-5 §5.1-B：选中天体属于当前视角域序列时补"上一个/下一个"快捷入口
-  // （与底部 BodyCycleSwitcher 行为一致，按域路由）
-  const cycleScope = useSimulationStore((s) =>
-    scopeForViewLevel(s.continuousLevel, s.followBodyId),
-  );
+  // （与底部 BodyCycleSwitcher 行为一致，按域路由；R3 改为显式巡游域状态）
+  const cycleScope = useSimulationStore((s) => s.cycleScope);
   const cycleScopeBody = useSimulationStore((s) => s.cycleScopeBody);
 
   // 模拟时间/标尺以低频率刷新（0.25s），避免每帧渲染 React 组件
@@ -587,8 +581,9 @@ export function HudInfo(): JSX.Element {
               {followBodyId === selected.id ? '🔓 取消跟随' : '🔒 跟随'}
             </button>
             {/* R2-5 §5.1-B：域序列内天体补"上一个/下一个"快捷入口
-                （与底部切换控件行为一致，按域路由，快捷键 [ / ]） */}
-            {isScopeCycleBody(cycleScope, selected.id) && (
+                （与底部切换控件行为一致，按域路由，快捷键 [ / ]；
+                R3：单成员系统（无卫星行星）position 为 null 时隐藏） */}
+            {scopeCyclePositionLabel(cycleScope, selected.id) !== null && (
               <span className="ml-auto flex items-center gap-1">
                 <button
                   type="button"
