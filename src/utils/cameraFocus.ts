@@ -51,6 +51,7 @@ import { satelliteBodyDisplayRadius, satelliteOrbitDisplayRadius } from '@/utils
 import { renderedSatellitePhaseRad } from '@/utils/satellitePhase';
 import { dwarfDisplayRadius, isDwarfPlanetClassification } from '@/utils/dwarfPlanets';
 import { renderedGalacticFrame } from '@/utils/galacticFrame';
+import { diskMorphWeight, morphGalacticYLy } from '@/utils/galacticLatitude';
 import { ECLIPTIC_GALACTIC_TILT_DEG, sunGalacticPositionLy } from '@/utils/galaxy';
 import {
   galaxyPlaneSizeUnits,
@@ -298,10 +299,25 @@ function specialBodyFocusTarget(body: SpecialBodyData, simDays: number): FocusTa
 
 /**
  * 超新星事件当前场景位置与观察距离
+ *
+ * R3-7：超新星随盘 morph（行为变更）——y 通道在换算前施加与
+ * Supernova.tsx 渲染定位同源的椭球 morph（morphGalacticYLy，权重由
+ * renderedGalacticFrame().expandGain 经 diskMorphWeight 派生），展开态
+ * 飞往/跟随落点与渲染一致；galacticPointToSceneUnits 本身不改
+ * （sgr-a-star 银心原点 y=0 morph 恒等，特殊天体走自身路径不受影响）。
  */
 export function supernovaFocusTarget(event: SupernovaEvent, simDays: number): FocusTarget {
+  const p = event.positionLy;
+  const morph01 = diskMorphWeight(renderedGalacticFrame().expandGain);
   return {
-    position: galacticPointToSceneUnits(event.positionLy, simDays),
+    position: galacticPointToSceneUnits(
+      {
+        x: p.x,
+        y: morphGalacticYLy(p.y, Math.hypot(p.x, p.z), morph01),
+        z: p.z,
+      },
+      simDays,
+    ),
     viewDistanceUnits: 90,
   };
 }

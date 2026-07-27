@@ -190,8 +190,11 @@ export interface RenderedGalacticFrame {
   verticalGain: number;
   /**
    * 天体垂直展开增益 ≥1（R3-6 §6.1-D：过渡缓动后的实际应用值，
-   * 仅乘在 sun-relative 特殊天体的 offsetLy.y 上，与 verticalGain 互不相乘；
-   * sgr-a-star（银心原点）与超新星事件（positionLy 银心系）不参与展开）
+   * 乘在 sun-relative 特殊天体的 offsetLy.y 上，与 verticalGain 互不相乘；
+   * sgr-a-star（银心原点 y=0）不参与展开。R3-7 起同一增益经
+   * diskMorphWeight 派生盘 morph 权重：银盘粒子 uExpand uniform 与
+   * 超新星事件/遗迹（morphGalacticYLy）随盘 morph 为扁旋转椭球体
+   * ——渲染与解析同源，禁止第二套过渡状态）
    */
   expandGain: number;
 }

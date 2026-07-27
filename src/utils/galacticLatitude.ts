@@ -13,10 +13,15 @@
  * 视觉夸大登记（AGENTS.md 数据准确性要求）：
  * - 展开增益为**观察辅助的视觉夸大**，非科学事实；高度指示线标注展示的是
  *   未乘增益的银纬推算真实高度（示意水平距离 × tan(b)）；
- * - 展开范围仅 13 个 L3 特殊天体（sgr-a-star 为银心原点无 offset 不参与）；
- *   银盘粒子/旋臂/超新星事件与遗迹/太阳系标记不展开（盘语境内容，展开会与
- *   旋臂视觉脱节）；太阳垂直振荡 ×10 增益（galacticMotionCues.ts）机制不变，
- *   与展开增益互不相乘。
+ * - 展开范围（R3-7 扩展）：13 个 L3 特殊天体（sgr-a-star 为银心原点无
+ *   offset 不参与）+ 银盘 40,000 粒子随同一生效增益 morph 为扁旋转椭球体
+ *   （diskMorphWeight 派生权重，×1→0、×6→1.0 完整轴比 0.5）+ 超新星事件
+ *   与遗迹随盘 morph（morphGalacticYLy，R3-7 行为变更——推翻 R3-6"超新星
+ *   不参与展开"登记）；银晕粒子/球状星团（本已球状分布）与太阳系标记/
+ *   尾迹/预测线/银河年刻度不参与 morph；太阳垂直振荡 ×10 增益
+ *   （galacticMotionCues.ts）机制不变，与展开增益互不相乘。
+ * - morph 权衡登记：morph 只重映射 y、x/z 不动 → 正面/俯视轮廓仍为圆形、
+ *   旋臂俯视可辨；侧视旋臂图案被垂直弥散（俯视仍清晰）。
  */
 
 import { easeInOutCubic } from '@/utils/animation';
@@ -130,6 +135,120 @@ export function heightLineDropUnits(
     throw new RangeError(`unitsPerLy 必须为正数，收到 ${unitsPerLy}`);
   }
   return -(sunYLy * sunVerticalGain + offsetYLy * expandGain) * unitsPerLy;
+}
+
+// ---------------------------------------------------------------------------
+// R3-7 银河系整体垂直展开（银盘 → 扁旋转椭球体）
+// ---------------------------------------------------------------------------
+
+/**
+ * 盘粒子椭球 morph 目标公式常量（与 Galaxy.tsx 盘粒子顶点着色器 R2-11
+ * `hTargetLy = (aHeightLy / 500.0) * max(aRadiusLy, 6000.0) * 0.5` 逐字同源，
+ * 禁止两套参数）：目标轴比 0.5、高度归一参考 500 ly、核球区最小水平半径
+ * 下限 6,000 ly（中心比严格椭球略"鼓"，贴近真实核球三维鼓包，登记）。
+ */
+export const DISK_MORPH_HEIGHT_REF_LY = 500;
+export const DISK_MORPH_MIN_RADIUS_LY = 6000;
+export const DISK_MORPH_AXIS_RATIO = 0.5;
+
+/** 展开态银晕增亮上限（用户确认项 4：morph 满权重时约 +30%） */
+export const HALO_EXPAND_BOOST_MAX = 0.3;
+
+/**
+ * 盘 morph 权重（0–1）：由 R3-6 生效展开增益线性映射
+ * （×1 → 0 不 morph、×6 → 1.0 完整轴比 0.5 椭球；默认 ×3 → 0.4 中等椭球）。
+ * 增益源为 renderedGalacticFrame().expandGain（已含 1 秒开关过渡 + 滑块平滑），
+ * 与特殊天体展开严格同源——禁止第二套过渡状态。
+ *
+ * @throws RangeError 非有限输入
+ */
+export function diskMorphWeight(expandGain: number): number {
+  if (!Number.isFinite(expandGain)) {
+    throw new RangeError(`展开增益必须为有限数，收到 ${expandGain}`);
+  }
+  return Math.min(
+    1,
+    Math.max(0, (expandGain - 1) / (GALAXY_EXPAND_GAIN_MAX - 1)),
+  );
+}
+
+/**
+ * 盘椭球 morph 的 CPU 镜像纯函数（与 Galaxy.tsx 盘粒子顶点着色器
+ * `pos.y = mix(pos.y, hTargetLy * uUnitsPerLy, uExpand)` 逐字镜像，光年域）：
+ * `mix(y, (y / 500) · max(r, 6000) · 0.5, morph01)`。
+ * 供超新星事件/遗迹渲染定位（Supernova.tsx）与解析
+ * （cameraFocus.supernovaFocusTarget）同源消费。
+ *
+ * 性质：morph01=0 恒等；y=0 恒等（银心/盘中平面不动）；符号保留；
+ * 水平半径 ≥ 1,000 ly 时 |y| 单调放大（r·0.5/500 ≥ 1）。
+ *
+ * @param yLy 银心系垂直高度（光年）
+ * @param horizontalRadiusLy 银心系水平半径 √(x²+z²)（光年，≥0）
+ * @param morph01 morph 权重 ∈ [0,1]
+ * @throws RangeError 非有限输入 / horizontalRadiusLy < 0 / morph01 越界
+ */
+export function morphGalacticYLy(
+  yLy: number,
+  horizontalRadiusLy: number,
+  morph01: number,
+): number {
+  if (!Number.isFinite(yLy)) {
+    throw new RangeError(`垂直高度必须为有限数，收到 ${yLy}`);
+  }
+  if (!Number.isFinite(horizontalRadiusLy) || horizontalRadiusLy < 0) {
+    throw new RangeError(`水平半径必须为非负有限数，收到 ${horizontalRadiusLy}`);
+  }
+  if (!Number.isFinite(morph01) || morph01 < 0 || morph01 > 1) {
+    throw new RangeError(`morph 权重必须在 [0,1] 内，收到 ${morph01}`);
+  }
+  const targetLy =
+    (yLy / DISK_MORPH_HEIGHT_REF_LY) *
+    Math.max(horizontalRadiusLy, DISK_MORPH_MIN_RADIUS_LY) *
+    DISK_MORPH_AXIS_RATIO;
+  return yLy + (targetLy - yLy) * morph01;
+}
+
+/**
+ * 展开态银晕不透明度增亮因子：1 + 0.3 × morph01（强化椭球轮廓，
+ * 用户确认项 4；银晕粒子本身球状分布不参与 morph）。
+ *
+ * @throws RangeError morph01 越界
+ */
+export function haloExpandBoost(morph01: number): number {
+  if (!Number.isFinite(morph01) || morph01 < 0 || morph01 > 1) {
+    throw new RangeError(`morph 权重必须在 [0,1] 内，收到 ${morph01}`);
+  }
+  return 1 + HALO_EXPAND_BOOST_MAX * morph01;
+}
+
+/**
+ * 展开态尘埃带渐隐因子：1 − morph01（morph 后"盘中平面"语义消失，
+ * 用户确认项 5；单一应用点驱动 shader vDust/暗带 mesh/核球辉光压低链路）。
+ *
+ * @throws RangeError morph01 越界
+ */
+export function dustLaneExpandFade(morph01: number): number {
+  if (!Number.isFinite(morph01) || morph01 < 0 || morph01 > 1) {
+    throw new RangeError(`morph 权重必须在 [0,1] 内，收到 ${morph01}`);
+  }
+  return 1 - morph01;
+}
+
+/**
+ * uEll（R2-11 合并终态椭球）与 uExpand（R3-7 展开）同目标顺序 mix 的
+ * 组合等效权重：`mix(mix(y, T, a), T, b) = mix(y, T, 1 − (1−a)(1−b))`
+ * （两次 mix 目标 T 相同 → 无视觉冲突；终态 Milkomeda（uEll=1）下组合
+ * 权重恒为 1，不受 V 开关破坏，登记）。
+ *
+ * @throws RangeError 任一权重越界
+ */
+export function combinedMorphWeight(ell01: number, expand01: number): number {
+  for (const v of [ell01, expand01]) {
+    if (!Number.isFinite(v) || v < 0 || v > 1) {
+      throw new RangeError(`morph 权重必须在 [0,1] 内，收到 ${v}`);
+    }
+  }
+  return 1 - (1 - ell01) * (1 - expand01);
 }
 
 /**

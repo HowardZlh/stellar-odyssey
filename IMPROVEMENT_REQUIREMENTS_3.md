@@ -1,6 +1,6 @@
 # 改进需求文档（第三批，R3 迭代）
 
-> **文档版本**: 1.7（R3-3～R3-6 已交付；R3-7 银河系整体垂直展开（盘 → 扁旋转椭球体）需求登记，待实现——实现提示词见 IMPROVEMENT_REQUIREMENTS_3_PROMPT.md）
+> **文档版本**: 1.8（R3-3～R3-7 已交付；R3-7 银河系整体垂直展开（盘 → 扁旋转椭球体）已实现并回写）
 > **参考文档**: REQUIREMENTS.md v2.8、IMPROVEMENT_REQUIREMENTS_2.md v1.1（R2-4 事件视角域软隔离）、AGENTS.md
 > **状态标记**: ✅ 已完成 / 🔶 部分完成 / 🔲 未实现
 > **调研说明**: §0.2 现状分析中的文件与行号已经代码调研核实（2026-07），实现时若行号漂移以符号名为准。
@@ -16,7 +16,7 @@
 | R3-4 | P0 | 标签屏幕尺寸统一治理（近距反向缩放钳制 + 治理缺口补齐） | 本批反馈 | — | ✅ |
 | R3-5 | P1 | 超新星事件视角域收窄至 L3（L4 不再触发/通知，域外丢弃） | 本批反馈 | R3-3 | ✅ |
 | R3-6 | P1 | 银河系视角天体垂直展开（银纬修正默认 + 展开开关/滑块 + 高度指示线） | 本批反馈 | R3-4（标签钳制） | ✅ |
-| R3-7 | P1 | 银河系整体垂直展开（银盘粒子 morph 为扁旋转椭球体 + 超新星随盘 + 银晕增亮/尘埃带渐隐） | 本批反馈（R3-6 复盘） | R3-6 | 🔲 |
+| R3-7 | P1 | 银河系整体垂直展开（银盘粒子 morph 为扁旋转椭球体 + 超新星随盘 + 银晕增亮/尘埃带渐隐） | 本批反馈（R3-6 复盘） | R3-6 | ✅ |
 
 > 优先级依据：P0 = 交互正确性缺陷（域外事件残留提醒频繁闪现 / 标签近距放大遮挡画面，干扰用户）。
 
@@ -216,7 +216,7 @@ R2-4 已交付事件视角域**软隔离**（`src/utils/eventScopes.ts`）：事
 **B. 展开模式状态与纯逻辑**
 - ✅ store 新增：`galaxyVerticalExpand: boolean`（默认 false）+ `galaxyExpandGain: number`（滑块值，范围 **[1, 6]**、默认 **3**，setter 经 `clampExpandGain` 钳制、非有限抛 RangeError）+ `setGalaxyVerticalExpand`/`toggleGalaxyVerticalExpand`/`setGalaxyExpandGain`；快捷键 `V` 切换开关（`useKeyboardShortcuts`）——🔶 差异登记：V 键未按 G 键模式做 L3 层级门控（任意视角均切换状态），因展开仅作用于特殊天体可见窗口 2.5–3.9、其余视角零视觉影响（登记于快捷键注释），域外按 V 无害
 - ✅ 展开增益纯逻辑（`utils/galacticLatitude.ts`）：开关线性进度 `advanceFrameTransition`（1 秒）经 `easeInOutCubic` 缓动后在 1 与滑块平滑值间插值（`effectiveExpandGain`，开/关约 1 秒完成、与滑块值大小无关）；滑块拖动经 `advanceExpandGainValue` 恒速平滑跟随（全量程 [1,6] 约 1 秒，消除 0.5 步进位置跳变）；应用点为 `useGalacticPlacement` 的 y 通道 `y = (sun.y × gain + offset.y × expandGain) × SCENE_UNITS_PER_LY`（太阳振荡 ×10 增益机制不变、互不相乘）；帧过渡由 Galaxy.tsx 每帧推进并写入注册表，SpecialBodies 消费——🔶 差异登记：useFrame 执行顺序下消费端至多滞后 1 帧，平滑过渡中不可辨
-- ✅ **范围界定（登记）**：仅 13 个特殊天体参与展开（sgr-a-star 银心原点无 offset 实际不动）；银盘粒子/旋臂/超新星事件与遗迹/太阳系标记不展开；展开为观察辅助视觉夸大，登记于 `utils/galacticLatitude.ts` 文件头 + store/注册表注释 + HelpHint 登记文案
+- ✅ **范围界定（登记）**：仅 13 个特殊天体参与展开（sgr-a-star 银心原点无 offset 实际不动）；银盘粒子/旋臂/超新星事件与遗迹/太阳系标记不展开（**R3-7 起口径更新**：银盘粒子与超新星随同一增益 morph 为扁旋转椭球体，太阳系标记仍不参与）；展开为观察辅助视觉夸大，登记于 `utils/galacticLatitude.ts` 文件头 + store/注册表注释 + HelpHint 登记文案
 
 **C. UI：控制面板 + 高度指示线**
 - ✅ ControlPanel 显示选项区新增"垂直展开（V）"复选框；开启时显示增益滑块（×1–×6，步进 0.5，默认 ×3，实时生效 + 视觉夸大说明文案）
@@ -224,7 +224,7 @@ R2-4 已交付事件视角域**软隔离**（`src/utils/eventScopes.ts`）：事
 - ✅ HelpHint 快捷键说明补 `V`（含科学性登记：方向按真实银纬、展开为观察辅助视觉夸大、标注为未放大推算高度）
 
 **D. 渲染/解析一致性**
-- ✅ 相机跟随/飞往与空间音效按展开后位置解析：`renderedGalacticFrame` 注册表扩展 `expandGain` 字段（默认 1，setter 校验 ≥1），`Galaxy.tsx` 每帧缓动后写入（SpecialBodies 只读消费不重复写入——单写者模式，差异登记），`cameraFocus.specialBodyFocusTarget` 消费（offset.y × expandGain）——渲染与解析同源（单测独立镜像渲染路径 computeGalacticFramePose + tiltAroundX，断言同一增益下两路径逐分量一致，含银心固定 w=1 + 太阳增益 ×10 + 展开 ×4.5 组合）；sgr-a-star（银心原点）与超新星事件解析不受影响（单测断言 expandGain 1→6 位置不变）；`galacticPointToSceneUnits` 本身不变（超新星等银心系坐标不展开）
+- ✅ 相机跟随/飞往与空间音效按展开后位置解析：`renderedGalacticFrame` 注册表扩展 `expandGain` 字段（默认 1，setter 校验 ≥1），`Galaxy.tsx` 每帧缓动后写入（SpecialBodies 只读消费不重复写入——单写者模式，差异登记），`cameraFocus.specialBodyFocusTarget` 消费（offset.y × expandGain）——渲染与解析同源（单测独立镜像渲染路径 computeGalacticFramePose + tiltAroundX，断言同一增益下两路径逐分量一致，含银心固定 w=1 + 太阳增益 ×10 + 展开 ×4.5 组合）；sgr-a-star（银心原点）与超新星事件解析不受影响（单测断言 expandGain 1→6 位置不变；**R3-7 起口径更新**：超新星在 supernovaFocusTarget 层随盘 morph，`galacticPointToSceneUnits` 本身仍不变）
 - ✅ 展开过渡期间跟随目标不跳变（每帧重解析，与既有跟随机制一致；渲染与解析读同一注册表值）
 
 **E. 测试与回归**
@@ -238,7 +238,7 @@ R2-4 已交付事件视角域**软隔离**（`src/utils/eventScopes.ts`）：事
 - ✅ 按 V 或面板开关开启展开：约 1 秒平滑过渡，天体垂直位置按滑块倍率（默认 ×3）展开，高度指示线（虚线 + ±ly 标注）出现（无头 Chrome 目验：r36-02 展开态、r36-09 M13 指示线特写、12 个 ±ly 标注 DOM 逐一核对 +4,858/−1,902/−1,616 ly 等）
 - ✅ 滑块 1–6 拖动实时平滑生效，无跳变（恒速平滑跟随单测断言；无头 Chrome 目验 ×6/×1 两档截图 r36-03/04，M13 高度随增益渐次分离）
 - ✅ 展开状态下飞往/跟随任一特殊天体：运镜落点正确、跟随无错位（渲染/解析同源单测；无头 Chrome 目验展开 ×3 下巡游至 M13 与猎户座星云，目标居中、信息面板正确，截图 r36-05/06）
-- ✅ 关闭展开恢复银纬真实高度（无头 Chrome 目验 r36-07）；L1/L2/L4 无视觉影响（特殊天体可见窗口 2.5–3.9 天然限定 + 生效增益仅乘 offset.y）；银盘粒子/超新星/太阳振荡不受展开影响（超新星/银心解析不变单测断言）
+- ✅ 关闭展开恢复银纬真实高度（无头 Chrome 目验 r36-07）；L1/L2/L4 无视觉影响（特殊天体可见窗口 2.5–3.9 天然限定 + 生效增益仅乘 offset.y）；银盘粒子/超新星/太阳振荡不受展开影响（超新星/银心解析不变单测断言；**R3-7 起口径更新**：银盘粒子与超新星随盘 morph，太阳振荡机制不变）
 - ✅ 60 FPS 不跌破（无头 Chrome Metal 1280×800 实测：L3 默认/展开/跟随 M13/关闭恢复均 60 FPS）；单测全通过（1862 用例/110 套件）、覆盖率 gate ≥90% 保持
 
 
@@ -264,36 +264,36 @@ R2-4 已交付事件视角域**软隔离**（`src/utils/eventScopes.ts`）：事
 ## 7.1 需求
 
 **A. 银盘粒子椭球 morph（40,000 粒，GPU uniform 驱动）**
-- 🔲 `Galaxy.tsx` 盘粒子 shader 新增 uniform `uExpand`（morph 权重 0–1）：在 R2-11 uEll mix（:243）之后追加 `pos.y = mix(pos.y, hTargetLy * uUnitsPerLy, uExpand);`（同一 morph 目标，顺序 mix 组合语义登记）；每帧由 Galaxy.tsx useFrame 写入，组不可见时跳过（现有门控）
-- 🔲 morph 权重纯函数（并入 `utils/galacticLatitude.ts`）：`diskMorphWeight(expandGain) = clamp((expandGain − 1) / (GALAXY_EXPAND_GAIN_MAX − 1), 0, 1)`——从 R3-6 注册表生效增益（`renderedGalacticFrame().expandGain`，已含 1 秒开关过渡 + 滑块平滑）派生，**零新增注册表字段、渲染/解析天然同源**；非法输入抛 RangeError
-- 🔲 CPU 镜像纯函数：`morphGalacticYLy(yLy, horizontalRadiusLy, morph01)` 与 shader 公式逐字镜像（`mix(y, (y/500)·max(r, 6000)·0.5, morph01)`），供超新星/单测消费；morph01=0 恒等、符号保留、|y| 单调放大断言
+- ✅ `Galaxy.tsx` 盘粒子 shader 新增 uniform `uExpand`（morph 权重 0–1）：在 R2-11 uEll mix 之后追加 `pos.y = mix(pos.y, hTargetLy * uUnitsPerLy, uExpand);`（同一 morph 目标，顺序 mix 组合语义登记于 shader 注释 + `combinedMorphWeight` 镜像单测）；每帧由 Galaxy.tsx useFrame 写入（morph01 计算位于既有可见性门控之后，组不可见时天然跳过）
+- ✅ morph 权重纯函数（并入 `utils/galacticLatitude.ts`）：`diskMorphWeight(expandGain) = clamp((expandGain − 1) / (GALAXY_EXPAND_GAIN_MAX − 1), 0, 1)`——从 R3-6 注册表生效增益（`renderedGalacticFrame().expandGain`，已含 1 秒开关过渡 + 滑块平滑）派生，**零新增注册表字段、渲染/解析天然同源**；非法输入抛 RangeError（单测含效果图确认值 ×5.25→0.85）
+- ✅ CPU 镜像纯函数：`morphGalacticYLy(yLy, horizontalRadiusLy, morph01)` 与 shader 公式逐字镜像（`mix(y, (y/500)·max(r, 6000)·0.5, morph01)`，常量 500/6000/0.5 导出为 `DISK_MORPH_*` 并单测断言同源），供超新星/单测消费；morph01=0 恒等、y=0 恒等、符号保留、|y| 单调放大断言
 
 **B. 超新星事件/遗迹随盘抬升（行为变更）**
-- 🔲 渲染：`Supernova.tsx` 两处 `positionLy × SCENE_UNITS_PER_LY` 定位（:151-153 活跃事件、:271-273 遗迹）y 通道改经 `morphGalacticYLy`（水平半径 √(x²+z²) 为银心系距离）
-- 🔲 解析：`cameraFocus.supernovaFocusTarget`（:297-302）传入 `galacticPointToSceneUnits` 前对 y 施加同一 morph（**`galacticPointToSceneUnits` 本身不改**——sgr-a-star 银心原点 y=0 morph 恒等，特殊天体走自身路径不受影响）；展开态飞往/跟随超新星落点正确（渲染/解析同源单测）
-- 🔲 范围登记更新：R3-6 在 `utils/galacticLatitude.ts` 文件头与 `galacticFrame.ts` 注册表注释登记的"超新星不参与展开"表述改为"超新星随盘 morph（R3-7）"
+- ✅ 渲染：`Supernova.tsx` 两处定位（活跃事件/遗迹）y 通道改经 `morphGalacticYLy`（水平半径 √(x²+z²) 为银心系距离；共用 `morphedSnYUnits` 辅助，useFrame 每帧标量更新 group.position.y 零分配，遗迹隐藏时跳过）
+- ✅ 解析：`cameraFocus.supernovaFocusTarget` 传入 `galacticPointToSceneUnits` 前对 y 施加同一 morph（**`galacticPointToSceneUnits` 本身未改**——sgr-a-star 银心原点 y=0 morph 恒等，特殊天体走自身路径不受影响，单测断言维持）；展开态飞往/跟随超新星落点正确（渲染/解析同源单测 ×3/×6/银心固定 w=1/×1 恒等零回退；无头 Chrome 目验展开 ×6 下飞往超新星遗迹居中，截图 r37v-13）
+- ✅ 范围登记更新：R3-6 在 `utils/galacticLatitude.ts` 文件头与 `galacticFrame.ts` 注册表注释登记的"超新星不参与展开"表述改为"超新星随盘 morph（R3-7）"；§R3-6 交付登记三处口径同步加注
 
 **C. 银晕增亮 + 尘埃带渐隐（展开态联动）**
-- 🔲 银晕：`haloMaterial.uniforms.uOpacity`（Galaxy.tsx :666）乘 `1 + 0.3 × morph01`（纯函数 `haloExpandBoost`）
-- 🔲 尘埃带：`dustLane` 计算（:753）乘 `1 − morph01`（纯函数 `dustLaneExpandFade`；单一应用点同时驱动 shader vDust 与暗带 mesh/核球辉光压低链路）
-- 🔲 不参与 morph 登记：银晕粒子/球状星团（本已球状）、太阳系标记/尾迹/预测线/银河年刻度（太阳振荡 ×10 机制不变）、特殊天体（维持 R3-6 银纬增益机制，同一滑块驱动）
+- ✅ 银晕：`haloMaterial.uniforms.uOpacity` 乘 `1 + 0.3 × morph01`（纯函数 `haloExpandBoost`；可见分支覆写，隐藏路径保持基础写值）
+- ✅ 尘埃带：`dustLane` 计算乘 `1 − morph01`（纯函数 `dustLaneExpandFade`；单一应用点同时驱动 shader vDust 与暗带 mesh/核球辉光压低链路，无头 Chrome ×6 侧视暗带消失核对，截图 r37v-03）
+- ✅ 不参与 morph 登记：银晕粒子/球状星团（本已球状）、太阳系标记/尾迹/预测线/银河年刻度（太阳振荡 ×10 机制不变）、特殊天体（维持 R3-6 银纬增益机制，同一滑块驱动）——登记于 utils/galacticLatitude.ts 文件头
 
 **D. 层级语义与登记**
-- 🔲 展开随 V 开关全程生效：银河系组在 L4 仍可见 → **V 开启时 L4 同样呈椭球**（符合"整个银河系变椭球"诉求，登记为预期行为；R3-6"其余视角零视觉影响"口径同步更新）；L1/L2 银河系组不可见零影响
-- 🔲 与 R2-11 合并演化互操作登记：L4 合并预览期间 uEll 与 uExpand 同目标顺序 mix，终态 Milkomeda 观感不受 V 开关破坏（组合权重单测镜像断言）
-- 🔲 权衡登记（HelpHint/文件头）：morph 后侧视旋臂图案被垂直弥散（俯视仍清晰）；展开为观察辅助视觉夸大
+- ✅ 展开随 V 开关全程生效：银河系组在 L4 仍可见 → **V 开启时 L4 同样呈椭球**（符合"整个银河系变椭球"诉求，登记为预期行为；R3-6"其余视角零视觉影响"口径同步更新）；L1/L2 银河系组不可见零影响
+- ✅ 与 R2-11 合并演化互操作登记：L4 合并预览期间 uEll 与 uExpand 同目标顺序 mix，终态 Milkomeda 观感不受 V 开关破坏（`combinedMorphWeight` 单测镜像断言：uEll=1 时组合权重恒 1）
+- ✅ 权衡登记（HelpHint/文件头/ControlPanel 说明文案）：morph 后侧视旋臂图案被垂直弥散（俯视仍清晰）；展开为观察辅助视觉夸大
 
 **E. 测试与回归**
-- 🔲 纯函数单测：`diskMorphWeight` 映射与钳制（×1→0/×3→0.4/×6→1/非法输入）、`morphGalacticYLy` 镜像公式（恒等/符号/单调/核球最小厚度下限/与 shader 常量一致）、`haloExpandBoost`/`dustLaneExpandFade`、超新星渲染/解析同源、uEll+uExpand 组合权重
-- 🔲 R3-6 既有行为零回退（特殊天体/指示线/滑块钳制单测不动）；覆盖率 gate ≥90% 保持；type-check/lint/build 全绿
-- 🔲 CHANGELOG [Unreleased] 登记（超新星随盘属行为变更）；REQUIREMENTS.md §3.1.5/§4.4 同步；R3-6 相关登记口径更新
+- ✅ 纯函数单测（`galacticLatitudeR37.test.ts` 23 例）：`diskMorphWeight` 映射与钳制（×1→0/×3→0.4/×6→1/×5.25→0.85/单调/非法输入）、`morphGalacticYLy` 镜像公式（恒等/符号/单调/核球最小厚度下限/与 shader 常量一致）、`haloExpandBoost`/`dustLaneExpandFade`、超新星渲染/解析同源（独立镜像渲染路径）、uEll+uExpand 组合权重顺序 mix 镜像
+- ✅ R3-6 既有行为零回退（特殊天体/指示线/滑块钳制单测零改动，仅一处测试标题口径加注）；全量 1885 用例/111 套件通过、覆盖率 gate ≥90% 保持；type-check/lint/build 全绿
+- ✅ CHANGELOG [Unreleased] 登记（超新星随盘属行为变更）；REQUIREMENTS.md §3.1.5/§4.4 同步（版本升 3.3）；R3-6 相关登记口径更新（文件头/注册表注释/§R3-6 交付登记/单测标题）
 
 ## 7.2 验收标准
 
-- 🔲 V 开启（默认 ×3）：银盘约 1 秒平滑 morph 至中等椭球（权重 0.4）；滑块 ×6 时完整轴比 0.5 椭球——**正面（俯视）轮廓仍为圆形、旋臂可辨；最厚侧面为椭圆**；×1 时盘不 morph（权重 0）
-- 🔲 滑块 1–6 拖动盘厚度实时平滑跟随（与 R3-6 特殊天体同一增益源，无跳变）
-- 🔲 超新星遗迹/活跃事件随盘抬升；展开态飞往/跟随超新星运镜落点正确（渲染/解析同源）
-- 🔲 展开态银晕增亮（约 +30%）强化球形轮廓；尘埃带侧视暗带随 morph 渐隐
-- 🔲 关闭展开：约 1 秒恢复薄盘 + 尘埃带/银晕恢复；R3-6 特殊天体/指示线行为零回退；银晕粒子/球状星团/太阳系标记不受 morph 影响
-- 🔲 L4 下 V 开启同样呈椭球（登记语义）；合并预览终态 Milkomeda 不受破坏
-- 🔲 60 FPS 不跌破（uniform-only、零新增粒子、渲染循环零分配）；单测全通过、覆盖率 gate ≥90% 保持
+- ✅ V 开启（默认 ×3）：银盘约 1 秒平滑 morph 至中等椭球（权重 0.4）；滑块 ×6 时完整轴比 0.5 椭球——**正面（俯视）轮廓仍为圆形、旋臂可辨；最厚侧面为椭圆**；×1 时盘不 morph（权重 0）（无头 Chrome 侧视四态对比截图 r37v-01～04、近正俯视对比 r37v-10/11）
+- ✅ 滑块 1–6 拖动盘厚度实时平滑跟随（与 R3-6 特殊天体同一增益源 `renderedGalacticFrame().expandGain` 派生，无第二套过渡状态；目验 ×6↔×1 平滑）
+- ✅ 超新星遗迹/活跃事件随盘抬升；展开态飞往/跟随超新星运镜落点正确（渲染/解析同源单测 + 无头 Chrome 展开 ×6 飞往超新星遗迹居中跟随，截图 r37v-13）
+- ✅ 展开态银晕增亮（约 +30%）强化球形轮廓；尘埃带侧视暗带随 morph 渐隐（r37v-03 ×6 侧视暗带消失、银晕增亮）
+- ✅ 关闭展开：约 1 秒恢复薄盘 + 尘埃带/银晕恢复（r37v-05）；R3-6 特殊天体/指示线行为零回退（既有单测零改动）；银晕粒子/球状星团/太阳系标记不受 morph 影响
+- ✅ L4 下 V 开启同样呈椭球（登记语义，银河系组 L4 仍可见）；合并预览终态 Milkomeda 不受破坏（combinedMorphWeight uEll=1 恒 1 单测断言）
+- ✅ 60 FPS 不跌破（uniform-only、零新增粒子、渲染循环零分配；无头 Chrome Metal 1280×800 实测：侧视默认/展开 ×3/×6/俯视 ×6/展开跟随超新星/关闭恢复均 60 FPS）；单测全通过（1885 用例/111 套件）、覆盖率 gate ≥90% 保持

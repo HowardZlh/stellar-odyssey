@@ -68,7 +68,10 @@ import { easeInOutCubic } from "@/utils/animation";
 import {
   GALAXY_EXPAND_TRANSITION_SECONDS,
   advanceExpandGainValue,
+  diskMorphWeight,
+  dustLaneExpandFade,
   effectiveExpandGain,
+  haloExpandBoost,
 } from "@/utils/galacticLatitude";
 import {
   createTrailBuffer,
@@ -202,6 +205,9 @@ export function Galaxy(): JSX.Element {
         uTidalDir: { value: new THREE.Vector3(1, 0, 0) },
         uEll: { value: 0 },
         uBurst: { value: 0 },
+        // R3-7 银河系整体垂直展开：盘 morph 权重（diskMorphWeight 由
+        // R3-6 生效展开增益派生，与特殊天体展开同源；同 uEll 目标顺序 mix）
+        uExpand: { value: 0 },
       },
       vertexShader: /* glsl */ `
         attribute float aRadiusLy;
@@ -220,6 +226,7 @@ export function Galaxy(): JSX.Element {
         uniform vec3 uTidalDir;
         uniform float uEll;
         uniform float uBurst;
+        uniform float uExpand;
         varying vec3 vColor;
         varying float vWave;
         varying float vDust;
@@ -241,6 +248,11 @@ export function Galaxy(): JSX.Element {
           // （目标轴比约 0.5，旋臂/团块调制随 uEll 抹平于亮度分支）
           float hTargetLy = (aHeightLy / 500.0) * max(aRadiusLy, 6000.0) * 0.5;
           pos.y = mix(pos.y, hTargetLy * uUnitsPerLy, uEll);
+          // R3-7 银河系整体垂直展开：同一椭球目标的第二次 mix（组合权重
+          // 1−(1−uEll)(1−uExpand)，utils/galacticLatitude.combinedMorphWeight
+          // 镜像登记；终态 Milkomeda uEll=1 时不受 V 开关影响）。
+          // 每粒子按自身真实高度等比例抬升、x/z 不动 → 正面轮廓天然不变
+          pos.y = mix(pos.y, hTargetLy * uUnitsPerLy, uExpand);
           // R2-11 潮汐扭曲（穿越/回摆期）：沿 MW–M31 连线拉伸（外盘更强，
           // 潮汐尾示意）+ 外盘朝伴星系侧整体偏置（潮汐桥示意）
           float outer = smoothstep(0.15, 1.0, aRadiusLy / 50000.0);
@@ -663,6 +675,7 @@ export function Galaxy(): JSX.Element {
     group.visible = weight > 0.001;
     diskMaterial.uniforms.uOpacity.value = weight;
     // R2-9：银晕淡（包裹感背景层）、星团亮（点簇可辨）
+    // （可见时下方 R3-7 分支会按展开 morph 权重覆写为 0.55·weight·boost）
     haloMaterial.uniforms.uOpacity.value = 0.55 * weight;
     clusterMaterial.uniforms.uOpacity.value = weight;
     if (!group.visible) return;
@@ -730,6 +743,14 @@ export function Galaxy(): JSX.Element {
     // 银心固定权重/垂直增益/展开增益解析 L3 天体场景坐标，保证飞往/跟随与渲染一致
     setRenderedGalacticFrame(w, gain, expandGain);
 
+    // R3-7 银河系整体垂直展开：盘 morph 权重由同一生效增益派生
+    // （×1→0、×3→0.4、×6→1.0），写入盘粒子 uExpand（GPU morph 零新增粒子）；
+    // 银晕展开态增亮 +30%（强化椭球轮廓，银晕粒子本身球状不参与 morph）
+    const morph01 = diskMorphWeight(expandGain);
+    diskMaterial.uniforms.uExpand.value = morph01;
+    haloMaterial.uniforms.uOpacity.value =
+      0.55 * weight * haloExpandBoost(morph01);
+
     // R2-9 视角因子：相机相对银心方向 → 正视程度（纯函数，倾斜逆旋转）
     // 驱动 1) 尘埃带侧视暗带强度；2) 核球辉光 sprite 椭球轴比
     const camPos = frameState.camera.position;
@@ -749,8 +770,11 @@ export function Galaxy(): JSX.Element {
       .copy(tidalDirLocal)
       .multiplyScalar(mwM31SignedSeparationLy(simDays) < 0 ? -1 : 1);
 
-    // 终态椭圆星系无尘埃带（气体在星暴中耗尽，随椭圆插值淡出）
-    const dustLane = dustLaneStrength(faceOn) * (1 - ellMix);
+    // 终态椭圆星系无尘埃带（气体在星暴中耗尽，随椭圆插值淡出）；
+    // R3-7 展开态同样渐隐（morph 后"盘中平面"语义消失，单一应用点
+    // 同时驱动 shader vDust / 暗带 mesh / 核球辉光压低链路）
+    const dustLane =
+      dustLaneStrength(faceOn) * (1 - ellMix) * dustLaneExpandFade(morph01);
     diskMaterial.uniforms.uDustLane.value = dustLane;
     if (dustLaneRef.current) {
       const laneMat = dustLaneRef.current.material as THREE.MeshBasicMaterial;
