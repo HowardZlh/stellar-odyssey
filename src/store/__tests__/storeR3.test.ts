@@ -144,6 +144,103 @@ describe('R3：requestFlyTo 按目标域归类切换巡游域并锁定对应层�
   });
 });
 
+describe('R3-2：天体简介面板跟随当前巡游天体（selectedBodyId 联动）', () => {
+  beforeEach(resetStore);
+
+  it('行星系统巡游（L1）切换：面板跟随新天体', () => {
+    useSimulationStore.setState({ cycleScope: 'system', viewLevel: 'L1' });
+    useSimulationStore.getState().requestFlyTo('earth');
+    useSimulationStore.getState().cycleScopeBody(1); // → tiangong
+    expect(useSimulationStore.getState().selectedBodyId).toBe('tiangong');
+    useSimulationStore.getState().cycleScopeBody(1); // → iss
+    expect(useSimulationStore.getState().selectedBodyId).toBe('iss');
+  });
+
+  it('太阳系巡游（L2）切换：面板跟随新天体', () => {
+    useSimulationStore.setState({ followBodyId: 'earth', anchorBodyId: 'earth' });
+    useSimulationStore.getState().cycleScopeBody(1); // → mars
+    expect(useSimulationStore.getState().selectedBodyId).toBe('mars');
+  });
+
+  it('银河系巡游（L3）切换：面板跟随新天体', () => {
+    useSimulationStore.setState({
+      cycleScope: 'galaxy',
+      viewLevel: 'L3',
+      continuousLevel: 3,
+      followBodyId: 'sgr-a-star',
+    });
+    useSimulationStore.getState().cycleScopeBody(1); // → betelgeuse
+    expect(useSimulationStore.getState().selectedBodyId).toBe('betelgeuse');
+  });
+
+  it('宇宙巡游（L4）切换：面板跟随新天体', () => {
+    useSimulationStore.setState({
+      cycleScope: 'universe',
+      viewLevel: 'L4',
+      continuousLevel: 4,
+      followBodyId: 'm31',
+    });
+    useSimulationStore.getState().cycleScopeBody(1); // → m33
+    expect(useSimulationStore.getState().selectedBodyId).toBe('m33');
+  });
+
+  it('未跟随时首次按下一个（起始锚定）同样显示面板（确认项 3）', () => {
+    useSimulationStore.setState({ cycleScope: 'galaxy', viewLevel: 'L3', continuousLevel: 3 });
+    useSimulationStore.getState().cycleScopeBody(1); // 起始锚定 → sgr-a-star
+    expect(useSimulationStore.getState().selectedBodyId).toBe('sgr-a-star');
+  });
+
+  it('手动关闭面板后跟随期间保持关闭，下一次切换才再次显示', () => {
+    useSimulationStore.setState({ followBodyId: 'earth', anchorBodyId: 'earth' });
+    useSimulationStore.getState().cycleScopeBody(1); // → mars，面板显示
+    useSimulationStore.getState().selectBody(null); // 用户 ✕ 关闭
+    expect(useSimulationStore.getState().selectedBodyId).toBeNull();
+    useSimulationStore.getState().cycleScopeBody(1); // → encke，面板重新显示
+    expect(useSimulationStore.getState().selectedBodyId).toBe('encke');
+  });
+
+  it('巡游切换清空黑子/日珥特征卡片（避免两张卡片叠显）', () => {
+    useSimulationStore.setState({
+      followBodyId: 'earth',
+      anchorBodyId: 'earth',
+      selectedSolarFeature: {
+        kind: 'sunspot',
+        titleZh: '黑子群',
+        descZh: '样例',
+        earthCount: 3,
+      },
+    });
+    useSimulationStore.getState().cycleScopeBody(1);
+    expect(useSimulationStore.getState().selectedSolarFeature).toBeNull();
+  });
+
+  it('飞往任意天体（确认项 2）：面板跟随目标（含通知入口"飞往太阳"）', () => {
+    useSimulationStore.getState().requestFlyTo('sun');
+    expect(useSimulationStore.getState().selectedBodyId).toBe('sun');
+    useSimulationStore.getState().requestFlyTo('heliopause');
+    expect(useSimulationStore.getState().selectedBodyId).toBe('heliopause');
+  });
+
+  it('飞往超新星事件（无目录条目）：维持现状不改写选中', () => {
+    useSimulationStore.getState().selectBody('earth');
+    useSimulationStore
+      .getState()
+      .triggerSupernova({ x: 100, y: 0, z: 200 }, 20, 30, 1_000_000);
+    const eventId = useSimulationStore.getState().activeSupernova!.id;
+    useSimulationStore.getState().requestFlyTo(eventId);
+    expect(useSimulationStore.getState().followBodyId).toBe(eventId);
+    expect(useSimulationStore.getState().selectedBodyId).toBe('earth');
+  });
+
+  it('单成员系统（无卫星行星）切换 no-op：不改写选中', () => {
+    useSimulationStore.getState().requestFlyTo('mercury');
+    useSimulationStore.setState({ cycleScope: 'system', viewLevel: 'L1' });
+    useSimulationStore.getState().selectBody(null);
+    useSimulationStore.getState().cycleScopeBody(1);
+    expect(useSimulationStore.getState().selectedBodyId).toBeNull();
+  });
+});
+
 describe('R3：cycleScopeBody 巡游切换锁定域主层级', () => {
   beforeEach(resetStore);
 
