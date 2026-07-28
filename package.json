@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:3100": "NEXT_DIST_DIR=.next-3100 next dev -p 3100",
+    "dev:3200": "NEXT_DIST_DIR=.next-3200 next dev -p 3200",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
