@@ -1,0 +1,7 @@
+{
+  "source": "Gaia DR3 (gaiadr3.gaia_source), ESA Gaia Archive TAP (https://gea.esac.esa.int/tap-server/tap/sync)",
+  "query": "SELECT TOP 600 source_id, ra, dec, parallax, pmra, pmdec, phot_g_mean_mag, bp_rp FROM gaiadr3.gaia_source WHERE 1=CONTAINS(POINT('ICRS', ra, dec), CIRCLE('ICRS', 56.75, 24.1167, 2.5)) AND parallax BETWEEN 7.0 AND 7.7 AND SQRT(POWER(pmra-19.9,2)+POWER(pmdec+45.5,2)) < 5 AND phot_g_mean_mag IS NOT NULL AND bp_rp IS NOT NULL ORDER BY phot_g_mean_mag ASC",
+  "selectionCriteria": "锥形检索：昴星团中心 (ICRS 56.75°, +24.1167°) 半径 2.5°；视差 7.0–7.7 mas（距离约 130–143 pc）；自行共动：|(pmra, pmdec) − (19.9, −45.5) mas/yr| < 5 mas/yr（簇平均自行取 Gaia DR3 文献值）；按 G 星等从亮到暗取前 600 颗",
+  "retrievedAt": "2026-07-28T00:00:00Z",
+  "license": "ESA Gaia DPAC, CC BY-SA 3.0 IGO (https://www.cosmos.esa.int/web/gaia-users/license)"
+}

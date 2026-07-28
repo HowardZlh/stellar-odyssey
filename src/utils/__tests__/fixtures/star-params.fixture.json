@@ -1,0 +1,64 @@
+{
+  "meta": {
+    "source": "SIMBAD（光谱型，检索于 2026-07-28）+ 文献数值表（逐星 ref 字段登记）",
+    "retrievedAt": "2026-07-28T00:00:00Z",
+    "license": "SIMBAD (CDS, Strasbourg)：学术引用许可；文献数值属公开科学数据",
+    "count": 6
+  },
+  "stars": {
+    "betelgeuse": {
+      "nameZh": "参宿四",
+      "simbadId": "* alf Ori",
+      "spectralType": "M1-M2Ia-Iab",
+      "teffK": 3600,
+      "radiusRsun": 764,
+      "luminosityLsun": 126000,
+      "ref": "Joyce et al. (2020, ApJ 902, 63)：Teff=3600 K、R=764 R☉、L=1.26e5 L☉（变星，取代表值）"
+    },
+    "rigel": {
+      "nameZh": "参宿七",
+      "simbadId": "* bet Ori",
+      "spectralType": "B8Ia",
+      "teffK": 12100,
+      "radiusRsun": 78.9,
+      "luminosityLsun": 120000,
+      "ref": "Przybilla et al. (2010, A&A 517, A38) Teff/R；Moravveji et al. (2012, ApJ 747, 108) L"
+    },
+    "siriusA": {
+      "nameZh": "天狼星 A",
+      "simbadId": "* alf CMa",
+      "spectralType": "A0mA1Va",
+      "teffK": 9940,
+      "radiusRsun": 1.711,
+      "luminosityLsun": 25.4,
+      "ref": "Kervella et al. (2003, A&A 408, 681) R 干涉测量；Adelman (2004) Teff；Liebert et al. (2005, ApJ 630, L69) L"
+    },
+    "siriusB": {
+      "nameZh": "天狼星 B",
+      "simbadId": "* alf CMa B",
+      "spectralType": "DA1.9",
+      "teffK": 25200,
+      "radiusRsun": 0.0084,
+      "luminosityLsun": 0.056,
+      "ref": "Barstow et al. (2005, MNRAS 362, 1134) Teff=25193 K；Holberg et al. (1998, ApJ 497, 935) R/L"
+    },
+    "deltaCephei": {
+      "nameZh": "造父一",
+      "simbadId": "* del Cep",
+      "spectralType": "F5Iab:+B7-8",
+      "teffK": 5960,
+      "radiusRsun": 43.3,
+      "luminosityLsun": 1955,
+      "ref": "Mérand et al. (2005, A&A 438, L9) R=43.3 R☉ 干涉测量；Engle et al. (2014, ApJ 794, 80) <Teff>/L（脉动均值）"
+    },
+    "wr124": {
+      "nameZh": "WR 124",
+      "simbadId": "Hen 2-427",
+      "spectralType": "WN8h",
+      "teffK": 44700,
+      "radiusRsun": 11.93,
+      "luminosityLsun": 562000,
+      "ref": "Hamann et al. (2019, A&A 625, A57)：Gaia DR2 距离修订后 T*=44.7 kK、R=11.93 R☉、L=5.62e5 L☉"
+    }
+  }
+}

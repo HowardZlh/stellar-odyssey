@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "source": "Gaia DR3 (gaiadr3.gaia_source), ESA Gaia Archive TAP (https://gea.esac.esa.int/tap-server/tap/sync)",
+    "retrievedAt": "2026-07-28T00:00:00Z",
+    "license": "ESA Gaia DPAC, CC BY-SA 3.0 IGO (https://www.cosmos.esa.int/web/gaia-users/license)",
+    "count": 3,
+    "selectionCriteria": "锥形检索：昴星团中心 (ICRS 56.75°, +24.1167°) 半径 2.5°；视差 7.0–7.7 mas（距离约 130–143 pc）；自行共动：|(pmra, pmdec) − (19.9, −45.5) mas/yr| < 5 mas/yr（簇平均自行取 Gaia DR3 文献值）；按 G 星等从亮到暗取前 600 颗",
+    "query": "SELECT TOP 600 source_id, ra, dec, parallax, pmra, pmdec, phot_g_mean_mag, bp_rp FROM gaiadr3.gaia_source WHERE 1=CONTAINS(POINT('ICRS', ra, dec), CIRCLE('ICRS', 56.75, 24.1167, 2.5)) AND parallax BETWEEN 7.0 AND 7.7 AND SQRT(POWER(pmra-19.9,2)+POWER(pmdec+45.5,2)) < 5 AND phot_g_mean_mag IS NOT NULL AND bp_rp IS NOT NULL ORDER BY phot_g_mean_mag ASC",
+    "photometricTransform": "Gaia DR3 文档 §5.5.1 表 5.9（Johnson-Cousins）：V = G − f(BP−RP)（σ=0.030）；B−V 由 GBP−GRP = f(B−V)（σ=0.066）二分反解。坐标为 ICRS 轴向、原点平移至成员星质心（pc）"
+  },
+  "stars": [
+    {
+      "id": "65283232316451328",
+      "x": -2.443,
+      "y": -4.584,
+      "z": -1.877,
+      "bv": -0.049,
+      "v": 3.891
+    },
+    {
+      "id": "66529975427235712",
+      "x": 0.032,
+      "y": 2.492,
+      "z": 0.809,
+      "bv": -0.06,
+      "v": 5.231
+    },
+    {
+      "id": "64940906245415808",
+      "x": -3.227,
+      "y": -3.393,
+      "z": -3.978,
+      "bv": -0.08,
+      "v": 5.457
+    }
+  ]
+}
