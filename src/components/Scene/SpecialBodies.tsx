@@ -86,7 +86,7 @@ interface BodyProps {
  * 视觉夸大登记：对流演化速率加速、色温梯度为简化 RGB 近似（见 stellarSurface 文件头）。
  * 门控：仅 L3 可见时推进 uTime（uniform），L1/L2/L4 零开销。
  */
-interface StellarSurfaceProps {
+export interface StellarSurfaceProps {
   radius: number;
   segments: number;
   color: string;
@@ -103,7 +103,7 @@ interface StellarSurfaceProps {
   onClick?: (e: { stopPropagation: () => void }) => void;
 }
 
-function StellarSurface({
+export function StellarSurface({
   radius,
   segments,
   color,

@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- 实现开发预览工位（R4-1，IMPROVEMENT_REQUIREMENTS_4 §R4-1）：新增独立路由 `/dev/preview?body=<id>`，隔离渲染指定天体细节模型用于人工目检提效——独立 Canvas（黑背景 + 可选参考网格 + OrbitControls），不挂载主场景任何组件（无 Galaxy/Universe/SolarSystem/音频/store 主循环）。A) 纯逻辑注册表 `src/utils/devPreview.ts`——`previewEntryForBody(id)` 查找预览挂载配置（未注册返回 null，页面显示占位提示并列出可用对象链接）、`PreviewParam { key, label, min, max, default, step? }`（每条目 ≤8 个调试滑杆）、`validatePreviewEntry`（注册期防错：数量超限/键重复/min>max/默认值越界/相机距离非正即抛 RangeError）、`defaultParamValues`/`clampParamValue`（滑杆越界钳制、非有限数回落默认值）；后续 R4 各阶段把细节组件经 `componentKey` 注册进来，渲染依赖不污染纯逻辑层。B) 预览页面板——Bloom 开关 + 曝光滑杆（tone mapping exposure）+ 参考网格开关 + 组件声明的调试滑杆 + 时间流速；左上 HUD 实时显示 FPS 与 JS 堆（复用 `utils/performance.ts`，组件自持 rAF 不依赖主循环）与数据来源登记。C) 生产安全（用户登记方案）——`NODE_ENV === 'production'` 下渲染空页且预览专用 harness（含 three/drei/postprocessing）走 `next/dynamic` 动态 import 仅 dev 加载，实测生产构建将 harness 打入独立异步 chunk、不被生产页 HTML 引用，主应用 bundle 零增大、生产路由不可用。D) 首个可预览对象 `betelgeuse`——复用现有 `StellarSurface`（红巨星档 limbU/cellScale/convection/rednessStrength 参数），时间流速经虚拟时钟覆写 uTime 实现可调，验证管线闭环。新增单测 `devPreview`（24 例，覆盖率 100%），全量 1995 用例/115 套件通过，覆盖率 gate ≥90% 保持，type-check/lint/build 全绿；无头 Chrome 目验（Metal 1280×800，截图 r41-01～05 + r41-metal 登记）：betelgeuse 恒星球体可见、绕行 60 FPS、cellScale 滑杆实时改变对流颗粒尺度、未注册 id 与缺参均显示占位不报错
+
 ## [0.1.2] - 2026-07-28
 
 ### 新增
