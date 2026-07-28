@@ -232,12 +232,49 @@ const VOLUME_TEST_ENTRY: PreviewEntry = {
 };
 
 /**
+ * 猎户座星云 M42 体积化 ①（R4-7，人工目检检查点）：128³ RG 双通道密度场
+ * 分帧烘焙 + 双通道 raymarch + Trapezium 四亮星 sprite 内嵌
+ *
+ * 密度场：`utils/nebulaVolume.makeM42Sampler`（发射 + 吸收双通道，确定性
+ * 种子）；材质：`components/Scene/volumetric/NebulaVolumeMaterial.ts`。
+ * 滑杆按 §R4-7 指定三件（密度倍率/双色权重/步数）+ 尘埃吸收/亮度/质量档/
+ * 抖动（7 个 ≤ 上限 8）。本阶段仅预览页可见，不接主场景（R4-8 范围）。
+ */
+const ORION_NEBULA_ENTRY: PreviewEntry = {
+  bodyId: 'orion-nebula',
+  title: '猎户座星云 M42（体积 raymarch · 双通道密度场）',
+  componentKey: 'orion-nebula-volume',
+  cameraDistance: 3.6,
+  params: [
+    { key: 'steps', label: '基准步进数', min: 16, max: 128, default: 64, step: 1 },
+    { key: 'density', label: '密度倍率', min: 0, max: 8, default: 3.2 },
+    { key: 'weightBias', label: '双色权重（−OIII/+Hα）', min: -1, max: 1, default: 0 },
+    { key: 'dust', label: '尘埃吸收倍率', min: 0, max: 4, default: 1 },
+    { key: 'intensity', label: '亮度', min: 0.1, max: 4, default: 1.3 },
+    { key: 'quality', label: '质量档（0自动 1低 2中 3高）', min: 0, max: 3, default: 0, step: 1 },
+    { key: 'jitter', label: '蓝噪声抖动（0关 1开）', min: 0, max: 1, default: 1, step: 1 },
+  ],
+  dataSource:
+    'NASA/ESA Hubble 公版图像（形态参考，程序化近似登记：扇贝腔/西北亮弓/东南暗湾/Trapezium 空腔与电离前沿壳）；Hα/OIII 双色权重取纯径向近似',
+};
+
+/** 体积类预览条目的 componentKey 集（HUD 质量档行按此显隐） */
+export const VOLUME_PREVIEW_COMPONENT_KEYS: ReadonlySet<string> = new Set([
+  'volume-raymarch-test',
+  'orion-nebula-volume',
+]);
+
+/**
  * 预览注册表（后续 R4 阶段在此追加条目）
  *
  * 以 Map 存储便于 O(1) 查找；模块加载时对每个条目做一次合法性自检。
  */
 export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
-  const entries: readonly PreviewEntry[] = [...STELLAR_ENTRIES, VOLUME_TEST_ENTRY];
+  const entries: readonly PreviewEntry[] = [
+    ...STELLAR_ENTRIES,
+    VOLUME_TEST_ENTRY,
+    ORION_NEBULA_ENTRY,
+  ];
   const map = new Map<string, PreviewEntry>();
   for (const e of entries) {
     validatePreviewEntry(e);
