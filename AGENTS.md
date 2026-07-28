@@ -218,10 +218,17 @@ src/
 注意运行项目时，不要占用3000端口，使用3100端口，用户会执行npm run dev进行测试验证占用3000
 ### 开发
 ```bash
-npm run dev          # 启动开发服务器
+npm run dev          # 启动开发服务器（端口 3000，留给用户）
+npm run dev:3100     # Agent 专用：端口 3100，独立 distDir，可与 3000 并行
+npm run dev:3200     # 备用：端口 3200，独立 distDir
 npm run build        # 构建生产版本
 npm run start        # 启动生产服务器
 ```
+
+> Next.js 在 `<distDir>/dev/lock` 上加了互斥锁，同一 distDir 只允许一个 dev server 运行，
+> 仅用 `next dev -p 3100` 换端口会被拒绝启动。必须用 `dev:3100` / `dev:3200`，
+> 它们通过 `NEXT_DIST_DIR` 分配了独立构建目录。该变量只在 dev 阶段生效，
+> 不要在 `npm run build` 时设置——会改变静态导出产物路径并破坏部署。
 
 ### 测试
 ```bash

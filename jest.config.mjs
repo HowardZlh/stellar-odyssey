@@ -9,7 +9,8 @@ const config = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
-  testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.next/'],
+  // `.next-` 前缀覆盖多端口并行开发时各实例的独立构建目录（见 next.config.mjs 的 distDir）
+  testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.next/', '<rootDir>/.next-'],
   // 核心业务逻辑覆盖率要求（AGENTS.md 要求 80%+，本项目按 90% 执行）：
   // 物理计算、尺度管理、时间系统、动画插值、音效混合、状态管理、数据完整性
   collectCoverageFrom: [
