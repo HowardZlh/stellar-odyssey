@@ -1,6 +1,6 @@
 # 改进需求文档（第四批，R4 迭代：天体真实观感 3D 模型）
 
-> **文档版本**: 1.0（全部 🔲 未实现）
+> **文档版本**: 1.1（R4-1 ✅ 已完成，其余 🔲 未实现）
 > **参考文档**: REQUIREMENTS.md、IMPROVEMENT_REQUIREMENTS_2.md（R2-7/R2-8 近观基础）、IMPROVEMENT_REQUIREMENTS_3.md（R3-1 巡游域）、AGENTS.md
 > **状态标记**: ✅ 已完成 / 🔶 部分完成 / 🔲 未实现
 > **调研说明**: §0.2 现状锚点已经代码调研核实（2026-07），实现时若行号漂移以符号名为准。
@@ -10,7 +10,7 @@
 
 | 阶段 | 优先级 | 主题 | 复杂度 | 依赖 | 状态 |
 |---|---|---|---|---|---|
-| R4-1 | P0 | 开发预览工位（/dev/preview 独立天体渲染验证页） | S | 无 | 🔲 |
+| R4-1 | P0 | 开发预览工位（/dev/preview 独立天体渲染验证页） | S | 无 | ✅ |
 | R4-2 | P0 | 细节层管理泛化（统一近观细节层注册/门控/LRU/预算） | M | 无 | 🔲 |
 | R4-3 | P0 | 体积渲染框架 ①：raymarch 材质 + 3D 密度纹理工具 | L | R4-1 | 🔲 |
 | R4-4 | P0 | 体积渲染框架 ②：半分辨率管线 + 蓝噪声抖动 + 帧率自适应降级 | M | R4-3 | 🔲 |
@@ -92,18 +92,18 @@
 
 ### 1.1 需求
 
-- 🔲 新增独立路由 `src/app/dev/preview/page.tsx`（App Router）：单独渲染指定天体细节模型，不加载主场景（无 Galaxy/Universe/SolarSystem/音频），黑色背景 + 可选参考网格
-- 🔲 URL 参数 `?body=<id>` 指定预览对象（id 与 catalog/specialBodies/galaxies 一致）；预览注册表纯逻辑模块 `src/utils/devPreview.ts`：`previewEntryForBody(id)` 返回该天体的细节组件挂载配置（后续 R4 各阶段将细节组件注册进来），未注册 id 显示占位提示
-- 🔲 内置轨道相机控制（drei `OrbitControls`）+ 简易参数面板：曝光/Bloom 开关、时间流速、每个细节组件可声明 ≤8 个调试滑杆（`PreviewParam { key, label, min, max, default }`），滑杆值经 context/props 传入组件
-- 🔲 显示实时 FPS 与 JS 堆（复用 `utils/performance.ts` 既有能力，如无则最小实现）
-- 🔲 生产安全：路由在 `NODE_ENV === 'production'` 下返回 404 或空页（构建体积零污染方案实现时二选一并登记）；主应用 bundle 不得因预览页增大（预览专用代码动态 import）
-- 🔲 首个可预览对象：接入现有 `StellarSurface`（以参宿四配置）作为管线验证样例
+- ✅ 新增独立路由 `src/app/dev/preview/page.tsx`（App Router）：单独渲染指定天体细节模型，不加载主场景（无 Galaxy/Universe/SolarSystem/音频/store 主循环），黑色背景 + 可选参考网格（drei `Grid`，面板开关）
+- ✅ URL 参数 `?body=<id>` 指定预览对象（页面客户端读 `window.location.search`）；预览注册表纯逻辑模块 `src/utils/devPreview.ts`：`previewEntryForBody(id)` 返回该天体的细节组件挂载配置（`componentKey` 标识实际 R3F 组件，渲染依赖不污染纯逻辑层；后续 R4 各阶段追加条目），未注册 id 返回 null → 页面显示占位提示并列出可用对象链接
+- ✅ 内置轨道相机控制（drei `OrbitControls`）+ 参数面板：曝光滑杆（tone mapping exposure）/Bloom 开关/参考网格开关、时间流速、每个细节组件可声明 ≤8 个调试滑杆（`PreviewParam { key, label, min, max, default, step? }`，`MAX_PREVIEW_PARAMS=8` + `validatePreviewEntry` 注册期防错），滑杆值经 props 传入组件（越界经 `clampParamValue` 钳制）
+- ✅ 显示实时 FPS 与 JS 堆（复用 `utils/performance.ts` 的 `createFpsCounter`/`recordFrame`/`formatFpsLabel`/`formatMemoryMB`/`readUsedHeapBytes`；harness 组件自持 rAF，不依赖主循环）
+- ✅ 生产安全（**登记：方案 = 生产渲染空页 + 动态 import**，非 404）：`NODE_ENV === 'production'` 下页面渲染空 div、不引用 harness；预览专用 harness（含 three/drei/postprocessing）经 `next/dynamic` 动态 import 仅 dev 加载——实测生产 `output:'export'` 构建将 harness 打入独立异步 chunk（`out/_next/static/chunks/*.js`），**不被生产页 HTML 引用**，主应用 bundle 零增大、生产路由为空页不可用
+- ✅ 首个可预览对象：接入现有 `StellarSurface`（导出自 `SpecialBodies.tsx`，参宿四红巨星档配置 limbU=0.75/cellScale=2.2/convection=0.7/rednessStrength=0.6 + 弥散气体壳），时间流速经虚拟时钟覆写 material.uTime 实现可调，作为管线验证样例
 
 ### 1.2 验收标准
 
-- 🔲 `npm run dev`（3100 端口）访问 `/dev/preview?body=betelgeuse` 可见恒星球体，滑杆调参实时生效，绕行流畅 60 FPS
-- 🔲 未注册 id / 缺参访问显示占位提示，不报错；生产构建下路由不可用
-- 🔲 `devPreview.ts` 纯逻辑（注册/查找/参数默认值）单测覆盖；全量测试/type-check/lint/build 全绿，覆盖率 gate ≥90% 保持
+- ✅ `npm run dev`（3100 端口）访问 `/dev/preview?body=betelgeuse` 可见恒星球体，滑杆调参实时生效（cellScale 2.2→6.0 对流颗粒尺度实时变细，截图 r41-01/r41-03 对比），绕行流畅 60 FPS（无头 Chrome Metal 后端 rAF 3 秒窗实测 60 FPS + HUD "帧率：60 FPS"，截图 r41-metal-betelgeuse）
+- ✅ 未注册 id（`?body=not-a-body`，截图 r41-04）/ 缺参（无 `?body`，截图 r41-05）访问显示占位提示（列出可用对象链接），不报错（控制台仅 Cloudflare RUM CORS 噪声，与本页无关）；生产构建下路由为空页不可用
+- ✅ `devPreview.ts` 纯逻辑（注册/查找/参数默认值/钳制/校验）单测覆盖（`devPreview.test.ts` 24 例，覆盖率 100%）；全量测试（1995 例/115 套件）/type-check/lint/build 全绿，覆盖率 gate ≥90% 保持
 
 ## R4-2 细节层管理泛化（detailLayer）
 
