@@ -162,10 +162,15 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
       { label: "直径", value: "约 24 光年" },
       { label: "真实距离", value: "约 1,350 光年" },
       { label: "内部", value: "猎户四边形星团等年轻恒星点亮局部" },
+      {
+        label: "结构",
+        value: "电离腔（扇贝状发射腔朝观察侧开口）+ 四边形星团空腔 + 东南前景尘埃湾",
+      },
     ],
     dynamicsZh:
       "内部年轻大质量恒星的紫外辐射电离氢气发出氢α红光，雾状气体缓慢流动",
-    dataSource: "NASA HST 猎户座星云观测（M42）",
+    dataSource:
+      "NASA HST 猎户座星云观测（M42）；近观体积形态参考 NASA/ESA Hubble 公版图像（程序化近似）；体积色彩为自然色近似（Hα 红棕 + OIII 青灰），与哈勃调色板（SII/Hα/OIII→RGB 假彩色，Hα 显绿）存在映射差异",
   },
   {
     id: "ring-nebula",
