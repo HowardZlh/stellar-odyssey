@@ -11,13 +11,16 @@
  * 阈值内）；退出阈值 = 进入阈值 × NEAR_VIEW_EXIT_RATIO（1.4，滞回防抖，
  * 与 planetDetail.detailExitDistance 同比例）。观察距离与
  * utils/cameraFocus.resolveFocusTarget 同源（同一公式，禁止两套参数）：
- * - sun：太阳显示半径 × 6（近观 = 既有 L1 太阳渲染，见差异登记）
+ * - sun：太阳显示半径 × 6（近观 = 既有 L1 太阳渲染，见差异登记；sun 已
+ *   不在 L3 巡游序列内——用户反馈与 heliopause 语境重复——但仍可点选/
+ *   飞往，激活距离公式保留）
  * - heliopause：示意球壳半径 × SHELL_VIEW_DISTANCE_RATIO
  * - L3 特殊天体：max(视觉半径 × 6，银心 40 / 太阳邻域 30 场景单位下限)
  *
  * ── 实现差异登记 ─────────────────────────────────────────────────────────
- * - 序列成员 sun 的"近观细节层" = 既有 L1 太阳渲染（P6 表面 shader/黑子/
- *   日珥，飞抵后相机落入 L1 语境自动呈现），不额外建近观层；
+ * - sun 的"近观细节层" = 既有 L1 太阳渲染（P6 表面 shader/黑子/日珥，
+ *   飞抵后相机落入 L1 语境自动呈现），不额外建近观层；sun 已移出 L3
+ *   巡游序列（保留 heliopause 一站），登记表不再含 sun 条目；
  * - 恒星类成员（参宿四/参宿七/造父一/WR 124）与黑洞类（人马座 A★ 与
  *   天鹅座 X-1）的近观细节已由 P6 恒星表面 shader（3D 噪声对流/临边昏暗）
  *   与吸积盘/引力透镜 shader 交付且常开零边际开销（shader uniform 按可见性
@@ -129,7 +132,6 @@ export function nearViewGateUpdate(
  * - 其余成员近观细节由 P6 shader 交付（差异登记见文件头），增量 0
  */
 export const NEAR_VIEW_PARTICLE_INCREMENTS: Readonly<Record<string, number>> = {
-  sun: 0,
   heliopause: 0,
   'sgr-a-star': 0,
   betelgeuse: 0,

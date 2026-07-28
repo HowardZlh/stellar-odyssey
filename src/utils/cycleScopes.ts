@@ -12,7 +12,7 @@
  *          bodyCycle.planetSystemSequence 动态序列；无卫星时 UI 隐藏切换按钮）
  * solar    太阳系视角（L2）：行星 + 矮行星 + 彗星（15 天体，按半长轴升序，
  *          bodyCycle.SOLAR_CYCLE_SEQUENCE；不含卫星）
- * galaxy   银河系视角（L3）：15 站巡游序列（成员登记见下）
+ * galaxy   银河系视角（L3）：14 站巡游序列（成员登记见下）
  * universe 宇宙视角（L4）：8 站巡游序列（成员登记见下）
  *
  * ── 视角层级锁定（R3 需求 2）───────────────────────────────────────────
@@ -23,22 +23,23 @@
  * 或 Esc 取消跟随后恢复距离驱动。连续层级 continuousLevel 仍按相机
  * 距离同步（LOD/音景/时间压缩等平滑行为不变）。
  *
- * ── L3 银河系域（15 成员，按"太阳系出发 → 银心 → 恒星类 → 星云类 → 星团类"组织）──
- *   1. sun               太阳（太阳系出发标记，与 "You are here" 联动语境）
- *   2. heliopause        日球层顶（R2-1 交付的可飞往外边界，太阳系告别站）
- *   3. sgr-a-star        银心人马座 A*（超大质量黑洞）
- *   4. betelgeuse        参宿四（红超巨星）
- *   5. rigel             参宿七（蓝超巨星）
- *   6. sirius            天狼星 A/B（双星：主序星 + 白矮星）
- *   7. delta-cephei      造父一（造父变星原型）
- *   8. wr-124            沃尔夫-拉叶星 WR 124
- *   9. cygnus-x1         天鹅座 X-1（黑洞 X 射线双星）
- *  10. crab-pulsar       蟹状星云脉冲星（恒星类 → 星云类的过渡：脉冲星居星云中心）
- *  11. orion-nebula      猎户座星云（发射星云）
- *  12. ring-nebula       环状星云 M57（行星状星云）
- *  13. horsehead-nebula  马头星云（暗星云）
- *  14. pleiades          昴星团（疏散星团）
- *  15. m13-cluster       武仙座 M13（球状星团）
+ * ── L3 银河系域（14 成员，按"太阳系出发 → 银心 → 恒星类 → 星云类 → 星团类"组织）──
+ *   1. heliopause        日球层顶（R2-1 交付的可飞往外边界，太阳系出发/告别站；
+ *                        用户反馈：原序列首站 sun 与其语境重复，太阳仅保留
+ *                        日球层顶一站，sun 不再入列——仍可经点选/飞往访问）
+ *   2. sgr-a-star        银心人马座 A*（超大质量黑洞）
+ *   3. betelgeuse        参宿四（红超巨星）
+ *   4. rigel             参宿七（蓝超巨星）
+ *   5. sirius            天狼星 A/B（双星：主序星 + 白矮星）
+ *   6. delta-cephei      造父一（造父变星原型）
+ *   7. wr-124            沃尔夫-拉叶星 WR 124
+ *   8. cygnus-x1         天鹅座 X-1（黑洞 X 射线双星）
+ *   9. crab-pulsar       蟹状星云脉冲星（恒星类 → 星云类的过渡：脉冲星居星云中心）
+ *  10. orion-nebula      猎户座星云（发射星云）
+ *  11. ring-nebula       环状星云 M57（行星状星云）
+ *  12. horsehead-nebula  马头星云（暗星云）
+ *  13. pleiades          昴星团（疏散星团）
+ *  14. m13-cluster       武仙座 M13（球状星团）
  *
  * ── L4 宇宙域（8 成员，按"银河系 → 卫星星系 → 本星系群 → 河外深空"组织）──
  *   1. milky-way         银河系
@@ -56,8 +57,9 @@
  * - 当前生效域改为显式状态（store.cycleScope），不再按"跟随天体归属 +
  *   连续层级区间"推断——太阳系巡游中跟随行星（近观距离对应 L1 读数）
  *   仍保持 solar 域，序列不混入卫星；银河系/宇宙巡游同理保持各自域。
- * - 太阳的域归类特殊：既是 L3 序列出发站又是太阳系中心，飞往太阳保持
- *   当前域（银河系巡游中 → galaxy；行星/太阳系语境 → 保持原域）。
+ * - 太阳的域归类特殊：虽已不在 L3 序列内（出发站语境由 heliopause 承担），
+ *   仍可经点选/耀斑通知飞往，飞往太阳保持当前域（银河系巡游中 → galaxy；
+ *   行星/太阳系语境 → 保持原域；宇宙域回落 galaxy）。
  */
 
 import type { ViewLevel } from '@/types';
@@ -76,7 +78,6 @@ export type CycleScope = 'system' | 'solar' | 'galaxy' | 'universe';
 
 /** L3 银河系域巡游序列（成员登记见文件头） */
 export const GALAXY_CYCLE_SEQUENCE: readonly string[] = [
-  'sun',
   'heliopause',
   'sgr-a-star',
   'betelgeuse',
