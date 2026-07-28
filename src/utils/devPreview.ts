@@ -113,12 +113,36 @@ const BETELGEUSE_ENTRY: PreviewEntry = {
 };
 
 /**
+ * 体积渲染框架测试体（R4-3 框架检查点）：球形 fBm 密度云 raymarch
+ *
+ * 密度场：`utils/volume.makeSphericalFbmCloudSampler`（96³ R8 纹理）；
+ * 材质：`components/Scene/volumetric/VolumeMaterial.ts`。滑杆覆盖
+ * 步数/密度/吸收/双色（色相 A/B）/混色阈值/亮度（§R4-3：步数/密度/双色）。
+ */
+const VOLUME_TEST_ENTRY: PreviewEntry = {
+  bodyId: 'volume-test',
+  title: '体积测试体 Volume Test（球形 fBm 密度云 · raymarch）',
+  componentKey: 'volume-raymarch-test',
+  cameraDistance: 3.2,
+  params: [
+    { key: 'steps', label: '步进数', min: 16, max: 128, default: 64, step: 1 },
+    { key: 'density', label: '密度倍率', min: 0, max: 6, default: 2.2 },
+    { key: 'absorption', label: '吸收系数', min: 0.2, max: 12, default: 5 },
+    { key: 'threshold', label: '混色阈值', min: 0, max: 1, default: 0.45 },
+    { key: 'hueA', label: '色相 A（Hα 红）', min: 0, max: 360, default: 352 },
+    { key: 'hueB', label: '色相 B（OIII 青绿）', min: 0, max: 360, default: 172 },
+    { key: 'intensity', label: '亮度', min: 0.1, max: 4, default: 1.2 },
+  ],
+  dataSource: 'R4-3 框架测试体：程序化 fBm 密度场（无真实观测数据）；双色对应 Hα/OIII 窄带映射方向',
+};
+
+/**
  * 预览注册表（后续 R4 阶段在此追加条目）
  *
  * 以 Map 存储便于 O(1) 查找；模块加载时对每个条目做一次合法性自检。
  */
 export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
-  const entries: readonly PreviewEntry[] = [BETELGEUSE_ENTRY];
+  const entries: readonly PreviewEntry[] = [BETELGEUSE_ENTRY, VOLUME_TEST_ENTRY];
   const map = new Map<string, PreviewEntry>();
   for (const e of entries) {
     validatePreviewEntry(e);

@@ -12,7 +12,7 @@
 |---|---|---|---|---|---|
 | R4-1 | P0 | 开发预览工位（/dev/preview 独立天体渲染验证页） | S | 无 | ✅ |
 | R4-2 | P0 | 细节层管理泛化（统一近观细节层注册/门控/LRU/预算） | M | 无 | ✅ |
-| R4-3 | P0 | 体积渲染框架 ①：raymarch 材质 + 3D 密度纹理工具 | L | R4-1 | 🔲 |
+| R4-3 | P0 | 体积渲染框架 ①：raymarch 材质 + 3D 密度纹理工具 | L | R4-1 | ✅ |
 | R4-4 | P0 | 体积渲染框架 ②：半分辨率管线 + 蓝噪声抖动 + 帧率自适应降级 | M | R4-3 | 🔲 |
 | R4-5 | P0 | 离线数据烘焙管线（Gaia/SIMBAD → public/data/） | M | 无 | 🔲 |
 | R4-6 | P0 | 恒星表面物理化增强（黑体色温/光谱型临边昏暗/时变对流） | M | R4-1 | 🔲 |
@@ -128,22 +128,22 @@
 
 ### 3.1 需求
 
-- 🔲 新建纯逻辑 `src/utils/volume.ts`：
-  - 3D 密度场构建工具：`buildDensityTexture(size, sampler)` → `THREE.Data3DTexture`（R8 单通道，size ≤128；含 2×2×2 到 128³ 任意尺寸）；确定性（FNV-1a 种子，复用 `utils/random.ts` 先例）
-  - 密度场塑形基元：3D value/simplex 噪声（复用现有 `hash3/valueNoise3` 基元，勿新造）、fBm、球/椭球/壳层 SDF 衰减、平滑并/差运算——组合出任意星云形态的纯函数集
-  - 发射-吸收积分参考实现（CPU 版，用于单测数值校验 shader 一致性：恒定密度解析解对比）
-- 🔲 新建 `src/components/Scene/volumetric/VolumeMaterial.ts`：raymarch ShaderMaterial 工厂
-  - 包围盒（box）内固定步数步进（默认 64 步，uniform 可调 16–128）；发射-吸收模型；双通道密度→双色映射（uColorA/uColorB + 密度阈值混色）
-  - 正确处理：相机在包围盒内/外两种入射、透明排序（renderOrder + depthWrite=false）、**log depth buffer 兼容**（参照 `Starfield.tsx` :33 的 logdepthbuf include 先例）
-  - 与 Bloom 共存：输出亮度可控（uIntensity），不产生 NaN/Inf
-- 🔲 预览页接入（依赖 R4-1）：注册测试体 `?body=volume-test`——球形 fBm 密度云，滑杆调步数/密度/双色，供人工确认框架观感方向（**框架检查点**）
-- 🔲 本阶段不接主场景、不做半分辨率（R4-4 范围）；接口设计须预留 uniforms：uTime（流动）、uQuality（R4-4 降级用）
+- ✅ 新建纯逻辑 `src/utils/volume.ts`：
+  - ✅ 3D 密度场构建工具：`buildDensityTexture(size, sampler)` → `THREE.Data3DTexture`（R8 单通道，`assertVolumeTextureSize` 校验 2 ≤ size ≤ 128；`buildDensityData` 体素中心映射归一化坐标 (-1,1)³）；确定性（FNV-1a 种子 `volumeSeed(id)`——`galaxyNearViewSeed` 同款算法，噪声域偏移经 `utils/random.ts` `createSeededRandom` 从种子展开）
+  - ✅ 密度场塑形基元：`fbm3`（复用 `stellarSurface.ts` 现有 `valueNoise3D`/`hash3` 基元，勿新造）、球/椭球/壳层 SDF（椭球取 IQ 一阶近似登记）+ `sdfDensityFalloff` 软衰减、`smoothUnionSdf`/`smoothSubtractSdf`（IQ 多项式，k=0 退化为硬并/差）；测试体采样器 `makeSphericalFbmCloudSampler` 一并交付（R4-7 塑形可复用）
+  - ✅ 发射-吸收积分参考实现 `integrateEmissionAbsorption`（CPU 版 front-to-back，与 shader 循环同式）+ 恒定密度解析解 `constantDensityEmissionAnalytic` 对比（单测：512 步相对误差 <1% 且随步数递减）；另附 `intersectRayBox`（shader hitBox 的 CPU 镜像，盒内/盒外入射 + 方向零分量 NaN 防护同式单测）
+- ✅ 新建 `src/components/Scene/volumetric/VolumeMaterial.ts`：raymarch ShaderMaterial 工厂 `createVolumeMaterial`
+  - ✅ 单位盒内固定步数步进（默认 64 步，uSteps 可调、`clampVolumeSteps` 钳 16–128，循环编译期上界 128）；发射-吸收模型；密度→双色映射（uColorA/uColorB + uThreshold 密度阈值 smoothstep 平滑混色）。实现差异登记：密度纹理为 R8 单通道（附录 A 显存预算取向），"双通道密度"以单通道密度绕阈值混双色实现，Hα/OIII 双通道分离留待 R4-7 按需扩展
+  - ✅ 相机盒内/盒外两种入射（slab 求交 t0 钳 0 + side=BackSide 穿盒不消失）、透明排序（depthWrite=false + `VOLUME_RENDER_ORDER` 常量由挂载方设 renderOrder）、log depth buffer 兼容（logdepthbuf include，`Starfield.tsx` :33 先例）
+  - ✅ 与 Bloom 共存：uIntensity 控亮 + 输出硬钳上限（`VOLUME_MAX_OUTPUT_LUMINANCE`）、方向零分量 1e-5 下限防除零——无 NaN/Inf。实现差异登记：**不设** `glslVersion: GLSL3`——three r169 WebGL2 下 ShaderMaterial 默认路径即编译为 GLSL ES 3.0（sampler3D/inverse() 可用）且保留 gl_FragColor 兼容 define；显式 GLSL3 会关闭该 define 致 tonemapping/colorspace include 编译失败（无头 Chrome 实测登记）
+- ✅ 预览页接入：注册测试体 `?body=volume-test`（componentKey `volume-raymarch-test`，`VolumeTestPreview` 组件）——球形 fBm 密度云（96³ 纹理、确定性种子、卸载即 dispose），滑杆调步数/密度倍率/吸收系数/混色阈值/双色（色相 A/B → HSL）/亮度（7 个 ≤8 上限），供人工确认框架观感方向（**框架检查点：待用户目检**）
+- ✅ 本阶段不接主场景、不做半分辨率（R4-4 范围）；uniforms 已预留：uTime（流动，预览页每帧写入、shader 本阶段不消费）、uQuality（R4-4 降级用，默认 1）
 
 ### 3.2 验收标准
 
-- 🔲 预览页 `volume-test`：绕行观察密度云有真实体积感（视差正确、无 billboard 感），步数 64 时 1280×800 全屏占比 ≤1/3 情况下 60 FPS（Apple Silicon 基准）
-- 🔲 相机穿入包围盒内部画面连续无翻转/消失；与场景 Bloom 开关组合无发光溢出异常
-- 🔲 密度场构建/塑形基元/CPU 积分校验单测（含确定性双次构建逐字节一致断言）；覆盖率 gate ≥90% 保持
+- ✅ 预览页 `volume-test`：绕行观察密度云有真实体积感（无头 Chrome Metal 1280×800 截图 r43-01 正视 / r43-02 侧视 / r43-03 俯仰：内部团块结构随视角变化、视差正确、无 billboard 感），步数 64 默认视角（占屏约 1/3）实测 60 FPS（rAF 3 秒窗；128 步亦 60 FPS）
+- ✅ 相机穿入包围盒内部画面连续无翻转/消失（截图 r43-04，盒内 60 FPS）；Bloom 关/开组合无发光溢出异常（截图 r43-05/r43-06 对比），控制台零错误无 NaN 异常
+- ✅ 密度场构建/塑形基元/CPU 积分校验单测 `volumeR43`（37 例，含确定性双次构建逐字节一致断言 `Buffer.compare === 0`）；`volume.ts` 覆盖率 100%（语句/函数/行）/98.2%（分支），全局覆盖率 gate ≥90% 保持（全量 2074 例/117 套件）
 
 ## R4-4 体积渲染框架 ②：半分辨率管线 + 蓝噪声抖动 + 帧率自适应降级
 
