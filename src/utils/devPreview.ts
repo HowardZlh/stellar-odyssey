@@ -258,6 +258,66 @@ const ORION_NEBULA_ENTRY: PreviewEntry = {
     'NASA/ESA Hubble 公版图像（形态参考，程序化近似登记：扇贝腔/西北亮弓/东南暗湾/Trapezium 空腔与电离前沿壳）；Hα/OIII 双色权重取纯径向近似',
 };
 
+/**
+ * 星系近观多分量预览条目组（R4-10）：M31（旋涡，专属倾角/尘埃环/偏黄
+ * 核球）+ LMC（不规则对照——dust/HII 新分量配额为 0，R2-8 团块分量
+ * 承载，滑杆对 LMC 的 dust/HII 无可见效果属预期登记；倾角覆写生效）。
+ *
+ * 滑杆按 §R4-10 指定三件：dust 强度 / HII 密度（[0,1] 与形态参数表同域，
+ * 经 GalaxyCompositeOverrides 重新生成分量）/ 倾角覆写（0–90°，
+ * inclinedOrientationRad 以预览视线 +z 重构姿态）。默认值 = 形态参数表
+ * 登记值（GALAXY_MORPHOLOGY_PARAMS，RC3/S4G/NED 近似档）。
+ */
+export interface GalaxyPreviewConfig {
+  /** 数据层星系 id（data/galaxies） */
+  galaxyId: string;
+  /** 倾角覆写姿态的长轴方位角（度；M31 = PA 38 登记值） */
+  positionAngleDeg: number;
+}
+
+/** 预览 bodyId → 星系近观配置（组件层据此挂载 GalaxyNearViewLayer） */
+export const GALAXY_PREVIEW_CONFIGS: ReadonlyMap<string, GalaxyPreviewConfig> = new Map([
+  ['m31', { galaxyId: 'm31', positionAngleDeg: 38 }],
+  ['lmc', { galaxyId: 'lmc', positionAngleDeg: 0 }],
+]);
+
+/** 按预览 bodyId 查星系近观配置（非星系条目返回 null） */
+export function galaxyPreviewConfigForBody(
+  id: string | null | undefined,
+): GalaxyPreviewConfig | null {
+  if (!id) return null;
+  return GALAXY_PREVIEW_CONFIGS.get(id) ?? null;
+}
+
+const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
+  {
+    bodyId: 'm31',
+    title: '仙女座星系 M31（近观多分量粒子层 · 倾角 77°/10 kpc 尘埃环）',
+    componentKey: 'galaxy-near-view',
+    cameraDistance: 4.2,
+    params: [
+      { key: 'dustStrength', label: '尘埃带强度', min: 0, max: 1, default: 0.8 },
+      { key: 'hiiDensity', label: 'HII 区密度', min: 0, max: 1, default: 0.5 },
+      { key: 'inclinationDeg', label: '倾角覆写（°）', min: 0, max: 90, default: 77, step: 1 },
+    ],
+    dataSource:
+      'RC3（de Vaucouleurs et al. 1991）SA(s)b；S4G（Sheth et al. 2010）B/D 分解近似档；倾角 77°（NED/Walterbos & Kennicutt 1988）；10 kpc 尘埃环（Spitzer/Herschel 观测，环宽/占比为示意档登记）',
+  },
+  {
+    bodyId: 'lmc',
+    title: '大麦哲伦云 LMC（近观团块粒子云 · 不规则对照）',
+    componentKey: 'galaxy-near-view',
+    cameraDistance: 4.2,
+    params: [
+      { key: 'dustStrength', label: '尘埃带强度（LMC 配额 0，登记）', min: 0, max: 1, default: 0.3 },
+      { key: 'hiiDensity', label: 'HII 区密度（LMC 配额 0，登记）', min: 0, max: 1, default: 0.85 },
+      { key: 'inclinationDeg', label: '倾角覆写（°）', min: 0, max: 90, default: 35, step: 1 },
+    ],
+    dataSource:
+      'RC3（de Vaucouleurs et al. 1991）SB(s)m；倾角 35°（NED）；HII 粉与蓝白年轻星由 R2-8 团块分量承载（新分量配额 0，R4-9 登记）',
+  },
+];
+
 /** 体积类预览条目的 componentKey 集（HUD 质量档行按此显隐） */
 export const VOLUME_PREVIEW_COMPONENT_KEYS: ReadonlySet<string> = new Set([
   'volume-raymarch-test',
@@ -274,6 +334,7 @@ export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
     ...STELLAR_ENTRIES,
     VOLUME_TEST_ENTRY,
     ORION_NEBULA_ENTRY,
+    ...GALAXY_NEAR_VIEW_ENTRIES,
   ];
   const map = new Map<string, PreviewEntry>();
   for (const e of entries) {

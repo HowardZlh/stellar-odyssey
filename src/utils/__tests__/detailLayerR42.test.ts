@@ -38,6 +38,7 @@ import {
 import {
   GALAXY_NEAR_VIEW_CONFIGS,
   GALAXY_NEAR_VIEW_LRU_CAPACITY,
+  galaxyComponentQuota,
   galaxyDetailLayerSpec,
   galaxyNearViewEnterDistanceUnits,
   nearViewLruUpdate,
@@ -336,7 +337,13 @@ describe('galaxyDetailLayerSpec（R2-8 星系近观规格，阈值同源零回�
         spec.enterDistanceUnits * NEAR_VIEW_EXIT_RATIO,
         10,
       );
-      const particles = GALAXY_NEAR_VIEW_CONFIGS[galaxyId].particleCount;
+      // R4-10 等价迁移登记：GPU 估算自基础层粒子改为多分量配额合计
+      // （R4-9 登记的"随渲染接入一并更新"；非旋涡 quota.total = 基础层，
+      // 阈值语义零回退）
+      const particles = galaxyComponentQuota(galaxyId).total;
+      expect(particles).toBeGreaterThanOrEqual(
+        GALAXY_NEAR_VIEW_CONFIGS[galaxyId].particleCount,
+      );
       expect(spec.budget.particles).toBe(particles);
       expect(spec.budget.gpuBytesEstimate).toBe(particles * GPU_BYTES_PER_PARTICLE);
       // 附录 A：任一星系近观层估算远低于 64 MB 总预算

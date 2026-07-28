@@ -506,8 +506,9 @@ export function HudInfo(): JSX.Element {
           </div>
           <p className="mb-2 text-[11px] text-gray-400">{selected.typeZh}</p>
           <dl className="space-y-1 text-gray-300">
-            {selected.lines.map((line) => (
-              <div key={line.label} className="flex justify-between gap-2">
+            {selected.lines.map((line, index) => (
+              // key 含序号：不同来源行可能同 label（防 React 同 key 复用串卡）
+              <div key={`${index}-${line.label}`} className="flex justify-between gap-2">
                 <dt className="shrink-0">{line.label}</dt>
                 <dd className="text-right">{line.value}</dd>
               </div>
