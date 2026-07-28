@@ -9,10 +9,13 @@ import {
   defaultParamValues,
   previewEntryForBody,
   registeredPreviewIds,
+  stellarPreviewConfigForBody,
   validatePreviewEntry,
   type PreviewEntry,
   type PreviewParam,
 } from '@/utils/devPreview';
+import { FALLBACK_STAR_PARAMS, granulationCellScale } from '@/utils/starPhysics';
+import { STAR_PARAM_KEYS } from '@/utils/bakedData';
 
 function makeEntry(overrides: Partial<PreviewEntry> = {}): PreviewEntry {
   return {
@@ -53,32 +56,73 @@ describe('previewEntryForBody', () => {
   });
 });
 
-describe('参宿四条目内容', () => {
-  const entry = previewEntryForBody('betelgeuse')!;
+describe('恒星预览条目组（R4-6：6 类恒星）', () => {
+  const STELLAR_IDS = [
+    'betelgeuse',
+    'rigel',
+    'sirius',
+    'sirius-b',
+    'delta-cephei',
+    'wr-124',
+  ];
+
+  it('6 类恒星全部注册且 componentKey 为 stellar-surface', () => {
+    for (const id of STELLAR_IDS) {
+      const entry = previewEntryForBody(id);
+      expect(entry).not.toBeNull();
+      expect(entry!.componentKey).toBe('stellar-surface');
+    }
+  });
+
+  it('每条目滑杆为 §R4-6 指定三件：Teff 覆写/噪声频率/时间流速', () => {
+    for (const id of STELLAR_IDS) {
+      const keys = previewEntryForBody(id)!.params.map((p) => p.key);
+      expect(keys).toEqual(['teffK', 'cellScale', 'timeScale']);
+    }
+  });
+
+  it('每条目均有恒星配置（stellarPreviewConfigForBody）且 starKey 属烘焙产物键集', () => {
+    for (const id of STELLAR_IDS) {
+      const config = stellarPreviewConfigForBody(id);
+      expect(config).not.toBeNull();
+      expect(STAR_PARAM_KEYS).toContain(config!.starKey);
+    }
+    expect(stellarPreviewConfigForBody('volume-test')).toBeNull();
+    expect(stellarPreviewConfigForBody(null)).toBeNull();
+  });
+
+  it('Teff 滑杆默认值与降级参数表一致（参宿四 3,600 K / 天狼星 B 25,200 K）', () => {
+    const teffOf = (id: string): number =>
+      previewEntryForBody(id)!.params.find((p) => p.key === 'teffK')!.default;
+    expect(teffOf('betelgeuse')).toBe(FALLBACK_STAR_PARAMS.betelgeuse.teffK);
+    expect(teffOf('sirius-b')).toBe(FALLBACK_STAR_PARAMS.siriusB.teffK);
+    expect(teffOf('wr-124')).toBe(FALLBACK_STAR_PARAMS.wr124.teffK);
+  });
+
+  it('噪声频率滑杆默认值 = granulationCellScale(半径)（参宿四 ≈2.2 巨对流胞）', () => {
+    const cellOf = (id: string): number =>
+      previewEntryForBody(id)!.params.find((p) => p.key === 'cellScale')!.default;
+    expect(cellOf('betelgeuse')).toBeCloseTo(
+      granulationCellScale(FALLBACK_STAR_PARAMS.betelgeuse.radiusRsun),
+      10,
+    );
+    expect(cellOf('betelgeuse')).toBeCloseTo(2.2, 1);
+    expect(cellOf('sirius-b')).toBe(12);
+  });
 
   it('参数数量不超过上限且键唯一', () => {
-    expect(entry.params.length).toBeLessThanOrEqual(MAX_PREVIEW_PARAMS);
-    const keys = entry.params.map((p) => p.key);
-    expect(new Set(keys).size).toBe(keys.length);
+    for (const id of STELLAR_IDS) {
+      const entry = previewEntryForBody(id)!;
+      expect(entry.params.length).toBeLessThanOrEqual(MAX_PREVIEW_PARAMS);
+      const keys = entry.params.map((p) => p.key);
+      expect(new Set(keys).size).toBe(keys.length);
+    }
   });
 
-  it('包含红巨星档 StellarSurface 参数（limbU/cellScale/convection/rednessStrength）', () => {
-    const keys = entry.params.map((p) => p.key);
-    expect(keys).toEqual(
-      expect.arrayContaining(['limbU', 'cellScale', 'convection', 'rednessStrength']),
-    );
-  });
-
-  it('默认值与 RedGiant 现状一致（管线验证样例）', () => {
-    const byKey = Object.fromEntries(entry.params.map((p) => [p.key, p.default]));
-    expect(byKey.limbU).toBe(0.75);
-    expect(byKey.cellScale).toBe(2.2);
-    expect(byKey.convection).toBe(0.7);
-    expect(byKey.rednessStrength).toBe(0.6);
-  });
-
-  it('登记数据来源', () => {
-    expect(entry.dataSource).toMatch(/Gaia|VLT|Montargès/);
+  it('逐条目登记数据来源（含 Claret 2000 临边昏暗近似档）', () => {
+    for (const id of STELLAR_IDS) {
+      expect(previewEntryForBody(id)!.dataSource).toMatch(/Claret \(2000\)/);
+    }
   });
 });
 

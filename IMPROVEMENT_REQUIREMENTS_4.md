@@ -15,7 +15,7 @@
 | R4-3 | P0 | 体积渲染框架 ①：raymarch 材质 + 3D 密度纹理工具 | L | R4-1 | ✅ |
 | R4-4 | P0 | 体积渲染框架 ②：半分辨率管线 + 蓝噪声抖动 + 帧率自适应降级 | M | R4-3 | ✅ |
 | R4-5 | P0 | 离线数据烘焙管线（Gaia/SIMBAD → public/data/） | M | 无 | 🔲 |
-| R4-6 | P0 | 恒星表面物理化增强（黑体色温/光谱型临边昏暗/时变对流） | M | R4-1 | 🔲 |
+| R4-6 | P0 | 恒星表面物理化增强（黑体色温/光谱型临边昏暗/时变对流） | M | R4-1 | ✅ |
 | R4-7 | P0 | 猎户座星云 M42 体积化 ①：密度场构建 + 预览页验证 | L | R4-3, R4-4 | 🔲 |
 | R4-8 | P0 | 猎户座星云 M42 体积化 ②：场景接入 + 色彩调参 | M | R4-7, R4-2 | 🔲 |
 | R4-9 | P0 | 星系近观多分量 ①：粒子生成器扩展（尘埃带/HII 区/年轻星团） | M | 无 | 🔲 |
@@ -191,21 +191,21 @@
 
 > 增量基线：P6 已交付 `StellarSurface`（fBm 对流 + 简单临边昏暗），本阶段为物理化改造，勿重写整个组件。
 
-- 🔲 新建纯逻辑 `src/utils/starPhysics.ts`：
-  - `blackbodyRGB(teffK)`：Planck 谱 → CIE XYZ → sRGB（3,000–50,000 K 域，查表插值实现即可，关键温度点单测断言：3,500 K 橙红 / 5,800 K 白黄 / 9,900 K 蓝白 / 25,000 K 蓝）
-  - `limbDarkeningU(spectralType)`：按光谱型档位（M/K/G/F/A/B/O + WD）返回线性临边昏暗系数 u（Claret 2000 近似档，来源登记）
-  - `granulationScale(radiusRsun)`：对流颗粒相对尺度（巨星颗粒大而少、矮星细密——近似关系登记）
-- 🔲 `StellarSurface` shader 改造：uniform 注入 `blackbodyRGB(Teff)` 基色（替换硬编码颜色）、u 系数临边昏暗、噪声频率按 `granulationScale` 调制、对流时间演化（uTime 驱动噪声域缓慢漂移，周期 ~20–60 s 视觉节奏，登记）+ 自转流动（沿用/接入各恒星既有自转参数）
-- 🔲 各恒星参数接入：Teff/半径/光谱型从 `public/data/star-params.json`（R4-5）读取，加载失败降级现状硬编码值（降级路径登记）；天狼星 B 白矮星单独档（u 小、色蓝白 ~25,000 K，与 R2-7 既有调蓝一致化）
-- 🔲 预览页注册全部 6 类恒星（betelgeuse/rigel/sirius/delta-cep/wr-124 + 白矮星），滑杆：Teff 覆写/噪声频率/时间流速
-- 🔲 太阳（Sun.tsx 独立管线）**不在本阶段范围**（登记）；颜色变化对 Bloom 亮度的影响逐星目检无过曝
-- 🔲 补齐 `StellarSurface` shader 的 log depth 兼容（附录 A §5，P6 遗留登记于 R4-1 修复轮：现状裸 ShaderMaterial 未含 `logdepthbuf` include，主场景与预览页 Canvas 均启用 `logarithmicDepthBuffer`，参照 `Starfield.tsx` :33 先例补齐）
+- ✅ 新建纯逻辑 `src/utils/starPhysics.ts`：
+  - ✅ `blackbodyRGB(teffK)`：Planck 谱 → CIE XYZ → sRGB（3,000–50,000 K 域外钳制，25 采样点查表插值——表取 Mitchell Charity CIE 10°/sRGB 黑体色数据，登记：不做运行时完整 CIE 管线；关键温度点单测断言：3,500 K 橙红 / 5,800 K 白黄 / 9,900 K 蓝白 / 25,000 K 蓝 + 蓝红比单调）
+  - ✅ `limbDarkeningU(spectralType)`：按光谱型档位（M/K/G/F/A/B/O + WD）返回线性临边昏暗系数 u（Claret 2000 V 波段近似档来源登记：M 0.85 → O 0.30、WD 0.25；实现差异登记：Wolf-Rayet W 型归 O 档高温近似、未识别型回落 G 档默认值）
+  - ✅ `granulationScale(radiusRsun)`：对流颗粒相对尺度（实现为 `granulationCellScale` 直接输出 shader 噪声频率 uCellScale——巨星颗粒大而少 → 频率低、矮星细密 → 频率高；近似关系 clamp(12−3.4·log10(R/R☉), 2, 12) 登记，锚点参宿四 764 R☉→2.2 与 P6 现状一致）
+- ✅ `StellarSurface` shader 改造：uniform 注入 `blackbodyRGB(Teff)` 基色（替换硬编码颜色，sRGB→线性工作色彩空间）、u 系数临边昏暗、噪声频率按 `granulationCellScale` 调制、对流时间演化（uTime 驱动 fBm 噪声域漂移，首层视觉周期 ≈20 s 落在 20–60 s 区间，登记）+ 自转流动（实现差异登记：各恒星组件无既有自转参数可沿用，新增 uSpin 绕 y 轴旋转采样域、默认 0.02 rad/s 缓慢流动为可视化选择）
+- ✅ 各恒星参数接入：Teff/半径/光谱型经新增 `useStarParams` hook 从 `public/data/star-params.json`（R4-5，`bakedData.loadStarParams`）读取，加载失败降级 `FALLBACK_STAR_PARAMS` 硬编码表（降级路径登记；降级表与烘焙产物逐字段一致由单测断言同步）；天狼星 B 白矮星单独档（u 0.25 最弱档、25,200 K 黑体蓝，与 R2-7 既有调蓝一致化）；增量交付：天狼星 A/B 由 meshBasicMaterial 纯色球升级为 StellarSurface
+- ✅ 预览页注册全部 6 类恒星（betelgeuse/rigel/sirius/sirius-b/delta-cephei/wr-124），滑杆：Teff 覆写（黑体基色实时重算）/噪声频率/时间流速
+- ✅ 太阳（Sun.tsx 独立管线）**不在本阶段范围**（登记）；颜色变化对 Bloom 亮度的影响逐星目检无过曝（预览页 6 星 + L3 恒星站截图核对）
+- ✅ 补齐 `StellarSurface` shader 的 log depth 兼容（vertex/fragment 各三件 `logdepthbuf` include，`Starfield.tsx` :33 先例）
 
 ### 6.2 验收标准
 
-- 🔲 预览页逐星目检：颜色与光谱型一致（截图登记 6 张）；对流有可感知时间演化；临边昏暗巨星/矮星观感区分可辨
-- 🔲 主场景 L3 巡游恒星站点回归：远景观感无突兀变化（亮度/色调平滑演进），60 FPS 保持
-- 🔲 `starPhysics` 纯函数单测（色温关键点/系数档位/尺度单调性）；覆盖率 gate ≥90% 保持
+- ✅ 预览页逐星目检：颜色与光谱型一致（截图登记 6 张 r46-preview-*：参宿四橙红/参宿七蓝白/天狼星 A 蓝白/天狼星 B 蓝/造父一白黄/WR 124 深蓝）；对流有可感知时间演化（4× 流速两帧对流图案明显重分布，r46-time-A/B）；临边昏暗巨星/矮星观感区分可辨（参宿四边缘显著变暗红 vs 天狼星 B 近平盘）
+- ✅ 主场景 L3 巡游恒星站点回归：5 个恒星站逐站截图（r46-L3-*）远景观感无突兀变化、无过曝，逐站实测 60 FPS、JS 堆 21–28 MB、控制台零错误
+- ✅ `starPhysics` 纯函数单测（26 例：色温关键点/系数档位/尺度单调性/降级表同步，starPhysics.ts 覆盖率 100%）；全量 2175 用例/121 套件通过，覆盖率 gate ≥90% 保持（语句 98.52%）
 
 ## R4-7 猎户座星云 M42 体积化 ①：密度场构建 + 预览页验证
 

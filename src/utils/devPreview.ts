@@ -12,6 +12,13 @@
  * - 每个条目声明 ≤8 个调试滑杆（`PreviewParam`）；超过即视为配置错误（`validatePreviewEntry`）。
  */
 
+import {
+  BLACKBODY_TEFF_MAX_K,
+  BLACKBODY_TEFF_MIN_K,
+  FALLBACK_STAR_PARAMS,
+  granulationCellScale,
+} from '@/utils/starPhysics';
+
 /** 单个天体细节组件可声明的最大调试滑杆数（§R4-1：≤8 个） */
 export const MAX_PREVIEW_PARAMS = 8;
 
@@ -92,25 +99,107 @@ export function validatePreviewEntry(entry: PreviewEntry): void {
 }
 
 /**
- * 参宿四（Betelgeuse）预览条目：接入现有 `StellarSurface`（R4-1 管线验证样例）
+ * 恒星预览条目组（R4-6）：6 类恒星接入物理化 `StellarSurface`
  *
- * 参数取自 `SpecialBodies.tsx` `RedGiant` 的 StellarSurface props（红巨星档）：
- * 强边缘昏暗、大对流胞（cellScale 小）、显著边缘偏红。
+ * 每条目滑杆（§R4-6 指定三件）：Teff 覆写（黑体基色实时重算）/
+ * 噪声频率（对流颗粒 uCellScale）/时间流速（虚拟时钟）。
+ * 临边昏暗 u / 对流对比 / 边缘偏红由光谱型与主场景档位固定注入
+ * （预览页与主场景观感同源）。默认参数取 `FALLBACK_STAR_PARAMS`
+ * （与 public/data/star-params.json 烘焙产物同值，starPhysics 单测断言同步）。
  */
-const BETELGEUSE_ENTRY: PreviewEntry = {
-  bodyId: 'betelgeuse',
-  title: '参宿四 Betelgeuse（红超巨星 · StellarSurface）',
-  componentKey: 'stellar-surface',
-  cameraDistance: 3.2,
-  params: [
-    { key: 'limbU', label: '边缘昏暗系数 u', min: 0, max: 1, default: 0.75 },
-    { key: 'cellScale', label: '对流胞尺度', min: 0.5, max: 6, default: 2.2 },
-    { key: 'convection', label: '对流对比', min: 0, max: 1, default: 0.7 },
-    { key: 'rednessStrength', label: '边缘偏红', min: 0, max: 1, default: 0.6 },
-    { key: 'timeScale', label: '时间流速', min: 0, max: 4, default: 1 },
-  ],
-  dataSource: 'NASA/ESA Hipparcos-Gaia；ESO VLT/SPHERE（Montargès et al. 2021）',
-};
+export interface StellarPreviewConfig {
+  /** FALLBACK_STAR_PARAMS / star-params.json 键名 */
+  starKey: string;
+  /** 对流对比（与主场景消费组件同值） */
+  convection: number;
+  /** 色温梯度边缘偏红强度（与主场景消费组件同值） */
+  rednessStrength: number;
+}
+
+/** 预览 bodyId → 恒星配置（组件层据此挂载 StellarSurface） */
+export const STELLAR_PREVIEW_CONFIGS: ReadonlyMap<string, StellarPreviewConfig> =
+  new Map([
+    ['betelgeuse', { starKey: 'betelgeuse', convection: 0.7, rednessStrength: 0.6 }],
+    ['rigel', { starKey: 'rigel', convection: 0.35, rednessStrength: 0 }],
+    ['sirius', { starKey: 'siriusA', convection: 0.18, rednessStrength: 0 }],
+    ['sirius-b', { starKey: 'siriusB', convection: 0.12, rednessStrength: 0 }],
+    ['delta-cephei', { starKey: 'deltaCephei', convection: 0.5, rednessStrength: 0.3 }],
+    ['wr-124', { starKey: 'wr124', convection: 0.45, rednessStrength: 0 }],
+  ]);
+
+/** 按预览 bodyId 查恒星配置（非恒星条目返回 null） */
+export function stellarPreviewConfigForBody(
+  id: string | null | undefined,
+): StellarPreviewConfig | null {
+  if (!id) return null;
+  return STELLAR_PREVIEW_CONFIGS.get(id) ?? null;
+}
+
+function makeStellarEntry(bodyId: string, title: string, dataSource: string): PreviewEntry {
+  const config = STELLAR_PREVIEW_CONFIGS.get(bodyId);
+  if (!config) {
+    throw new RangeError(`恒星预览条目 ${bodyId} 缺少 STELLAR_PREVIEW_CONFIGS 配置`);
+  }
+  const star = FALLBACK_STAR_PARAMS[config.starKey];
+  return {
+    bodyId,
+    title,
+    componentKey: 'stellar-surface',
+    cameraDistance: 3.2,
+    params: [
+      {
+        key: 'teffK',
+        label: '有效温度 Teff（K）',
+        min: BLACKBODY_TEFF_MIN_K,
+        max: BLACKBODY_TEFF_MAX_K,
+        default: star.teffK,
+        step: 50,
+      },
+      {
+        key: 'cellScale',
+        label: '对流噪声频率',
+        min: 0.5,
+        max: 14,
+        default: granulationCellScale(star.radiusRsun),
+      },
+      { key: 'timeScale', label: '时间流速', min: 0, max: 4, default: 1 },
+    ],
+    dataSource,
+  };
+}
+
+const STELLAR_ENTRIES: readonly PreviewEntry[] = [
+  makeStellarEntry(
+    'betelgeuse',
+    '参宿四 Betelgeuse（红超巨星 M1-M2 · StellarSurface）',
+    'Joyce et al. (2020)；ESO VLT/SPHERE（Montargès et al. 2021）；Claret (2000) 临边昏暗近似档',
+  ),
+  makeStellarEntry(
+    'rigel',
+    '参宿七 Rigel（蓝超巨星 B8Ia · StellarSurface）',
+    'Przybilla et al. (2010)；Claret (2000) 临边昏暗近似档',
+  ),
+  makeStellarEntry(
+    'sirius',
+    '天狼星 A Sirius A（主序星 A0mA1Va · StellarSurface）',
+    'Kervella et al. (2003)；Adelman (2004)；Claret (2000) 临边昏暗近似档',
+  ),
+  makeStellarEntry(
+    'sirius-b',
+    '天狼星 B Sirius B（白矮星 DA1.9 · StellarSurface）',
+    'Barstow et al. (2005)；Holberg et al. (1998)；Claret (2000) 临边昏暗近似档（WD 档）',
+  ),
+  makeStellarEntry(
+    'delta-cephei',
+    '造父一 δ Cephei（黄超巨星 F5Iab · StellarSurface）',
+    'Mérand et al. (2005)；Engle et al. (2014)；Claret (2000) 临边昏暗近似档',
+  ),
+  makeStellarEntry(
+    'wr-124',
+    'WR 124（沃尔夫-拉叶星 WN8h · StellarSurface）',
+    'Hamann et al. (2019)；Claret (2000) 临边昏暗近似档（O 档高温近似）',
+  ),
+];
 
 /**
  * 体积渲染框架测试体（R4-3 框架检查点 + R4-4 半分辨率/抖动/自适应降级）：
@@ -148,7 +237,7 @@ const VOLUME_TEST_ENTRY: PreviewEntry = {
  * 以 Map 存储便于 O(1) 查找；模块加载时对每个条目做一次合法性自检。
  */
 export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
-  const entries: readonly PreviewEntry[] = [BETELGEUSE_ENTRY, VOLUME_TEST_ENTRY];
+  const entries: readonly PreviewEntry[] = [...STELLAR_ENTRIES, VOLUME_TEST_ENTRY];
   const map = new Map<string, PreviewEntry>();
   for (const e of entries) {
     validatePreviewEntry(e);
