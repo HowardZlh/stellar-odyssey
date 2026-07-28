@@ -40,11 +40,13 @@ import {
   stellarWindPhase01,
 } from "@/utils/specialBodies";
 import {
-  NEAR_VIEW_TRANSITION_SECONDS,
+  NEAR_VIEW_PARTICLE_INCREMENTS,
   nearViewEnterDistanceUnits,
-  nearViewGateUpdate,
+  nearViewExitDistanceUnits,
   nebulaPuffLayout,
 } from "@/utils/nearView";
+import { estimateGpuBytes, type DetailLayerSpec } from "@/utils/detailLayer";
+import { useDetailLayer } from "@/hooks/useDetailLayer";
 import {
   createDiffractionSpikeCanvas,
   createGlowSpriteCanvas,
@@ -298,12 +300,10 @@ function useGalacticPlacement(
   return getWeight;
 }
 
-/** 渲染循环共用临时向量（零分配纪律） */
-const NEAR_VIEW_TMP_VEC = new THREE.Vector3();
-
 /**
- * 近观 LOD 门控 hook（R2-7 §7.1-B）：复用 P4 detailGateUpdate 滞回模式
- * （纯逻辑 utils/nearView.nearViewGateUpdate），仅当前跟随/飞往目标激活。
+ * 近观 LOD 门控 hook（R2-7 §7.1-B；R4-2 起为统一细节层机制
+ * hooks/useDetailLayer 的薄包装——kind='particles'、退出即释放语义、
+ * 阈值/0.5s 淡入淡出逐项与现状一致，行为零回退）。
  *
  * @returns nearActive 近观层是否挂载（React state，卸载即释放几何/材质）；
  *   getNear01 读取平滑激活权重（0.5s 淡入淡出，淡出完成后才卸载）
@@ -312,42 +312,18 @@ function useNearViewGate(
   body: SpecialBodyData,
   groupRef: React.RefObject<THREE.Group | null>,
 ): { nearActive: boolean; getNear01: () => number } {
-  const [nearActive, setNearActive] = useState(false);
-  const mountedRef = useRef(false);
-  const activeRef = useRef(false);
-  const near01Ref = useRef(0);
-  const enterDistance = useMemo(() => nearViewEnterDistanceUnits(body.id), [body.id]);
-  const getNear01 = useCallback(() => near01Ref.current, []);
-  useFrame(({ camera }, delta) => {
-    const group = groupRef.current;
-    if (!group) return;
-    const state = useSimulationStore.getState();
-    const focused =
-      state.followBodyId === body.id || state.flyToBodyId === body.id;
-    const distance = camera.position.distanceTo(
-      group.getWorldPosition(NEAR_VIEW_TMP_VEC),
-    );
-    const gate = nearViewGateUpdate(
-      activeRef.current,
-      focused,
-      distance,
-      enterDistance,
-    );
-    activeRef.current = gate.active;
-    near01Ref.current = advanceFrameTransition(
-      near01Ref.current,
-      gate.active ? 1 : 0,
-      delta,
-      NEAR_VIEW_TRANSITION_SECONDS,
-    );
-    // 淡出完成后再卸载（激活/释放无突变；卸载即释放，无 LRU 保留）
-    const shouldMount = gate.active || near01Ref.current > 0.001;
-    if (shouldMount !== mountedRef.current) {
-      mountedRef.current = shouldMount;
-      setNearActive(shouldMount);
-    }
-  });
-  return { nearActive, getNear01 };
+  const spec = useMemo<DetailLayerSpec>(() => {
+    const particles = NEAR_VIEW_PARTICLE_INCREMENTS[body.id] ?? 0;
+    return {
+      bodyId: body.id,
+      kind: "particles",
+      enterDistanceUnits: nearViewEnterDistanceUnits(body.id),
+      exitDistanceUnits: nearViewExitDistanceUnits(body.id),
+      budget: { particles, gpuBytesEstimate: estimateGpuBytes({ particles }) },
+    };
+  }, [body.id]);
+  const { active, opacity01 } = useDetailLayer(spec, { objectRef: groupRef });
+  return { nearActive: active, getNear01: opacity01 };
 }
 
 /**

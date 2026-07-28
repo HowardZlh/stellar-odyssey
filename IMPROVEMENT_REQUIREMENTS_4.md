@@ -1,6 +1,6 @@
 # 改进需求文档（第四批，R4 迭代：天体真实观感 3D 模型）
 
-> **文档版本**: 1.1（R4-1 ✅ 已完成，其余 🔲 未实现）
+> **文档版本**: 1.2（R4-1/R4-2 ✅ 已完成，其余 🔲 未实现）
 > **参考文档**: REQUIREMENTS.md、IMPROVEMENT_REQUIREMENTS_2.md（R2-7/R2-8 近观基础）、IMPROVEMENT_REQUIREMENTS_3.md（R3-1 巡游域）、AGENTS.md
 > **状态标记**: ✅ 已完成 / 🔶 部分完成 / 🔲 未实现
 > **调研说明**: §0.2 现状锚点已经代码调研核实（2026-07），实现时若行号漂移以符号名为准。
@@ -11,7 +11,7 @@
 | 阶段 | 优先级 | 主题 | 复杂度 | 依赖 | 状态 |
 |---|---|---|---|---|---|
 | R4-1 | P0 | 开发预览工位（/dev/preview 独立天体渲染验证页） | S | 无 | ✅ |
-| R4-2 | P0 | 细节层管理泛化（统一近观细节层注册/门控/LRU/预算） | M | 无 | 🔲 |
+| R4-2 | P0 | 细节层管理泛化（统一近观细节层注册/门控/LRU/预算） | M | 无 | ✅ |
 | R4-3 | P0 | 体积渲染框架 ①：raymarch 材质 + 3D 密度纹理工具 | L | R4-1 | 🔲 |
 | R4-4 | P0 | 体积渲染框架 ②：半分辨率管线 + 蓝噪声抖动 + 帧率自适应降级 | M | R4-3 | 🔲 |
 | R4-5 | P0 | 离线数据烘焙管线（Gaia/SIMBAD → public/data/） | M | 无 | 🔲 |
@@ -109,20 +109,20 @@
 
 ### 2.1 需求
 
-- 🔲 新建纯逻辑 `src/utils/detailLayer.ts`，泛化 R2-7 `nearView.ts` 滞回门控与 R2-8 `nearViewLruUpdate` LRU 为统一机制：
+- ✅ 新建纯逻辑 `src/utils/detailLayer.ts`，泛化 R2-7 `nearView.ts` 滞回门控与 R2-8 `nearViewLruUpdate` LRU 为统一机制：
   - `DetailLayerKind = 'particles' | 'volume' | 'lensing' | 'starCatalog'`（可扩展）
   - `DetailLayerSpec { bodyId, kind, enterDistanceUnits, exitDistanceUnits, budget: { particles?, volumeTexBytes?, gpuBytesEstimate } }`
-  - 门控判据沿用现状：进入 = 飞往观察距离 ×1.5、退出 ×1.4 滞回，与 `resolveFocusTarget` 同源（单测断言）；仅当前跟随/飞往目标可激活
-  - LRU 按 kind 分池：`particles` 沿用容量 1；`volume` 容量 1；总 GPU 估算预算上限常量化（`DETAIL_GPU_BUDGET_BYTES`，建议 64 MB）超限即先逐出再挂载
-- 🔲 提供 React 挂载 Hook `useDetailLayer(spec)`（组件层薄封装）：返回 `{ active, opacity01 }`（0.5s 交叉淡入淡出，复用 `NEAR_VIEW_TRANSITION_SECONDS` 语义），卸载即 dispose
-- 🔲 迁移改造：`nearView.ts` / `galaxyNearView.ts` 现有门控调用方切换到统一机制（**行为零回退**：进入/退出阈值、LRU 语义、淡入淡出时长逐项与现状一致，现有 `nearViewR27` / `galaxyNearViewR28` 单测全绿或等价迁移）
-- 🔲 显存估算纯函数：`estimateGpuBytes(spec)`（粒子按 float32 属性布局、体积纹理按分辨率×通道）；预算/逐出决策单测覆盖
+  - 门控判据沿用现状：进入 = 飞往观察距离 ×1.5、退出 ×1.4 滞回，与 `resolveFocusTarget` 同源（单测断言：`galaxyDetailLayerSpec` 阈值同源逐星系对拍 + `nearViewGateUpdate` 委托逐状态对拍）；仅当前跟随/飞往目标可激活（`detailGateUpdate` 泛化为显式 enter/exit 双阈值入参）
+  - LRU 按 kind 分池：`particles` 沿用容量 1；`volume` 容量 1（lensing/starCatalog 亦各 1，`DETAIL_LRU_CAPACITY_BY_KIND`）；总 GPU 估算预算 `DETAIL_GPU_BUDGET_BYTES = 64 MB`，超限先按池容量逐出、再跨池按最旧优先逐出（新声明层豁免；单层超总预算属注册期防错抛 RangeError），持有者注册表（claim/release/reset + `detailLayerGpuBytesInUse` 出账）供渲染端单例消费
+- ✅ 提供 React 挂载 Hook `useDetailLayer(spec)`（`src/hooks/useDetailLayer.ts`，组件层薄封装）：返回 `{ active, opacity01 }`（0.5s 交叉淡入淡出，`DETAIL_LAYER_TRANSITION_SECONDS` 与 `NEAR_VIEW_TRANSITION_SECONDS` 同源同值），卸载即 dispose（React 卸载子树 + 注册表持有权幂等释放）。实现差异登记：a) `opacity01` 以帧读 getter（`() => number`）而非 React state 交付——附录 A 渲染纪律（零逐帧重渲染/零分配），沿用 R2-7 `getNear01` 先例；b) 增设保留策略两档 `retention: 'release-on-exit'（默认，R2-7 退出即释放）| 'lru-retain'（R2-8 LRU 保留淡出不卸载）`，两套现状语义收敛于同一 Hook；c) 支持自定义跟随判据/距离注入（`getFocused`/`getDistanceUnits`，日球层顶含旅行者标记判据、距离 = 相机位置模长的特例所需）
+- ✅ 迁移改造：`nearView.ts` / `galaxyNearView.ts` 现有门控调用方切换到统一机制（**行为零回退**：进入/退出阈值、LRU 语义、淡入淡出时长逐项与现状一致，现有 `nearViewR27`（43 例）/ `galaxyNearViewR28`（29 例）单测**零修改全绿**，无需等价迁移）。迁移登记：`nearViewGateUpdate`/`nearViewLruUpdate`/星系持有者注册表改为委托 detailLayer 的兼容包装（API 不变）；调用方 `SpecialBodies.useNearViewGate`（7 处近观组件共用，包装签名不变）、`Heliopause`、`Universe.GalaxyObject` 三处切换到 `useDetailLayer`；新增 `galaxyDetailLayerSpec(galaxyId)` 生成星系近观统一规格。实现差异登记：Heliopause 原实现以"挂载态"作门控 prevActive（淡出窗口内滞回判据与 R2-7 canonical 实现略异的历史 quirk），迁移后统一为 SpecialBodies 同款纯门控状态语义（差异仅存在于 0.5s 淡出窗口内的重进入判据，目验无观感差异）
+- ✅ 显存估算纯函数：`estimateGpuBytes(spec.budget)`（粒子按 float32 属性布局 position3+color3+size1 = 28 B/粒，与 GalaxyNearView 几何一致；体积纹理按 `volumeTextureGpuBytes(size, channels, bytesPerChannel)` = 分辨率³×通道×字节，size ≤128 附录 A 约束校验）；预算/逐出决策（`detailClaimUpdate`）单测覆盖
 
 ### 2.2 验收标准
 
-- 🔲 R2-5/R2-7/R2-8 既有行为回归：L3 15 站与 L4 8 站巡游逐站近观激活/释放正常，连续切换 10 个目标 JS 堆稳定（无泄漏），60 FPS 保持
-- 🔲 现有近观相关单测全部通过（或等价迁移后通过）；新增 `detailLayer` 门控/LRU/预算单测；覆盖率 gate ≥90% 保持
-- 🔲 无头 Chrome 目验：L3 巡游一整圈 + L4 巡游一整圈截图抽查，与 R2-7/R2-8 交付截图观感一致（无回退）
+- ✅ R2-5/R2-7/R2-8 既有行为回归：L3 15 站与 L4 8 站巡游逐站近观激活/释放正常（无头 Chrome 整圈实测），连续切换 10 个目标 JS 堆稳定（末 10 站采样 29–53 MB GC 波动、净差 +4 MB，无泄漏趋势），L3/L4 实测均 60 FPS（rAF 3 秒窗）
+- ✅ 现有近观相关单测全部通过（零修改，无需等价迁移）；新增 `detailLayerR42` 门控/LRU/预算单测（42 例，`detailLayer.ts` 覆盖率 100%）；全量 2037 例/116 套件通过，覆盖率 gate ≥90% 保持（全局 98.4%）
+- ✅ 无头 Chrome 目验（Metal 后端 1280×800，生产静态构建 3100 端口）：L3 巡游一整圈（截图 r42-L3-01～15）+ L4 巡游一整圈（截图 r42-L4-01～08）截图抽查——M13 近观星场/M42 云团/M31 旋臂粒子层/M87 Sérsic 椭球云均正常激活与交叉淡出，与 R2-7/R2-8 交付截图观感一致（无回退）
 
 ## R4-3 体积渲染框架 ①：raymarch 材质 + 3D 密度纹理工具
 
