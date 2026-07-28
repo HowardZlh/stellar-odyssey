@@ -1,0 +1,187 @@
+/**
+ * 体积 raymarch ShaderMaterial 工厂（R4-3，IMPROVEMENT_REQUIREMENTS_4 §R4-3 / §0.3 方案 B）
+ *
+ * 渲染模型：单位盒（BoxGeometry 1×1×1，世界尺寸经 mesh.scale 控制）内固定
+ * 步数步进采样 3D 密度纹理（R8，`utils/volume.buildDensityTexture` 产出），
+ * 发射-吸收积分（离散格式与 `utils/volume.integrateEmissionAbsorption` CPU
+ * 参考实现同式，单测据此校验一致性），密度→双色映射（uColorA/uColorB +
+ * 密度阈值平滑混色，Hα/OIII 窄带映射的载体）。
+ *
+ * 管线兼容（附录 A §5）：
+ * - log depth buffer：含 logdepthbuf include（`Starfield.tsx` :33 先例）；
+ * - 相机盒内/盒外两种入射：slab 求交后 t0 钳到 0（盒内从相机处起步），
+ *   side=BackSide 保证相机穿入盒内时仍有面片可栅格化、画面连续；
+ * - 透明排序：depthWrite=false，renderOrder 由挂载方设置
+ *   （`VOLUME_RENDER_ORDER` 常量），depthTest 保留（被前景实体遮挡正确）；
+ * - Bloom 共存：输出亮度经 uIntensity 控制并硬钳上限（防发光溢出），
+ *   方向零分量加下限防除零——无 NaN/Inf 输出；
+ * - 预留 uniforms：uTime（R4-7 流动）、uQuality（R4-4 降级），本阶段不消费。
+ *
+ * GLSL 版本登记：sampler3D/inverse() 需要 GLSL ES 3.0——three r169 WebGL2-only，
+ * ShaderMaterial 默认路径即以 `#version 300 es` + 兼容 define（varying/gl_FragColor/
+ * texture2D→texture）编译，故**不设** `glslVersion: GLSL3`（显式 GLSL3 会关闭
+ * gl_FragColor 兼容 define，致 tonemapping/colorspace include 编译失败，实测登记）。
+ * 相机局部坐标经 inverse(modelMatrix) 在顶点级求得（盒仅 8 顶点，开销可忽略），
+ * 无需 CPU 侧每帧上传逆矩阵 uniform。
+ */
+
+import * as THREE from 'three';
+import {
+  clampVolumeSteps,
+  VOLUME_STEPS_DEFAULT,
+  VOLUME_STEPS_MAX,
+  VOLUME_STEPS_MIN,
+} from '@/utils/volume';
+
+/**
+ * 体积层 renderOrder（挂载方对 mesh 设置）：晚于常规透明对象绘制，
+ * 保证发射-吸收合成覆盖在既有半透明层之上。
+ */
+export const VOLUME_RENDER_ORDER = 10;
+
+/** 输出亮度硬钳上限（防 Bloom 溢出，验收 §R4-3.2） */
+export const VOLUME_MAX_OUTPUT_LUMINANCE = 12.0;
+
+const VERTEX_SHADER = /* glsl */ `
+  #include <common>
+  #include <logdepthbuf_pars_vertex>
+  varying vec3 vOrigin;
+  varying vec3 vDirection;
+  void main() {
+    // 相机位置变换到盒局部空间（盒仅 8 顶点，inverse 开销可忽略）
+    vOrigin = vec3(inverse(modelMatrix) * vec4(cameraPosition, 1.0));
+    vDirection = position - vOrigin;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    #include <logdepthbuf_vertex>
+  }
+`;
+
+const FRAGMENT_SHADER = /* glsl */ `
+  precision highp float;
+  precision highp sampler3D;
+  #include <common>
+  #include <logdepthbuf_pars_fragment>
+  varying vec3 vOrigin;
+  varying vec3 vDirection;
+  uniform sampler3D uMap;
+  uniform float uSteps;
+  uniform float uDensityScale;
+  uniform float uAbsorption;
+  uniform float uThreshold;
+  uniform vec3 uColorA;
+  uniform vec3 uColorB;
+  uniform float uIntensity;
+  uniform float uTime;    // 预留：R4-7 密度场流动
+  uniform float uQuality; // 预留：R4-4 帧率自适应降级
+
+  // 单位盒 [-0.5, 0.5]³ slab 求交（utils/volume.intersectRayBox 的 GLSL 镜像）
+  vec2 hitBox(vec3 orig, vec3 dir) {
+    const vec3 boxMin = vec3(-0.5);
+    const vec3 boxMax = vec3(0.5);
+    vec3 invDir = 1.0 / dir;
+    vec3 tA = (boxMin - orig) * invDir;
+    vec3 tB = (boxMax - orig) * invDir;
+    vec3 tMin = min(tA, tB);
+    vec3 tMax = max(tA, tB);
+    float t0 = max(tMin.x, max(tMin.y, tMin.z));
+    float t1 = min(tMax.x, min(tMax.y, tMax.z));
+    return vec2(t0, t1);
+  }
+
+  void main() {
+    #include <logdepthbuf_fragment>
+    // 方向零分量加下限（保号），防 slab 除零产生 NaN（CPU 镜像同式）
+    vec3 rd = normalize(vDirection);
+    vec3 s = step(vec3(0.0), rd) * 2.0 - 1.0;
+    rd = s * max(abs(rd), vec3(1e-5));
+
+    vec2 bounds = hitBox(vOrigin, rd);
+    if (bounds.x > bounds.y || bounds.y < 0.0) discard;
+    // 相机在盒内：从相机处起步（画面连续，验收 §R4-3.2）
+    bounds.x = max(bounds.x, 0.0);
+
+    float steps = clamp(uSteps, ${VOLUME_STEPS_MIN.toFixed(1)}, ${VOLUME_STEPS_MAX.toFixed(1)});
+    float stepLen = (bounds.y - bounds.x) / steps;
+    vec3 p = vOrigin + bounds.x * rd;
+    vec3 delta = rd * stepLen;
+
+    // 发射-吸收积分（front-to-back，与 CPU 参考实现 integrateEmissionAbsorption 同式）
+    float transmittance = 1.0;
+    vec3 accum = vec3(0.0);
+    for (int i = 0; i < ${VOLUME_STEPS_MAX}; i++) {
+      if (float(i) >= steps) break;
+      float raw = texture(uMap, p + 0.5).r;
+      float d = raw * uDensityScale;
+      if (d > 0.0005) {
+        // 双色映射：原始密度绕阈值平滑混色（低密度 A → 高密度 B）
+        vec3 col = mix(uColorA, uColorB, smoothstep(uThreshold - 0.12, uThreshold + 0.12, raw));
+        accum += transmittance * col * (d * stepLen);
+        transmittance *= exp(-d * uAbsorption * stepLen);
+        if (transmittance < 0.004) break; // 提前终止（不透明饱和）
+      }
+      p += delta;
+    }
+
+    float alpha = clamp(1.0 - transmittance, 0.0, 1.0);
+    if (alpha < 0.001) discard;
+    // uIntensity 控亮 + 硬钳上限：防 Bloom 溢出，无 NaN/Inf
+    vec3 rgb = clamp(accum * uIntensity, vec3(0.0), vec3(${VOLUME_MAX_OUTPUT_LUMINANCE.toFixed(1)}));
+    gl_FragColor = vec4(rgb, alpha);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;
+
+/** 体积材质构造参数 */
+export interface VolumeMaterialParams {
+  /** 3D 密度纹理（`buildDensityTexture` 产出，R8） */
+  map: THREE.Data3DTexture;
+  /** 步进数（默认 64，钳制 16–128） */
+  steps?: number;
+  /** 低密度端颜色（默认 Hα 红） */
+  colorA?: THREE.ColorRepresentation;
+  /** 高密度端颜色（默认 OIII 青绿） */
+  colorB?: THREE.ColorRepresentation;
+  /** 密度倍率（默认 2.2） */
+  densityScale?: number;
+  /** 吸收系数 σ（默认 5） */
+  absorption?: number;
+  /** 双色混合密度阈值（默认 0.45） */
+  threshold?: number;
+  /** 输出亮度（默认 1.2，控 Bloom 贡献） */
+  intensity?: number;
+}
+
+/**
+ * 创建体积 raymarch 材质（消费方持有并负责 dispose，附录 A §6）
+ *
+ * 挂载约定：配合 BoxGeometry(1,1,1) 使用，世界尺寸经 mesh.scale 控制；
+ * mesh.renderOrder 设为 `VOLUME_RENDER_ORDER`。
+ */
+export function createVolumeMaterial(params: VolumeMaterialParams): THREE.ShaderMaterial {
+  const material = new THREE.ShaderMaterial({
+    name: 'VolumeMaterial',
+    vertexShader: VERTEX_SHADER,
+    fragmentShader: FRAGMENT_SHADER,
+    uniforms: {
+      uMap: { value: params.map },
+      uSteps: { value: clampVolumeSteps(params.steps ?? VOLUME_STEPS_DEFAULT) },
+      uDensityScale: { value: params.densityScale ?? 2.2 },
+      uAbsorption: { value: params.absorption ?? 5 },
+      uThreshold: { value: params.threshold ?? 0.45 },
+      uColorA: { value: new THREE.Color(params.colorA ?? '#ff3b30') },
+      uColorB: { value: new THREE.Color(params.colorB ?? '#2ee6c8') },
+      uIntensity: { value: params.intensity ?? 1.2 },
+      uTime: { value: 0 },
+      uQuality: { value: 1 },
+    },
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    side: THREE.BackSide,
+    // 发射-吸收输出为预乘形式（emission 独立于 alpha）：
+    // 合成 C_out = C_vol + T·C_bg ⇔ NormalBlending + premultipliedAlpha
+    premultipliedAlpha: true,
+  });
+  return material;
+}
