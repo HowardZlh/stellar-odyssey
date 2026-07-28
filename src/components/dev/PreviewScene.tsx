@@ -14,6 +14,7 @@ import {
 import { useStarParams } from '@/hooks/useStarParams';
 import { stellarPreviewConfigForBody, type PreviewEntry } from '@/utils/devPreview';
 import { VolumeTestPreview } from '@/components/dev/VolumeTestPreview';
+import { OrionNebulaPreview } from '@/components/dev/OrionNebulaPreview';
 
 /**
  * 预览场景（R4-1）：按条目 componentKey 挂载对应细节组件，注入滑杆参数值。
@@ -201,6 +202,12 @@ export function PreviewScene({
         />
       ) : entry.componentKey === 'volume-raymarch-test' ? (
         <VolumeTestPreview
+          values={values}
+          clockLabelRef={clockLabelRef}
+          qualityLabelRef={qualityLabelRef}
+        />
+      ) : entry.componentKey === 'orion-nebula-volume' ? (
+        <OrionNebulaPreview
           values={values}
           clockLabelRef={clockLabelRef}
           qualityLabelRef={qualityLabelRef}

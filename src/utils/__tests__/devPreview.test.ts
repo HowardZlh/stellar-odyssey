@@ -5,6 +5,7 @@
 import {
   MAX_PREVIEW_PARAMS,
   PREVIEW_REGISTRY,
+  VOLUME_PREVIEW_COMPONENT_KEYS,
   clampParamValue,
   defaultParamValues,
   previewEntryForBody,
@@ -213,6 +214,45 @@ describe('validatePreviewEntry', () => {
     expect(() =>
       validatePreviewEntry(makeEntry({ params: [P({ step: 0.01 })] })),
     ).not.toThrow();
+  });
+});
+
+describe('猎户座星云 M42 体积条目（R4-7）', () => {
+  it('orion-nebula 已注册且 componentKey 为 orion-nebula-volume', () => {
+    const entry = previewEntryForBody('orion-nebula');
+    expect(entry).not.toBeNull();
+    expect(entry!.componentKey).toBe('orion-nebula-volume');
+  });
+
+  it('滑杆含 §R4-7 指定三件（密度倍率/双色权重/步数）且总数 ≤ 上限', () => {
+    const entry = previewEntryForBody('orion-nebula')!;
+    const keys = entry.params.map((p) => p.key);
+    expect(keys).toEqual(
+      expect.arrayContaining(['density', 'weightBias', 'steps']),
+    );
+    expect(entry.params.length).toBeLessThanOrEqual(MAX_PREVIEW_PARAMS);
+  });
+
+  it('双色权重滑杆默认 0、区间 [-1,1]；步数默认 64、区间 [16,128]', () => {
+    const entry = previewEntryForBody('orion-nebula')!;
+    const weight = entry.params.find((p) => p.key === 'weightBias')!;
+    expect(weight.default).toBe(0);
+    expect(weight.min).toBe(-1);
+    expect(weight.max).toBe(1);
+    const steps = entry.params.find((p) => p.key === 'steps')!;
+    expect(steps.default).toBe(64);
+    expect(steps.min).toBe(16);
+    expect(steps.max).toBe(128);
+  });
+
+  it('dataSource 登记 Hubble 公版图像形态参考（附录 A §4）', () => {
+    expect(previewEntryForBody('orion-nebula')!.dataSource).toMatch(/Hubble 公版图像/);
+  });
+
+  it('VOLUME_PREVIEW_COMPONENT_KEYS 覆盖两个体积条目（HUD 质量档行显隐依据）', () => {
+    expect(VOLUME_PREVIEW_COMPONENT_KEYS.has('volume-raymarch-test')).toBe(true);
+    expect(VOLUME_PREVIEW_COMPONENT_KEYS.has('orion-nebula-volume')).toBe(true);
+    expect(VOLUME_PREVIEW_COMPONENT_KEYS.has('stellar-surface')).toBe(false);
   });
 });
 
