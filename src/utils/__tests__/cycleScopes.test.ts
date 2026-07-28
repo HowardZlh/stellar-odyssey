@@ -37,9 +37,8 @@ describe('域序列定义（§5.1-A / R3）', () => {
     expect(sequenceForScope('system', 'io')).toEqual(planetSystemSequence('jupiter'));
   });
 
-  it('L3 银河系域为 15 成员：太阳系出发 → 银心 → 恒星类 → 星云类 → 星团类', () => {
+  it('L3 银河系域为 14 成员：日球层顶出发 → 银心 → 恒星类 → 星云类 → 星团类（sun 不入列，用户反馈与 heliopause 重复）', () => {
     expect(GALAXY_CYCLE_SEQUENCE).toEqual([
-      'sun',
       'heliopause',
       'sgr-a-star',
       'betelgeuse',
@@ -72,7 +71,7 @@ describe('域序列定义（§5.1-A / R3）', () => {
 
   it('L3 序列的特殊天体成员均存在于 specialBodies 且为银河系内 L3 天体', () => {
     for (const id of GALAXY_CYCLE_SEQUENCE) {
-      if (id === 'sun' || id === 'heliopause') continue;
+      if (id === 'heliopause') continue;
       const body = getSpecialBodyById(id);
       expect(body).toBeDefined();
       expect(body!.level).toBe('L3');
@@ -193,11 +192,11 @@ describe('cycleBodyIdInScope 域内循环（§5.1-A / R3）', () => {
     expect(cycleBodyIdInScope('solar', 'io', 1)).toBe('saturn');
   });
 
-  it('L3 域沿序列前进/后退且循环闭合', () => {
-    expect(cycleBodyIdInScope('galaxy', 'sun', 1)).toBe('heliopause');
+  it('L3 域沿序列前进/后退且循环闭合（首站 heliopause，sun 不入列）', () => {
     expect(cycleBodyIdInScope('galaxy', 'heliopause', 1)).toBe('sgr-a-star');
-    expect(cycleBodyIdInScope('galaxy', 'm13-cluster', 1)).toBe('sun');
-    expect(cycleBodyIdInScope('galaxy', 'sun', -1)).toBe('m13-cluster');
+    expect(cycleBodyIdInScope('galaxy', 'sgr-a-star', -1)).toBe('heliopause');
+    expect(cycleBodyIdInScope('galaxy', 'm13-cluster', 1)).toBe('heliopause');
+    expect(cycleBodyIdInScope('galaxy', 'heliopause', -1)).toBe('m13-cluster');
   });
 
   it('L4 域沿序列前进且循环闭合', () => {
@@ -206,18 +205,18 @@ describe('cycleBodyIdInScope 域内循环（§5.1-A / R3）', () => {
     expect(cycleBodyIdInScope('universe', 'milky-way', -1)).toBe('quasar-3c273');
   });
 
-  it('遍历一整圈回到起点（solar 15 步 / L3 15 步 / L4 8 步 / 地球系统 6 步）', () => {
+  it('遍历一整圈回到起点（solar 15 步 / L3 14 步 / L4 8 步 / 地球系统 6 步）', () => {
     let id = 'earth';
     for (let i = 0; i < SOLAR_CYCLE_SEQUENCE.length; i += 1) {
       id = cycleBodyIdInScope('solar', id, 1);
     }
     expect(id).toBe('earth');
 
-    id = 'sun';
+    id = 'heliopause';
     for (let i = 0; i < GALAXY_CYCLE_SEQUENCE.length; i += 1) {
       id = cycleBodyIdInScope('galaxy', id, 1);
     }
-    expect(id).toBe('sun');
+    expect(id).toBe('heliopause');
 
     id = 'm31';
     for (let i = 0; i < UNIVERSE_CYCLE_SEQUENCE.length; i += 1) {
@@ -232,9 +231,10 @@ describe('cycleBodyIdInScope 域内循环（§5.1-A / R3）', () => {
     expect(id).toBe('earth');
   });
 
-  it('序列外 id 回落域默认天体', () => {
+  it('序列外 id 回落域默认天体（sun 在 galaxy 域亦属序列外）', () => {
     expect(cycleBodyIdInScope('galaxy', 'earth', 1)).toBe('sgr-a-star');
     expect(cycleBodyIdInScope('galaxy', 'unknown', -1)).toBe('sgr-a-star');
+    expect(cycleBodyIdInScope('galaxy', 'sun', 1)).toBe('sgr-a-star');
     expect(cycleBodyIdInScope('universe', 'sun', 1)).toBe('m31');
     expect(cycleBodyIdInScope('system', 'sgr-a-star', 1)).toBe('earth');
     expect(cycleBodyIdInScope('solar', 'sun', 1)).toBe('earth');
@@ -261,14 +261,15 @@ describe('scopeCyclePositionLabel 序列位置标签（HUD）', () => {
   });
 
   it('L3/L4 域位置标签', () => {
-    expect(scopeCyclePositionLabel('galaxy', 'sun')).toBe('1/15');
-    expect(scopeCyclePositionLabel('galaxy', 'm13-cluster')).toBe('15/15');
+    expect(scopeCyclePositionLabel('galaxy', 'heliopause')).toBe('1/14');
+    expect(scopeCyclePositionLabel('galaxy', 'm13-cluster')).toBe('14/14');
     expect(scopeCyclePositionLabel('universe', 'milky-way')).toBe('1/8');
     expect(scopeCyclePositionLabel('universe', 'quasar-3c273')).toBe('8/8');
   });
 
-  it('不在该域序列内返回 null（solar 域卫星亦为 null）', () => {
+  it('不在该域序列内返回 null（solar 域卫星亦为 null；sun 已移出 galaxy 序列）', () => {
     expect(scopeCyclePositionLabel('galaxy', 'earth')).toBeNull();
+    expect(scopeCyclePositionLabel('galaxy', 'sun')).toBeNull();
     expect(scopeCyclePositionLabel('universe', 'sgr-a-star')).toBeNull();
     expect(scopeCyclePositionLabel('solar', 'moon')).toBeNull();
   });
