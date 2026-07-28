@@ -373,7 +373,11 @@ function buildCatalog(): Map<string, BodyInfo> {
       nameZh: b.nameZh,
       typeZh: b.typeZh,
       lines: [
-        { label: '距离', value: formatLightYears(b.realDistanceLy) },
+        // R4-10 修复：factsZh 已含"距离"行（3C 273/触须星系富文本）时以
+        // 其为准，不再叠加自动距离行——避免同卡重复行（React 同 key 告警）
+        ...(b.factsZh.some((f) => f.label === '距离')
+          ? []
+          : [{ label: '距离', value: formatLightYears(b.realDistanceLy) }]),
         ...b.factsZh,
         { label: '动态效果', value: b.dynamicsZh },
       ],
