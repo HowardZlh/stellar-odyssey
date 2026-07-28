@@ -318,6 +318,31 @@ const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
   },
 ];
 
+/**
+ * 黑洞引力透镜 raymarch 原型（R4-11，人工目检检查点）：包围球弯折
+ * raymarch——弱场积分核 + 二阶闭式预算 + 解析阴影判据 + 光子环沿程
+ * 积累发光，背景采样程序化星场 cubemap（128px/面）。
+ *
+ * 滑杆按 §R4-11 指定三件：质量尺度（rsWorld = 0.5×massScale，包围球
+ * 世界半径 = 7×massScale）/ 相机距离（值变化时相机径向重置；下限受
+ * 预览页 OrbitControls minDistance = cameraDistance×0.5 = 4 约束，
+ * 配合质量尺度 4 档可推至 ~2 r_s 近光子球距离）/ 步数（16–128）。
+ * 本阶段仅预览页可见，不接主场景（R4-13 范围）。
+ */
+const BLACKHOLE_LENSED_ENTRY: PreviewEntry = {
+  bodyId: 'blackhole-test',
+  title: '黑洞引力透镜 Black Hole Lensing（raymarch 原型 · 光子环 + 背景弯曲）',
+  componentKey: 'blackhole-lensed',
+  cameraDistance: 8,
+  params: [
+    { key: 'massScale', label: '质量尺度', min: 0.3, max: 4, default: 1 },
+    { key: 'cameraDistance', label: '相机距离', min: 4, max: 60, default: 8 },
+    { key: 'steps', label: '步进数', min: 16, max: 128, default: 64, step: 1 },
+  ],
+  dataSource:
+    'Schwarzschild 二阶 PPN 偏转（Keeton & Petters 2005）+ 解析捕获截面 b_crit=3√3/2·r_s（MTW §25.6）；光子环观感基准 EHT M87*（2019）/Sgr A*（2022）；强场对数发散域以驻留发光高斯核近似（艺术化登记）',
+};
+
 /** 体积类预览条目的 componentKey 集（HUD 质量档行按此显隐） */
 export const VOLUME_PREVIEW_COMPONENT_KEYS: ReadonlySet<string> = new Set([
   'volume-raymarch-test',
@@ -335,6 +360,7 @@ export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
     VOLUME_TEST_ENTRY,
     ORION_NEBULA_ENTRY,
     ...GALAXY_NEAR_VIEW_ENTRIES,
+    BLACKHOLE_LENSED_ENTRY,
   ];
   const map = new Map<string, PreviewEntry>();
   for (const e of entries) {
