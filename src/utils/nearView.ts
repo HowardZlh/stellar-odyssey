@@ -44,6 +44,11 @@ import {
 } from '@/utils/cameraFocus';
 import { HELIOPAUSE_VISUAL_RADIUS_UNITS } from '@/utils/heliopause';
 import { createSeededRandom } from '@/utils/random';
+import {
+  DETAIL_LAYER_TRANSITION_SECONDS,
+  detailGateUpdate,
+  type DetailGateResult,
+} from '@/utils/detailLayer';
 
 /** 进入阈值 = 飞往观察距离 × 该系数（飞抵后必然处于阈值内） */
 export const NEAR_VIEW_ENTER_RATIO = 1.5;
@@ -51,8 +56,8 @@ export const NEAR_VIEW_ENTER_RATIO = 1.5;
 /** 退出阈值 = 进入阈值 × 该系数（滞回防抖，与 planetDetail 同比例） */
 export const NEAR_VIEW_EXIT_RATIO = 1.4;
 
-/** 近观层淡入淡出过渡时长（秒，激活/释放无突变） */
-export const NEAR_VIEW_TRANSITION_SECONDS = 0.5;
+/** 近观层淡入淡出过渡时长（秒；R4-2 起与 detailLayer 统一机制同源） */
+export const NEAR_VIEW_TRANSITION_SECONDS = DETAIL_LAYER_TRANSITION_SECONDS;
 
 /**
  * 近观激活（进入）距离（场景单位，§7.1-B 逐成员定义）
@@ -84,16 +89,12 @@ export function nearViewExitDistanceUnits(bodyId: string): number {
   return nearViewEnterDistanceUnits(bodyId) * NEAR_VIEW_EXIT_RATIO;
 }
 
-/** 门控更新结果（与 planetDetail.DetailGateUpdate 同构） */
-export interface NearViewGateResult {
-  /** 近观细节层是否激活（挂载/渲染） */
-  active: boolean;
-  /** 是否应立即释放该目标近观层资源（离开跟随语境/超出退出距离） */
-  releaseNow: boolean;
-}
+/** 门控更新结果（与 detailLayer.DetailGateResult 同构，别名保持兼容） */
+export type NearViewGateResult = DetailGateResult;
 
 /**
- * 近观门控状态机（每帧调用，滞回防抖；复用 P4 detailGateUpdate 模式）：
+ * 近观门控状态机（每帧调用，滞回防抖）：R4-2 起委托统一机制
+ * detailLayer.detailGateUpdate（语义逐项一致，行为零回退）：
  * - 未激活 → 激活：正在跟随/飞往本目标（focused）且 距离 < 进入阈值
  * - 激活 → 未激活：焦点离开本目标 或 距离 > 退出阈值（= 进入 × 1.4）
  * - releaseNow：退出即释放（§7.1-B"离开跟随/超出距离即释放"，无 LRU 保留）
@@ -104,21 +105,16 @@ export function nearViewGateUpdate(
   distanceToBodyUnits: number,
   enterDistanceUnits: number,
 ): NearViewGateResult {
-  if (!Number.isFinite(distanceToBodyUnits) || distanceToBodyUnits < 0) {
-    throw new RangeError(`相机距离必须为非负有限数，收到 ${distanceToBodyUnits}`);
-  }
   if (!Number.isFinite(enterDistanceUnits) || enterDistanceUnits <= 0) {
     throw new RangeError(`进入阈值必须为正有限数，收到 ${enterDistanceUnits}`);
   }
-  if (prevActive) {
-    const exit = !focused || distanceToBodyUnits > enterDistanceUnits * NEAR_VIEW_EXIT_RATIO;
-    if (exit) {
-      return { active: false, releaseNow: true };
-    }
-    return { active: true, releaseNow: false };
-  }
-  const enter = focused && distanceToBodyUnits < enterDistanceUnits;
-  return { active: enter, releaseNow: false };
+  return detailGateUpdate(
+    prevActive,
+    focused,
+    distanceToBodyUnits,
+    enterDistanceUnits,
+    enterDistanceUnits * NEAR_VIEW_EXIT_RATIO,
+  );
 }
 
 /**
