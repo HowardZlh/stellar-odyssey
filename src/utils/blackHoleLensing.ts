@@ -25,12 +25,36 @@
  *   近似残差登记：观察者深入光子球以内（r < 1.5 r_s）时，真解中 b > b_crit
  *   的外行光子会回落，本近似仍按出射处理（预览页相机域基本不可达）。
  *
+ * ── 吸积盘物理（R4-12，§R4-12 / §0.3 方案 C）────────────────────────
+ * - 几何薄盘：盘平面 r ∈ [内缘≈3 r_s（ISCO）, 外缘~12 r_s]，raymarch 弯折
+ *   步进中做平面跨越检测（线性插值求交，非解析求交）——弯曲光线可与盘
+ *   多次相交，上下缘翻折像即来源于绕过黑洞上/下方的光线再交盘面。
+ * - 温度剖面：T(r) ∝ r^(−3/4) × [1 − √(r_in/r)]^(1/4)（Novikov-Thorne /
+ *   Shakura-Sunyaev 薄盘近似，内缘应力零边界截断项登记；剖面峰值在
+ *   r = (49/36)·r_in，归一化系数 DISK_TEMP_PROFILE_NORM 闭式求得）。
+ *   峰值温度 DISK_TEMP_PEAK_K_DEFAULT 为可视化选择（真实恒星级黑洞盘内区
+ *   ~10⁷ K 属 X 射线，光学黑体色板不可表现，压标至数千 K 登记）。
+ * - 开普勒速度：β(r) = √[ (r_s/2) / (r − r_s) ]（Schwarzschild 圆轨道的
+ *   静止观察者局域速度，ISCO r=3 r_s 处恰 0.5c），上限钳 DISK_BETA_MAX。
+ * - 多普勒束流：δ = √(1−β²)/(1−β·cosθ)，亮度 ∝ δ³（§R4-12 指定 δ³ 近似；
+ *   频率积分强度真值为 δ⁴，登记）；色温随 δ 蓝移/红移（T_obs = T·δ）。
+ * - 引力红移：g = √(1 − r_s/r)（静止发射体→无穷远观察者近似，忽略盘倾角
+ *   与观察者位置的次级项，登记）；亮度 ×g³、色温 ×g。
+ * - 束流强度滑杆：δ_eff = δ^strength（strength=0 关闭束流、1 物理档、
+ *   >1 夸大），引力红移不随滑杆关闭（物理常开）。
+ * - 亮度剖面：I ∝ tempFactor²（真值 T⁴ 动态范围过大，压缩为平方档 +
+ *   Bloom 联调不过曝，艺术化登记）。
+ * - 黑体着色复用 R4-6 `starPhysics.blackbodyRGB`：`buildBlackbodyLutData`
+ *   预采样 [1,000, 16,000] K → 64 texel RGBA LUT（shader 1D 查表，
+ *   blackbodyRGB 域外自行钳制）。
+ *
  * CPU 参考追踪 `traceLensedRay` 与 shader（BlackHoleLensed.tsx）逐步公式
  * 同式，常数单点维护于本文件（shader 经模板插值引用），单测据此断言一致性。
  * 全文件以 r_s = 1 为长度单位（shader 侧经 uniform 换算世界单位）。
  */
 
 import { createSeededRandom } from '@/utils/random';
+import { blackbodyRGB } from '@/utils/starPhysics';
 
 /** 撞击终止半径（r_s 单位；§R4-11：r ≤ 1.05 r_s 终止为黑） */
 export const CAPTURE_RADIUS_RS = 1.05;
@@ -301,6 +325,176 @@ export function traceLensedRay(ro: Vec3, rd: Vec3, options: TraceOptions = {}): 
     stepsUsed,
     minRadiusRs: minR,
   };
+}
+
+// ---------------------------------------------------------------------------
+// 吸积盘物理（R4-12：温度黑体色 / 多普勒束流 / 引力红移，文件头登记）
+// ---------------------------------------------------------------------------
+
+/** 盘内缘默认半径（r_s 单位；Schwarzschild ISCO = 3 r_s） */
+export const DISK_INNER_RADIUS_RS_DEFAULT = 3;
+
+/** 盘外缘默认半径（r_s 单位；§R4-12 "~12 r_s"，须 < 包围球 14 r_s） */
+export const DISK_OUTER_RADIUS_RS_DEFAULT = 12;
+
+/** 盘内外缘最小间隔（r_s 单位；滑杆域防交叉） */
+export const DISK_RADII_MIN_GAP_RS = 1;
+
+/** 温度剖面峰值位置 u = r/r_in（NT 截断剖面解析极值点 49/36 ≈ 1.361） */
+export const DISK_TEMP_PROFILE_PEAK_U = 49 / 36;
+
+/**
+ * 温度剖面归一化系数：f(u) = u^(−3/4)·(1−u^(−1/2))^(1/4) 在 u = 49/36
+ * 处取峰值 f = (36/49)^(3/4)·7^(−1/4)，NORM = 1/f = (49/36)^(3/4)·7^(1/4)
+ */
+export const DISK_TEMP_PROFILE_NORM = Math.pow(49 / 36, 0.75) * Math.pow(7, 0.25);
+
+/** 峰值温度可视化档（K；真实内区 ~10⁷ K X 射线，压标登记见文件头） */
+export const DISK_TEMP_PEAK_K_DEFAULT = 7200;
+
+/** 开普勒速度上限钳（β = v/c；内缘滑杆下限 2 r_s 处 β ≈ 0.707 的稳定钳） */
+export const DISK_BETA_MAX = 0.72;
+
+/** 引力红移因子下限（g → 0 时颜色/亮度归零的数值防护） */
+export const GRAV_REDSHIFT_FLOOR = 0.05;
+
+/** 黑体 LUT 温度域（K；覆盖盘温 × 多普勒/引力偏移域，blackbodyRGB 域外钳制） */
+export const DISK_LUT_TEMP_MIN_K = 1000;
+export const DISK_LUT_TEMP_MAX_K = 16000;
+
+/** 黑体 LUT 宽度（texel；线性插值采样足够平滑） */
+export const DISK_LUT_WIDTH = 64;
+
+/** 盘条纹差速角速度系数（rad/s · r_s^1.5；ω = K·r^(−3/2) 开普勒律形状，
+ * 速率为可视化节奏登记——真实 ISCO 周期毫秒~小时级不可视化） */
+export const DISK_STRIPE_OMEGA = 6;
+
+/**
+ * 盘内外缘滑杆钳制（inner < outer，最小间隔 DISK_RADII_MIN_GAP_RS；
+ * 外缘上限 = 包围球半径 − 1（弯折光线须在球内完成盘交），内缘下限 1.5 r_s）
+ */
+export function clampDiskRadii(innerRs: number, outerRs: number): { innerRs: number; outerRs: number } {
+  const outerMax = LENSING_DOMAIN_RADIUS_RS - 1;
+  const inner0 = Number.isFinite(innerRs) ? innerRs : DISK_INNER_RADIUS_RS_DEFAULT;
+  const outer0 = Number.isFinite(outerRs) ? outerRs : DISK_OUTER_RADIUS_RS_DEFAULT;
+  const outer = Math.max(1.5 + DISK_RADII_MIN_GAP_RS, Math.min(outerMax, outer0));
+  const inner = Math.max(1.5, Math.min(outer - DISK_RADII_MIN_GAP_RS, inner0));
+  return { innerRs: inner, outerRs: outer };
+}
+
+/**
+ * 归一化温度剖面 [0,1]：f(r) = NORM · (r/r_in)^(−3/4)·(1−√(r_in/r))^(1/4)
+ *（Novikov-Thorne 近似 + 内缘截断，文件头登记）。r ≤ r_in 返回 0（内缘
+ * 以内无稳定圆轨道，盘物质快速坠入不发光）；峰值 1 在 r = (49/36)·r_in。
+ *
+ * @throws RangeError 当 innerRs 非 >1 有限数
+ */
+export function diskTemperatureFactor01(rRs: number, innerRs: number): number {
+  if (!Number.isFinite(innerRs) || innerRs <= 1) {
+    throw new RangeError(`盘内缘半径须为 >1 的有限数（r_s），收到 ${innerRs}`);
+  }
+  if (!Number.isFinite(rRs) || rRs <= innerRs) return 0;
+  const u = rRs / innerRs;
+  const trunc = 1 - 1 / Math.sqrt(u);
+  const f = Math.pow(u, -0.75) * Math.pow(trunc, 0.25) * DISK_TEMP_PROFILE_NORM;
+  return Math.max(0, Math.min(1, f));
+}
+
+/** 盘温（K）= 峰值温度 × 归一化剖面 */
+export function diskTemperatureK(
+  rRs: number,
+  innerRs: number,
+  peakK: number = DISK_TEMP_PEAK_K_DEFAULT,
+): number {
+  return peakK * diskTemperatureFactor01(rRs, innerRs);
+}
+
+/**
+ * 开普勒圆轨道局域速度 β = √[(r_s/2)/(r − r_s)]（静止观察者测得，
+ * Schwarzschild 精确式；ISCO r = 3 r_s 处恰 0.5）。上限钳 DISK_BETA_MAX、
+ * r ≤ 1 时取上限（数值防护，盘域内不可达）。
+ */
+export function diskKeplerianBeta(rRs: number): number {
+  if (!Number.isFinite(rRs) || rRs <= 1) return DISK_BETA_MAX;
+  return Math.min(Math.sqrt(0.5 / (rRs - 1)), DISK_BETA_MAX);
+}
+
+/**
+ * 引力红移因子 g = √(1 − r_s/r) ∈ (0,1]（静止发射体 → 无穷远近似，
+ * 文件头登记）；下限钳 GRAV_REDSHIFT_FLOOR 防归零除法
+ */
+export function gravitationalRedshiftFactor(rRs: number): number {
+  if (!Number.isFinite(rRs) || rRs <= 1) return GRAV_REDSHIFT_FLOOR;
+  return Math.max(Math.sqrt(1 - 1 / rRs), GRAV_REDSHIFT_FLOOR);
+}
+
+/**
+ * 相对论多普勒因子 δ = √(1−β²) / (1 − β·cosθ)
+ *
+ * @param beta 源速度 v/c（钳 [0, 0.999]）
+ * @param cosTheta 源速度与"指向观察者的光子方向"夹角余弦（钳 [−1,1]）
+ * @returns δ > 1 接近（蓝移增亮）、δ < 1 远离（红移减暗）
+ */
+export function dopplerFactor(beta: number, cosTheta: number): number {
+  const b = Math.max(0, Math.min(0.999, Number.isFinite(beta) ? beta : 0));
+  const c = Math.max(-1, Math.min(1, Number.isFinite(cosTheta) ? cosTheta : 0));
+  return Math.sqrt(1 - b * b) / Math.max(1 - b * c, 1e-3);
+}
+
+/**
+ * 束流亮度因子 = δ_eff³ × g³（δ_eff = δ^strength，§R4-12 δ³ 近似 +
+ * 引力红移减暗，文件头登记；strength=0 时只剩引力项 g³）
+ */
+export function diskBeamedBrightness(delta: number, grav: number, beamStrength: number): number {
+  const dEff = Math.pow(Math.max(delta, 1e-3), Math.max(0, beamStrength));
+  const g = Math.max(grav, GRAV_REDSHIFT_FLOOR);
+  return dEff * dEff * dEff * g * g * g;
+}
+
+/** 观测色温（K）= 盘温 × δ_eff × g（多普勒蓝/红移 + 引力红移，shader 同式） */
+export function diskObservedTemperatureK(
+  baseK: number,
+  delta: number,
+  grav: number,
+  beamStrength: number,
+): number {
+  const dEff = Math.pow(Math.max(delta, 1e-3), Math.max(0, beamStrength));
+  return baseK * dEff * Math.max(grav, GRAV_REDSHIFT_FLOOR);
+}
+
+/**
+ * 盘平面跨越线性插值参数 t ∈ [0,1]：步进前后两点盘面高度 y0/y1 异号时
+ * 交点 = p0 + t·(p1−p0)（shader 同式；y0 = y1 时返回 0.5 防除零）
+ */
+export function planeCrossingLerp(y0: number, y1: number): number {
+  const d = y0 - y1;
+  if (!Number.isFinite(d) || Math.abs(d) < 1e-12) return 0.5;
+  return Math.max(0, Math.min(1, y0 / d));
+}
+
+/**
+ * 黑体色 LUT 数据（RGBA Uint8Array，宽 × 1）：温度域
+ * [DISK_LUT_TEMP_MIN_K, DISK_LUT_TEMP_MAX_K] 线性采样
+ * `starPhysics.blackbodyRGB`（R4-6 复用，§R4-12）。确定性纯函数——
+ * 双次调用逐字节一致（单测断言）；alpha 恒 255。
+ *
+ * @throws RangeError 当 width 非 ≥2 整数
+ */
+export function buildBlackbodyLutData(width: number = DISK_LUT_WIDTH): Uint8Array<ArrayBuffer> {
+  if (!Number.isInteger(width) || width < 2) {
+    throw new RangeError(`LUT 宽度须为 ≥2 整数，收到 ${width}`);
+  }
+  const data = new Uint8Array(width * 4);
+  for (let i = 0; i < width; i += 1) {
+    const t =
+      DISK_LUT_TEMP_MIN_K + ((DISK_LUT_TEMP_MAX_K - DISK_LUT_TEMP_MIN_K) * i) / (width - 1);
+    const rgb = blackbodyRGB(t);
+    data[i * 4] = Math.round(rgb.r * 255);
+    data[i * 4 + 1] = Math.round(rgb.g * 255);
+    data[i * 4 + 2] = Math.round(rgb.b * 255);
+    data[i * 4 + 3] = 255;
+  }
+  return data;
 }
 
 // ---------------------------------------------------------------------------

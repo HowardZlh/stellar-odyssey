@@ -319,28 +319,36 @@ const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
 ];
 
 /**
- * 黑洞引力透镜 raymarch 原型（R4-11，人工目检检查点）：包围球弯折
- * raymarch——弱场积分核 + 二阶闭式预算 + 解析阴影判据 + 光子环沿程
- * 积累发光，背景采样程序化星场 cubemap（128px/面）。
+ * 黑洞引力透镜 raymarch（R4-11 原型 + R4-12 吸积盘，人工目检检查点）：
+ * 包围球弯折 raymarch——弱场积分核 + 二阶闭式预算 + 解析阴影判据 +
+ * 光子环沿程积累发光 + 薄盘求交（温度黑体色/多普勒束流/引力红移/
+ * 差速条纹），背景采样程序化星场 cubemap（128px/面）。
  *
- * 滑杆按 §R4-11 指定三件：质量尺度（rsWorld = 0.5×massScale，包围球
- * 世界半径 = 7×massScale）/ 相机距离（值变化时相机径向重置；下限受
+ * 滑杆 7 件（≤8 上限）：§R4-11 三件——质量尺度（rsWorld = 0.5×massScale，
+ * 包围球世界半径 = 7×massScale）/ 相机距离（值变化时相机径向重置；下限受
  * 预览页 OrbitControls minDistance = cameraDistance×0.5 = 4 约束，
- * 配合质量尺度 4 档可推至 ~2 r_s 近光子球距离）/ 步数（16–128）。
+ * 配合质量尺度 4 档可推至 ~2 r_s 近光子球距离）/ 步数（16–128）；
+ * §R4-12 四件——盘倾角（0°=正视 face-on / 90°=侧视 edge-on）/ 盘内缘
+ * （ISCO 档默认 3 r_s）/ 盘外缘（默认 12 r_s，经 clampDiskRadii 防交叉）/
+ * 束流强度（δ 指数：0 关闭、1 物理档 δ³、2 夸大）。
  * 本阶段仅预览页可见，不接主场景（R4-13 范围）。
  */
 const BLACKHOLE_LENSED_ENTRY: PreviewEntry = {
   bodyId: 'blackhole-test',
-  title: '黑洞引力透镜 Black Hole Lensing（raymarch 原型 · 光子环 + 背景弯曲）',
+  title: '黑洞引力透镜 Black Hole Lensing（光子环 + 背景弯曲 + 吸积盘翻折像）',
   componentKey: 'blackhole-lensed',
   cameraDistance: 8,
   params: [
     { key: 'massScale', label: '质量尺度', min: 0.3, max: 4, default: 1 },
     { key: 'cameraDistance', label: '相机距离', min: 4, max: 60, default: 8 },
     { key: 'steps', label: '步进数', min: 16, max: 128, default: 64, step: 1 },
+    { key: 'diskInclDeg', label: '盘倾角（°，0=正视/90=侧视）', min: 0, max: 90, default: 75, step: 1 },
+    { key: 'diskInnerRs', label: '盘内缘（r_s）', min: 2, max: 6, default: 3 },
+    { key: 'diskOuterRs', label: '盘外缘（r_s）', min: 6, max: 13, default: 12 },
+    { key: 'beamStrength', label: '束流强度', min: 0, max: 2, default: 1 },
   ],
   dataSource:
-    'Schwarzschild 二阶 PPN 偏转（Keeton & Petters 2005）+ 解析捕获截面 b_crit=3√3/2·r_s（MTW §25.6）；光子环观感基准 EHT M87*（2019）/Sgr A*（2022）；强场对数发散域以驻留发光高斯核近似（艺术化登记）',
+    'Schwarzschild 二阶 PPN 偏转（Keeton & Petters 2005）+ 解析捕获截面 b_crit=3√3/2·r_s（MTW §25.6）；吸积盘 T∝r^(−3/4)（Novikov-Thorne/Shakura-Sunyaev 薄盘近似，内缘截断）+ 多普勒束流 δ³ + 引力红移 √(1−r_s/r)（峰值温度压标至可视化档登记）；观感基准 EHT M87*（2019）/Sgr A*（2022）与 Interstellar 盘翻折像；强场对数发散域以驻留发光高斯核近似（艺术化登记）',
 };
 
 /** 体积类预览条目的 componentKey 集（HUD 质量档行按此显隐） */
