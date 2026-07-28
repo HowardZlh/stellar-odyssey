@@ -193,6 +193,10 @@ export function VolumeTestPreview({
     const savedClearAlpha = gl.getClearAlpha();
     gl.setRenderTarget(rt);
     gl.setClearColor(0x000000, 0);
+    // 显式清屏（bug 修复，与 OrionNebulaPreview 同源）：EffectComposer
+    // （postprocessing）把 renderer.autoClear 永久置 false，隐式自动清屏
+    // 失效 → RT 帧间累积成拖影；gl.clear 遵循当前剪裁子区域
+    gl.clear(true, false, false);
     gl.render(volumeScene, camera);
     gl.setRenderTarget(null);
     gl.setClearColor(savedClearColor, savedClearAlpha);
