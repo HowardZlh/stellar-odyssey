@@ -42,7 +42,15 @@ import { generateGalaxyDiskParticles } from '@/utils/galaxy';
 import { createSeededRandom } from '@/utils/random';
 import { galaxyPlaneSizeUnits } from '@/utils/universe';
 import { viewDistanceForRadius } from '@/utils/cameraFocus';
-import { NEAR_VIEW_ENTER_RATIO } from '@/utils/nearView';
+import { NEAR_VIEW_ENTER_RATIO, NEAR_VIEW_EXIT_RATIO } from '@/utils/nearView';
+import {
+  claimDetailLayer,
+  detailLayerHolderIds,
+  detailLruUpdate,
+  estimateGpuBytes,
+  releaseDetailLayer,
+  type DetailLayerSpec,
+} from '@/utils/detailLayer';
 
 /** 单星系近观粒子数上限（§8.1 需求硬性预算） */
 export const GALAXY_NEAR_VIEW_MAX_PARTICLES = 8000;
@@ -487,6 +495,7 @@ export interface NearViewLruResult {
 
 /**
  * 近观层 LRU 更新（纯函数，容量 GALAXY_NEAR_VIEW_LRU_CAPACITY=1）：
+ * R4-2 起委托统一机制 detailLayer.detailLruUpdate（语义逐项一致）：
  * activeId 为 null 时保持现状（离开跟随后近观层淡出但保留在 LRU 内，
  * 便于快速切回）；非 null 时提升为最新持有者，超容量的旧持有者进入
  * releasedIds（组件侧卸载 dispose）。
@@ -496,40 +505,56 @@ export function nearViewLruUpdate(
   activeId: string | null,
   capacity: number = GALAXY_NEAR_VIEW_LRU_CAPACITY,
 ): NearViewLruResult {
-  if (!Number.isInteger(capacity) || capacity < 1) {
-    throw new RangeError(`LRU 容量必须为正整数，收到 ${capacity}`);
+  return detailLruUpdate(holders, activeId, capacity);
+}
+
+/**
+ * 星系近观粒子层的统一细节层规格（R4-2：kind='particles' 池，
+ * 阈值与 GPU 估算逐星系登记；供 claim 与组件侧 useDetailLayer 消费）。
+ */
+export function galaxyDetailLayerSpec(galaxyId: string): DetailLayerSpec {
+  const cfg = GALAXY_NEAR_VIEW_CONFIGS[galaxyId];
+  if (!cfg) {
+    throw new RangeError(`未定义近观粒子层配置的星系 id：${galaxyId}`);
   }
-  if (activeId === null) {
-    return { holders, releasedIds: [] };
-  }
-  const next = [activeId, ...holders.filter((id) => id !== activeId)];
-  return { holders: next.slice(0, capacity), releasedIds: next.slice(capacity) };
+  const enterDistanceUnits = galaxyNearViewEnterDistanceUnits(galaxyId);
+  return {
+    bodyId: galaxyId,
+    kind: 'particles',
+    enterDistanceUnits,
+    exitDistanceUnits: enterDistanceUnits * NEAR_VIEW_EXIT_RATIO,
+    budget: {
+      particles: cfg.particleCount,
+      gpuBytesEstimate: estimateGpuBytes({ particles: cfg.particleCount }),
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
-// 持有者注册表（渲染端单例，测试可重置；satellitePhase 注册表同范式）
+// 持有者注册表（R4-2 起委托 detailLayer 统一注册表 'particles' 池，
+// 兼容包装保持调用方/单测 API 不变；行为零回退）
 // ---------------------------------------------------------------------------
-
-let holderIds: readonly string[] = [];
 
 /**
  * 声明某星系为当前近观层持有者（激活门控命中时调用）。
  * @returns 被挤出、应立即释放的星系 id 列表
  */
 export function claimGalaxyNearView(galaxyId: string): readonly string[] {
-  const result = nearViewLruUpdate(holderIds, galaxyId);
-  holderIds = result.holders;
-  return result.releasedIds;
+  return claimDetailLayer(galaxyDetailLayerSpec(galaxyId))
+    .filter((h) => h.kind === 'particles')
+    .map((h) => h.bodyId);
 }
 
 /** 当前近观层持有者列表（最新在前） */
 export function galaxyNearViewHolderIds(): readonly string[] {
-  return holderIds;
+  return detailLayerHolderIds('particles');
 }
 
-/** 重置持有者注册表（测试/场景卸载用） */
+/** 重置持有者注册表（测试/场景卸载用；仅清空 particles 池） */
 export function resetGalaxyNearViewHolders(): void {
-  holderIds = [];
+  for (const id of detailLayerHolderIds('particles')) {
+    releaseDetailLayer(id, 'particles');
+  }
 }
 
 // ---------------------------------------------------------------------------

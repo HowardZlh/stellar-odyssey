@@ -45,13 +45,10 @@ import {
   mwM31SignedSeparationSceneUnits,
 } from '@/utils/galaxyMerger';
 import {
-  claimGalaxyNearView,
-  galaxyNearViewEnterDistanceUnits,
-  galaxyNearViewHolderIds,
+  galaxyDetailLayerSpec,
   resetGalaxyNearViewHolders,
 } from '@/utils/galaxyNearView';
-import { NEAR_VIEW_TRANSITION_SECONDS, nearViewGateUpdate } from '@/utils/nearView';
-import { advanceFrameTransition } from '@/utils/galacticFrame';
+import { useDetailLayer } from '@/hooks/useDetailLayer';
 import { GalaxyNearViewLayer } from '@/components/Scene/GalaxyNearView';
 import {
   createGalaxySpriteCanvas,
@@ -72,9 +69,6 @@ function fadeWeight(continuousLevel: number): number {
   // 连续层级上限为 4，平台区延伸至 4 以上保证 L4 锚点处不淡出
   return trapezoidWeight(continuousLevel, FADE.start, FADE.full, 4.5, 5);
 }
-
-/** 渲染循环共用临时向量（零分配纪律） */
-const GALAXY_TMP_VEC = new THREE.Vector3();
 
 interface GalaxyObjectProps {
   galaxy: GalaxyData;
@@ -111,20 +105,18 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
       mergerEllipticalMix01(s.simDays) >= 0.5,
   );
 
-  // ---- R2-8 近观门控状态（滞回 + 0.5s 淡入淡出 + LRU 保留） ----
-  const [nearMounted, setNearMounted] = useState(false);
-  const nearMountedRef = useRef(false);
-  const nearActiveRef = useRef(false);
-  const near01Ref = useRef(0);
+  // ---- R2-8 近观门控（R4-2 起经统一细节层机制 hooks/useDetailLayer 挂接：
+  // 滞回阈值 + 0.5s 淡入淡出 + LRU 保留（'lru-retain'）语义零回退）----
   const weightRef = useRef(0);
-  const nearEnterDistance = useMemo(
-    () => galaxyNearViewEnterDistanceUnits(galaxy.id),
-    [galaxy.id],
-  );
+  const nearSpec = useMemo(() => galaxyDetailLayerSpec(galaxy.id), [galaxy.id]);
+  const { active: nearMounted, opacity01: getNear01 } = useDetailLayer(nearSpec, {
+    objectRef: groupRef,
+    retention: 'lru-retain',
+  });
   /** 近观层不透明度 = 宇宙层级淡入权重 × 近观激活权重 */
   const getNearOpacity = useCallback(
-    () => weightRef.current * near01Ref.current,
-    [],
+    () => weightRef.current * getNear01(),
+    [getNear01],
   );
 
   const texture = useMemo(() => {
@@ -153,7 +145,7 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
   // 登记：×0.55 抑制压缩距离下的透视夸大）
   const sizeUnits = galaxyPlaneSizeUnits(galaxy.diameterLy);
 
-  useFrame(({ camera }, delta) => {
+  useFrame(({ camera }) => {
     const state = useSimulationStore.getState();
     const group = groupRef.current;
     if (!group) return;
@@ -202,41 +194,14 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
     // 其余星系静态（初始 position；M32/M110 随 M31、宇宙网静止属预期，
     // 面板"运动（模拟）"行登记，R2-10）
 
-    // ---- R2-8 近观门控（滞回状态机 utils/nearView.nearViewGateUpdate）----
-    const focused =
-      state.followBodyId === galaxy.id || state.flyToBodyId === galaxy.id;
-    const distance = camera.position.distanceTo(group.getWorldPosition(GALAXY_TMP_VEC));
-    const gate = nearViewGateUpdate(
-      nearActiveRef.current,
-      focused,
-      distance,
-      nearEnterDistance,
-    );
-    nearActiveRef.current = gate.active;
-    // 激活时声明 LRU 持有权（已是最新持有者时跳过，渲染循环零分配）
-    if (gate.active && galaxyNearViewHolderIds()[0] !== galaxy.id) {
-      claimGalaxyNearView(galaxy.id);
-    }
-    near01Ref.current = advanceFrameTransition(
-      near01Ref.current,
-      gate.active ? 1 : 0,
-      delta,
-      NEAR_VIEW_TRANSITION_SECONDS,
-    );
-    // LRU 语义：释放跟随后近观层保留（淡出但不卸载，快速切回免重建）；
-    // 被其他星系挤出持有权时立即卸载（几何/材质随卸载 dispose）
-    const shouldMount = galaxyNearViewHolderIds().includes(galaxy.id);
-    if (shouldMount !== nearMountedRef.current) {
-      nearMountedRef.current = shouldMount;
-      setNearMounted(shouldMount);
-    }
-
+    // R2-8 近观门控/LRU 已迁移至 useDetailLayer（R4-2，本 useFrame 前
+    // 同帧先行更新）；此处仅消费 getNear01() 做贴图交叉淡出
     if (meshRef.current) {
       // billboard 面向相机（薄片修复，登记见组件头注释）；
       // 近观层激活时贴图交叉淡出（释放时随 near01 回落自动淡入）
       meshRef.current.quaternion.copy(camera.quaternion);
       const mat = meshRef.current.material as THREE.MeshBasicMaterial;
-      let opacity = weight * (1 - near01Ref.current);
+      let opacity = weight * (1 - getNear01());
       // R2-11 合并演化：M31 及伴星系随终态过渡淡出并入 Milkomeda
       // （椭球终态由银河系粒子盘着色器承载）；M31 贴图穿越期潮汐拉伸 +
       // 星暴时刻蓝白偏色（艺术化登记于 utils/galaxyMerger 文件头）
