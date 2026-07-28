@@ -1,10 +1,11 @@
 'use client';
 
 import type { JSX } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid } from '@react-three/drei';
-import { Bloom, EffectComposer } from '@react-three/postprocessing';
+import { Bloom, EffectComposer, ToneMapping } from '@react-three/postprocessing';
+import { ToneMappingMode } from 'postprocessing';
 import {
   clampParamValue,
   defaultParamValues,
@@ -74,6 +75,9 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
   }, [entry]);
 
   const { fps, heap } = usePerfHud();
+  // 虚拟时钟读数（时间流速滑杆的即时数值反馈）：由 PreviewScene 每帧直写
+  // textContent，不走 React state（避免 60Hz 重渲染）
+  const clockLabelRef = useRef<HTMLSpanElement | null>(null);
 
   if (!entry) {
     return (
@@ -95,7 +99,11 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
 
   return (
     <div className="relative h-screen w-screen bg-black">
+      {/* flat：关闭 renderer 内建 tone mapping，统一由 EffectComposer 末端的
+          ToneMapping(ACES) 在帧缓冲级做映射——曝光对裸 ShaderMaterial（如
+          StellarSurface）同样生效，且内建材质不会被双重映射 */}
       <Canvas
+        flat
         gl={{ logarithmicDepthBuffer: true, antialias: true }}
         camera={{ position: [0, 0, entry.cameraDistance], near: 0.01, far: 1000 }}
       >
@@ -111,11 +119,24 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
             infiniteGrid
           />
         )}
-        <PreviewScene entry={entry} values={values} exposure={exposure} />
-        <OrbitControls enablePan minDistance={0.1} maxDistance={100} />
-        {bloom && (
+        <PreviewScene
+          entry={entry}
+          values={values}
+          exposure={exposure}
+          clockLabelRef={clockLabelRef}
+        />
+        {/* minDistance 按条目相机距离推导，防止推进到天体内部（单面材质黑屏） */}
+        <OrbitControls enablePan minDistance={entry.cameraDistance * 0.5} maxDistance={100} />
+        {/* 常驻 Composer：ToneMapping 必须始终在管线末端（曝光的实现载体），
+            Bloom 按开关条件渲染并置于其前（作用于线性 HDR） */}
+        {bloom ? (
           <EffectComposer multisampling={4}>
             <Bloom intensity={0.6} luminanceThreshold={0.6} luminanceSmoothing={0.2} mipmapBlur />
+            <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+          </EffectComposer>
+        ) : (
+          <EffectComposer multisampling={4}>
+            <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
           </EffectComposer>
         )}
       </Canvas>
@@ -125,6 +146,9 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
         <div className="mb-1 font-semibold text-sky-300">{entry.title}</div>
         <div>帧率：{fps}</div>
         <div>JS 堆：{heap}</div>
+        <div>
+          虚拟时钟：<span ref={clockLabelRef}>0.0</span> s
+        </div>
         {entry.dataSource && (
           <div className="mt-1 max-w-64 text-gray-400">来源：{entry.dataSource}</div>
         )}
