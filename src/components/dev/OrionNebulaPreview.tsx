@@ -13,8 +13,11 @@ import {
   makeM42Sampler,
   rgVolumeBuildDone,
   rgVolumeBuildProgress01,
-  trapeziumStarBoxPositions,
 } from '@/utils/nebulaVolume';
+import {
+  addTrapeziumSprites,
+  buildStarSpriteTexture,
+} from '@/components/Scene/volumetric/TrapeziumSprites';
 import {
   createAdaptiveQuality,
   createQualityBlend,
@@ -67,36 +70,6 @@ const PREVIEW_OVERRIDE_PRIORITY = 0.5;
 /** 体积 RT pass 优先级：晚于 uniform 覆写（0.5）、早于 EffectComposer 渲染（1） */
 const VOLUME_RT_PASS_PRIORITY = 0.7;
 
-/** 星点 glow sprite 纹理边长 */
-const STAR_SPRITE_SIZE = 64;
-
-/** 程序化星点 glow 纹理（径向高斯衰减 + 蓝白色调，确定性无随机） */
-function buildStarSpriteTexture(): THREE.DataTexture {
-  const size = STAR_SPRITE_SIZE;
-  const data = new Uint8Array(size * size * 4);
-  const half = (size - 1) / 2;
-  let ptr = 0;
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const dx = (x - half) / half;
-      const dy = (y - half) / half;
-      const r2 = dx * dx + dy * dy;
-      // 核心亮斑 + 宽晕（双高斯），蓝白（Trapezium O/B 型热星示意）
-      const core = Math.exp(-r2 * 18);
-      const halo = 0.35 * Math.exp(-r2 * 3.2);
-      const v = Math.min(1, core + halo);
-      data[ptr] = Math.round(210 * v);
-      data[ptr + 1] = Math.round(225 * v);
-      data[ptr + 2] = Math.round(255 * v);
-      data[ptr + 3] = Math.round(255 * v);
-      ptr += 4;
-    }
-  }
-  const texture = new THREE.DataTexture(data, size, size);
-  texture.needsUpdate = true;
-  return texture;
-}
-
 export interface OrionNebulaPreviewProps {
   /** 当前滑杆值映射（key → value） */
   values: Record<string, number>;
@@ -128,7 +101,7 @@ export function OrionNebulaPreview({
     const buildState = createRgVolumeBuild(M42_TEXTURE_SIZE, makeM42Sampler());
     const volumeScene = new THREE.Scene();
     const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
-    // Trapezium 四亮星 sprite（位置与空腔一致：trapeziumStarBoxPositions）
+    // Trapezium 四亮星 sprite（位置与空腔一致；R4-8 起共享工具模块）
     const starTexture = buildStarSpriteTexture();
     const starMaterial = new THREE.SpriteMaterial({
       map: starTexture,
@@ -137,13 +110,7 @@ export function OrionNebulaPreview({
       depthTest: false,
       transparent: true,
     });
-    for (const [x, y, z] of trapeziumStarBoxPositions()) {
-      const sprite = new THREE.Sprite(starMaterial);
-      sprite.position.set(x * ORION_BOX_SIZE, y * ORION_BOX_SIZE, z * ORION_BOX_SIZE);
-      sprite.scale.setScalar(0.12 * ORION_BOX_SIZE);
-      sprite.renderOrder = 0; // 先于体积 mesh（renderOrder 1）绘制
-      volumeScene.add(sprite);
-    }
+    addTrapeziumSprites(volumeScene, starMaterial, ORION_BOX_SIZE, 0.12);
     const rt = createVolumeRenderTarget(2, 2); // 首帧按实际缓冲尺寸同步
     const compositeMaterial = createVolumeCompositeMaterial(rt);
     const compositeGeometry = createFullscreenTriangleGeometry();

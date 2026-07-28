@@ -17,7 +17,7 @@
 | R4-5 | P0 | 离线数据烘焙管线（Gaia/SIMBAD → public/data/） | M | 无 | 🔲 |
 | R4-6 | P0 | 恒星表面物理化增强（黑体色温/光谱型临边昏暗/时变对流） | M | R4-1 | ✅ |
 | R4-7 | P0 | 猎户座星云 M42 体积化 ①：密度场构建 + 预览页验证 | L | R4-3, R4-4 | ✅ |
-| R4-8 | P0 | 猎户座星云 M42 体积化 ②：场景接入 + 色彩调参 | M | R4-7, R4-2 | 🔲 |
+| R4-8 | P0 | 猎户座星云 M42 体积化 ②：场景接入 + 色彩调参 | M | R4-7, R4-2 | ✅ |
 | R4-9 | P0 | 星系近观多分量 ①：粒子生成器扩展（尘埃带/HII 区/年轻星团） | M | 无 | 🔲 |
 | R4-10 | P0 | 星系近观多分量 ②：渲染接入 + M31 专属细节 | M | R4-9, R4-2 | 🔲 |
 | R4-11 | P1 | 黑洞引力透镜 ①：raymarch 原型（光子环 + 背景弯曲） | L | R4-1 | 🔲 |
@@ -230,17 +230,17 @@
 
 ### 8.1 需求
 
-- 🔲 主场景接入：`SpecialBodies.tsx` 猎户座星云组件挂接 `useDetailLayer({ kind:'volume' })`（R4-2）——跟随/飞往 M42 且距离达阈值时激活体积层，与现有 billboard + `NebulaPuffCloud` 交叉淡出（0.5s）；退出时反向恢复，体积纹理 dispose
-- 🔲 位姿对齐：体积包围盒与现有 billboard 的 `visualRadiusLy` 尺度、银河系组变换（`useGalacticPlacement`）一致，远近景过渡无位置跳变
-- 🔲 色彩：默认自然色近似（Hα 红棕 + OIII 青灰），登记与"哈勃调色板"的差异说明入信息面板 dataSource 行；亮度与 Bloom 联调（体积核心不过曝、外缘不糊黑）
-- 🔲 自适应质量（R4-4）在主场景生效；LRU：体积池容量 1，切换到其他体积天体（后续 R4-14/15/16）时逐出
-- 🔲 信息面板 M42 卡片补"结构"行（电离腔/四边形星团/尘埃湾）+ dataSource 追加 Hubble 公版图像形态参考登记
+- ✅ 主场景接入：`SpecialBodies.tsx` 猎户座星云组件挂接 `useDetailLayer({ kind:'volume' })`（R4-2，release-on-exit）——跟随/飞往 M42 且距离达阈值（与 R2-7 近观层同源同值，两层同时机激活、交叉淡出无空档）时挂载新组件 `Scene/OrionVolumeLayer.tsx`（分帧烘焙 22ms/帧 + R4-4 半分辨率 RT/合成路径复用），与现有 billboard + `NebulaPuffCloud` + youngStars 星点交叉淡出（0.5s，纯函数 `utils/nebulaVolumeScene.orionBaseLayerFactor/orionPuffFactor`——vol01=0 时与 R2-7 现状逐点一致，行为零回退单测锚定）；退出时反向恢复，体积纹理/RT/材质随卸载 dispose。实现差异登记：a) detailLayer 0.5s 门控淡入之上叠加"烘焙就绪"二次平滑（`orionVolumeFadeTarget`：未就绪目标恒 0，billboard 保持原样无空档）——烘焙晚于门控就绪时有效过渡 0.5–1s（主场景烘焙实测 ~490ms/20 块/最大单块 26.2ms）；b) 合成材质新增 uOpacity 淡入淡出 uniform（预乘 alpha 颜色/alpha 同乘，淡出为变透明非变黑）；c) 合成全屏三角形 raycast 置空（不拦截点选）；d) R4-4 遗留的主场景深度合成决议：维持 depthTest=false——M42 体积仅近观跟随激活、视野内无前景实体穿插（billboard/星点已交叉淡出移交），实测无遮挡穿帮，免深度附件带宽；e) Trapezium 星点经共享模块 `volumetric/TrapeziumSprites.ts` 内嵌体积子场景（R4-7 预览页重构复用），主场景原 youngStars sprite 经 volDim 标记淡出移交
+- ✅ 位姿对齐：体积包围盒边长 = `visualRadiusLy` 场景尺寸 × 2.6（`orionVolumeBoxEdgeUnits`，发射包络折算 ≈1.0× 视觉半径与 billboard/PuffCloud 尺度衔接）；体积容器逐帧复制星云组世界矩阵（`useGalacticPlacement` 银河系组变换 + sun-relative 偏移），远近景过渡无位置跳变（截图 r48c-04→06 位置连续）
+- ✅ 色彩：默认自然色近似 Hα 红棕 #cc5a3c + OIII 青灰 #8fb3a8（`ORION_SCENE_VOLUME_PARAMS`，相对 R4-7 预览页窄带饱和默认降饱和），与"哈勃调色板"（SII/Hα/OIII→RGB 假彩色）差异说明已入信息面板 dataSource 行；亮度 1.3→1.15 随主场景 Bloom 联调（目验核心不过曝、外缘不糊黑，截图 r48c 系列）
+- ✅ 自适应质量（R4-4）在主场景生效（high 64 步/full → mid 48 步/half → low 32 步/half，无强制档滑杆）；LRU：体积池容量 1（单测断言），切换到其他体积天体（后续 R4-14/15/16）时逐出
+- ✅ 信息面板 M42 卡片补"结构"行（电离腔（扇贝状发射腔朝观察侧开口）+ 四边形星团空腔 + 东南前景尘埃湾）+ dataSource 追加 Hubble 公版图像形态参考与色彩映射差异登记
 
 ### 8.2 验收标准
 
-- 🔲 L3 巡游至猎户座站：飞抵后 billboard 平滑过渡到体积层，绕行/穿越无薄片或跳变观感（对照 R2-7 截图 r27 系列确认升级幅度，截图登记）
-- 🔲 离开跟随 → 体积层淡出释放，JS 堆/显存回落（连续进出 5 次无泄漏，数值登记）；60 FPS（允许自适应降至 mid 档）不跌破 55
-- 🔲 L3 全序列巡游回归无其他站点观感/性能回退；覆盖率 gate ≥90% 保持
+- ✅ L3 巡游至猎户座站：飞抵后 billboard 平滑过渡到体积层（时序截图 t=1.8s billboard 淡出中 → t=2.7s 体积接管，位置连续），绕行（6 方向）/渐进穿越无薄片或跳变观感——尘埃湾暗斑/青灰内腔/Trapezium 星点随视角连续视差（截图 r48c-1x/2x/3x 登记；升级幅度对照登记：R2-7 交付为 18 张 billboard sprite 团絮的伪视差（r27 系列），本阶段为真体积 raymarch，穿越云体内部结构为 R2-7 不可达能力）
+- ✅ 离开跟随 → 体积层淡出释放，JS 堆回落（连续进出 5 次，CDP 强制 GC 后采样：out 45–47 MB / in 50–51 MB，无增长趋势；体积纹理/RT/材质随卸载 dispose，每次返回重新烘焙打点 ~490ms 一致）；全程 60 FPS 未触发降档（≥55 达标，自适应 mid 未介入）
+- ✅ L3 全序列巡游整圈回归（14 站 + 循环闭合，逐站截图 r48d-L3 系列）无其他站点观感/性能回退（60 FPS、末 10 站堆净差 0 MB）；覆盖率 gate ≥90% 保持（新增 `nebulaVolumeSceneR48` 22 例，nebulaVolumeScene.ts 覆盖率 100%，全量 2233 例/123 套件）
 
 ## R4-9 星系近观多分量 ①：粒子生成器扩展（纯逻辑）
 

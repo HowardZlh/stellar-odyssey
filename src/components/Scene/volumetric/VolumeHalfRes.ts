@@ -94,9 +94,11 @@ const COMPOSITE_FRAGMENT = /* glsl */ `
   uniform sampler2D uRT;
   uniform vec2 uUvScale;    // 子区域 / RT 满尺寸
   uniform vec2 uUvClampMax; // 子区域内边缘半像素钳制（防采到区域外残留）
+  uniform float uOpacity;   // 合成整体淡入淡出（R4-8 交叉过渡；默认 1）
   void main() {
     vec2 uv = min(vUv * uUvScale, uUvClampMax);
-    gl_FragColor = texture2D(uRT, uv);
+    // 预乘 alpha 链路：颜色与 alpha 同乘 → 淡出为"变透明"而非"变黑"
+    gl_FragColor = texture2D(uRT, uv) * uOpacity;
   }
 `;
 
@@ -115,6 +117,7 @@ export function createVolumeCompositeMaterial(rt: THREE.WebGLRenderTarget): THRE
       uRT: { value: rt.texture },
       uUvScale: { value: new THREE.Vector2(1, 1) },
       uUvClampMax: { value: new THREE.Vector2(1, 1) },
+      uOpacity: { value: 1 },
     },
     transparent: true,
     depthWrite: false,

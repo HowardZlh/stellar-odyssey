@@ -48,6 +48,12 @@ import {
 import { estimateGpuBytes, type DetailLayerSpec } from "@/utils/detailLayer";
 import { useDetailLayer } from "@/hooks/useDetailLayer";
 import {
+  orionBaseLayerFactor,
+  orionPuffFactor,
+  orionVolumeDetailLayerSpec,
+} from "@/utils/nebulaVolumeScene";
+import { OrionVolumeLayer } from "@/components/Scene/OrionVolumeLayer";
+import {
   createDiffractionSpikeCanvas,
   createGlowSpriteCanvas,
 } from "@/components/CelestialBody/proceduralTextures";
@@ -1798,6 +1804,13 @@ function BlackHole({ body }: BodyProps): JSX.Element {
 
 /**
  * 发射星云（猎户座星云）：氢α粉红雾状层 + 内部年轻恒星点亮局部
+ *
+ * R4-8：近观挂接体积层（useDetailLayer volume 池，容量 1）——跟随/飞往
+ * 且距离达阈值（与 R2-7 近观层同源同值）时挂载 OrionVolumeLayer，
+ * billboard 平面层（nearDim）/ PuffCloud 团絮 / youngStars 星点（volDim）
+ * 随体积淡入交叉淡出（0.5s，utils/nebulaVolumeScene 纯函数），退出反向
+ * 恢复、体积纹理随卸载 dispose。体积激活期间 billboard 平面透明度趋 0
+ * 但仍保留 raycast 命中（点选星云信息面板不受影响，登记）。
  */
 function EmissionNebula({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
@@ -1870,16 +1883,31 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
   const getWeight = useGalacticPlacement(body, groupRef);
   // R2-7 近观门控：跟随时挂载体积感云团层，离开即释放
   const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
+  // R4-8 体积层门控（volume 池容量 1，release-on-exit：退出淡出即卸载）
+  const volumeSpec = useMemo(() => orionVolumeDetailLayerSpec(), []);
+  const { active: volumeActive, opacity01: getVolumeGate01 } = useDetailLayer(
+    volumeSpec,
+    { objectRef: groupRef },
+  );
+  // 体积视觉淡入权重（OrionVolumeLayer 每帧写入：门控 × 烘焙就绪；
+  // 卸载复位 0——billboard/PuffCloud/星点交叉淡出的唯一消费源）
+  const volumeFadeRef = useRef(0);
   useFrame(() => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
     const near01 = getNear01();
+    const vol01 = volumeFadeRef.current;
     group.traverse((obj) => {
       const base = obj.userData.baseOpacity as number | undefined;
       if (base === undefined) return;
-      // 近观时基础平面层减淡（体积云团接管主体，削弱"平面贴片"观感）
-      const factor = obj.userData.nearDim ? weight * (1 - 0.35 * near01) : weight;
+      // 近观时基础平面层减淡（R2-7）+ 体积层交叉淡出（R4-8：体积淡入时
+      // billboard 隐去、youngStars 星点移交给体积子场景 Trapezium sprite）
+      const factor = obj.userData.nearDim
+        ? weight * orionBaseLayerFactor(near01, vol01)
+        : obj.userData.volDim
+          ? weight * (1 - vol01)
+          : weight;
       if (obj instanceof THREE.Sprite) {
         obj.material.opacity = base * factor;
       } else if (obj instanceof THREE.Mesh) {
@@ -1919,7 +1947,7 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
           />
         </mesh>
       ))}
-      {/* R2-7 近观体积感云团（18 sprite，绕行观察无"单张圆形光晕"） */}
+      {/* R2-7 近观体积感云团（18 sprite；R4-8：体积淡入时交叉淡出） */}
       {nearActive && (
         <NebulaPuffCloud
           seed={4210}
@@ -1927,16 +1955,30 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
           radiusUnits={size * 1.05}
           flattenY={0.55}
           textures={cloudLayers}
-          getOpacity={() => getWeight() * getNear01()}
+          getOpacity={() =>
+            getWeight() * orionPuffFactor(getNear01(), volumeFadeRef.current)
+          }
         />
       )}
-      {/* 内部年轻恒星 + Trapezium 聚星（点亮局部） */}
+      {/* R4-8 近观体积层（128³ RG raymarch，detailLayer volume 池门控；
+          卸载即 dispose 纹理/RT/材质，交叉淡出权重经 volumeFadeRef 输出） */}
+      {volumeActive && (
+        <OrionVolumeLayer
+          groupRef={groupRef}
+          sizeUnits={size}
+          getWeight={getWeight}
+          getGate01={getVolumeGate01}
+          fadeRef={volumeFadeRef}
+        />
+      )}
+      {/* 内部年轻恒星 + Trapezium 聚星（点亮局部；体积激活时交叉淡出，
+          星点移交体积子场景内嵌 Trapezium sprite——位置与空腔一致） */}
       {youngStars.map((p, i) => (
         <sprite
           key={i}
           position={[p.x, p.y, p.z]}
           scale={[size * p.s, size * p.s, 1]}
-          userData={{ baseOpacity: 0.9 }}
+          userData={{ baseOpacity: 0.9, volDim: true }}
         >
           <spriteMaterial
             map={starTexture}
