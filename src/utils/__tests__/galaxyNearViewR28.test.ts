@@ -1,17 +1,18 @@
 /**
  * L4 星系近观 3D 粒子层单元测试（R2-8，IMPROVEMENT_REQUIREMENTS_2 §R2-8）
  *
- * 覆盖：确定性种子/朝向、逐星系配置完整性与形态一致性、粒子预算（单星系
- * ≤8,000）、Sérsic 径向采样、椭球轴比/盘厚/团块分布统计特征、近观激活
+ * 覆盖：确定性种子/朝向、逐星系配置完整性与形态一致性、粒子预算（基础层
+ * 单星系 ≤8,000；R4-9 起总量上限 12,000 由 galaxyNearViewR49 断言，等价
+ * 迁移登记）、Sérsic 径向采样、椭球轴比/盘厚/团块分布统计特征、近观激活
  * 距离与 resolveFocusTarget 同源、LRU 释放语义（容量 1）、持有者注册表、
  * 信息面板结构说明、贴图平面尺寸同源公式。
  */
 
 import { LOCAL_GROUP_GALAXIES, getGalaxyById } from '@/data/galaxies';
 import {
+  GALAXY_NEAR_VIEW_BASE_MAX_PARTICLES,
   GALAXY_NEAR_VIEW_CONFIGS,
   GALAXY_NEAR_VIEW_LRU_CAPACITY,
-  GALAXY_NEAR_VIEW_MAX_PARTICLES,
   GALAXY_STRUCTURE_NOTE_BY_MORPHOLOGY_ZH,
   GALAXY_STRUCTURE_SOURCE_ZH,
   KIND_BY_MORPHOLOGY,
@@ -92,10 +93,10 @@ describe('逐星系配置完整性与形态一致性（§8.2 验收 2）', () =>
     }
   });
 
-  it('粒子预算：单星系 ≤8,000（需求硬性预算）；LRU 容量 1 → 同时峰值 ≤8,000', () => {
+  it('粒子预算：基础层单星系 ≤8,000（R2-8 原预算不变，R4-9 总量迁移登记）；LRU 容量 1', () => {
     for (const id of CONFIGURED_IDS) {
       expect(GALAXY_NEAR_VIEW_CONFIGS[id].particleCount).toBeLessThanOrEqual(
-        GALAXY_NEAR_VIEW_MAX_PARTICLES,
+        GALAXY_NEAR_VIEW_BASE_MAX_PARTICLES,
       );
       expect(GALAXY_NEAR_VIEW_CONFIGS[id].particleCount).toBeGreaterThan(0);
     }
@@ -104,7 +105,7 @@ describe('逐星系配置完整性与形态一致性（§8.2 验收 2）', () =>
       ...CONFIGURED_IDS.map((id) => GALAXY_NEAR_VIEW_CONFIGS[id].particleCount),
     );
     expect(peak * GALAXY_NEAR_VIEW_LRU_CAPACITY).toBeLessThanOrEqual(
-      GALAXY_NEAR_VIEW_MAX_PARTICLES,
+      GALAXY_NEAR_VIEW_BASE_MAX_PARTICLES,
     );
   });
 });

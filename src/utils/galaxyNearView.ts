@@ -12,11 +12,17 @@
  * 渲染循环零随机（附录 A 渲染纪律）。
  *
  * ── 粒子预算登记（附录 A）────────────────────────────────────────────────
- * 单星系 ≤ GALAXY_NEAR_VIEW_MAX_PARTICLES（8,000）；LRU 容量 1（同 P4
- * planetDetail LRU 模式，最多同时 1 个星系持有近观层）→ 近观层同时峰值
- * +8,000。与太阳活动粒子预算（15,000/20,000，utils/nearView.ts 登记）分属
+ * 单星系 ≤ GALAXY_NEAR_VIEW_MAX_PARTICLES（12,000，R4-9 自 8,000 上调登记：
+ * 新增尘埃带/HII 区/年轻星团分量，基础层配置仍 ≤8,000；附录 A 单目标
+ * ≤12,000 上限内）；LRU 容量 1（同 P4 planetDetail LRU 模式，最多同时
+ * 1 个星系持有近观层）→ 近观层同时峰值增量 +12,000（较 R2-8 +4,000）。
+ * 与太阳活动粒子预算（15,000/20,000，utils/nearView.ts 登记）分属
  * 不同视角域（R2-4 事件域隔离：L4 下太阳活动特效不可见且跳过演算）；
  * L4 场景粒子基线为银盘 40,000 + 宇宙网点集，近观增量单独登记（单测断言）。
+ * 注：本阶段（R4-9）渲染零改动——GalaxyNearView.tsx 仍仅消费基础层
+ * generateGalaxyNearViewParticles（≤8,000），新分量由 R4-10 接入渲染；
+ * galaxyDetailLayerSpec 的 GPU 估算仍按基础层粒子计（随 R4-10 一并更新，
+ * 登记）。
  *
  * ── 薄片修复方案登记（§8.1 二选一）──────────────────────────────────────
  * 取 billboard 方案：远观（非近观）贴图平面每帧面向相机，侧向飞入不再出现
@@ -52,8 +58,14 @@ import {
   type DetailLayerSpec,
 } from '@/utils/detailLayer';
 
-/** 单星系近观粒子数上限（§8.1 需求硬性预算） */
-export const GALAXY_NEAR_VIEW_MAX_PARTICLES = 8000;
+/**
+ * 单星系近观粒子总量上限（基础层 + R4-9 新分量合计；§R4-9 自 8,000 上调
+ * 登记，附录 A 单目标 ≤12,000 硬性约束内）。
+ */
+export const GALAXY_NEAR_VIEW_MAX_PARTICLES = 12000;
+
+/** 基础层（核球+盘+旋臂/团块/Sérsic 椭球）单星系粒子上限（R2-8 原预算不变） */
+export const GALAXY_NEAR_VIEW_BASE_MAX_PARTICLES = 8000;
 
 /** 近观层 LRU 容量（同 P4 模式）：最多同时 1 个星系持有近观层 */
 export const GALAXY_NEAR_VIEW_LRU_CAPACITY = 1;
@@ -459,6 +471,528 @@ export function nearViewReferenceRadiusLy(galaxyId: string): number {
   if (cfg.kind === 'spiral') return cfg.diskRadiusLy;
   if (cfg.kind === 'irregular') return cfg.radiusLy;
   return cfg.effectiveRadiusLy * SERSIC_MAX_RADIUS_FACTOR;
+}
+
+// ---------------------------------------------------------------------------
+// R4-9 星系近观多分量 ①：形态参数表 + 分量配额 + 新分量生成器（纯逻辑）
+//
+// 本阶段渲染零改动：GalaxyNearView.tsx 不消费以下任何导出，渲染接入在
+// R4-10。全部生成器为确定性纯函数（FNV-1a 派生种子），供单测断言
+// 分布范围/配额/泊松最小间距/颜色梯度单调性。
+//
+// ── 科学性登记（§0.4 数据源表）──────────────────────────────────────────
+// 形态参数 {倾角/臂数/螺距角/B/D 比} 取自 RC3（de Vaucouleurs et al. 1991
+// 第三参考星表）、S4G（Sheth et al. 2010 Spitzer 巡天形态测量）与
+// NASA/IPAC NED 登记值的近似档（逐星系注释）；尘埃带强度/HII 区密度为
+// 按观测特征归一化的示意参数（0-1，非物理量纲，登记）。椭圆/矮椭圆
+// （M32/M110/人马座矮/M87）无盘尘埃带与 HII 区 → dust/HII 登记为 0
+// （M110 已知少量尘埃云，矮椭圆按 §R4-9 需求统一登记为 0，差异登记）。
+// 螺距角为登记值：基础层旋臂几何仍由 SpiralNearViewConfig.spiralTightness
+// 的对数螺旋（相位 = tightness·ln(1+r/r_bulge)）承载，新分量沿同一公式
+// 对齐旋臂（保证 dust/HII/星团与基础层旋臂重合），螺距角供 R4-10 渲染
+// 与信息面板登记（差异登记）。
+// ---------------------------------------------------------------------------
+
+/** 星系形态参数（RC3/S4G/NED 登记，§R4-9 参数表扩展） */
+export interface GalaxyMorphologyParams {
+  /** 盘面倾角（度；椭圆类不适用登记 0；银河系观察者位于盘内登记 0） */
+  inclinationDeg: number;
+  /** 主旋臂数（非旋涡为 0；LMC 麦哲伦单臂登记 1） */
+  armCount: number;
+  /** 旋臂螺距角（度；非旋涡为 0，登记值不驱动几何，见节头登记） */
+  pitchAngleDeg: number;
+  /** 核球/盘光度比 B/D（椭圆无盘 → Infinity 登记） */
+  bulgeToDiskRatio: number;
+  /** 尘埃带强度（0-1 示意归一化；椭圆类为 0） */
+  dustStrength: number;
+  /** HII 区密度（0-1 示意归一化；椭圆类为 0） */
+  hiiDensity: number;
+  /** 参数来源登记（附录 A §4） */
+  source: string;
+}
+
+/**
+ * 9 星系形态参数表（§R4-9：M31/M33/LMC/SMC/M32/M110/人马座矮/M87 +
+ * 银河系）。银河系近观 = 既有 4 万粒 3D 粒子盘渲染（Galaxy.tsx），
+ * 不入 GALAXY_NEAR_VIEW_CONFIGS，参数仅登记复用（复用登记，单测断言）。
+ */
+export const GALAXY_MORPHOLOGY_PARAMS: Readonly<Record<string, GalaxyMorphologyParams>> = {
+  // SA(s)b：高倾角尘埃带显著；倾角 77°（Walterbos & Kennicutt 1988/NED）
+  m31: {
+    inclinationDeg: 77,
+    armCount: 2,
+    pitchAngleDeg: 8,
+    bulgeToDiskRatio: 0.57,
+    dustStrength: 0.8,
+    hiiDensity: 0.5,
+    source: 'RC3 SA(s)b；倾角 77°（NED）；B/D≈0.57（S4G 分解近似档）',
+  },
+  // SA(s)cd：弱核球絮结旋涡，HII 区极丰富（NGC 604 等）
+  m33: {
+    inclinationDeg: 56,
+    armCount: 2,
+    pitchAngleDeg: 24,
+    bulgeToDiskRatio: 0.04,
+    dustStrength: 0.35,
+    hiiDensity: 0.9,
+    source: 'RC3 SA(s)cd；倾角 56°（NED）；螺距角取文献区间中值近似档（登记）',
+  },
+  // SB(s)m：麦哲伦型单臂 + 棒，30 Doradus 等活跃 HII 区
+  lmc: {
+    inclinationDeg: 35,
+    armCount: 1,
+    pitchAngleDeg: 0,
+    bulgeToDiskRatio: 0.05,
+    dustStrength: 0.3,
+    hiiDensity: 0.85,
+    source: 'RC3 SB(s)m；倾角 35°（NED）；单臂不参数化对数螺旋（螺距角登记 0）',
+  },
+  // SB(s)m pec：无规则臂结构
+  smc: {
+    inclinationDeg: 62,
+    armCount: 0,
+    pitchAngleDeg: 0,
+    bulgeToDiskRatio: 0.02,
+    dustStrength: 0.25,
+    hiiDensity: 0.6,
+    source: 'RC3 SB(s)m pec；倾角为视向深度拉伸近似档（NED，登记）',
+  },
+  // cE2 致密椭圆：无盘/尘埃/HII
+  m32: {
+    inclinationDeg: 0,
+    armCount: 0,
+    pitchAngleDeg: 0,
+    bulgeToDiskRatio: Number.POSITIVE_INFINITY,
+    dustStrength: 0,
+    hiiDensity: 0,
+    source: 'RC3 cE2；椭圆无盘 → B/D 登记 Infinity、dust/HII 为 0',
+  },
+  // dE5 pec 矮椭圆（已知少量尘埃云，按 §R4-9 统一登记 0，差异登记）
+  m110: {
+    inclinationDeg: 0,
+    armCount: 0,
+    pitchAngleDeg: 0,
+    bulgeToDiskRatio: Number.POSITIVE_INFINITY,
+    dustStrength: 0,
+    hiiDensity: 0,
+    source: 'RC3 dE5 pec；矮椭圆 dust/HII 登记 0（少量尘埃云差异登记）',
+  },
+  // dSph 矮椭球（潮汐拉伸）
+  'sagittarius-dwarf': {
+    inclinationDeg: 0,
+    armCount: 0,
+    pitchAngleDeg: 0,
+    bulgeToDiskRatio: Number.POSITIVE_INFINITY,
+    dustStrength: 0,
+    hiiDensity: 0,
+    source: 'NED dSph；矮椭球无盘结构，dust/HII 为 0',
+  },
+  // E0-1 pec（cD）巨椭圆：无盘尘埃带/HII
+  m87: {
+    inclinationDeg: 0,
+    armCount: 0,
+    pitchAngleDeg: 0,
+    bulgeToDiskRatio: Number.POSITIVE_INFINITY,
+    dustStrength: 0,
+    hiiDensity: 0,
+    source: 'RC3 E0-1 pec；巨椭圆无盘 → B/D 登记 Infinity、dust/HII 为 0',
+  },
+  // SBbc 银河系：近观 = 既有 Galaxy.tsx 4 万粒渲染（复用登记，不建近观层）
+  'milky-way': {
+    inclinationDeg: 0,
+    armCount: 4,
+    pitchAngleDeg: 12.5,
+    bulgeToDiskRatio: 0.3,
+    dustStrength: 0.7,
+    hiiDensity: 0.7,
+    source: 'Gaia DR3/NED SBbc；观察者位于盘内倾角不适用登记 0；近观复用既有渲染（登记）',
+  },
+};
+
+// ── 分量配额（纯函数，§R4-9 预算） ─────────────────────────────────────
+
+/** 尘埃带粒子数 = 单位尘埃强度 × 本系数（旋涡专属） */
+export const DUST_PARTICLES_PER_UNIT_STRENGTH = 1600;
+
+/** HII 区数 = 单位 HII 密度 × 本系数（大颗粒少量） */
+export const HII_REGIONS_PER_UNIT_DENSITY = 140;
+
+/** 年轻星团粒子数 = 单位 HII 密度 × 本系数（恒星形成率与 HII 同源近似登记） */
+export const YOUNG_CLUSTER_PARTICLES_PER_UNIT_DENSITY = 1000;
+
+/** 星系近观分量配额（§R4-9：纯函数计算，总量 ≤12,000 单测断言） */
+export interface GalaxyComponentQuota {
+  /** 基础层（R2-8 核球+盘+旋臂/团块/椭球）粒子数 */
+  base: number;
+  /** 尘埃带暗吸收粒子数（非旋涡为 0） */
+  dust: number;
+  /** HII 区发射团数（非旋涡为 0） */
+  hii: number;
+  /** 年轻星团粒子数（非旋涡为 0） */
+  youngClusters: number;
+  /** 合计（≤ GALAXY_NEAR_VIEW_MAX_PARTICLES） */
+  total: number;
+}
+
+/**
+ * 逐星系分量配额（纯函数）：旋涡 = 基础层 + 尘埃带/HII/年轻星团
+ * （配额随形态参数表 dustStrength/hiiDensity 线性缩放）；不规则/椭圆
+ * 新分量为 0——不规则星系的 HII 粉色与蓝白年轻星已由 R2-8 团块分量承载
+ * （登记），椭圆类按 §R4-9 需求为 0。无配置 id（milky-way/未知）抛
+ * RangeError（银河系近观复用既有渲染，登记见参数表）。
+ */
+export function galaxyComponentQuota(galaxyId: string): GalaxyComponentQuota {
+  const cfg = GALAXY_NEAR_VIEW_CONFIGS[galaxyId];
+  if (!cfg) {
+    throw new RangeError(`未定义近观粒子层配置的星系 id：${galaxyId}`);
+  }
+  const morph = GALAXY_MORPHOLOGY_PARAMS[galaxyId];
+  if (!morph) {
+    throw new RangeError(`未定义形态参数的星系 id：${galaxyId}`);
+  }
+  const spiral = cfg.kind === 'spiral';
+  const dust = spiral ? Math.round(DUST_PARTICLES_PER_UNIT_STRENGTH * morph.dustStrength) : 0;
+  const hii = spiral ? Math.round(HII_REGIONS_PER_UNIT_DENSITY * morph.hiiDensity) : 0;
+  const youngClusters = spiral
+    ? Math.round(YOUNG_CLUSTER_PARTICLES_PER_UNIT_DENSITY * morph.hiiDensity)
+    : 0;
+  const total = cfg.particleCount + dust + hii + youngClusters;
+  if (total > GALAXY_NEAR_VIEW_MAX_PARTICLES) {
+    throw new RangeError(
+      `星系 ${galaxyId} 分量配额合计 ${total} 超出单星系上限 ${GALAXY_NEAR_VIEW_MAX_PARTICLES}`,
+    );
+  }
+  return { base: cfg.particleCount, dust, hii, youngClusters, total };
+}
+
+// ── 新分量生成器（确定性纯函数，输出光年坐标，坐标约定与基础层一致） ──
+
+/** R4-9 新分量标识（§R4-9：dust 供 R4-10 normal 混合暗色渲染识别） */
+export type GalaxyNearViewComponentName = 'dust' | 'hii' | 'youngClusters';
+
+/** 带分量标记的近观粒子集（结构与 GalaxyNearViewParticles 一致 + 标记） */
+export interface GalaxyComponentParticles extends GalaxyNearViewParticles {
+  component: GalaxyNearViewComponentName;
+}
+
+/** 尘埃带相位偏移 = 旋臂宽度 × 本系数（正向 = 旋臂内缘一侧，示意登记） */
+export const DUST_LANE_INNER_OFFSET_FACTOR = 0.6;
+
+/** 尘埃带相位散布 = 旋臂宽度 × 本系数（比恒星臂更窄的暗纹） */
+export const DUST_LANE_SPREAD_FACTOR = 0.35;
+
+/** 尘埃带厚度 = 盘厚 × 本系数（尘埃沉降薄层近似登记） */
+export const DUST_LANE_THICKNESS_FACTOR = 0.35;
+
+/** HII 区泊松盘最小间距 = 盘半径 × 本系数（离散发射团防重叠） */
+export const HII_POISSON_MIN_SEPARATION_FACTOR = 0.055;
+
+/** HII 泊松盘采样尝试上限 = 配额 × 本系数（确定性 dart-throwing） */
+export const HII_POISSON_MAX_ATTEMPT_FACTOR = 60;
+
+/** 年轻星团脊线相位散布 = 旋臂宽度 × 本系数（紧贴旋臂脊线的颗粒串） */
+export const YOUNG_CLUSTER_RIDGE_SPREAD_FACTOR = 0.15;
+
+/** 尘埃暗吸收色板（深棕，R4-10 以 normal 混合渲染为暗纹） */
+const DUST_PALETTE = ['#2b1a10', '#33200f', '#241812'] as const;
+
+/** HII 区发射色板（电离氢粉红） */
+const HII_PALETTE = ['#ff9bb5', '#ff8fa8', '#ffa8bd'] as const;
+
+/** 年轻星团蓝白色板（O/B 光谱型近似色，YOUNG_STAR_PALETTE 蓝端子集） */
+const YOUNG_CLUSTER_PALETTE = ['#9bb0ff', '#aabfff', '#cad7ff'] as const;
+
+/** 高斯截断（±3σ，防离群粒子飞出分布范围断言） */
+function clampedGaussian(rand: () => number): number {
+  return Math.max(-3, Math.min(3, gaussian(rand)));
+}
+
+/**
+ * 旋臂脊线相位（弧度）：与基础层 generateGalaxyDiskParticles 的对数螺旋
+ * 公式逐字一致（armIndex·2π/armCount + tightness·ln(1+r/r_bulge)），
+ * 保证新分量与基础层旋臂对齐（单测以此复算脊线残差）。
+ */
+export function spiralArmRidgePhaseRad(
+  cfg: SpiralNearViewConfig,
+  armIndex: number,
+  radiusLy: number,
+): number {
+  return (
+    armIndex * ((Math.PI * 2) / cfg.armCount) +
+    cfg.spiralTightness * Math.log(1 + radiusLy / cfg.bulgeRadiusLy)
+  );
+}
+
+/** (r, φ, h) → xyz（光年，与基础层 generateSpiralParticles 同一约定） */
+function writeCylindricalPosition(
+  positionsLy: Float32Array,
+  index: number,
+  radiusLy: number,
+  phaseRad: number,
+  heightLy: number,
+): void {
+  positionsLy[index * 3] = radiusLy * Math.cos(phaseRad);
+  positionsLy[index * 3 + 1] = heightLy;
+  positionsLy[index * 3 + 2] = -radiusLy * Math.sin(phaseRad);
+}
+
+/**
+ * 尘埃带分量（§R4-9）：沿旋臂内缘的暗吸收粒子——相位 = 脊线 +
+ * 内缘偏移（DUST_LANE_INNER_OFFSET_FACTOR×臂宽）+ 窄散布；径向
+ * [r_bulge, 0.95·r_disk] 中心偏密（√rand）；深棕低亮度（全通道 <0.3，
+ * 单测断言），渲染混合方案归 R4-10（本阶段仅输出标记与位置/尺寸）。
+ */
+export function generateDustLaneParticles(
+  cfg: SpiralNearViewConfig,
+  count: number,
+  seed: number,
+): GalaxyComponentParticles {
+  if (count < 0 || !Number.isInteger(count)) {
+    throw new RangeError(`尘埃带粒子数必须为非负整数，收到 ${count}`);
+  }
+  const rand = createSeededRandom(seed);
+  const positionsLy = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const palette = DUST_PALETTE.map(hexToRgb);
+  const rMin = cfg.bulgeRadiusLy;
+  const rMax = cfg.diskRadiusLy * 0.95;
+  for (let i = 0; i < count; i += 1) {
+    const r = rMin + (rMax - rMin) * Math.sqrt(rand());
+    const armIndex = Math.floor(rand() * cfg.armCount);
+    const phase =
+      spiralArmRidgePhaseRad(cfg, armIndex, r) +
+      cfg.armSpreadRad * DUST_LANE_INNER_OFFSET_FACTOR +
+      clampedGaussian(rand) * cfg.armSpreadRad * DUST_LANE_SPREAD_FACTOR;
+    const height =
+      clampedGaussian(rand) * (cfg.thicknessLy / 2) * DUST_LANE_THICKNESS_FACTOR;
+    writeCylindricalPosition(positionsLy, i, r, phase, height);
+    const color = palette[Math.floor(rand() * palette.length)];
+    const brightness = 0.6 + 0.4 * rand();
+    colors[i * 3] = color.r * brightness;
+    colors[i * 3 + 1] = color.g * brightness;
+    colors[i * 3 + 2] = color.b * brightness;
+    sizes[i] = 1.6 + 1.0 * rand();
+  }
+  return { component: 'dust', count, positionsLy, colors, sizes };
+}
+
+/**
+ * HII 区分量（§R4-9）：沿旋臂离散分布的发射团（粉红大颗粒少量）——
+ * 泊松盘采样（确定性 dart-throwing：候选点 = 臂上抖动位置，与已接受点
+ * 盘面距离 < 最小间距则拒绝；尝试上限 count×HII_POISSON_MAX_ATTEMPT_FACTOR，
+ * 达上限提前返回实际接受数，单测断言最小间距与配额）。
+ */
+export function generateHiiRegionParticles(
+  cfg: SpiralNearViewConfig,
+  count: number,
+  seed: number,
+): GalaxyComponentParticles {
+  if (count < 0 || !Number.isInteger(count)) {
+    throw new RangeError(`HII 区数必须为非负整数，收到 ${count}`);
+  }
+  const rand = createSeededRandom(seed);
+  const minSeparationLy = cfg.diskRadiusLy * HII_POISSON_MIN_SEPARATION_FACTOR;
+  const positionsLy = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const palette = HII_PALETTE.map(hexToRgb);
+  const rMin = cfg.bulgeRadiusLy * 1.1;
+  const rMax = cfg.diskRadiusLy * 0.92;
+  let accepted = 0;
+  const maxAttempts = count * HII_POISSON_MAX_ATTEMPT_FACTOR;
+  for (let attempt = 0; attempt < maxAttempts && accepted < count; attempt += 1) {
+    // 每次尝试消耗固定随机数（候选参数先行求全，拒绝亦确定性）
+    const r = rMin + (rMax - rMin) * rand();
+    const armIndex = Math.floor(rand() * cfg.armCount);
+    const phase =
+      spiralArmRidgePhaseRad(cfg, armIndex, r) +
+      clampedGaussian(rand) * cfg.armSpreadRad * 0.5;
+    const height = clampedGaussian(rand) * (cfg.thicknessLy / 2) * 0.3;
+    const colorPick = Math.floor(rand() * palette.length);
+    const brightness = 0.85 + 0.15 * rand();
+    const size = 3.0 + 1.5 * rand();
+    const x = r * Math.cos(phase);
+    const z = -r * Math.sin(phase);
+    // 泊松盘拒绝：盘面（x-z）距离 < 最小间距（3D 距离 ≥ 盘面距离，同样达标）
+    let tooClose = false;
+    for (let j = 0; j < accepted; j += 1) {
+      const dx = x - positionsLy[j * 3];
+      const dz = z - positionsLy[j * 3 + 2];
+      if (dx * dx + dz * dz < minSeparationLy * minSeparationLy) {
+        tooClose = true;
+        break;
+      }
+    }
+    if (tooClose) continue;
+    positionsLy[accepted * 3] = x;
+    positionsLy[accepted * 3 + 1] = height;
+    positionsLy[accepted * 3 + 2] = z;
+    const color = palette[colorPick];
+    colors[accepted * 3] = color.r * brightness;
+    colors[accepted * 3 + 1] = color.g * brightness;
+    colors[accepted * 3 + 2] = color.b * brightness;
+    sizes[accepted] = size;
+    accepted += 1;
+  }
+  return {
+    component: 'hii',
+    count: accepted,
+    positionsLy: positionsLy.subarray(0, accepted * 3),
+    colors: colors.subarray(0, accepted * 3),
+    sizes: sizes.subarray(0, accepted),
+  };
+}
+
+/**
+ * 年轻星团分量（§R4-9）：旋臂脊线上的蓝白小颗粒串——相位紧贴脊线
+ * （散布 = 臂宽×YOUNG_CLUSTER_RIDGE_SPREAD_FACTOR，±3σ 截断 → 残差
+ * ≤0.45×臂宽，单测断言）；薄层（0.25×半厚度）；蓝白小颗粒
+ * （b ≥ r 通道，单测断言）。
+ */
+export function generateYoungClusterParticles(
+  cfg: SpiralNearViewConfig,
+  count: number,
+  seed: number,
+): GalaxyComponentParticles {
+  if (count < 0 || !Number.isInteger(count)) {
+    throw new RangeError(`年轻星团粒子数必须为非负整数，收到 ${count}`);
+  }
+  const rand = createSeededRandom(seed);
+  const positionsLy = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const palette = YOUNG_CLUSTER_PALETTE.map(hexToRgb);
+  const rMin = cfg.bulgeRadiusLy * 1.05;
+  const rMax = cfg.diskRadiusLy * 0.9;
+  for (let i = 0; i < count; i += 1) {
+    const r = rMin + (rMax - rMin) * rand();
+    const armIndex = Math.floor(rand() * cfg.armCount);
+    const phase =
+      spiralArmRidgePhaseRad(cfg, armIndex, r) +
+      clampedGaussian(rand) * cfg.armSpreadRad * YOUNG_CLUSTER_RIDGE_SPREAD_FACTOR;
+    const height = clampedGaussian(rand) * (cfg.thicknessLy / 2) * 0.25;
+    writeCylindricalPosition(positionsLy, i, r, phase, height);
+    const color = palette[Math.floor(rand() * palette.length)];
+    const brightness = 0.85 + 0.15 * rand();
+    colors[i * 3] = color.r * brightness;
+    colors[i * 3 + 1] = color.g * brightness;
+    colors[i * 3 + 2] = color.b * brightness;
+    sizes[i] = 0.8 + 0.6 * rand();
+  }
+  return { component: 'youngClusters', count, positionsLy, colors, sizes };
+}
+
+// ── 老年盘底色半径梯度（§R4-9：内红黄外偏蓝，参数化） ──────────────────
+
+/** RGB 颜色（0-1） */
+export interface RgbColor {
+  r: number;
+  g: number;
+  b: number;
+}
+
+/** 盘底色梯度内端（红黄，老年星族内盘色调近似登记） */
+export const DISK_COLOR_GRADIENT_INNER: Readonly<RgbColor> = hexToRgb('#ffce8a');
+
+/** 盘底色梯度外端（偏蓝，外盘年轻星族占比升高近似登记） */
+export const DISK_COLOR_GRADIENT_OUTER: Readonly<RgbColor> = hexToRgb('#aabfff');
+
+/** 老年盘底色梯度向基础层盘粒子的混合权重（R4-10 渲染观感调参基准） */
+export const OLD_DISK_GRADIENT_BLEND = 0.35;
+
+/**
+ * 老年盘底色（半径梯度参数化）：r01 ∈ [0,1]（盘心→盘缘，域外钳制），
+ * 内红黄 → 外偏蓝线性插值。红通道单调不增、蓝通道单调不减（单测断言）。
+ * NaN 抛 RangeError。
+ */
+export function oldDiskColorAtRadius(r01: number): RgbColor {
+  if (Number.isNaN(r01)) {
+    throw new RangeError('盘半径分位必须为数值，收到 NaN');
+  }
+  const t = Math.max(0, Math.min(1, r01));
+  return {
+    r: DISK_COLOR_GRADIENT_INNER.r + (DISK_COLOR_GRADIENT_OUTER.r - DISK_COLOR_GRADIENT_INNER.r) * t,
+    g: DISK_COLOR_GRADIENT_INNER.g + (DISK_COLOR_GRADIENT_OUTER.g - DISK_COLOR_GRADIENT_INNER.g) * t,
+    b: DISK_COLOR_GRADIENT_INNER.b + (DISK_COLOR_GRADIENT_OUTER.b - DISK_COLOR_GRADIENT_INNER.b) * t,
+  };
+}
+
+/**
+ * 对旋涡基础层粒子应用老年盘底色梯度（纯函数：返回新 colors 数组的
+ * 副本对象，positions/sizes 共享引用、入参不变）：仅盘面半径 >
+ * 核球半径的粒子按 r01 = 盘面半径/盘半径 向梯度色混合
+ * OLD_DISK_GRADIENT_BLEND；核球区粒子保持原色（核球暖黄由基础层承载）。
+ */
+export function applyOldDiskColorGradient(
+  particles: GalaxyNearViewParticles,
+  cfg: SpiralNearViewConfig,
+): GalaxyNearViewParticles {
+  const colors = new Float32Array(particles.colors);
+  for (let i = 0; i < particles.count; i += 1) {
+    const x = particles.positionsLy[i * 3];
+    const z = particles.positionsLy[i * 3 + 2];
+    const planarR = Math.hypot(x, z);
+    if (planarR <= cfg.bulgeRadiusLy) continue;
+    const grad = oldDiskColorAtRadius(planarR / cfg.diskRadiusLy);
+    colors[i * 3] += (grad.r - colors[i * 3]) * OLD_DISK_GRADIENT_BLEND;
+    colors[i * 3 + 1] += (grad.g - colors[i * 3 + 1]) * OLD_DISK_GRADIENT_BLEND;
+    colors[i * 3 + 2] += (grad.b - colors[i * 3 + 2]) * OLD_DISK_GRADIENT_BLEND;
+  }
+  return {
+    count: particles.count,
+    positionsLy: particles.positionsLy,
+    colors,
+    sizes: particles.sizes,
+  };
+}
+
+// ── 组合入口（§R4-9：基础层 + 新分量，总量断言） ────────────────────────
+
+/** 星系近观多分量组合结果（R4-10 渲染消费；本阶段仅单测消费） */
+export interface GalaxyNearViewComposite {
+  /** 基础层（旋涡已应用老年盘底色梯度；不规则/椭圆与 R2-8 输出一致） */
+  base: GalaxyNearViewParticles;
+  /** 新分量（旋涡：dust/hii/youngClusters；不规则/椭圆为空数组，登记） */
+  components: readonly GalaxyComponentParticles[];
+  /** 全分量粒子合计（≤ GALAXY_NEAR_VIEW_MAX_PARTICLES） */
+  totalCount: number;
+}
+
+/**
+ * 生成星系近观多分量组合（§R4-9 组合入口）：种子按分量派生
+ * （galaxyNearViewSeed(`${id}:${component}`)，FNV-1a 沿用），两次生成
+ * 逐字节一致（单测断言）。总量超上限抛 RangeError（配额纯函数已保证，
+ * 防御性断言）。
+ */
+export function generateGalaxyNearViewComposite(galaxyId: string): GalaxyNearViewComposite {
+  const cfg = GALAXY_NEAR_VIEW_CONFIGS[galaxyId];
+  if (!cfg) {
+    throw new RangeError(`未定义近观粒子层配置的星系 id：${galaxyId}`);
+  }
+  const quota = galaxyComponentQuota(galaxyId);
+  const raw = generateGalaxyNearViewParticles(galaxyId);
+  if (cfg.kind !== 'spiral') {
+    return { base: raw, components: [], totalCount: raw.count };
+  }
+  const base = applyOldDiskColorGradient(raw, cfg);
+  const components: GalaxyComponentParticles[] = [
+    generateDustLaneParticles(cfg, quota.dust, galaxyNearViewSeed(`${galaxyId}:dust`)),
+    generateHiiRegionParticles(cfg, quota.hii, galaxyNearViewSeed(`${galaxyId}:hii`)),
+    generateYoungClusterParticles(
+      cfg,
+      quota.youngClusters,
+      galaxyNearViewSeed(`${galaxyId}:youngClusters`),
+    ),
+  ];
+  let totalCount = base.count;
+  for (const c of components) totalCount += c.count;
+  if (totalCount > GALAXY_NEAR_VIEW_MAX_PARTICLES) {
+    throw new RangeError(
+      `星系 ${galaxyId} 多分量合计 ${totalCount} 超出单星系上限 ${GALAXY_NEAR_VIEW_MAX_PARTICLES}`,
+    );
+  }
+  return { base, components, totalCount };
 }
 
 // ---------------------------------------------------------------------------
