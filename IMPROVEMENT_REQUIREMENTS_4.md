@@ -165,21 +165,21 @@
 
 ### 5.1 需求
 
-- 🔲 新建 `scripts/bake-data/` Node 脚本目录 + `npm run bake:data` 命令：构建期（开发者手动）运行，产出静态资产到 `public/data/`；**运行时零外部网络请求**（烘焙产物随仓库提交）
-- 🔲 数据获取策略：脚本内置从公开接口拉取（Gaia TAP/VizieR）**或** 以内嵌文献数值表为源（网络不可用时的降级路径，二选一实现并登记来源与查询语句/文献表号）
-- 🔲 首批烘焙产物：
-  - `pleiades.json`：昴星团成员星 ≤600 颗（Gaia DR3 视差 7.0–7.7 mas + 自行共动选星，判据登记）——每星 {x,y,z}（pc，簇质心系）、B−V、视星等
-  - `star-params.json`：R4 涉及恒星（参宿四/参宿七/天狼星 A/B/造父一/WR 124）的 Teff/半径/光度/光谱型（SIMBAD 数值 + 文献登记）
-  - `m13-profile.json`：M13 King profile 参数（Harris 目录：核半径/潮汐半径/浓度/积分星等）
-- 🔲 产物格式约束：JSON（数据量 <1 MB）或二进制 Float32（≥1 MB 时）；`public/data/` 总量（gzip 前）≤5 MB；每个产物含 `meta { source, retrievedAt, license, count }`
-- 🔲 运行时加载器 `src/utils/bakedData.ts`：fetch + 解析 + 内存缓存 + 校验（count/数值范围断言），加载失败返回 null（消费方需可降级到现状程序化分布）；单测用本地 fixture
-- 🔲 脚本自校验：产物写出前断言（星数范围、坐标模长合理、无 NaN），失败即退出非零
+- ✅ 新建 `scripts/bake-data/` Node 脚本目录 + `npm run bake:data` 命令：构建期（开发者手动）运行，产出静态资产到 `public/data/`；**运行时零外部网络请求**（烘焙产物随仓库提交）——`scripts/bake-data/index.ts`（Node 26 原生 TS 执行，零新依赖），产物三件已提交
+- ✅ 数据获取策略：脚本内置从公开接口拉取（Gaia TAP/VizieR）**或** 以内嵌文献数值表为源（网络不可用时的降级路径，二选一实现并登记来源与查询语句/文献表号）——实现差异登记：两路径兼备。昴星团默认从**内嵌查询快照**烘焙（`snapshots/pleiades-gaia-dr3.csv` + meta 文件登记 ADQL 语句/选星判据/retrievedAt/license，离线可用），`--fetch` 可选联网重拉快照（Gaia TAP sync）；star-params/m13 为脚本内嵌文献数值表（逐项 ref 登记）
+- ✅ 首批烘焙产物：
+  - ✅ `pleiades.json`：昴星团成员星 ≤600 颗（Gaia DR3 视差 7.0–7.7 mas + 自行共动选星，判据登记）——每星 {x,y,z}（pc，簇质心系）、B−V、视星等。判据登记：锥形检索中心 (ICRS 56.75°, +24.1167°) 半径 2.5° + 视差 7.0–7.7 mas + |(pmra,pmdec)−(19.9,−45.5)|<5 mas/yr，按 G 取最亮 600 颗；坐标 ICRS 轴向、原点平移至成员星质心；光度转换登记：Gaia DR3 文档 §5.5.1 表 5.9 官方 Johnson-Cousins 关系（V = G − f(BP−RP)，σ=0.030；B−V 由 GBP−GRP = f(B−V)（σ=0.066）单调区间二分反解；抽检 Maia 计算 V=3.89 vs 目录 3.87 在 σ 内）。已知限制登记：Gaia DR3 对极亮成员（如昴宿六 Alcyone V=2.87）天测/测光解不全，不在选星结果中——Gaia 基选星的固有特性
+  - ✅ `star-params.json`：R4 涉及恒星（参宿四/参宿七/天狼星 A/B/造父一/WR 124）的 Teff/半径/光度/光谱型（SIMBAD 数值 + 文献登记）——SIMBAD sp_type（检索 2026-07-28）+ 逐星 ref：Joyce et al. 2020（参宿四）/Przybilla 2010 + Moravveji 2012（参宿七）/Kervella 2003 + Adelman 2004 + Liebert 2005（天狼 A）/Barstow 2005 + Holberg 1998（天狼 B）/Mérand 2005 + Engle 2014（造父一，脉动均值）/Hamann et al. 2019（WR 124）
+  - ✅ `m13-profile.json`：M13 King profile 参数（Harris 目录：核半径/潮汐半径/浓度/积分星等）——Harris (1996, 2010 版) NGC 6205 行：r_c=0.62′、r_h=1.69′、c=1.53、d=7.1 kpc、V_t=5.78、[Fe/H]=−1.53；潮汐半径 21.01′ 由 r_t = r_c·10^c 导出（King 模型定义，meta.note 登记），另附小角度近似导出的 pc 值
+- ✅ 产物格式约束：JSON（数据量 <1 MB）或二进制 Float32（≥1 MB 时）；`public/data/` 总量（gzip 前）≤5 MB；每个产物含 `meta { source, retrievedAt, license, count }`——三产物均 <1 MB 取 JSON（pleiades 48.0 KB / star-params 2.1 KB / m13-profile 0.8 KB，总量 50.9 KB）；meta 四字段齐全，pleiades 另附 query/selectionCriteria/photometricTransform 登记字段
+- ✅ 运行时加载器 `src/utils/bakedData.ts`：fetch + 解析 + 内存缓存 + 校验（count/数值范围断言），加载失败返回 null（消费方需可降级到现状程序化分布）；单测用本地 fixture——校验为纯函数三件（validatePleiades/validateStarParams/validateM13Profile：meta 结构、count 一致性、坐标模长 ≤30 pc、B−V/V/Teff/半径/光度数值域、r_t>r_c、无 NaN）；缓存按 URL、成功缓存失败不缓存（可重试）；fixture 三件入 `__tests__/fixtures/`
+- ✅ 脚本自校验：产物写出前断言（星数范围、坐标模长合理、无 NaN），失败即退出非零——星数 [100,600]、视差窗、质心距离 125–145 pc、坐标模长 ≤30 pc、B−V∈[−0.5,3.5]、V∈[−2,20]、转换关系适用域、恒星参数数值域、r_t>r_c、总量 ≤5 MB，`assertBake` 失败 `process.exit(1)`
 
 ### 5.2 验收标准
 
-- 🔲 `npm run bake:data` 幂等可重复执行，产物两次运行一致（或差异仅 meta.retrievedAt）；自校验通过
-- 🔲 `bakedData.ts` 加载/校验/降级单测（fixture 驱动）覆盖；产物总量 ≤5 MB；覆盖率 gate ≥90% 保持
-- 🔲 主应用现有行为零影响（本阶段无消费方，仅管线就绪）；全量测试/build 全绿
+- ✅ `npm run bake:data` 幂等可重复执行，产物两次运行一致（或差异仅 meta.retrievedAt）；自校验通过——实测两次运行产物 SHA-1 逐字节一致（默认模式产物为快照的纯函数，retrievedAt 取自快照 meta；`-0` 归一化保证舍入幂等）；自校验通过
+- ✅ `bakedData.ts` 加载/校验/降级单测（fixture 驱动）覆盖；产物总量 ≤5 MB；覆盖率 gate ≥90% 保持——`bakedData` 21 例（三校验器合法/非法路径、加载成功/缓存/网络异常重试/HTTP 非 2xx/JSON 解析失败/载荷未过校验/缓存重置 + 实际产物完整性集成断言），bakedData.ts 覆盖率 100%；产物总量 50.9 KB；全量覆盖率 gate 保持
+- ✅ 主应用现有行为零影响（本阶段无消费方，仅管线就绪）；全量测试/build 全绿——src 侧仅新增 bakedData.ts（无引用方），全量 2146 例/120 套件通过，type-check/lint/build 全绿
 
 ---
 
