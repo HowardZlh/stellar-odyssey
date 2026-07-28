@@ -21,6 +21,7 @@
 
 ### 改进
 
+- 银河系巡游（L3）序列由 15 站精简为 14 站（用户反馈：太阳与日球层顶示意语境重复）：移除 `sun` 站，保留 `heliopause`（日球层顶示意）作为太阳系出发/告别站，巡游"上一个/下一个"不再经停太阳，位置标签变为 x/14；太阳仍可经点选/耀斑通知飞往（域归类保持当前域、近观激活距离公式保留不变），银河系巡游中跟随太阳时点击切换回落到域记忆天体。`nearView.ts` 粒子增量登记表同步移除 sun 条目（保持"登记表 = 序列成员"不变式）；单测同步更新（序列断言/循环闭合 14 步/位置标签/回落语义），全量 2072 例/117 套件通过，覆盖率 gate ≥90% 保持，type-check/lint/build 全绿；无头 Chrome 目验（Metal 1280×800）：L3 巡游整圈 15 次切换逐站核对——日球层顶 1/14 起步、武仙座 M13 14/14 收尾、循环闭合回日球层顶，全程无太阳站、无异常
 - 支持同一份代码并行运行多个开发服务器（此前 `next dev -p <port>` 换端口无效：Next.js 在 `<distDir>/dev/lock` 放互斥锁，第二个实例会以 "Another next dev server is already running." 直接退出）。新增 `npm run dev:3100` / `npm run dev:3200` 两个脚本，各自通过 `NEXT_DIST_DIR` 指定独立构建目录（`.next-3100` / `.next-3200`）绕开该锁，可与占用 3000 端口的 `npm run dev` 同时运行、互不干扰。该覆盖仅在 dev 阶段生效——`output: 'export'` 下自定义 distDir 会让静态导出产物改落到 distDir 而非 `out/`（Next 内部 `hasCustomExportOutput` 特殊处理），限定阶段可确保 `npm run build` 与 GitHub Pages 部署产物路径不受影响；`.next-*` 已加入 .gitignore、ESLint `ignores` 与 Jest `testPathIgnorePatterns`（否则并行实例的产物会让 `npm run lint` 冒出数百条误报），`tsconfig.json` 预置对应 `include` 条目以避免 Next 启动时改写该文件
 
 ## [0.1.2] - 2026-07-28
