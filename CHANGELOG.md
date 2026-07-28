@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### 改进
+
+- 支持同一份代码并行运行多个开发服务器（此前 `next dev -p <port>` 换端口无效：Next.js 在 `<distDir>/dev/lock` 放互斥锁，第二个实例会以 "Another next dev server is already running." 直接退出）。新增 `npm run dev:3100` / `npm run dev:3200` 两个脚本，各自通过 `NEXT_DIST_DIR` 指定独立构建目录（`.next-3100` / `.next-3200`）绕开该锁，可与占用 3000 端口的 `npm run dev` 同时运行、互不干扰。该覆盖仅在 dev 阶段生效——`output: 'export'` 下自定义 distDir 会让静态导出产物改落到 distDir 而非 `out/`（Next 内部 `hasCustomExportOutput` 特殊处理），限定阶段可确保 `npm run build` 与 GitHub Pages 部署产物路径不受影响；`.next-*` 已加入 .gitignore、ESLint `ignores` 与 Jest `testPathIgnorePatterns`（否则并行实例的产物会让 `npm run lint` 冒出数百条误报），`tsconfig.json` 预置对应 `include` 条目以避免 Next 启动时改写该文件
+
 ## [0.1.2] - 2026-07-28
 
 ### 新增

@@ -4,7 +4,15 @@ import coreWebVitals from 'eslint-config-next/core-web-vitals';
 
 const eslintConfig = [
   {
-    ignores: ['.next/**', 'out/**', 'node_modules/**', 'coverage/**', 'next-env.d.ts'],
+    // `.next-*/**` 覆盖多端口并行开发时各实例的独立构建目录（见 next.config.mjs 的 distDir）
+    ignores: [
+      '.next/**',
+      '.next-*/**',
+      'out/**',
+      'node_modules/**',
+      'coverage/**',
+      'next-env.d.ts',
+    ],
   },
   ...coreWebVitals,
   {
