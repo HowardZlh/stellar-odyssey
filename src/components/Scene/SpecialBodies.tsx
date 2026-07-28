@@ -54,6 +54,8 @@ import {
 import { getSoftPointTexture } from "@/components/CelestialBody/sharedTextures";
 import { getNebulaTexture } from "@/components/CelestialBody/nebulaTextures";
 import { stellarSphereSegments } from "@/utils/stellarSurface";
+import { blackbodyRGB, stellarSurfacePhysics } from "@/utils/starPhysics";
+import { useStarParams } from "@/hooks/useStarParams";
 
 /**
  * 特殊天体 LOD 淡入淡出（需求 3.1.5 通用要求）：
@@ -81,9 +83,18 @@ interface BodyProps {
 }
 
 /**
- * 恒星表面 shader（P6 §3.2）：对流颗粒 fBm（缓慢演化）+ 边缘昏暗（limb
- * darkening）+ 色温梯度（边缘偏暗红）。GLSL 与 utils/stellarSurface.ts 纯函数
- * 镜像一致（valueNoise/limbDarkening/色温梯度公式），单测覆盖 CPU 侧。
+ * 恒星表面 shader（P6 §3.2 基线 + R4-6 物理化增强）：
+ * - 基色 = `blackbodyRGB(teffK)` 黑体色温（替换 P6 硬编码颜色，utils/starPhysics）
+ * - 临边昏暗系数 u 按光谱型档位注入（`limbDarkeningU`，Claret 2000 近似档）
+ * - 噪声频率（cellScale）按 `granulationCellScale(radiusRsun)` 调制
+ *   （巨星颗粒大而少、矮星细密）
+ * - 对流时变：uTime 驱动 fBm 噪声域缓慢漂移（首层视觉周期 ≈20 s，
+ *   落在需求 20–60 s 区间，登记）+ 自转流动（uSpin 绕 y 轴旋转采样域；
+ *   各恒星无既有自转参数，取缓慢默认值为可视化选择，登记）
+ * - log depth buffer 兼容（附录 A §5，P6 遗留补齐，Starfield.tsx 先例）
+ *
+ * GLSL 与 utils/stellarSurface.ts 纯函数镜像一致（valueNoise/limbDarkening/
+ * 色温梯度公式），单测覆盖 CPU 侧。
  *
  * 视觉夸大登记：对流演化速率加速、色温梯度为简化 RGB 近似（见 stellarSurface 文件头）。
  * 门控：仅 L3 可见时推进 uTime（uniform），L1/L2/L4 零开销。
@@ -91,34 +102,43 @@ interface BodyProps {
 export interface StellarSurfaceProps {
   radius: number;
   segments: number;
-  color: string;
-  /** 边缘昏暗系数（红巨星大、蓝巨星小） */
+  /** 有效温度（K）：经 blackbodyRGB 查表得 sRGB 基色（R4-6） */
+  teffK: number;
+  /** 边缘昏暗系数（limbDarkeningU(光谱型) 档位；红巨星大、蓝巨星小） */
   limbU: number;
-  /** 对流胞尺度（红巨星小 → 大胞；蓝巨星大 → 细） */
+  /** 对流胞噪声频率（granulationCellScale(半径R☉)；巨星小 → 大胞） */
   cellScale: number;
   /** 对流对比强度 ∈ [0,1] */
   convection: number;
   /** 色温梯度边缘偏红强度 ∈ [0,1] */
   rednessStrength: number;
+  /** 自转流动角速度（rad/s，绕本地 y 轴平移噪声采样域；默认缓慢自转） */
+  spinRadPerSec?: number;
   /** 读取本帧有效可见权重（由 useGalacticPlacement 提供，含聚焦提升） */
   getWeight: () => number;
   onClick?: (e: { stopPropagation: () => void }) => void;
 }
 
+/** 默认自转流动角速度（rad/s）：约 5 分钟一圈的缓慢可辨流动（登记） */
+const STELLAR_DEFAULT_SPIN_RAD_PER_SEC = 0.02;
+
 export function StellarSurface({
   radius,
   segments,
-  color,
+  teffK,
   limbU,
   cellScale,
   convection,
   rednessStrength,
+  spinRadPerSec = STELLAR_DEFAULT_SPIN_RAD_PER_SEC,
   getWeight,
   onClick,
 }: StellarSurfaceProps): JSX.Element {
   const meshRef = useRef<THREE.Mesh>(null);
   const material = useMemo(() => {
-    const c = new THREE.Color(color);
+    // 黑体基色（sRGB 查表值 → 线性工作色彩空间）
+    const rgb = blackbodyRGB(teffK);
+    const c = new THREE.Color().setRGB(rgb.r, rgb.g, rgb.b, THREE.SRGBColorSpace);
     return new THREE.ShaderMaterial({
       transparent: true,
       uniforms: {
@@ -129,8 +149,11 @@ export function StellarSurface({
         uCellScale: { value: cellScale },
         uConvection: { value: convection },
         uRedness: { value: rednessStrength },
+        uSpin: { value: spinRadPerSec },
       },
       vertexShader: /* glsl */ `
+        #include <common>
+        #include <logdepthbuf_pars_vertex>
         varying vec3 vNormal;
         varying vec3 vViewDir;
         varying vec3 vObjPos;
@@ -140,9 +163,12 @@ export function StellarSurface({
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
           vViewDir = normalize(-mv.xyz);
           gl_Position = projectionMatrix * mv;
+          #include <logdepthbuf_vertex>
         }
       `,
       fragmentShader: /* glsl */ `
+        #include <common>
+        #include <logdepthbuf_pars_fragment>
         uniform float uTime;
         uniform float uOpacity;
         uniform vec3 uColor;
@@ -150,6 +176,7 @@ export function StellarSurface({
         uniform float uCellScale;
         uniform float uConvection;
         uniform float uRedness;
+        uniform float uSpin;
         varying vec3 vNormal;
         varying vec3 vViewDir;
         varying vec3 vObjPos;
@@ -188,8 +215,19 @@ export function StellarSurface({
         }
 
         void main() {
-          // 单位球面坐标直接采样 3D 噪声（无经度接缝、无极点收缩）
-          float cells = fbm3(vObjPos * 1.5, uTime);
+          #include <logdepthbuf_fragment>
+          // 自转流动（R4-6）：绕本地 y 轴旋转噪声采样域，对流图案随自转平移
+          float spinAng = uSpin * uTime;
+          float cs = cos(spinAng);
+          float sn = sin(spinAng);
+          vec3 spun = vec3(
+            cs * vObjPos.x + sn * vObjPos.z,
+            vObjPos.y,
+            -sn * vObjPos.x + cs * vObjPos.z
+          );
+          // 单位球面坐标直接采样 3D 噪声（无经度接缝、无极点收缩）；
+          // 对流时变：fbm3 内各层噪声域随 uTime 缓慢漂移（首层 ≈20 s/胞）
+          float cells = fbm3(spun * 1.5, uTime);
           // 边缘昏暗 μ = N·V
           float mu = clamp(dot(normalize(vNormal), normalize(vViewDir)), 0.0, 1.0);
           float limb = 1.0 - uLimbU * (1.0 - mu);
@@ -203,7 +241,7 @@ export function StellarSurface({
       `,
     });
      
-  }, [color, limbU, cellScale, convection, rednessStrength]);
+  }, [teffK, limbU, cellScale, convection, rednessStrength, spinRadPerSec]);
 
   useEffect(() => () => material.dispose(), [material]);
 
@@ -429,6 +467,9 @@ function RedGiant({ body }: BodyProps): JSX.Element {
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
   const segments = stellarSphereSegments(size);
+  // R4-6：Teff/光谱型/半径 → 黑体基色/临边昏暗档/对流颗粒频率
+  const star = useStarParams().betelgeuse;
+  const physics = stellarSurfacePhysics(star);
 
   const glowTexture = useMemo(
     () => new THREE.CanvasTexture(createGlowSpriteCanvas(body.color, 128)),
@@ -455,16 +496,16 @@ function RedGiant({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 恒星表面（对流颗粒 + 边缘昏暗 + 色温梯度，P6 §3.2）；
-          红巨星：大对流胞（cellScale 小）、强边缘昏暗、显著边缘偏红 */}
+      {/* 恒星表面（对流颗粒 + 边缘昏暗 + 色温梯度，P6 §3.2 + R4-6 物理化）；
+          红巨星：M 档强临边昏暗、巨对流胞（764 R☉ → 低噪声频率）、显著边缘偏红 */}
       <group ref={coreRef}>
         <StellarSurface
           getWeight={getWeight}
           radius={size}
           segments={segments}
-          color={body.color}
-          limbU={0.75}
-          cellScale={2.2}
+          teffK={star.teffK}
+          limbU={physics.limbU}
+          cellScale={physics.cellScale}
           convection={0.7}
           rednessStrength={0.6}
           onClick={(e) => {
@@ -615,6 +656,9 @@ function BlueGiant({ body }: BodyProps): JSX.Element {
   const glowRef = useRef<THREE.Sprite>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
+  // R4-6：参宿七 B8Ia（12,100 K 蓝白、弱临边昏暗、78.9 R☉ 中低颗粒频率）
+  const star = useStarParams().rigel;
+  const physics = stellarSurfacePhysics(star);
 
   const glowTexture = useMemo(
     () => new THREE.CanvasTexture(createGlowSpriteCanvas(body.color, 128)),
@@ -635,14 +679,14 @@ function BlueGiant({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 蓝巨星表面：细对流颗粒、弱边缘昏暗、无边缘偏红（高温） */}
+      {/* 蓝巨星表面：黑体蓝白基色、B 档弱边缘昏暗、无边缘偏红（高温） */}
       <StellarSurface
         getWeight={getWeight}
         radius={size}
         segments={stellarSphereSegments(size)}
-        color="#cfe0ff"
-        limbU={0.3}
-        cellScale={9}
+        teffK={star.teffK}
+        limbU={physics.limbU}
+        cellScale={physics.cellScale}
         convection={0.35}
         rednessStrength={0}
         onClick={(e) => {
@@ -683,6 +727,9 @@ function WolfRayet({ body }: BodyProps): JSX.Element {
   const shellRef = useRef<THREE.Mesh>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
+  // R4-6：WR 124 WN8h（44,700 K 深蓝、O 档极弱昏暗、11.93 R☉ 细颗粒）
+  const star = useStarParams().wr124;
+  const physics = stellarSurfacePhysics(star);
 
   const glowTexture = useMemo(
     () => new THREE.CanvasTexture(createGlowSpriteCanvas(body.color, 128)),
@@ -711,14 +758,14 @@ function WolfRayet({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 炽热核心（约 44,000 K，蓝白色）：极细对流颗粒 + 强湍流 */}
+      {/* 炽热核心（44,700 K 黑体蓝）：细对流颗粒 + 强湍流 */}
       <StellarSurface
         getWeight={getWeight}
         radius={size * 0.6}
         segments={stellarSphereSegments(size * 0.6)}
-        color="#e8f0ff"
-        limbU={0.25}
-        cellScale={12}
+        teffK={star.teffK}
+        limbU={physics.limbU}
+        cellScale={physics.cellScale}
         convection={0.45}
         rednessStrength={0}
         onClick={(e) => {
@@ -770,6 +817,9 @@ function Cepheid({ body }: BodyProps): JSX.Element {
   const glowRef = useRef<THREE.Sprite>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
+  // R4-6：造父一 F5Iab（5,960 K 白黄、F 档中等昏暗、43.3 R☉ 中等颗粒）
+  const star = useStarParams().deltaCephei;
+  const physics = stellarSurfacePhysics(star);
 
   const glowTexture = useMemo(
     () => new THREE.CanvasTexture(createGlowSpriteCanvas(body.color, 128)),
@@ -797,15 +847,15 @@ function Cepheid({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 造父变星表面：中等对流颗粒（黄超巨星） */}
+      {/* 造父变星表面：黑体白黄基色、中等对流颗粒（黄超巨星） */}
       <group ref={coreRef}>
         <StellarSurface
           getWeight={getWeight}
           radius={size * 0.5}
           segments={stellarSphereSegments(size * 0.5)}
-          color={body.color}
-          limbU={0.55}
-          cellScale={5}
+          teffK={star.teffK}
+          limbU={physics.limbU}
+          cellScale={physics.cellScale}
           convection={0.5}
           rednessStrength={0.3}
           onClick={(e) => {
@@ -1194,6 +1244,11 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
   const selectBody = useSimulationStore((s) => s.selectBody);
   const showLabels = useSimulationStore((s) => s.showLabels);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
+  // R4-6：A 星 A0mA1Va（9,940 K 蓝白）；B 星白矮星 DA1.9（25,200 K 蓝、
+  // 最弱昏暗档、上限颗粒频率——与 R2-7 既有 ~25,000 K 调蓝一致化）
+  const starParams = useStarParams();
+  const physicsA = stellarSurfacePhysics(starParams.siriusA);
+  const physicsB = stellarSurfacePhysics(starParams.siriusB);
   const separation = size * 1.7;
   // 绕共同质心的轨道半径（binaryStarPositions 同源公式：重星轨道小）
   const rPrimary = separation / (1 + SIRIUS_MASS_RATIO);
@@ -1238,17 +1293,23 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
           getOpacity={() => getWeight() * getNear01()}
         />
       )}
-      {/* 天狼星A：主序星（大而亮） */}
+      {/* 天狼星A：主序星（大而亮）——R4-6 黑体蓝白 + A 档临边昏暗
+          （A 型星表面对流弱，convection 取低档，视觉选择登记） */}
       <group ref={primaryRef}>
-        <mesh
+        <StellarSurface
+          getWeight={getWeight}
+          radius={size * 0.42}
+          segments={stellarSphereSegments(size * 0.42)}
+          teffK={starParams.siriusA.teffK}
+          limbU={physicsA.limbU}
+          cellScale={physicsA.cellScale}
+          convection={0.18}
+          rednessStrength={0}
           onClick={(e) => {
             e.stopPropagation();
             selectBody(body.id);
           }}
-        >
-          <sphereGeometry args={[size * 0.42, 20, 20]} />
-          <meshBasicMaterial color="#f4f8ff" />
-        </mesh>
+        />
         <sprite scale={[size * 2.2, size * 2.2, 1]}>
           <spriteMaterial
             map={glowTexture}
@@ -1272,18 +1333,24 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
           </ClampedHtmlLabel>
         )}
       </group>
-      {/* 天狼星B：白矮星（极小、白蓝色致密高亮点 + 衍射芒线，高密度在信息面板强调） */}
+      {/* 天狼星B：白矮星（极小、致密高亮点 + 衍射芒线，高密度在信息面板强调）
+          —— R4-6 白矮星单独档：25,200 K 黑体蓝基色（R2-7 调蓝一致化）、
+          u 最弱档、颗粒频率上限（矮星细密） */}
       <group ref={secondaryRef}>
-        <mesh
+        <StellarSurface
+          getWeight={getWeight}
+          radius={size * 0.1}
+          segments={stellarSphereSegments(size * 0.1)}
+          teffK={starParams.siriusB.teffK}
+          limbU={physicsB.limbU}
+          cellScale={physicsB.cellScale}
+          convection={0.12}
+          rednessStrength={0}
           onClick={(e) => {
             e.stopPropagation();
             selectBody(body.id);
           }}
-        >
-          <sphereGeometry args={[size * 0.1, 20, 20]} />
-          {/* R2-7：白矮星取更蓝的色调（~25,000 K 高温白矮星，与主星对比清晰） */}
-          <meshBasicMaterial color="#cfe4ff" />
-        </mesh>
+        />
         <sprite scale={[size * 1.6, size * 1.6, 1]}>
           <spriteMaterial
             map={spikeTexture}
