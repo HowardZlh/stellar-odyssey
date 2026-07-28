@@ -11,6 +11,7 @@ import {
   defaultParamValues,
   previewEntryForBody,
   registeredPreviewIds,
+  VOLUME_PREVIEW_COMPONENT_KEYS,
 } from '@/utils/devPreview';
 import {
   createFpsCounter,
@@ -152,7 +153,7 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
         <div>
           虚拟时钟：<span ref={clockLabelRef}>0.0</span> s
         </div>
-        {entry.componentKey === 'volume-raymarch-test' && (
+        {VOLUME_PREVIEW_COMPONENT_KEYS.has(entry.componentKey) && (
           <div>
             体积质量档：<span ref={qualityLabelRef}>—</span>
           </div>
