@@ -13,6 +13,9 @@
  *   恒定密度解析解对比用于单测数值校验（保证 shader 与 CPU 同一积分格式）。
  * - `intersectRayBox`：单位盒光线求交（shader `hitBox` 的 CPU 镜像，相机
  *   盒内/盒外两种入射的参数化在此单测校验）。
+ * - 蓝噪声抖动掩码（R4-4）：`buildBlueNoiseData/Texture` 程序化生成
+ *   64×64 排序掩码（void-and-cluster 简化，环绕核平铺无缝，零新依赖），
+ *   raymarch 步进起点抖动打散条带。
  *
  * 确定性（附录 A §2）：种子采用 FNV-1a 字符串哈希（`galaxyNearView.ts`
  * `galaxyNearViewSeed` 同款先例），噪声域偏移经 `createSeededRandom`
@@ -393,4 +396,109 @@ export function makeSphericalFbmCloudSampler(
     const t = Math.min(1, Math.max(0, (n - coverage) / (1 - coverage)));
     return shell * t * t * (3 - 2 * t);
   };
+}
+
+/** 蓝噪声纹理默认边长（§R4-4：64×64 程序化生成，勿引入新依赖） */
+export const BLUE_NOISE_SIZE = 64;
+
+/** 蓝噪声生成边长上限（防误用超大尺寸拖慢构建：O(n²) 复杂度） */
+export const BLUE_NOISE_MAX_SIZE = 128;
+
+/** 蓝噪声斥力核高斯 σ（Ulichney void-and-cluster 经验值 1.5–1.9 档） */
+const BLUE_NOISE_SIGMA = 1.9;
+
+/**
+ * 程序化生成蓝噪声排序掩码（void-and-cluster 简化：最小能量填充，纯函数）
+ *
+ * 算法（Ulichney 1993 void-and-cluster 的秩填充相位，环绕域）：
+ * 逐秩挑选当前"最空"（能量最低）像素，赋值 rank/n×256，并在其周围
+ * 溅射环绕（toroidal）高斯斥力能量——后续挑选被推离已选点，得到
+ * 高频为主（蓝色频谱）的抖动掩码；纹理 Repeat 平铺无缝（环绕核保证）。
+ *
+ * 确定性（附录 A §2）：平局以种子展开的微扰打破（`createSeededRandom`），
+ * 同一 (size, seed) 双次生成逐字节一致；输出直方图严格均匀
+ * （每个 8-bit 级出现 n/256 次，size=64 时恰为 16 次）。
+ *
+ * 复杂度 O(n²)（64² ≈ 1.7×10⁷ 次比较，构建一次 <20ms），仅在材质创建期
+ * 调用（渲染循环零构建）。
+ *
+ * @param size 边长（整数 8–128）
+ * @param seed 确定性种子（FNV-1a，`volumeSeed(id)`）
+ */
+export function buildBlueNoiseData(size: number, seed: number): Uint8Array<ArrayBuffer> {
+  if (!Number.isInteger(size) || size < 8 || size > BLUE_NOISE_MAX_SIZE) {
+    throw new RangeError(`蓝噪声边长必须为 [8, ${BLUE_NOISE_MAX_SIZE}] 的整数，收到 ${size}`);
+  }
+  const n = size * size;
+  const rand = createSeededRandom(seed >>> 0);
+  // 能量场：种子微扰打破平局（幅度 ≪ 单次高斯溅射，不影响蓝噪声结构）
+  const energy = new Float64Array(n);
+  for (let i = 0; i < n; i += 1) energy[i] = rand() * 1e-4;
+
+  // 预计算环绕高斯核（半径 3σ 截断）
+  const kernelRadius = Math.min(Math.ceil(BLUE_NOISE_SIGMA * 3), size >> 1);
+  const kernelSide = kernelRadius * 2 + 1;
+  const kernel = new Float64Array(kernelSide * kernelSide);
+  const inv2Sigma2 = 1 / (2 * BLUE_NOISE_SIGMA * BLUE_NOISE_SIGMA);
+  for (let dy = -kernelRadius; dy <= kernelRadius; dy += 1) {
+    for (let dx = -kernelRadius; dx <= kernelRadius; dx += 1) {
+      kernel[(dy + kernelRadius) * kernelSide + (dx + kernelRadius)] = Math.exp(
+        -(dx * dx + dy * dy) * inv2Sigma2,
+      );
+    }
+  }
+
+  const out = new Uint8Array(n);
+  const assigned = new Uint8Array(n);
+  for (let rank = 0; rank < n; rank += 1) {
+    // 找未分配像素中能量最低者（"最大空洞"）
+    let best = -1;
+    let bestEnergy = Infinity;
+    for (let i = 0; i < n; i += 1) {
+      if (assigned[i] === 0 && energy[i] < bestEnergy) {
+        bestEnergy = energy[i];
+        best = i;
+      }
+    }
+    assigned[best] = 1;
+    out[best] = Math.floor((rank * 256) / n);
+    // 环绕高斯斥力溅射
+    const bx = best % size;
+    const by = (best / size) | 0;
+    for (let dy = -kernelRadius; dy <= kernelRadius; dy += 1) {
+      const yy = (by + dy + size) % size;
+      const rowK = (dy + kernelRadius) * kernelSide;
+      const rowE = yy * size;
+      for (let dx = -kernelRadius; dx <= kernelRadius; dx += 1) {
+        const xx = (bx + dx + size) % size;
+        energy[rowE + xx] += kernel[rowK + (dx + kernelRadius)];
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * 构建蓝噪声 DataTexture（R8/UnsignedByte、NearestFilter、Repeat 平铺）
+ *
+ * shader 侧以 `texelFetch(uBlueNoise, gl_FragCoord mod size)` 逐像素取
+ * 抖动值（步进起点偏移，打散条带，§R4-4）。消费方卸载时须调用
+ * `texture.dispose()`（附录 A §6；`disposeVolumeMaterial` 已托管工厂
+ * 自建的实例）。
+ */
+export function buildBlueNoiseTexture(
+  size: number = BLUE_NOISE_SIZE,
+  seed: number = volumeSeed('volume-blue-noise'),
+): THREE.DataTexture {
+  const data = buildBlueNoiseData(size, seed);
+  const texture = new THREE.DataTexture(data, size, size);
+  texture.format = THREE.RedFormat;
+  texture.type = THREE.UnsignedByteType;
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.unpackAlignment = 1;
+  texture.needsUpdate = true;
+  return texture;
 }

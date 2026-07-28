@@ -23,6 +23,8 @@ export interface PreviewSceneProps {
   exposure: number;
   /** HUD 虚拟时钟读数节点（每帧直写 textContent，不走 React state） */
   clockLabelRef?: RefObject<HTMLSpanElement | null>;
+  /** HUD 体积质量档位读数节点（R4-4，仅体积类条目消费） */
+  qualityLabelRef?: RefObject<HTMLSpanElement | null>;
 }
 
 /**
@@ -146,6 +148,7 @@ export function PreviewScene({
   values,
   exposure,
   clockLabelRef,
+  qualityLabelRef,
 }: PreviewSceneProps): JSX.Element {
   return (
     <>
@@ -153,7 +156,11 @@ export function PreviewScene({
       {entry.componentKey === 'stellar-surface' ? (
         <StellarSurfacePreview values={values} clockLabelRef={clockLabelRef} />
       ) : entry.componentKey === 'volume-raymarch-test' ? (
-        <VolumeTestPreview values={values} clockLabelRef={clockLabelRef} />
+        <VolumeTestPreview
+          values={values}
+          clockLabelRef={clockLabelRef}
+          qualityLabelRef={qualityLabelRef}
+        />
       ) : (
         <mesh>
           <boxGeometry args={[1, 1, 1]} />

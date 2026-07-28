@@ -15,7 +15,13 @@
  *   （`VOLUME_RENDER_ORDER` 常量），depthTest 保留（被前景实体遮挡正确）；
  * - Bloom 共存：输出亮度经 uIntensity 控制并硬钳上限（防发光溢出），
  *   方向零分量加下限防除零——无 NaN/Inf 输出；
- * - 预留 uniforms：uTime（R4-7 流动）、uQuality（R4-4 降级），本阶段不消费。
+ * - 蓝噪声抖动（R4-4）：步进起点按 64×64 蓝噪声掩码逐像素偏移 [0,1) 个
+ *   步长（texelFetch + gl_FragCoord mod 平铺），打散步进条带；uJitter=0
+ *   可关（预览页 A/B 对比）。工厂未显式传入掩码时自建实例并随
+ *   `disposeVolumeMaterial` 一并释放（附录 A §6）；
+ * - 预留 uniforms：uTime（R4-7 流动）、uQuality（档位标量 0.5–1，由
+ *   adaptiveQuality 每帧写入，本阶段步数/RT 比例在 CPU 侧落地，shader
+ *   暂不消费该标量——R4-7 细节淡出可按需接入）。
  *
  * GLSL 版本登记：sampler3D/inverse() 需要 GLSL ES 3.0——three r169 WebGL2-only，
  * ShaderMaterial 默认路径即以 `#version 300 es` + 兼容 define（varying/gl_FragColor/
@@ -27,6 +33,8 @@
 
 import * as THREE from 'three';
 import {
+  BLUE_NOISE_SIZE,
+  buildBlueNoiseTexture,
   clampVolumeSteps,
   VOLUME_STEPS_DEFAULT,
   VOLUME_STEPS_MAX,
@@ -71,8 +79,10 @@ const FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 uColorA;
   uniform vec3 uColorB;
   uniform float uIntensity;
+  uniform sampler2D uBlueNoise; // 蓝噪声抖动掩码（64×64 Repeat 平铺，R4-4）
+  uniform float uJitter;        // 抖动强度（0 关 / 1 开，预览页 A/B 对比）
   uniform float uTime;    // 预留：R4-7 密度场流动
-  uniform float uQuality; // 预留：R4-4 帧率自适应降级
+  uniform float uQuality; // 档位标量（0.5–1，adaptiveQuality 写入；shader 暂不消费）
 
   // 单位盒 [-0.5, 0.5]³ slab 求交（utils/volume.intersectRayBox 的 GLSL 镜像）
   vec2 hitBox(vec3 orig, vec3 dir) {
@@ -102,7 +112,11 @@ const FRAGMENT_SHADER = /* glsl */ `
 
     float steps = clamp(uSteps, ${VOLUME_STEPS_MIN.toFixed(1)}, ${VOLUME_STEPS_MAX.toFixed(1)});
     float stepLen = (bounds.y - bounds.x) / steps;
-    vec3 p = vOrigin + bounds.x * rd;
+    // 蓝噪声抖动：步进起点逐像素偏移 [0,1) 个步长，打散条带（R4-4）。
+    // 掩码 Repeat 平铺（环绕核生成无缝），gl_FragCoord 随 RT 视口缩放，
+    // 半分辨率下仍按 RT 像素取值——抖动粒度与渲染分辨率一致。
+    float jitter = texelFetch(uBlueNoise, ivec2(mod(gl_FragCoord.xy, ${BLUE_NOISE_SIZE.toFixed(1)})), 0).r;
+    vec3 p = vOrigin + (bounds.x + stepLen * jitter * uJitter) * rd;
     vec3 delta = rd * stepLen;
 
     // 发射-吸收积分（front-to-back，与 CPU 参考实现 integrateEmissionAbsorption 同式）
@@ -150,15 +164,24 @@ export interface VolumeMaterialParams {
   threshold?: number;
   /** 输出亮度（默认 1.2，控 Bloom 贡献） */
   intensity?: number;
+  /**
+   * 蓝噪声抖动掩码（64×64 R8，`buildBlueNoiseTexture` 产出）。
+   * 缺省时工厂自建实例并托管生命周期（`disposeVolumeMaterial` 释放）；
+   * 显式传入时归调用方持有并负责 dispose。
+   */
+  blueNoise?: THREE.DataTexture;
 }
 
 /**
- * 创建体积 raymarch 材质（消费方持有并负责 dispose，附录 A §6）
+ * 创建体积 raymarch 材质（消费方持有并负责 dispose，附录 A §6；
+ * 经 `disposeVolumeMaterial` 释放可一并回收工厂自建的蓝噪声掩码）
  *
  * 挂载约定：配合 BoxGeometry(1,1,1) 使用，世界尺寸经 mesh.scale 控制；
  * mesh.renderOrder 设为 `VOLUME_RENDER_ORDER`。
  */
 export function createVolumeMaterial(params: VolumeMaterialParams): THREE.ShaderMaterial {
+  const ownsBlueNoise = params.blueNoise === undefined;
+  const blueNoise = params.blueNoise ?? buildBlueNoiseTexture();
   const material = new THREE.ShaderMaterial({
     name: 'VolumeMaterial',
     vertexShader: VERTEX_SHADER,
@@ -172,6 +195,8 @@ export function createVolumeMaterial(params: VolumeMaterialParams): THREE.Shader
       uColorA: { value: new THREE.Color(params.colorA ?? '#ff3b30') },
       uColorB: { value: new THREE.Color(params.colorB ?? '#2ee6c8') },
       uIntensity: { value: params.intensity ?? 1.2 },
+      uBlueNoise: { value: blueNoise },
+      uJitter: { value: 1 },
       uTime: { value: 0 },
       uQuality: { value: 1 },
     },
@@ -183,5 +208,24 @@ export function createVolumeMaterial(params: VolumeMaterialParams): THREE.Shader
     // 合成 C_out = C_vol + T·C_bg ⇔ NormalBlending + premultipliedAlpha
     premultipliedAlpha: true,
   });
+  // 工厂自建掩码登记到 userData，disposeVolumeMaterial 一并释放（附录 A §6）
+  if (ownsBlueNoise) {
+    material.userData.ownedBlueNoise = blueNoise;
+  }
   return material;
+}
+
+/**
+ * 释放体积材质及工厂自建的蓝噪声掩码（消费方卸载时调用，附录 A §6）
+ *
+ * 显式传入的 blueNoise（调用方持有）不在此释放；密度纹理（uMap）
+ * 生命周期归构建方（`buildDensityTexture` 调用侧），亦不在此释放。
+ */
+export function disposeVolumeMaterial(material: THREE.ShaderMaterial): void {
+  const owned = material.userData.ownedBlueNoise as THREE.DataTexture | undefined;
+  if (owned) {
+    owned.dispose();
+    delete material.userData.ownedBlueNoise;
+  }
+  material.dispose();
 }
