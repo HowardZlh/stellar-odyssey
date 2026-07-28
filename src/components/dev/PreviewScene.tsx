@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { StellarSurface } from '@/components/Scene/SpecialBodies';
 import { stellarSphereSegments } from '@/utils/stellarSurface';
 import type { PreviewEntry } from '@/utils/devPreview';
+import { VolumeTestPreview } from '@/components/dev/VolumeTestPreview';
 
 /**
  * 预览场景（R4-1）：按条目 componentKey 挂载对应细节组件，注入滑杆参数值。
@@ -151,6 +152,8 @@ export function PreviewScene({
       <ExposureSync exposure={exposure} />
       {entry.componentKey === 'stellar-surface' ? (
         <StellarSurfacePreview values={values} clockLabelRef={clockLabelRef} />
+      ) : entry.componentKey === 'volume-raymarch-test' ? (
+        <VolumeTestPreview values={values} clockLabelRef={clockLabelRef} />
       ) : (
         <mesh>
           <boxGeometry args={[1, 1, 1]} />
