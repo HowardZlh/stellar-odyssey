@@ -76,6 +76,9 @@ npm install
 # 启动开发服务器（http://localhost:3000）
 npm run dev
 
+# 需要同时开第二个实例时（http://localhost:3100，独立构建目录，与上面互不干扰）
+npm run dev:3100
+
 # 生产构建与启动
 npm run build
 npm run start
