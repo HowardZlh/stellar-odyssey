@@ -94,7 +94,7 @@
 
 - ✅ 新增独立路由 `src/app/dev/preview/page.tsx`（App Router）：单独渲染指定天体细节模型，不加载主场景（无 Galaxy/Universe/SolarSystem/音频/store 主循环），黑色背景 + 可选参考网格（drei `Grid`，面板开关）
 - ✅ URL 参数 `?body=<id>` 指定预览对象（页面客户端读 `window.location.search`）；预览注册表纯逻辑模块 `src/utils/devPreview.ts`：`previewEntryForBody(id)` 返回该天体的细节组件挂载配置（`componentKey` 标识实际 R3F 组件，渲染依赖不污染纯逻辑层；后续 R4 各阶段追加条目），未注册 id 返回 null → 页面显示占位提示并列出可用对象链接
-- ✅ 内置轨道相机控制（drei `OrbitControls`）+ 参数面板：曝光滑杆（tone mapping exposure）/Bloom 开关/参考网格开关、时间流速、每个细节组件可声明 ≤8 个调试滑杆（`PreviewParam { key, label, min, max, default, step? }`，`MAX_PREVIEW_PARAMS=8` + `validatePreviewEntry` 注册期防错），滑杆值经 props 传入组件（越界经 `clampParamValue` 钳制）
+- ✅ 内置轨道相机控制（drei `OrbitControls`）+ 参数面板：曝光滑杆（tone mapping exposure）/Bloom 开关/参考网格开关、时间流速、每个细节组件可声明 ≤8 个调试滑杆（`PreviewParam { key, label, min, max, default, step? }`，`MAX_PREVIEW_PARAMS=8` + `validatePreviewEntry` 注册期防错），滑杆值经 props 传入组件（越界经 `clampParamValue` 钳制）。**修复登记（用户反馈：曝光/时间流速滑杆无效果）**：曝光改为帧缓冲级实现——Canvas `flat` + EffectComposer 常驻 + 末端 `ToneMapping(ACES_FILMIC)`（裸 ShaderMaterial 不响应 `renderer.toneMappingExposure`，帧缓冲级对后续 R4 体积/透镜自定义 shader 预览一并生效）；时间流速加 HUD「虚拟时钟」读数 + 预览自转基准 0.05→0.15 rad/s（感知增强，仅预览页）；滑杆调参改为挂载时缓存材质引用 + 每帧 uniform 直写（原 props→useMemo 路径高频重建材质），uTime 覆写改显式 useFrame 优先级（0.5）不依赖隐式挂载顺序
 - ✅ 显示实时 FPS 与 JS 堆（复用 `utils/performance.ts` 的 `createFpsCounter`/`recordFrame`/`formatFpsLabel`/`formatMemoryMB`/`readUsedHeapBytes`；harness 组件自持 rAF，不依赖主循环）
 - ✅ 生产安全（**登记：方案 = 生产渲染空页 + 动态 import**，非 404）：`NODE_ENV === 'production'` 下页面渲染空 div、不引用 harness；预览专用 harness（含 three/drei/postprocessing）经 `next/dynamic` 动态 import 仅 dev 加载——实测生产 `output:'export'` 构建将 harness 打入独立异步 chunk（`out/_next/static/chunks/*.js`），**不被生产页 HTML 引用**，主应用 bundle 零增大、生产路由为空页不可用
 - ✅ 首个可预览对象：接入现有 `StellarSurface`（导出自 `SpecialBodies.tsx`，参宿四红巨星档配置 limbU=0.75/cellScale=2.2/convection=0.7/rednessStrength=0.6 + 弥散气体壳），时间流速经虚拟时钟覆写 material.uTime 实现可调，作为管线验证样例
@@ -199,6 +199,7 @@
 - 🔲 各恒星参数接入：Teff/半径/光谱型从 `public/data/star-params.json`（R4-5）读取，加载失败降级现状硬编码值（降级路径登记）；天狼星 B 白矮星单独档（u 小、色蓝白 ~25,000 K，与 R2-7 既有调蓝一致化）
 - 🔲 预览页注册全部 6 类恒星（betelgeuse/rigel/sirius/delta-cep/wr-124 + 白矮星），滑杆：Teff 覆写/噪声频率/时间流速
 - 🔲 太阳（Sun.tsx 独立管线）**不在本阶段范围**（登记）；颜色变化对 Bloom 亮度的影响逐星目检无过曝
+- 🔲 补齐 `StellarSurface` shader 的 log depth 兼容（附录 A §5，P6 遗留登记于 R4-1 修复轮：现状裸 ShaderMaterial 未含 `logdepthbuf` include，主场景与预览页 Canvas 均启用 `logarithmicDepthBuffer`，参照 `Starfield.tsx` :33 先例补齐）
 
 ### 6.2 验收标准
 
