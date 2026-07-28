@@ -6,7 +6,13 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { StellarSurface } from '@/components/Scene/SpecialBodies';
 import { stellarSphereSegments } from '@/utils/stellarSurface';
-import type { PreviewEntry } from '@/utils/devPreview';
+import {
+  blackbodyRGB,
+  limbDarkeningU,
+  granulationCellScale,
+} from '@/utils/starPhysics';
+import { useStarParams } from '@/hooks/useStarParams';
+import { stellarPreviewConfigForBody, type PreviewEntry } from '@/utils/devPreview';
 import { VolumeTestPreview } from '@/components/dev/VolumeTestPreview';
 
 /**
@@ -51,17 +57,21 @@ function ExposureSync({ exposure }: { exposure: number }): null {
 }
 
 /**
- * 参宿四恒星表面预览：复用现有 `StellarSurface`（管线验证样例）
+ * 恒星表面预览（R4-6）：6 类恒星复用物理化 `StellarSurface`
  *
- * 滑杆调参路径（bug 修复：原实现经 props 触发 useMemo 高频重建 ShaderMaterial）：
- * StellarSurface 以默认 props 挂载一次（材质零重建），挂载时缓存其
- * ShaderMaterial 引用，随后每帧按滑杆值直写 uniform（uLimbU/uCellScale/
- * uConvection/uRedness），时间经虚拟时钟（timeScale 调制）覆写 uTime。
+ * 物理参数（Teff/光谱型/半径）经 `useStarParams` 读取（star-params.json，
+ * 失败降级硬编码表）；滑杆（§R4-6：Teff 覆写/噪声频率/时间流速）路径：
+ * StellarSurface 以默认物理 props 挂载一次（材质零重建），挂载时缓存其
+ * ShaderMaterial 引用，随后每帧按滑杆值直写 uniform——Teff 覆写仅在值
+ * 变化时重算黑体色（复用 THREE.Color 实例，渲染循环零分配），时间经
+ * 虚拟时钟（timeScale 调制）覆写 uTime。
  */
 function StellarSurfacePreview({
+  entry,
   values,
   clockLabelRef,
 }: {
+  entry: PreviewEntry;
   values: Record<string, number>;
   clockLabelRef?: RefObject<HTMLSpanElement | null>;
 }): JSX.Element {
@@ -69,8 +79,26 @@ function StellarSurfacePreview({
   const materialRef = useRef<THREE.ShaderMaterial | null>(null);
   const virtualTimeRef = useRef(0);
   const clockTextRef = useRef('');
+  const lastTeffRef = useRef(Number.NaN);
+  const colorScratchRef = useRef(new THREE.Color());
   const radius = 1.4;
   const segments = useMemo(() => stellarSphereSegments(radius * 30), [radius]);
+  // 恒星配置与物理参数（config 为注册期校验过的恒星条目，必存在）
+  const config = stellarPreviewConfigForBody(entry.bodyId)!;
+  const star = useStarParams()[config.starKey];
+  const defaults = useMemo(
+    () => ({
+      teffK: star.teffK,
+      limbU: limbDarkeningU(star.spectralType),
+      cellScale: granulationCellScale(star.radiusRsun),
+    }),
+    [star],
+  );
+  // 弥散气体壳颜色（黑体默认色，装饰层不随滑杆变化）
+  const shellColor = useMemo(() => {
+    const rgb = blackbodyRGB(star.teffK);
+    return new THREE.Color().setRGB(rgb.r, rgb.g, rgb.b, THREE.SRGBColorSpace);
+  }, [star]);
 
   // 挂载时一次性缓存 StellarSurface 的 ShaderMaterial（材质 props 静态不重建，
   // 渲染循环零遍历/零闭包分配，附录 A §2）
@@ -99,10 +127,20 @@ function StellarSurfacePreview({
     if (mat) {
       mat.uniforms.uTime.value = virtualTimeRef.current;
       mat.uniforms.uOpacity.value = 1;
-      mat.uniforms.uLimbU.value = values.limbU ?? 0.75;
-      mat.uniforms.uCellScale.value = values.cellScale ?? 2.2;
-      mat.uniforms.uConvection.value = values.convection ?? 0.7;
-      mat.uniforms.uRedness.value = values.rednessStrength ?? 0.6;
+      mat.uniforms.uCellScale.value = values.cellScale ?? defaults.cellScale;
+      // Teff 覆写：值变化时重算黑体基色（sRGB → 线性，复用 Color 实例）
+      const teff = values.teffK ?? defaults.teffK;
+      if (teff !== lastTeffRef.current) {
+        lastTeffRef.current = teff;
+        const rgb = blackbodyRGB(teff);
+        const c = colorScratchRef.current.setRGB(
+          rgb.r,
+          rgb.g,
+          rgb.b,
+          THREE.SRGBColorSpace,
+        );
+        (mat.uniforms.uColor.value as THREE.Vector3).set(c.r, c.g, c.b);
+      }
     }
     // HUD 虚拟时钟读数（0.1s 粒度，内容变化才写 DOM）
     const label = clockLabelRef?.current;
@@ -121,17 +159,17 @@ function StellarSurfacePreview({
         getWeight={WEIGHT_FULL}
         radius={radius}
         segments={segments}
-        color="#ff6a3c"
-        limbU={0.75}
-        cellScale={2.2}
-        convection={0.7}
-        rednessStrength={0.6}
+        teffK={defaults.teffK}
+        limbU={defaults.limbU}
+        cellScale={defaults.cellScale}
+        convection={config.convection}
+        rednessStrength={config.rednessStrength}
       />
-      {/* 外层弥散气体壳（与 RedGiant 现状观感一致） */}
+      {/* 外层弥散气体壳（黑体默认色，观感与主场景恒星组件一致） */}
       <mesh>
         <sphereGeometry args={[radius * 1.5, 32, 32]} />
         <meshBasicMaterial
-          color="#ff6a3c"
+          color={shellColor}
           transparent
           opacity={0.12}
           side={THREE.BackSide}
@@ -154,7 +192,13 @@ export function PreviewScene({
     <>
       <ExposureSync exposure={exposure} />
       {entry.componentKey === 'stellar-surface' ? (
-        <StellarSurfacePreview values={values} clockLabelRef={clockLabelRef} />
+        /* key=bodyId：切换恒星时强制重挂载（材质引用缓存与虚拟时钟随之重置） */
+        <StellarSurfacePreview
+          key={entry.bodyId}
+          entry={entry}
+          values={values}
+          clockLabelRef={clockLabelRef}
+        />
       ) : entry.componentKey === 'volume-raymarch-test' ? (
         <VolumeTestPreview
           values={values}
