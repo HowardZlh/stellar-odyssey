@@ -279,6 +279,11 @@ export function OrionNebulaPreview({
     const savedClearAlpha = gl.getClearAlpha();
     gl.setRenderTarget(rt);
     gl.setClearColor(0x000000, 0);
+    // 显式清屏（bug 修复：用户反馈拖拽绕行出现残影）——postprocessing 的
+    // EffectComposer.setRenderer 会把 renderer.autoClear 永久置 false，
+    // 依赖 gl.render 隐式自动清屏在挂 Composer 的环境下失效 → RT 帧间累积
+    // 成拖影；gl.clear 遵循当前视口/剪裁子区域（半分辨率路径不受影响）
+    gl.clear(true, false, false);
     gl.render(volumeScene, camera);
     gl.setRenderTarget(null);
     gl.setClearColor(savedClearColor, savedClearAlpha);
