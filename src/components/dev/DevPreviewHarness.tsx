@@ -78,6 +78,8 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
   // 虚拟时钟读数（时间流速滑杆的即时数值反馈）：由 PreviewScene 每帧直写
   // textContent，不走 React state（避免 60Hz 重渲染）
   const clockLabelRef = useRef<HTMLSpanElement | null>(null);
+  // 体积质量档位读数（R4-4 HUD 指示，实现定夺登记：予以显示）：同上直写
+  const qualityLabelRef = useRef<HTMLSpanElement | null>(null);
 
   if (!entry) {
     return (
@@ -124,6 +126,7 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
           values={values}
           exposure={exposure}
           clockLabelRef={clockLabelRef}
+          qualityLabelRef={qualityLabelRef}
         />
         {/* minDistance 按条目相机距离推导，防止推进到天体内部（单面材质黑屏） */}
         <OrbitControls enablePan minDistance={entry.cameraDistance * 0.5} maxDistance={100} />
@@ -149,6 +152,11 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
         <div>
           虚拟时钟：<span ref={clockLabelRef}>0.0</span> s
         </div>
+        {entry.componentKey === 'volume-raymarch-test' && (
+          <div>
+            体积质量档：<span ref={qualityLabelRef}>—</span>
+          </div>
+        )}
         {entry.dataSource && (
           <div className="mt-1 max-w-64 text-gray-400">来源：{entry.dataSource}</div>
         )}
