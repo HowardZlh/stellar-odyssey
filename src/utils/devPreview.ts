@@ -18,6 +18,10 @@ import {
   FALLBACK_STAR_PARAMS,
   granulationCellScale,
 } from '@/utils/starPhysics';
+import {
+  BETELGEUSE_SH_AMPLITUDE_DEFAULT,
+  BETELGEUSE_SH_EVOLVE_SPEED_DEFAULT,
+} from '@/utils/stellarNearView';
 
 /** 单个天体细节组件可声明的最大调试滑杆数（§R4-1：≤8 个） */
 export const MAX_PREVIEW_PARAMS = 8;
@@ -114,17 +118,33 @@ export interface StellarPreviewConfig {
   convection: number;
   /** 色温梯度边缘偏红强度（与主场景消费组件同值） */
   rednessStrength: number;
+  /**
+   * 低阶球谐非对称巨对流胞幅度（R4-18 参宿四专属，与主场景同值；
+   * 其余恒星 0 = 关闭，均匀颗粒观感区分）
+   */
+  shAmplitude: number;
 }
 
 /** 预览 bodyId → 恒星配置（组件层据此挂载 StellarSurface） */
 export const STELLAR_PREVIEW_CONFIGS: ReadonlyMap<string, StellarPreviewConfig> =
   new Map([
-    ['betelgeuse', { starKey: 'betelgeuse', convection: 0.7, rednessStrength: 0.6 }],
-    ['rigel', { starKey: 'rigel', convection: 0.35, rednessStrength: 0 }],
-    ['sirius', { starKey: 'siriusA', convection: 0.18, rednessStrength: 0 }],
-    ['sirius-b', { starKey: 'siriusB', convection: 0.12, rednessStrength: 0 }],
-    ['delta-cephei', { starKey: 'deltaCephei', convection: 0.5, rednessStrength: 0.3 }],
-    ['wr-124', { starKey: 'wr124', convection: 0.45, rednessStrength: 0 }],
+    [
+      'betelgeuse',
+      {
+        starKey: 'betelgeuse',
+        convection: 0.7,
+        rednessStrength: 0.6,
+        shAmplitude: BETELGEUSE_SH_AMPLITUDE_DEFAULT,
+      },
+    ],
+    ['rigel', { starKey: 'rigel', convection: 0.35, rednessStrength: 0, shAmplitude: 0 }],
+    ['sirius', { starKey: 'siriusA', convection: 0.18, rednessStrength: 0, shAmplitude: 0 }],
+    ['sirius-b', { starKey: 'siriusB', convection: 0.12, rednessStrength: 0, shAmplitude: 0 }],
+    [
+      'delta-cephei',
+      { starKey: 'deltaCephei', convection: 0.5, rednessStrength: 0.3, shAmplitude: 0 },
+    ],
+    ['wr-124', { starKey: 'wr124', convection: 0.45, rednessStrength: 0, shAmplitude: 0 }],
   ]);
 
 /** 按预览 bodyId 查恒星配置（非恒星条目返回 null） */
@@ -141,29 +161,49 @@ function makeStellarEntry(bodyId: string, title: string, dataSource: string): Pr
     throw new RangeError(`恒星预览条目 ${bodyId} 缺少 STELLAR_PREVIEW_CONFIGS 配置`);
   }
   const star = FALLBACK_STAR_PARAMS[config.starKey];
+  const params: PreviewParam[] = [
+    {
+      key: 'teffK',
+      label: '有效温度 Teff（K）',
+      min: BLACKBODY_TEFF_MIN_K,
+      max: BLACKBODY_TEFF_MAX_K,
+      default: star.teffK,
+      step: 50,
+    },
+    {
+      key: 'cellScale',
+      label: '对流噪声频率',
+      min: 0.5,
+      max: 14,
+      default: granulationCellScale(star.radiusRsun),
+    },
+    { key: 'timeScale', label: '时间流速', min: 0, max: 4, default: 1 },
+  ];
+  // R4-18 参宿四专属滑杆：球谐幅度 / 演化速度（§R4-18 第 3 条指定两件）
+  if (bodyId === 'betelgeuse') {
+    params.push(
+      {
+        key: 'shAmplitude',
+        label: '球谐斑块幅度',
+        min: 0,
+        max: 1,
+        default: BETELGEUSE_SH_AMPLITUDE_DEFAULT,
+      },
+      {
+        key: 'shSpeed',
+        label: '球谐演化速度',
+        min: 0,
+        max: 6,
+        default: BETELGEUSE_SH_EVOLVE_SPEED_DEFAULT,
+      },
+    );
+  }
   return {
     bodyId,
     title,
     componentKey: 'stellar-surface',
     cameraDistance: 3.2,
-    params: [
-      {
-        key: 'teffK',
-        label: '有效温度 Teff（K）',
-        min: BLACKBODY_TEFF_MIN_K,
-        max: BLACKBODY_TEFF_MAX_K,
-        default: star.teffK,
-        step: 50,
-      },
-      {
-        key: 'cellScale',
-        label: '对流噪声频率',
-        min: 0.5,
-        max: 14,
-        default: granulationCellScale(star.radiusRsun),
-      },
-      { key: 'timeScale', label: '时间流速', min: 0, max: 4, default: 1 },
-    ],
+    params,
     dataSource,
   };
 }

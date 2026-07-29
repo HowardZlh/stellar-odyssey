@@ -138,6 +138,9 @@ function StellarSurfacePreview({
       mat.uniforms.uTime.value = virtualTimeRef.current;
       mat.uniforms.uOpacity.value = 1;
       mat.uniforms.uCellScale.value = values.cellScale ?? defaults.cellScale;
+      // R4-18 参宿四球谐滑杆（其余恒星条目无此滑杆，回落配置默认值）
+      mat.uniforms.uShAmp.value = values.shAmplitude ?? config.shAmplitude;
+      mat.uniforms.uShSpeed.value = values.shSpeed ?? 1;
       // Teff 覆写：值变化时重算黑体基色（sRGB → 线性，复用 Color 实例）
       const teff = values.teffK ?? defaults.teffK;
       if (teff !== lastTeffRef.current) {
@@ -174,6 +177,7 @@ function StellarSurfacePreview({
         cellScale={defaults.cellScale}
         convection={config.convection}
         rednessStrength={config.rednessStrength}
+        shAmplitude={config.shAmplitude}
       />
       {/* 外层弥散气体壳（黑体默认色，观感与主场景恒星组件一致） */}
       <mesh>

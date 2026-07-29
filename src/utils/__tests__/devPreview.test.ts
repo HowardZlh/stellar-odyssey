@@ -75,10 +75,30 @@ describe('恒星预览条目组（R4-6：6 类恒星）', () => {
     }
   });
 
-  it('每条目滑杆为 §R4-6 指定三件：Teff 覆写/噪声频率/时间流速', () => {
+  it('每条目滑杆为 §R4-6 指定三件：Teff 覆写/噪声频率/时间流速（参宿四另加 R4-18 两件）', () => {
     for (const id of STELLAR_IDS) {
       const keys = previewEntryForBody(id)!.params.map((p) => p.key);
-      expect(keys).toEqual(['teffK', 'cellScale', 'timeScale']);
+      if (id === 'betelgeuse') {
+        // R4-18：参宿四专属滑杆——球谐幅度/演化速度
+        expect(keys).toEqual(['teffK', 'cellScale', 'timeScale', 'shAmplitude', 'shSpeed']);
+      } else {
+        expect(keys).toEqual(['teffK', 'cellScale', 'timeScale']);
+      }
+    }
+  });
+
+  it('R4-18：仅参宿四 shAmplitude 配置非零（其余恒星均匀颗粒观感区分）', () => {
+    for (const id of STELLAR_IDS) {
+      const config = stellarPreviewConfigForBody(id)!;
+      if (id === 'betelgeuse') {
+        expect(config.shAmplitude).toBeGreaterThan(0);
+        expect(config.shAmplitude).toBeLessThanOrEqual(1);
+        // 滑杆默认值与配置同源
+        const amp = previewEntryForBody(id)!.params.find((p) => p.key === 'shAmplitude')!;
+        expect(amp.default).toBe(config.shAmplitude);
+      } else {
+        expect(config.shAmplitude).toBe(0);
+      }
     }
   });
 
