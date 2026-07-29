@@ -75,12 +75,15 @@ describe('恒星预览条目组（R4-6：6 类恒星）', () => {
     }
   });
 
-  it('每条目滑杆为 §R4-6 指定三件：Teff 覆写/噪声频率/时间流速（参宿四另加 R4-18 两件）', () => {
+  it('每条目滑杆为 §R4-6 指定三件：Teff 覆写/噪声频率/时间流速（参宿四另加 R4-18 两件；WR 124 另加 R4-20 两件）', () => {
     for (const id of STELLAR_IDS) {
       const keys = previewEntryForBody(id)!.params.map((p) => p.key);
       if (id === 'betelgeuse') {
         // R4-18：参宿四专属滑杆——球谐幅度/演化速度
         expect(keys).toEqual(['teffK', 'cellScale', 'timeScale', 'shAmplitude', 'shSpeed']);
+      } else if (id === 'wr-124') {
+        // R4-20：WR 124 专属滑杆——抛射壳密度/径向膨胀幅度
+        expect(keys).toEqual(['teffK', 'cellScale', 'timeScale', 'density', 'expandAmp']);
       } else {
         expect(keys).toEqual(['teffK', 'cellScale', 'timeScale']);
       }

@@ -55,13 +55,17 @@ import {
   M57_SHELL_RADII,
   M57_TEXTURE_SIZE,
   M57_VOLUME_ID,
+  WR124_TEXTURE_SIZE,
+  WR124_VOLUME_ID,
   makeCrabSampler,
   makeHorseheadSampler,
   makeM42Sampler,
   makeM57Sampler,
+  makeWr124Sampler,
   trapeziumStarBoxPositions,
   type NebulaDualSampler,
 } from '@/utils/nebulaVolume';
+import { nebulaExpansionScale } from '@/utils/specialBodies';
 import { blackbodyRGB } from '@/utils/starPhysics';
 
 /** 体积包围盒边长系数（× visualRadiusLy 场景尺寸，位姿对齐登记见文件头） */
@@ -533,6 +537,10 @@ export interface NebulaVolumeSceneParams {
   readonly weightOuterR?: number;
   /** 椭球归一化逐轴倒数（缺省 = (1,1,1) 欧氏距离） */
   readonly weightInvRadii?: readonly [number, number, number];
+  /** R4-20 径向膨胀幅度（缺省 0 = 关闭，既有星云零回退） */
+  readonly expandAmp?: number;
+  /** R4-20 径向膨胀周期（秒，缺省 80） */
+  readonly expandPeriodSec?: number;
 }
 
 /** 星云体积层通用配置（NebulaVolumeLayer / 预览页共用） */
@@ -602,5 +610,139 @@ export function horseheadVolumeLayerConfig(): NebulaVolumeLayerConfig {
     stars: [],
     starTint: [255, 255, 255],
     logTag: 'R4-15 马头',
+  };
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+ * WR 124 抛射壳主场景接入配置（R4-20，IMPROVEMENT_REQUIREMENTS_4 §R4-20）
+ *
+ * 接入模式与 R4-8/R4-14/R4-15/R4-16 完全同构（volume 池容量 1——与
+ * M42/M57/马头/蟹状巡游切换时 LRU 逐出）；差异仅密度场（64³ 小型层）、
+ * 径向膨胀参数与配置。
+ *
+ * ── 位姿尺度登记 ─────────────────────────────────────────────────────────
+ * 包围盒边长 = 视觉尺寸 × 6.0：壳中面（归一化域 0.6）折算世界半径 =
+ * 0.6 × 3.0 = 1.8 × 视觉半径，与既有抛射壳 mesh（半径 1.9× 视觉半径、
+ * 膨胀至 ~2.17×）尺度衔接；膨胀满幅（×1.14）时壳外缘（归一化 ~0.98）
+ * 仍在密度域内（早退门约束，纹理边缘零密度无切边）。
+ *
+ * ── 膨胀登记（§R4-20 第 1 条）───────────────────────────────────────────
+ * 幅度 0.14 / 周期 80 s 与既有壳 mesh 动画 nebulaExpansionScale(t,80,0.14)
+ * 同参（体积接管后观感节奏一致，交叉淡出无跳变）；shader 采样域齐次缩放
+ * = v ∝ r 均匀膨胀流近似（Hubble 型抛射流场；真实 M1-67 膨胀 ~46 km/s
+ * 的循环重放属艺术化加速，沿用既有登记）。
+ *
+ * ── 色彩登记（附录 A §4）──────────────────────────────────────────────────
+ * M1-67 为 Hα/[NII] 发射主导（红）：weightBias = 1 恒取 colorHa 红档
+ * （#cf5643，与既有壳 mesh #c8a8d8 相比向 Hα 观测色修正并登记）；
+ * colorOIII 无效果（权重恒 1），保留接口占位登记（马头先例）。
+ *
+ * ── 深度关系登记 ─────────────────────────────────────────────────────────
+ * 恒星本体/光晕/星风为主场景发射体，绘制先于体积合成（renderOrder 0 <
+ * VOLUME_RENDER_ORDER），被按整盒透射率压暗——以 `wr124CoreBoostFactor`
+ * 对光晕 sprite 透射补偿（蟹状 crabCoreBoostFactor 先例）；体积无内嵌
+ * 星点 sprite（中心为真实 StellarSurface shader 球，非 sprite 点源登记）。
+ * ════════════════════════════════════════════════════════════════════════ */
+
+/** WR 124 体积包围盒边长系数（× visualRadiusLy 场景尺寸，登记见上） */
+export const WR124_VOLUME_BOX_FACTOR = 6.0;
+
+/** 径向膨胀幅度（与既有壳 mesh nebulaExpansionScale 同参，登记见上） */
+export const WR124_EXPAND_AMP = 0.14;
+
+/** 径向膨胀周期（秒） */
+export const WR124_EXPAND_PERIOD_SEC = 80;
+
+/** 主场景 WR 124 体积层默认参数（色彩/膨胀登记见上；步数为自适应基准） */
+export const WR124_SCENE_VOLUME_PARAMS = {
+  /** 基准步进数（64³ 小型壳层：48 步足够无分层伪影） */
+  baseSteps: 48,
+  /** 发射密度倍率（团块峰值 ~1、泡沫谷底 ~0.18 → 目验调参恢复亮度） */
+  densityScale: 2.2,
+  /** 尘埃吸收倍率（吸收通道恒零，值无效果——保持 0 登记） */
+  dustStrength: 0,
+  /** 双色权重偏置（+1 恒取 Hα 档：M1-67 红色发射壳，登记见上） */
+  weightBias: 1,
+  /** 输出亮度（主场景 Bloom 联调） */
+  intensity: 1.15,
+  /** Hα/[NII] 发射壳自然色近似：红 */
+  colorHa: '#cf5643',
+  /** OIII 档无效果（weightBias=1 恒取 Hα；接口占位登记） */
+  colorOIII: '#8fb3a8',
+  /** 径向膨胀（uTime 驱动，shader 采样域齐次缩放） */
+  expandAmp: WR124_EXPAND_AMP,
+  expandPeriodSec: WR124_EXPAND_PERIOD_SEC,
+} as const;
+
+/**
+ * WR 124 体积层细节规格（useDetailLayer 入参；调用方 useMemo 稳定）
+ *
+ * 阈值与 R2-7/R4-18 近观层同源同值（近观点缀与体积同时机激活）；
+ * 预算 = 64³ RG 双通道纹理 512 KB（§R4-20 小型体积层）。
+ */
+export function wr124VolumeDetailLayerSpec(): DetailLayerSpec {
+  const volumeTexBytes = volumeTextureGpuBytes(WR124_TEXTURE_SIZE, 2, 1);
+  return {
+    bodyId: WR124_VOLUME_ID,
+    kind: 'volume',
+    enterDistanceUnits: nearViewEnterDistanceUnits(WR124_VOLUME_ID),
+    exitDistanceUnits: nearViewExitDistanceUnits(WR124_VOLUME_ID),
+    budget: {
+      volumeTexBytes,
+      gpuBytesEstimate: estimateGpuBytes({ volumeTexBytes }),
+    },
+  };
+}
+
+/** WR 124 体积包围盒世界边长（场景单位） */
+export function wr124VolumeBoxEdgeUnits(sizeUnits: number): number {
+  if (!Number.isFinite(sizeUnits) || sizeUnits <= 0) {
+    throw new RangeError(`星云视觉尺寸必须为正有限数，收到 ${sizeUnits}`);
+  }
+  return sizeUnits * WR124_VOLUME_BOX_FACTOR;
+}
+
+/**
+ * 既有抛射壳 mesh 交叉淡出系数：1 − 体积权重
+ *
+ * 体积淡入至满时壳 mesh 完全隐去（体积团块泡沫接管），退出反向恢复；
+ * vol01 = 0 时恒 1（现状行为零回退）。
+ */
+export function wr124ShellMeshFactor(vol01: number): number {
+  return 1 - clamp01(vol01);
+}
+
+/**
+ * 光晕 sprite 透射补偿系数（深度关系登记见文件段头）
+ *
+ * 体积合成按整盒透射率压暗主场景发射体；对恒星光晕按体积淡入权重
+ * 补偿增亮（×(1 + 0.35·vol01)，壳层内腔近空、透射压暗弱于蟹状 →
+ * 系数低于 crabCoreBoostFactor 的 0.6 档）。vol01 = 0 时恒 1（零回退）。
+ */
+export function wr124CoreBoostFactor(vol01: number): number {
+  return 1 + 0.35 * clamp01(vol01);
+}
+
+/**
+ * WR 124 径向膨胀缩放 CPU 镜像（NebulaVolumeMaterial GLSL 同式；
+ * 单测据此校验 shader 公式与既有壳 mesh 动画同参同值）
+ */
+export function wr124VolumeExpansionScale(tSec: number): number {
+  return nebulaExpansionScale(tSec, WR124_EXPAND_PERIOD_SEC, WR124_EXPAND_AMP);
+}
+
+/** WR 124 体积层通用配置（团块泡沫抛射壳；无内嵌星点登记见文件段头） */
+export function wr124VolumeLayerConfig(): NebulaVolumeLayerConfig {
+  return {
+    volumeId: WR124_VOLUME_ID,
+    textureSize: WR124_TEXTURE_SIZE,
+    makeSampler: () => makeWr124Sampler(),
+    params: {
+      ...WR124_SCENE_VOLUME_PARAMS,
+      core: [0, 0, 0],
+    },
+    stars: [],
+    starTint: [255, 255, 255],
+    logTag: 'R4-20 WR124',
   };
 }
