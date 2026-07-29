@@ -105,6 +105,13 @@ export const SPECIAL_VIEW_DISTANCE_FLOOR_SUN_RELATIVE = 30;
 export const VOYAGER_VIEW_DISTANCE_UNITS = 40;
 
 /**
+ * 河外特殊天体（extragalactic 定位模式）的等效观察半径（场景单位）：
+ * 观察距离 = viewDistanceForRadius(该值)。R4-21 起导出供
+ * utils/quasarNearView 细节层阈值同源换算（禁止两套参数）。
+ */
+export const EXTRAGALACTIC_VIEW_RADIUS_UNITS = 300;
+
+/**
  * 太阳系外围球壳结构的飞往/跟随目标解析（R2-1 §1.1-B）
  *
  * 修复"点飞往后无运镜却显示跟随中"的假跟随死锁：日球层顶/奥尔特云
@@ -260,7 +267,7 @@ function specialBodyFocusTarget(body: SpecialBodyData, simDays: number): FocusTa
     const d = cosmicDistanceToSceneUnits(body.realDistanceLy);
     return {
       position: { x: body.direction.x * d, y: body.direction.y * d, z: body.direction.z * d },
-      viewDistanceUnits: viewDistanceForRadius(300),
+      viewDistanceUnits: viewDistanceForRadius(EXTRAGALACTIC_VIEW_RADIUS_UNITS),
     };
   }
   const sizeUnits = body.visualRadiusLy * SCENE_UNITS_PER_LY;

@@ -547,6 +547,30 @@ const M13_ENTRY: PreviewEntry = {
     'Harris (1996, AJ 112, 1487; 2010 版) 球状星团目录 NGC 6205（核半径 0.62′/潮汐半径 21.01′/浓度 c=1.53/距离 7.1 kpc，m13-profile.json 烘焙产物）；King (1962/1966) 三维密度解析去投影式逆变换采样（64 点数值反查表，半质量半径 ≈0.121 r_t）；HR 颜色两档近似登记：老年红黄星族 90%（Teff 3.9–5.8 kK，u² 偏冷端）+ 蓝离散星/水平支蓝端 10%（7.5–10.5 kK）→ blackbodyRGB（R4-6 复用）',
 };
 
+/**
+ * 类星体 3C 273 近观（R4-21）：吸积盘（R4-12 盘着色非透镜简化版——温度
+ * 剖面黑体色 + 多普勒束流 δ³ + 引力红移，透镜 raymarch 不启用登记）+
+ * BLR 弥散辉光过渡层 + 尘埃环面粒子环（小型体积/粒子环二选一取粒子环，
+ * 登记见 utils/quasarNearView 文件头）+ 双向相对论喷流（既有复用）。
+ *
+ * 滑杆 4 件（≤8 上限）：束流强度（δ 指数：0 关闭、1 物理档 δ³、2 夸大）/
+ * 盘亮度/尘埃环面亮度/时间流速（盘差速条纹 + 光变闪烁联动虚拟时钟）。
+ */
+const QUASAR_ENTRY: PreviewEntry = {
+  bodyId: 'quasar-3c273',
+  title: '类星体 3C 273（近观吸积盘 + BLR 辉光 + 尘埃环面 + 喷流）',
+  componentKey: 'quasar-near-view',
+  cameraDistance: 6,
+  params: [
+    { key: 'beamStrength', label: '束流强度', min: 0, max: 2, default: 1 },
+    { key: 'diskGain', label: '盘亮度', min: 0.1, max: 3, default: 1 },
+    { key: 'torusGain', label: '尘埃环面亮度', min: 0, max: 2, default: 1 },
+    { key: 'timeScale', label: '时间流速', min: 0, max: 4, default: 1 },
+  ],
+  dataSource:
+    '吸积盘 T∝r^(−3/4)（Novikov-Thorne/Shakura-Sunyaev 薄盘近似）+ 多普勒束流 δ³ + 引力红移 √(1−r_s/r)（R4-12 复用；透镜 raymarch 不启用登记）；峰值色温压标 12,000 K（3C 273 真实"大蓝包"~10⁴–10⁵ K）；尘埃环面取 AGN 统一模型（Urry & Padovani 1995）粒子环近似（暗红棕艺术化档）；盘/BLR/环面尺度比例为可视化档（真实跨 3–5 量级）',
+};
+
 /** 体积类预览条目的 componentKey 集（HUD 质量档行按此显隐） */
 export const VOLUME_PREVIEW_COMPONENT_KEYS: ReadonlySet<string> = new Set([
   'volume-raymarch-test',
@@ -582,6 +606,7 @@ export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
     BLACKHOLE_LENSED_ENTRY,
     PLEIADES_ENTRY,
     M13_ENTRY,
+    QUASAR_ENTRY,
   ];
   const map = new Map<string, PreviewEntry>();
   for (const e of entries) {
