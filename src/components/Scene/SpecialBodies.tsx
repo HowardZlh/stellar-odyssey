@@ -48,6 +48,15 @@ import {
 import { estimateGpuBytes, type DetailLayerSpec } from "@/utils/detailLayer";
 import { useDetailLayer } from "@/hooks/useDetailLayer";
 import {
+  CRAB_PWN_COLOR,
+  CRAB_PWN_JET_LENGTH_FACTOR,
+  CRAB_PWN_TORUS_RADIUS_FACTOR,
+  crabBaseLayerFactor,
+  crabCoreBoostFactor,
+  crabNearLayerFactor,
+  crabVolumeBoxEdgeUnits,
+  crabVolumeDetailLayerSpec,
+  crabVolumeLayerConfig,
   horseheadCurtainFactor,
   horseheadNearLayerFactor,
   horseheadVolumeBoxEdgeUnits,
@@ -64,7 +73,14 @@ import {
   orionVolumeDetailLayerSpec,
   orionVolumeLayerConfig,
 } from "@/utils/nebulaVolumeScene";
+import {
+  CRAB_TORUS_INNER_RHO01,
+  CRAB_TORUS_INNER_SIGMA,
+  CRAB_TORUS_RING_RHO01,
+  CRAB_TORUS_RING_SIGMA,
+} from "@/utils/nebulaVolume";
 import { NebulaVolumeLayer } from "@/components/Scene/NebulaVolumeLayer";
+import { RelativisticJet } from "@/components/Scene/ExtragalacticObjects";
 import {
   blackHoleLensedConfig,
   blackHoleLensingDetailLayerSpec,
@@ -1509,6 +1525,18 @@ function SiriusNearOrbits({
 /**
  * 蟹状星云脉冲星 + 超新星遗迹（同一对象联动，需求 3.1.5）：
  * 丝状膨胀星云 + 中心中子星 + 双极射束旋转扫描（灯塔效应）
+ *
+ * R4-16：近观挂接丝状体积模型（useDetailLayer volume 池，容量 1，与
+ * M42/M57/马头同池——巡游切换时 LRU 逐出）——跟随/飞往且距离达阈值
+ * （与 R2-7 近观层同源同值）时挂载 NebulaVolumeLayer（丝状网络 + OIII
+ * 弥散密度场 128³）；遗迹壳 billboard（crabBaseLayerFactor）与 R2-7
+ * +16 丝状云团（crabNearLayerFactor）随体积淡入交叉淡出（0.5s），退出
+ * 反向恢复、体积纹理随卸载 dispose。射束扫描/脉冲节奏保留（节奏函数
+ * 零改动），射束/脉冲闪烁按 crabCoreBoostFactor 补偿体积透射压暗
+ * （深度关系登记见 nebulaVolumeScene.ts 蟹状段头）。近观同时挂载 PWN
+ * 内核（CrabPwnCore：Chandra 形态参考赤道环面 shader 发射体 + 极向
+ * 双喷流复用 RelativisticJet 参数化缩小），不随体积淡出——蓝白同步
+ * 辐射内核为体积双色（红橙丝/青弥散）之外的第三层结构。
  */
 function PulsarRemnant({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
@@ -1611,15 +1639,29 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
   const getWeight = useGalacticPlacement(body, groupRef);
   // R2-7 近观门控：跟随时挂载丝状体积云团层，离开即释放
   const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
+  // R4-16 体积层门控（volume 池容量 1，release-on-exit：退出淡出即卸载）
+  const volumeSpec = useMemo(() => crabVolumeDetailLayerSpec(), []);
+  const volumeConfig = useMemo(() => crabVolumeLayerConfig(), []);
+  const { active: volumeActive, opacity01: getVolumeGate01 } = useDetailLayer(
+    volumeSpec,
+    { objectRef: groupRef },
+  );
+  // 体积视觉淡入权重（NebulaVolumeLayer 每帧写入：门控 × 烘焙就绪；
+  // 卸载复位 0——遗迹壳 billboard/丝状云团交叉淡出的唯一消费源）
+  const volumeFadeRef = useRef(0);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
     const near01 = getNear01();
+    const vol01 = volumeFadeRef.current;
     const t = clock.elapsedTime;
+    // 射束/脉冲透射补偿（R4-16：体积合成压暗主场景发射体，登记）
+    const boost = crabCoreBoostFactor(vol01);
     beamMaterial.uniforms.uTime.value = t;
     // 近观时射束增亮（扫描形态更清晰，R2-7）
-    beamMaterial.uniforms.uOpacity.value = 0.5 * weight * (1 + 0.6 * near01);
+    beamMaterial.uniforms.uOpacity.value =
+      0.5 * weight * (1 + 0.6 * near01) * boost;
     // 射束旋转扫描（可视化降频周期，已登记）
     if (beamsRef.current) {
       beamsRef.current.rotation.y = pulsarBeamAngle(
@@ -1627,18 +1669,23 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
         PULSAR_VISUAL_SPIN_PERIOD_SEC,
       );
     }
-    // 射束扫过视线方向 → 周期性脉冲闪烁
+    // 射束扫过视线方向 → 周期性脉冲闪烁（节奏函数零改动，R4-16 不回退）
     if (flashRef.current) {
-      (flashRef.current.material as THREE.SpriteMaterial).opacity =
-        pulsarPulseIntensity(t, PULSAR_VISUAL_SPIN_PERIOD_SEC) * 0.95 * weight;
+      (flashRef.current.material as THREE.SpriteMaterial).opacity = Math.min(
+        1,
+        pulsarPulseIntensity(t, PULSAR_VISUAL_SPIN_PERIOD_SEC) *
+          0.95 *
+          weight *
+          boost,
+      );
     }
     // 遗迹星云缓慢膨胀（联动蟹状星云）；近观时单张光晕减淡交叉过渡到
-    // 体积云团（R2-7"无单张圆形光晕"）
+    // 体积云团（R2-7"无单张圆形光晕"）；体积淡入时完全隐去（R4-16）
     if (nebulaRef.current) {
       const s = size * 2.6 * nebulaExpansionScale(t, 90, 0.1);
       nebulaRef.current.scale.set(s, s, 1);
       (nebulaRef.current.material as THREE.SpriteMaterial).opacity =
-        0.4 * weight * (1 - 0.45 * near01);
+        0.4 * weight * crabBaseLayerFactor(near01, vol01);
     }
   });
 
@@ -1653,7 +1700,8 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
           blending={THREE.AdditiveBlending}
         />
       </sprite>
-      {/* R2-7 近观丝状体积云团（16 sprite，遗迹壳层立体感） */}
+      {/* R2-7 近观丝状体积云团（16 sprite，遗迹壳层立体感；
+          R4-16：体积淡入时交叉淡出——丝状云团移交体积丝网） */}
       {nearActive && (
         <NebulaPuffCloud
           seed={1054}
@@ -1661,6 +1709,29 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
           radiusUnits={size * 1.2}
           flattenY={0.85}
           textures={filamentTextures}
+          getOpacity={() =>
+            getWeight() * crabNearLayerFactor(getNear01(), volumeFadeRef.current)
+          }
+        />
+      )}
+      {/* R4-16 近观丝状体积层（128³ RG raymarch：红橙丝网 + OIII 青弥散；
+          detailLayer volume 池门控，卸载即 dispose 纹理/RT/材质） */}
+      {volumeActive && (
+        <NebulaVolumeLayer
+          groupRef={groupRef}
+          boxEdgeUnits={crabVolumeBoxEdgeUnits(size)}
+          config={volumeConfig}
+          getWeight={getWeight}
+          getGate01={getVolumeGate01}
+          fadeRef={volumeFadeRef}
+        />
+      )}
+      {/* R4-16 PWN 内核（Chandra 形态参考）：赤道环面 shader 发射体 +
+          极向双喷流（复用 RelativisticJet 参数化缩小）——近观激活、
+          不随体积淡出（蓝白同步辐射第三层结构） */}
+      {nearActive && (
+        <CrabPwnCore
+          sizeUnits={size}
           getOpacity={() => getWeight() * getNear01()}
         />
       )}
@@ -1699,6 +1770,94 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
         />
       </sprite>
       <BodyLabel body={body} sizeUnits={size} />
+    </group>
+  );
+}
+
+/**
+ * 蟹状 PWN 内核（R4-16 §16.1 第 2 条，Chandra/Weisskopf et al. 2000
+ * 形态参考）：赤道环面 shader 发射体（蓝白同步辐射色，径向剖面 =
+ * `crabTorusIntensity` 的 GLSL 镜像——主环 + 内环 + 中心弱辉；环面
+ * 平面增强项由平面几何承载 height01=0，登记见 nebulaVolume.ts）+
+ * 极向双喷流（复用 `RelativisticJet` 锥体 shader 参数化缩小尺度，
+ * 复用登记；方向 = ±y 自转轴，与射束进动轴一致）。
+ *
+ * 环面细纹随时间缓慢外流（Chandra 观测 wisp 移动的观感示意）；尺度
+ * 夸大登记见 nebulaVolumeScene.ts 蟹状段头（环面半径 0.30× 视觉半径）。
+ */
+function CrabPwnCore({
+  sizeUnits,
+  getOpacity,
+}: {
+  sizeUnits: number;
+  /** 读取本帧不透明度权重（层级权重 × 近观权重） */
+  getOpacity: () => number;
+}): JSX.Element {
+  const torusMaterial = useMemo(() => {
+    const c = new THREE.Color(CRAB_PWN_COLOR);
+    return new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      uniforms: {
+        uTime: { value: 0 },
+        uOpacity: { value: 0 },
+        uColor: { value: new THREE.Vector3(c.r, c.g, c.b) },
+      },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uTime;
+        uniform float uOpacity;
+        uniform vec3 uColor;
+        varying vec2 vUv;
+        void main() {
+          float rho = length(vUv * 2.0 - 1.0);
+          if (rho > 1.0) discard;
+          // crabTorusIntensity 径向部分 GLSL 镜像（单点同源常数经模板插值）
+          float ring = exp(-pow((rho - ${CRAB_TORUS_RING_RHO01.toFixed(4)}) / ${CRAB_TORUS_RING_SIGMA.toFixed(4)}, 2.0));
+          float inner = 0.75 * exp(-pow((rho - ${CRAB_TORUS_INNER_RHO01.toFixed(4)}) / ${CRAB_TORUS_INNER_SIGMA.toFixed(4)}, 2.0));
+          float glow = 0.22 * exp(-pow(rho / 0.5, 2.0));
+          // wisp 细纹缓慢外流（Chandra wisp 移动观感示意）
+          float wisp = 0.85 + 0.15 * sin(rho * 24.0 - uTime * 1.8);
+          float a = (ring + inner + glow) * wisp * uOpacity;
+          gl_FragColor = vec4(uColor * (0.8 + 0.6 * ring), a);
+        }
+      `,
+    });
+  }, []);
+  useEffect(() => () => torusMaterial.dispose(), [torusMaterial]);
+
+  const jetDirection = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+
+  useFrame(({ clock }) => {
+    torusMaterial.uniforms.uTime.value = clock.elapsedTime;
+    // 0.68：目验调参——保蓝白色阶不被 Bloom 洗成纯白
+    torusMaterial.uniforms.uOpacity.value = 0.68 * getOpacity();
+  });
+
+  const torusEdge = sizeUnits * CRAB_PWN_TORUS_RADIUS_FACTOR * 2;
+  return (
+    <group>
+      {/* 赤道环面（x-z 平面，⊥ 自转轴 y；蓝白同步辐射色） */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} material={torusMaterial}>
+        <planeGeometry args={[torusEdge, torusEdge]} />
+      </mesh>
+      {/* 极向双喷流（RelativisticJet 参数化复用：近观权重注入 + 缩小尺度） */}
+      <RelativisticJet
+        direction={jetDirection}
+        lengthUnits={sizeUnits * CRAB_PWN_JET_LENGTH_FACTOR}
+        color={CRAB_PWN_COLOR}
+        bilateral
+        baseOpacity={0.85}
+        getWeight={getOpacity}
+      />
     </group>
   );
 }

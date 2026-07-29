@@ -36,12 +36,24 @@ interface JetProps {
   /** 是否双向（类星体双向 / M87 单侧可见） */
   bilateral: boolean;
   baseOpacity: number;
+  /** 可见权重读取覆写（默认河外 LOD fadeWeight；R4-16 蟹状 PWN 极向
+   * 双喷流复用登记——注入 L3 近观权重、参数化缩小尺度，锥体 shader 不变） */
+  getWeight?: () => number;
 }
 
 /**
  * 相对论喷流：细长锥体 + 沿喷流方向循环流动的辉光节点（流动动画）
+ *
+ * R4-16 起导出复用（蟹状 PWN 极向双喷流，SpecialBodies.tsx 消费）。
  */
-function RelativisticJet({ direction, lengthUnits, color, bilateral, baseOpacity }: JetProps): JSX.Element {
+export function RelativisticJet({
+  direction,
+  lengthUnits,
+  color,
+  bilateral,
+  baseOpacity,
+  getWeight,
+}: JetProps): JSX.Element {
   const nodesRef = useRef<THREE.Group>(null);
   const texture = useMemo(() => new THREE.CanvasTexture(createGlowSpriteCanvas(color, 64)), [color]);
   useEffect(() => () => texture.dispose(), [texture]);
@@ -100,7 +112,9 @@ function RelativisticJet({ direction, lengthUnits, color, bilateral, baseOpacity
   }, [direction]);
 
   useFrame(({ clock }) => {
-    const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
+    const weight = getWeight
+      ? getWeight()
+      : fadeWeight(useSimulationStore.getState().continuousLevel);
     jetMaterial.uniforms.uTime.value = clock.elapsedTime;
     jetMaterial.uniforms.uOpacity.value = baseOpacity * 0.5 * weight;
     const nodes = nodesRef.current;

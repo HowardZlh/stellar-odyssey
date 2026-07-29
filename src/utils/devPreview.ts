@@ -315,6 +315,35 @@ const HORSEHEAD_ENTRY: PreviewEntry = {
 };
 
 /**
+ * 蟹状星云 M1 丝状体积（R4-16）：128³ RG 双通道密度场分帧烘焙 +
+ * 丝状网络（12 条参数化曲线骨架沿线增密）+ OIII 青弥散 raymarch +
+ * 中心脉冲星蓝白核 sprite 内嵌
+ *
+ * 密度场：`utils/nebulaVolume.makeCrabSampler`（丝状骨架随机游走折线 +
+ * 方向场扭曲密度脊 + 椭球包络，确定性种子；吸收通道恒零）；配置：
+ * `utils/nebulaVolumeScene.crabVolumeLayerConfig`（主场景同源）。
+ * 登记：预览页仅体积层（PWN 环面/喷流为主场景 PulsarRemnant 近观
+ * 组件，形态经主场景截图验收）。滑杆 6 件（≤8 上限）：步数/密度/
+ * 双色权重/亮度 + 质量档/抖动；无尘埃滑杆（吸收通道恒零登记）。
+ */
+const CRAB_NEBULA_ENTRY: PreviewEntry = {
+  bodyId: 'crab-pulsar',
+  title: '蟹状星云 M1（丝状体积 raymarch · 曲线骨架丝网 + OIII 弥散）',
+  componentKey: 'crab-nebula-volume',
+  cameraDistance: 3.6,
+  params: [
+    { key: 'steps', label: '基准步进数', min: 16, max: 128, default: 64, step: 1 },
+    { key: 'density', label: '密度倍率', min: 0, max: 8, default: 2.6 },
+    { key: 'weightBias', label: '双色权重（−OIII/+Hα）', min: -1, max: 1, default: 0 },
+    { key: 'intensity', label: '亮度', min: 0.1, max: 4, default: 1.15 },
+    { key: 'quality', label: '质量档（0自动 1低 2中 3高）', min: 0, max: 3, default: 0, step: 1 },
+    { key: 'jitter', label: '蓝噪声抖动（0关 1开）', min: 0, max: 1, default: 1, step: 1 },
+  ],
+  dataSource:
+    'NASA/ESA Hubble 公版图像（丝状网络形态参考，程序化近似登记：12 条随机游走曲线骨架沿线增密 + 方向场扭曲，非逐丝贴合照片）；Chandra（Weisskopf et al. 2000）PWN 环面/喷流形态参考（主场景 shader 发射体，预览页仅体积层登记）；外围 Hα 红橙丝/内部 OIII 青弥散按内外分区径向近似',
+};
+
+/**
  * 星系近观多分量预览条目组（R4-10）：M31（旋涡，专属倾角/尘埃环/偏黄
  * 核球）+ LMC（不规则对照——dust/HII 新分量配额为 0，R2-8 团块分量
  * 承载，滑杆对 LMC 的 dust/HII 无可见效果属预期登记；倾角覆写生效）。
@@ -413,6 +442,7 @@ export const VOLUME_PREVIEW_COMPONENT_KEYS: ReadonlySet<string> = new Set([
   'orion-nebula-volume',
   'ring-nebula-volume',
   'horsehead-nebula-volume',
+  'crab-nebula-volume',
 ]);
 
 /**
@@ -427,6 +457,7 @@ export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
     ORION_NEBULA_ENTRY,
     RING_NEBULA_ENTRY,
     HORSEHEAD_ENTRY,
+    CRAB_NEBULA_ENTRY,
     ...GALAXY_NEAR_VIEW_ENTRIES,
     BLACKHOLE_LENSED_ENTRY,
   ];
