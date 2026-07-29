@@ -499,6 +499,28 @@ const PLEIADES_ENTRY: PreviewEntry = {
     'Gaia DR3（ESA Archive，选星判据见 pleiades.json meta：锥形检索 2.5° + 视差 7.0–7.7 mas + 自行共动，按 G 取最亮 600 颗）；B−V→Teff 取 Ballesteros (2012) 黑体近似；命名星天测 SIMBAD（Gaia 缺失的最亮 5 颗径向取簇质心距离合成，登记）；反射星云为分层 sprite 艺术化近似（蓝色散射色调）',
 };
 
+/**
+ * M13 球状星团 King 分布（R4-19）：King (1966) profile 逆变换采样（64 点
+ * 数值反查表）替代均匀分布 + HR 图两档颜色（红黄老年星族 ~90% + 蓝离散/
+ * 水平支 ~10%）→ blackbodyRGB。远观 420 粒 + 近观 +1,200 粒两级均接新
+ * 分布（总预算不变）。数据未就绪/失败显示降级占位（主场景降级为现状
+ * rand² 程序化分布，utils/m13Cluster 文件头登记）。
+ *
+ * 滑杆 2 件：粒径增益/亮度增益（帧读 getter 直达材质标量，无材质重建）。
+ */
+const M13_ENTRY: PreviewEntry = {
+  bodyId: 'm13',
+  title: 'M13 武仙座球状星团（King 分布 + HR 图颜色）',
+  componentKey: 'm13-king-cluster',
+  cameraDistance: 4,
+  params: [
+    { key: 'sizeGain', label: '粒径增益', min: 0.3, max: 3, default: 1 },
+    { key: 'brightnessGain', label: '亮度增益', min: 0.2, max: 2, default: 1 },
+  ],
+  dataSource:
+    'Harris (1996, AJ 112, 1487; 2010 版) 球状星团目录 NGC 6205（核半径 0.62′/潮汐半径 21.01′/浓度 c=1.53/距离 7.1 kpc，m13-profile.json 烘焙产物）；King (1962/1966) 三维密度解析去投影式逆变换采样（64 点数值反查表，半质量半径 ≈0.121 r_t）；HR 颜色两档近似登记：老年红黄星族 90%（Teff 3.9–5.8 kK，u² 偏冷端）+ 蓝离散星/水平支蓝端 10%（7.5–10.5 kK）→ blackbodyRGB（R4-6 复用）',
+};
+
 /** 体积类预览条目的 componentKey 集（HUD 质量档行按此显隐） */
 export const VOLUME_PREVIEW_COMPONENT_KEYS: ReadonlySet<string> = new Set([
   'volume-raymarch-test',
@@ -524,6 +546,7 @@ export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
     ...GALAXY_NEAR_VIEW_ENTRIES,
     BLACKHOLE_LENSED_ENTRY,
     PLEIADES_ENTRY,
+    M13_ENTRY,
   ];
   const map = new Map<string, PreviewEntry>();
   for (const e of entries) {

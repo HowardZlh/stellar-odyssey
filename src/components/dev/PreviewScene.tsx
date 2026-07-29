@@ -24,6 +24,7 @@ import { NebulaVolumePreview } from '@/components/dev/NebulaVolumePreview';
 import { GalaxyNearViewPreview } from '@/components/dev/GalaxyNearViewPreview';
 import { BlackHoleLensedPreview } from '@/components/dev/BlackHoleLensedPreview';
 import { PleiadesCatalogPreview } from '@/components/dev/PleiadesCatalogPreview';
+import { M13ClusterPreview } from '@/components/dev/M13ClusterPreview';
 
 /**
  * 预览场景（R4-1）：按条目 componentKey 挂载对应细节组件，注入滑杆参数值。
@@ -246,6 +247,8 @@ export function PreviewScene({
         <BlackHoleLensedPreview values={values} clockLabelRef={clockLabelRef} />
       ) : entry.componentKey === 'pleiades-catalog' ? (
         <PleiadesCatalogPreview values={values} />
+      ) : entry.componentKey === 'm13-king-cluster' ? (
+        <M13ClusterPreview values={values} />
       ) : entry.componentKey === 'galaxy-near-view' ? (
         /* key=bodyId：切换星系时强制重挂载（虚拟时钟与自转姿态重置） */
         <GalaxyNearViewPreview
