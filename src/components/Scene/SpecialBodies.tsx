@@ -96,6 +96,21 @@ import { getNebulaTexture } from "@/components/CelestialBody/nebulaTextures";
 import { stellarSphereSegments } from "@/utils/stellarSurface";
 import { blackbodyRGB, stellarSurfacePhysics } from "@/utils/starPhysics";
 import { useStarParams } from "@/hooks/useStarParams";
+import { usePleiadesCatalog } from "@/hooks/usePleiadesCatalog";
+import {
+  PLEIADES_BASE_STAR_COUNT,
+  buildPleiadesStarAttributes,
+  pleiadesCatalogDetailLayerSpec,
+  pleiadesNamedStarPlacements,
+  pleiadesReflectionNebulaLayout,
+  sortPleiadesStarsByV,
+} from "@/utils/pleiadesCatalog";
+import {
+  PleiadesCatalogPoints,
+  PleiadesNamedStars,
+  PleiadesReflectionNebula,
+  pleiadesSkyViewQuaternion,
+} from "@/components/Scene/PleiadesCluster";
 
 /**
  * 特殊天体 LOD 淡入淡出（需求 3.1.5 通用要求）：
@@ -918,8 +933,10 @@ function Cepheid({ body }: BodyProps): JSX.Element {
 }
 
 /**
- * 疏散星团（昴星团，可选需求 3.1.5）：松散分布的年轻热蓝星
- * + 蓝色反射星云（与球状星团的致密老年恒星形成对比）
+ * 疏散星团（昴星团，可选需求 3.1.5 + R4-17）：
+ * Gaia DR3 真实成员星（pleiades.json，位置/颜色/粒径数据驱动）
+ * + 命名亮星星芒 + 蓝色反射星云（与球状星团的致密老年恒星形成对比）。
+ * 星表加载失败/未就绪时降级现状程序化分布（§R4-17 降级登记）。
  */
 function OpenCluster({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
@@ -943,7 +960,34 @@ function OpenCluster({ body }: BodyProps): JSX.Element {
   );
   const nebulaRef = useRef<THREE.Sprite>(null);
 
-  const { geometry, material } = useMemo(() => {
+  // R4-17：真实星表（Gaia DR3 烘焙产物；null = 加载中/失败 → 降级现状）
+  const catalog = usePleiadesCatalog();
+  const catalogModel = useMemo(() => {
+    if (!catalog) return null;
+    const sorted = sortPleiadesStarsByV(catalog.stars);
+    const attrs = buildPleiadesStarAttributes(sorted, size);
+    const baseCount = Math.min(PLEIADES_BASE_STAR_COUNT, sorted.length);
+    const named = pleiadesNamedStarPlacements(sorted, size);
+    return {
+      // 基础星场（远景常驻）：最亮 160 颗；其余进近观 starCatalog 细节层
+      base: {
+        positions: attrs.positions.slice(0, baseCount * 3),
+        colors: attrs.colors.slice(0, baseCount * 3),
+        sizes: attrs.sizes.slice(0, baseCount),
+      },
+      near: {
+        positions: attrs.positions.slice(baseCount * 3),
+        colors: attrs.colors.slice(baseCount * 3),
+        sizes: attrs.sizes.slice(baseCount),
+      },
+      named,
+      nebula: pleiadesReflectionNebulaLayout(named, size),
+    };
+  }, [catalog, size]);
+
+  // 降级基础星场（程序化 120 粒，现状保留；真实星表就绪后不再构建）
+  const fallback = useMemo(() => {
+    if (catalogModel) return null;
     const rand = createSeededRandom(20260733);
     const count = 120;
     const positions = new Float32Array(count * 3);
@@ -978,24 +1022,38 @@ function OpenCluster({ body }: BodyProps): JSX.Element {
       sizeAttenuation: true,
     });
     return { geometry: geo, material: mat };
-  }, [size]);
+  }, [size, catalogModel]);
 
   useEffect(
     () => () => {
-      geometry.dispose();
-      material.dispose();
+      fallback?.geometry.dispose();
+      fallback?.material.dispose();
     },
-    [geometry, material],
+    [fallback],
   );
 
   const getWeight = useGalacticPlacement(body, groupRef);
-  // R2-7 近观门控：跟随时挂载近观星场与"七姊妹"亮星，离开即释放
-  const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
+  // R4-17 近观门控：starCatalog 细节层（R4-2 统一机制；阈值与 R2-7 同源），
+  // 真实星表近观层与降级近观层共用同一门控
+  const catalogSpec = useMemo(() => pleiadesCatalogDetailLayerSpec(), []);
+  const { active: nearActive, opacity01: getNear01 } = useDetailLayer(
+    catalogSpec,
+    { objectRef: groupRef },
+  );
+  const getBaseOpacity = useCallback(() => 0.95 * getWeight(), [getWeight]);
+  const getNearOpacity = useCallback(
+    () => getWeight() * getNear01(),
+    [getWeight, getNear01],
+  );
+  // 地球天空视图姿态（与预览页共用；"自地球方向看"构型与公版图像一致，登记）
+  const skyView = useMemo(() => pleiadesSkyViewQuaternion(), []);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
-    material.opacity = 0.95 * weight;
+    if (fallback) {
+      fallback.material.opacity = 0.95 * weight;
+    }
     if (nebulaRef.current) {
       // 反射星云微闪烁（星光散射）
       (nebulaRef.current.material as THREE.SpriteMaterial).opacity =
@@ -1014,9 +1072,39 @@ function OpenCluster({ body }: BodyProps): JSX.Element {
           blending={THREE.AdditiveBlending}
         />
       </sprite>
-      <points geometry={geometry} material={material} />
-      {/* R2-7 近观分级星场（+320 粒更小的暗成员星，疏散分布保持松散感） */}
-      {nearActive && (
+      {/* 基础星场：真实星表最亮 160 颗（R4-17）或降级程序化 120 粒 */}
+      {catalogModel ? (
+        <group quaternion={skyView}>
+          <PleiadesCatalogPoints
+            attributes={catalogModel.base}
+            getOpacity={getBaseOpacity}
+          />
+        </group>
+      ) : (
+        fallback && (
+          <points geometry={fallback.geometry} material={fallback.material} />
+        )
+      )}
+      {/* R4-17 近观 starCatalog 细节层：目录暗星 440 粒 + 命名亮星星芒 ×9
+          + 反射星云分层 sprite ×12（R2-7 +320 程序化增量被真实星表替代，登记） */}
+      {nearActive && catalogModel && (
+        <group quaternion={skyView}>
+          <PleiadesCatalogPoints
+            attributes={catalogModel.near}
+            getOpacity={getNearOpacity}
+          />
+          <PleiadesNamedStars
+            placements={catalogModel.named}
+            getOpacity={getNearOpacity}
+          />
+          <PleiadesReflectionNebula
+            placements={catalogModel.nebula}
+            getOpacity={getNearOpacity}
+          />
+        </group>
+      )}
+      {/* 降级近观层（现状 R2-7：+320 程序化星场 + "七姊妹"辉光 ×7，登记） */}
+      {nearActive && !catalogModel && (
         <>
           <ClusterNearStarField
             seed={20260734}
@@ -1026,12 +1114,9 @@ function OpenCluster({ body }: BodyProps): JSX.Element {
             flattenY={0.7}
             pointSizeUnits={size * 0.05}
             bluePalette
-            getOpacity={() => getWeight() * getNear01()}
+            getOpacity={getNearOpacity}
           />
-          <PleiadesSistersNear
-            sizeUnits={size}
-            getOpacity={() => getWeight() * getNear01()}
-          />
+          <PleiadesSistersNear sizeUnits={size} getOpacity={getNearOpacity} />
         </>
       )}
       {/* 点选热区 */}

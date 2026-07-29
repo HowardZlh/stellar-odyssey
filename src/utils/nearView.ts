@@ -123,7 +123,10 @@ export function nearViewGateUpdate(
 /**
  * 逐成员近观粒子增量登记（§7.1-B 粒子预算；sprites/points 合并计数）：
  * - m13-cluster：近观星场 points +1,200（中心更密的分级星场）
- * - pleiades：近观星场 points +320 + "七姊妹"亮星辉光 sprite ×7
+ * - pleiades：R4-17 真实星表近观层——Gaia 目录暗星 points +440 +
+ *   命名亮星星芒 sprite ×9 + 反射星云分层 sprite ×12 = 461
+ *   （utils/pleiadesCatalog.PLEIADES_NEAR_PARTICLE_INCREMENT 同值单测防漂移；
+ *   降级路径为现状 +320 points + 辉光 sprite ×7 = 327，取上界登记）
  * - ring-nebula：环体环向软边粒子 +200
  * - orion-nebula：体积感云团 sprite ×18
  * - crab-pulsar：丝状遗迹云团 sprite ×16
@@ -144,7 +147,7 @@ export const NEAR_VIEW_PARTICLE_INCREMENTS: Readonly<Record<string, number>> = {
   'orion-nebula': 18,
   'ring-nebula': 200,
   'horsehead-nebula': 5,
-  pleiades: 327,
+  pleiades: 461,
   'm13-cluster': 1200,
 };
 

@@ -26,7 +26,7 @@
 | R4-14 | P1 | 环状星云 M57 壳层体积模型 | M | R4-8 | ✅ |
 | R4-15 | P1 | 马头星云吸收体积（暗云 + 背景发射幕） | M | R4-8 | ✅ |
 | R4-16 | P1 | 蟹状星云丝状结构 + PWN 环面/喷流 | L | R4-8 | ✅ |
-| R4-17 | P1 | 昴星团 Gaia 真实成员星 + 反射星云 | M | R4-5, R4-2 | 🔲 |
+| R4-17 | P1 | 昴星团 Gaia 真实成员星 + 反射星云 | M | R4-5, R4-2 | ✅ |
 | R4-18 | P1 | 参宿四非对称巨对流胞 + 恒星近观日冕/衍射星芒 | M | R4-6 | 🔲 |
 | R4-19 | P2 | M13 球状星团 King 分布 + HR 图颜色 | M | R4-5 | 🔲 |
 | R4-20 | P2 | WR 124 星风抛射壳 + 脉冲星射束体积化 | M | R4-8 | 🔲 |
@@ -378,16 +378,16 @@
 
 ### 17.1 需求
 
-- 🔲 `OpenCluster`（昴星团分支）改造：消费 `public/data/pleiades.json`（R4-5）真实成员星 3D 位置（pc → 场景单位比例登记）+ B−V → `blackbodyRGB` 颜色 + 视星等 → 粒径/亮度；加载失败降级现状程序化分布（降级登记）
-- 🔲 "七姊妹" + Atlas/Pleione 等 9 颗命名亮星：真实相对位置 + 衍射星芒 sprite（复用 `proceduralTextures.ts` 既有星芒）+ 悬停/点选显示星名（复用现有标签机制，实现成本高则仅信息面板列名，二选一登记）
-- 🔲 反射星云：围绕 Merope/Maia 等亮星的蓝色反射星云——轻量方案：3–5 个椭球壳低密度蓝色体积（volume 池复用，96³ 单纹理内多壳）或分层 sprite（性能优先二选一并登记，蓝色反射色调区别于发射星云红/青）
-- 🔲 近观粒子经 `useDetailLayer({ kind:'starCatalog' })` 挂载（R4-2）；R2-7 的 +320 程序化增量粒子被真实星表替代（登记）；预览页注册 `?body=pleiades`
+- ✅ `OpenCluster`（昴星团分支）改造：消费 `public/data/pleiades.json`（R4-5）真实成员星 3D 位置（pc → 场景单位比例登记：模型半径 6 pc 映射视觉半径，`utils/pleiadesCatalog.ts` 文件头 §1）+ B−V → `blackbodyRGB` 颜色（Ballesteros 2012 B−V→Teff 近似登记）+ 视星等 → 粒径/亮度（自定义 points shader 每星粒径 + logdepthbuf）；加载失败降级现状程序化分布（降级登记：`usePleiadesCatalog` 返回 null 时基础/近观层整体回落现状 120+320+7；实现差异登记：基础星场就绪后由目录最亮 160 颗替代程序化 120 粒——远景亦真实数据驱动）
+- ✅ "七姊妹" + Atlas/Pleione 等 9 颗命名亮星：真实相对位置（产物内 4 颗按角距 <1′ 且 |ΔV|<0.35 吸附目录位置；Gaia DR3 缺失的最亮 5 颗按 SIMBAD 天球坐标 + 簇质心距离合成，径向近似登记；质心常量以 3 星最小二乘拟合登记）+ 衍射星芒 sprite（复用 `proceduralTextures.createDiffractionSpikeCanvas`）+ 悬停显示星名（二选一登记取悬停方案：小热区 + ClampedHtmlLabel 标签，中文星名昴宿一~七 + 神话译名登记）；另加"地球天空视图"姿态（北上东左纯旋转，构型对照公版图像用，登记）
+- ✅ 反射星云：围绕 Merope/Maia 等亮星的蓝色反射星云——二选一登记取**分层 sprite**（性能优先：volume 池容量 1 已被 M42/M57/马头/蟹状 L3 巡游站高频占用，昴星团插入将致连续巡游反复逐出重烘焙）：Merope/Maia/Alcyone/Electra 四宿主各 3 层嵌套 sprite（共 12 张），蓝色反射色调（#c4d6ff–#5a78c8 档）区别于发射星云红/青
+- ✅ 近观粒子经 `useDetailLayer({ kind:'starCatalog' })` 挂载（R4-2，starCatalog 池首个消费方，release-on-exit，阈值与 R2-7 同源）；R2-7 的 +320 程序化增量粒子被真实星表替代（登记：近观增量 440 points + 9 星芒 + 12 星云 sprite = 461，`NEAR_VIEW_PARTICLE_INCREMENTS.pleiades` 327→461；降级路径保留 R2-7 现状层）；预览页注册 `?body=pleiades`（滑杆 3 件：粒径增益/星芒尺寸/反射星云强度）
 
 ### 17.2 验收标准
 
-- 🔲 近观形态与真实昴星团可对应（亮星相对构型可辨认，对照公版图像截图登记）；蓝色反射星云包裹观感成立
-- 🔲 数据加载失败降级路径实测（临时改名产物文件验证不报错回落现状）；巡游回归无泄漏；60 FPS 保持
-- 🔲 数据消费纯函数（单位换算/星等→粒径映射）单测；覆盖率 gate ≥90% 保持
+- ✅ 近观形态与真实昴星团可对应（亮星相对构型可辨认，对照公版图像截图登记：r417-preview-20-zoom-asterism / r417-preview-11-skyview-stars——天空视图姿态北上东左，Atlas/Pleione 居东侧等相对方位与公版图像一致；悬停星名截图 r417-preview-21-hover）；蓝色反射星云包裹观感成立（r417-scene-21-closer 主场景近观）
+- ✅ 数据加载失败降级路径实测（临时改名产物文件验证不报错回落现状：r417-scene-11-fallback，控制台零错误，恢复后正常）；巡游回归无泄漏（马头↔昴星团↔M13 连续切换 ×3 强制 GC 后 JS 堆 49→50 MB）；60 FPS 保持（预览/近观/绕行/切换后均实测 60）
+- ✅ 数据消费纯函数（单位换算/星等→粒径映射）单测（`pleiadesCatalogR417` 32 例，pleiadesCatalog.ts 覆盖率 100%）；覆盖率 gate ≥90% 保持（语句 98.52%）
 
 ## R4-18 参宿四非对称巨对流胞 + 恒星近观日冕/衍射星芒
 
