@@ -54,6 +54,12 @@ import {
 } from "@/utils/nebulaVolumeScene";
 import { OrionVolumeLayer } from "@/components/Scene/OrionVolumeLayer";
 import {
+  blackHoleLensedConfig,
+  blackHoleLensingDetailLayerSpec,
+  blackHoleRsWorldUnits,
+} from "@/utils/blackHoleScene";
+import { BlackHoleLensedLayer } from "@/components/Scene/BlackHoleLensedLayer";
+import {
   createDiffractionSpikeCanvas,
   createGlowSpriteCanvas,
 } from "@/components/CelestialBody/proceduralTextures";
@@ -1648,15 +1654,26 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
 }
 
 /**
- * 人马座A* 黑洞（需求 3.1.5）：事件视界（纯黑球体）+ 吸积盘
- * （开普勒较差旋转 + 多普勒不对称，shader）+ 引力透镜环状扭曲（shader）
+ * 黑洞（需求 3.1.5：人马座 A* / 天鹅座 X-1）：事件视界（纯黑球体）+
+ * 吸积盘（开普勒较差旋转 + 多普勒不对称，shader）+ 引力透镜环状扭曲
+ * （公告板 shader）——远景廉价表现。
+ *
+ * R4-13：近观挂接透镜细节层（useDetailLayer lensing 池容量 1）——跟随/
+ * 飞往且距离达阈值（R2-7 同源）时挂载 BlackHoleLensedLayer（R4-11/R4-12
+ * raymarch：光子环 + 背景弯曲 + 盘翻折 + 束流不对称），廉价盘/光环按
+ * (1 − 门控权重) 交叉淡出，退出反向恢复、资源随卸载 dispose。透镜接管
+ * 后事件视界黑球停写颜色/深度（colorWrite/depthWrite 关闭）——raymarch
+ * 阴影（b_crit ≈ 2.6 r_s）大于黑球（1 r_s），保留黑球深度会切断盘前景
+ * 翻折像；黑球 mesh 仍保留为点选 raycast 命中体（登记）。
  */
 function BlackHole({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
   const lensRef = useRef<THREE.Mesh>(null);
+  const horizonMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
-  const horizonRadius = size * 0.32;
+  // 视界半径 = 透镜 r_s 世界长度（单点同源，utils/blackHoleScene 尺度登记）
+  const horizonRadius = blackHoleRsWorldUnits(size);
 
   // 吸积盘 shader：较差旋转（ω ∝ r^-1.5）+ 内亮外暗 + 多普勒集束不对称
   const diskMaterial = useMemo(
@@ -1762,18 +1779,47 @@ function BlackHole({ body }: BodyProps): JSX.Element {
   );
 
   const getWeight = useGalacticPlacement(body, groupRef);
+  // R4-13 透镜细节层门控（lensing 池容量 1，release-on-exit）
+  const lensedConfig = useMemo(() => blackHoleLensedConfig(body.id), [body.id]);
+  const lensedSpec = useMemo(
+    () => blackHoleLensingDetailLayerSpec(body.id),
+    [body.id],
+  );
+  // 跟随判据注入：仅按 followBodyId（requestFlyTo 同步置 followBodyId，
+  // 运镜期门控不变；flyToBodyId 抵达后不清零，若纳入判据则 Esc 退出跟随
+  // 无法释放透镜层——§R4-13 验收"Esc 退出恢复"，实现差异登记）
+  const getLensedFocused = useCallback(
+    () => useSimulationStore.getState().followBodyId === body.id,
+    [body.id],
+  );
+  const { active: lensedActive, opacity01: getLensed01 } = useDetailLayer(
+    lensedSpec,
+    { objectRef: groupRef, getFocused: getLensedFocused },
+  );
   useFrame(({ clock, camera }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
+    const lensed01 = getLensed01();
+    // 廉价盘/光环交叉淡出：透镜层淡入时反向淡出（R4-13），退出恢复
+    const cheap = 1 - lensed01;
     // 动态效果按需渲染（需求 3.1.5）：仅可见时推进 shader 时间
     diskMaterial.uniforms.uTime.value = clock.elapsedTime;
-    diskMaterial.uniforms.uOpacity.value = weight;
+    diskMaterial.uniforms.uOpacity.value = weight * cheap;
     lensMaterial.uniforms.uTime.value = clock.elapsedTime;
-    lensMaterial.uniforms.uOpacity.value = weight * 0.85;
+    lensMaterial.uniforms.uOpacity.value = weight * 0.85 * cheap;
     // 透镜公告板始终面向相机
     if (lensRef.current) {
       lensRef.current.quaternion.copy(camera.quaternion);
+    }
+    // 透镜接管（>0.5）后黑球停写颜色/深度（保留 raycast 点选，登记见组件头）
+    const horizonMat = horizonMatRef.current;
+    if (horizonMat) {
+      const writeOn = lensed01 <= 0.5;
+      if (horizonMat.colorWrite !== writeOn) {
+        horizonMat.colorWrite = writeOn;
+        horizonMat.depthWrite = writeOn;
+      }
     }
   });
 
@@ -1787,7 +1833,7 @@ function BlackHole({ body }: BodyProps): JSX.Element {
         }}
       >
         <sphereGeometry args={[horizonRadius, 32, 32]} />
-        <meshBasicMaterial color="#000000" />
+        <meshBasicMaterial ref={horizonMatRef} color="#000000" />
       </mesh>
       {/* 吸积盘（较差旋转 + 多普勒不对称） */}
       <mesh rotation={[-Math.PI / 2.6, 0, 0]} material={diskMaterial}>
@@ -1797,6 +1843,16 @@ function BlackHole({ body }: BodyProps): JSX.Element {
       <mesh ref={lensRef} material={lensMaterial}>
         <planeGeometry args={[size * 3.6, size * 3.6]} />
       </mesh>
+      {/* R4-13 近观透镜 raymarch 细节层（光子环 + 盘翻折 + 束流不对称；
+          detailLayer lensing 池门控，卸载即 dispose 材质/cubemap/LUT） */}
+      {lensedActive && lensedConfig && (
+        <BlackHoleLensedLayer
+          config={lensedConfig}
+          rsWorld={horizonRadius}
+          getWeight={getWeight}
+          getGate01={getLensed01}
+        />
+      )}
       <BodyLabel body={body} sizeUnits={size} />
     </group>
   );
