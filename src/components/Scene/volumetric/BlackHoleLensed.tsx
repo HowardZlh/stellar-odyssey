@@ -118,6 +118,9 @@ export const LENSING_FRAGMENT_SHADER = /* glsl */ `
   uniform float uBeamStrength;
   uniform float uDiskBrightness;
   uniform mat3 uDiskRot;
+  // R4-13 场景接入：盘峰值色温缩放（两黑洞橙红/蓝白区分）+ 输出淡入权重
+  uniform float uDiskTempScale;
+  uniform float uFade;
 
   const float R_DOMAIN = ${LENSING_DOMAIN_RADIUS_RS.toFixed(1)};
   const float R_CAPTURE = ${CAPTURE_RADIUS_RS.toFixed(2)};
@@ -236,6 +239,8 @@ export const LENSING_FRAGMENT_SHADER = /* glsl */ `
           float g = max(sqrt(max(1.0 - 1.0 / rC, 0.0)), GRAV_FLOOR);
           // 观测色温 → 黑体 LUT（diskObservedTemperatureK 同式）
           float tObs = DISK_PEAK_K * tf * dEff * g;
+          // R4-13：两黑洞峰值温标缩放（Sgr A* 0.64 橙红 / Cyg X-1 1.36 蓝白）
+          tObs *= uDiskTempScale;
           vec3 col = texture(uBlackbodyLUT,
             vec2(clamp((tObs - LUT_T_MIN) / (LUT_T_MAX - LUT_T_MIN), 0.0, 1.0), 0.5)).rgb;
           // 差速旋转流动条纹（ω ∝ r^-3/2；cos/sin 嵌入消 φ 接缝，可视化登记；
@@ -266,7 +271,8 @@ export const LENSING_FRAGMENT_SHADER = /* glsl */ `
     vec3 rgb = diskAccum + trans * bg + uRingColor * (glow * uRingStrength);
     // 输出亮度硬钳（防 Bloom 溢出，无 NaN/Inf）
     rgb = clamp(rgb, vec3(0.0), vec3(${LENSING_MAX_OUTPUT_LUMINANCE.toFixed(1)}));
-    gl_FragColor = vec4(rgb, 1.0);
+    // alpha = uFade（R4-13 交叉淡出；默认 1，opaque 材质下被忽略 = 原行为）
+    gl_FragColor = vec4(rgb, uFade);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
   }
@@ -334,6 +340,8 @@ export interface BlackHoleLensedMaterialParams {
   beamStrength?: number;
   /** 盘发光基准亮度（默认 DISK_DEFAULT_BRIGHTNESS；0 隐藏盘） */
   diskBrightness?: number;
+  /** 盘峰值色温缩放（默认 1 = 7200 K 压标档；R4-13 两黑洞橙红/蓝白区分） */
+  diskTempScale?: number;
 }
 
 /**
@@ -370,6 +378,9 @@ export function createBlackHoleLensedMaterial(
       uDiskOuterRs: { value: radii.outerRs },
       uBeamStrength: { value: params.beamStrength ?? 1 },
       uDiskBrightness: { value: params.diskBrightness ?? DISK_DEFAULT_BRIGHTNESS },
+      uDiskTempScale: { value: params.diskTempScale ?? 1 },
+      // 输出淡入权重（R4-13 交叉淡出；opaque 默认态下 alpha 被忽略）
+      uFade: { value: 1 },
       // 盘姿态（物体空间 → 盘空间；恒等 = 盘在物体 xz 平面）
       uDiskRot: { value: new THREE.Matrix3() },
     },
