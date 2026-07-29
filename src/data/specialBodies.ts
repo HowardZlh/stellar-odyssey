@@ -141,8 +141,9 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
       { label: "吸积盘", value: "发光气体环，内圈快外圈慢（较差旋转）" },
     ],
     dynamicsZh:
-      "吸积盘按开普勒较差旋转（角速度 ∝ r^-3/2，内圈快外圈慢），接近侧因多普勒集束增亮；背景星光绕事件视界弯曲形成引力透镜环状扭曲（shader 实现）",
-    dataSource: "GRAVITY Collaboration (2019)；EHT 2022 人马座A* 成像",
+      "吸积盘按开普勒较差旋转（角速度 ∝ r^-3/2，内圈快外圈慢），接近侧因多普勒集束增亮；近观切换引力透镜 raymarch：光子环 + 背景星光弯曲 + 吸积盘上下缘翻折像",
+    dataSource:
+      "GRAVITY Collaboration (2019)；EHT 2022 人马座A* 成像；近观透镜为 Schwarzschild 二阶弯曲近似（视界渲染半径按可视化比例压缩、背景为程序化星场近似）；盘色为黑体色档艺术化映射（峰值 ≈4,600 K 橙红，实际银心吸积流为射电/亚毫米波段亮度）",
   },
   {
     id: "orion-nebula",
@@ -236,9 +237,9 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
       { label: "真实距离", value: "约 7,200 光年" },
     ],
     dynamicsZh:
-      "从蓝超巨星伴星剥离的物质形成吸积盘并发出强 X 射线；吸积盘较差旋转（内圈快外圈慢），背景星光被引力透镜弯曲",
+      "从蓝超巨星伴星剥离的物质形成吸积盘并发出强 X 射线；吸积盘较差旋转（内圈快外圈慢），近观切换引力透镜 raymarch：光子环 + 背景星光弯曲 + 吸积盘上下缘翻折像",
     dataSource:
-      "Miller-Jones et al. (2021), Science；NASA Chandra 天鹅座X-1 观测",
+      "Miller-Jones et al. (2021), Science；NASA Chandra 天鹅座X-1 观测；近观透镜为 Schwarzschild 二阶弯曲近似（视界渲染半径按可视化比例压缩、背景为程序化星场近似）；盘色为黑体色档艺术化映射（峰值 ≈9,800 K 蓝白，真实盘内区 ~10⁷ K X 射线域不可光学表现）",
   },
   {
     id: "wr-124",
