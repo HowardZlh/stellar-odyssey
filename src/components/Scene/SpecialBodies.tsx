@@ -48,11 +48,18 @@ import {
 import { estimateGpuBytes, type DetailLayerSpec } from "@/utils/detailLayer";
 import { useDetailLayer } from "@/hooks/useDetailLayer";
 import {
+  m57BillboardFactor,
+  m57NearLayerFactor,
+  m57VolumeBoxEdgeUnits,
+  m57VolumeDetailLayerSpec,
+  m57VolumeLayerConfig,
   orionBaseLayerFactor,
   orionPuffFactor,
+  orionVolumeBoxEdgeUnits,
   orionVolumeDetailLayerSpec,
+  orionVolumeLayerConfig,
 } from "@/utils/nebulaVolumeScene";
-import { OrionVolumeLayer } from "@/components/Scene/OrionVolumeLayer";
+import { NebulaVolumeLayer } from "@/components/Scene/NebulaVolumeLayer";
 import {
   blackHoleLensedConfig,
   blackHoleLensingDetailLayerSpec,
@@ -1862,7 +1869,7 @@ function BlackHole({ body }: BodyProps): JSX.Element {
  * 发射星云（猎户座星云）：氢α粉红雾状层 + 内部年轻恒星点亮局部
  *
  * R4-8：近观挂接体积层（useDetailLayer volume 池，容量 1）——跟随/飞往
- * 且距离达阈值（与 R2-7 近观层同源同值）时挂载 OrionVolumeLayer，
+ * 且距离达阈值（与 R2-7 近观层同源同值）时挂载 NebulaVolumeLayer，
  * billboard 平面层（nearDim）/ PuffCloud 团絮 / youngStars 星点（volDim）
  * 随体积淡入交叉淡出（0.5s，utils/nebulaVolumeScene 纯函数），退出反向
  * 恢复、体积纹理随卸载 dispose。体积激活期间 billboard 平面透明度趋 0
@@ -1941,11 +1948,12 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
   const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
   // R4-8 体积层门控（volume 池容量 1，release-on-exit：退出淡出即卸载）
   const volumeSpec = useMemo(() => orionVolumeDetailLayerSpec(), []);
+  const volumeConfig = useMemo(() => orionVolumeLayerConfig(), []);
   const { active: volumeActive, opacity01: getVolumeGate01 } = useDetailLayer(
     volumeSpec,
     { objectRef: groupRef },
   );
-  // 体积视觉淡入权重（OrionVolumeLayer 每帧写入：门控 × 烘焙就绪；
+  // 体积视觉淡入权重（NebulaVolumeLayer 每帧写入：门控 × 烘焙就绪；
   // 卸载复位 0——billboard/PuffCloud/星点交叉淡出的唯一消费源）
   const volumeFadeRef = useRef(0);
   useFrame(() => {
@@ -2017,11 +2025,13 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
         />
       )}
       {/* R4-8 近观体积层（128³ RG raymarch，detailLayer volume 池门控；
-          卸载即 dispose 纹理/RT/材质，交叉淡出权重经 volumeFadeRef 输出） */}
+          卸载即 dispose 纹理/RT/材质，交叉淡出权重经 volumeFadeRef 输出；
+          R4-14 起经泛化 NebulaVolumeLayer 接线，行为零回退） */}
       {volumeActive && (
-        <OrionVolumeLayer
+        <NebulaVolumeLayer
           groupRef={groupRef}
-          sizeUnits={size}
+          boxEdgeUnits={orionVolumeBoxEdgeUnits(size)}
+          config={volumeConfig}
           getWeight={getWeight}
           getGate01={getVolumeGate01}
           fadeRef={volumeFadeRef}
@@ -2051,11 +2061,21 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
 
 /**
  * 行星状星云（环状星云 M57）：环壳结构 + 中心白矮星 + 缓慢膨胀动画
+ *
+ * R4-14：近观挂接壳层体积模型（useDetailLayer volume 池，容量 1，与
+ * M42 同池——巡游切换时 LRU 逐出）——跟随/飞往且距离达阈值（与 R2-7
+ * 近观层同源同值）时挂载 NebulaVolumeLayer（三轴椭球壳密度场 96³）；
+ * 环面 billboard/中心白矮星网格（m57BillboardFactor）与 R2-7 环体
+ * +200 环向粒子/外晕壳（m57NearLayerFactor）随体积淡入交叉淡出（0.5s，
+ * §R4-14 第 3 条登记），退出反向恢复、体积纹理随卸载 dispose。体积
+ * 位姿参考 = 环壳缩放组（倾斜姿态 + 膨胀动画随动）。体积激活期间环面
+ * 透明度趋 0 但仍保留 raycast 命中（点选信息面板不受影响，同 R4-8）。
  */
 function PlanetaryNebula({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
   const shellRef = useRef<THREE.Group>(null);
   const planeRef = useRef<THREE.Mesh>(null);
+  const dwarfRef = useRef<THREE.Mesh>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
 
@@ -2078,20 +2098,37 @@ function PlanetaryNebula({ body }: BodyProps): JSX.Element {
   const getWeight = useGalacticPlacement(body, groupRef);
   // R2-7 近观门控：跟随时挂载环体 3D 粒子与外晕层，离开即释放
   const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
+  // R4-14 体积层门控（volume 池容量 1，release-on-exit：退出淡出即卸载）
+  const volumeSpec = useMemo(() => m57VolumeDetailLayerSpec(), []);
+  const volumeConfig = useMemo(() => m57VolumeLayerConfig(), []);
+  const { active: volumeActive, opacity01: getVolumeGate01 } = useDetailLayer(
+    volumeSpec,
+    { objectRef: groupRef },
+  );
+  // 体积视觉淡入权重（NebulaVolumeLayer 每帧写入：门控 × 烘焙就绪；
+  // 卸载复位 0——环面/环粒子/外晕/白矮星交叉淡出的唯一消费源）
+  const volumeFadeRef = useRef(0);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
+    const vol01 = volumeFadeRef.current;
     if (shellRef.current) {
       // 缓慢膨胀（真实约 20–30 km/s，动画为艺术化加速，已登记）；
-      // 近观环体粒子挂在同一缩放组内与环面同步膨胀
+      // 近观环体粒子挂在同一缩放组内与环面同步膨胀（体积层随动）
       shellRef.current.scale.setScalar(
         nebulaExpansionScale(clock.elapsedTime, 75, 0.12),
       );
     }
     if (planeRef.current) {
+      // R4-14：体积淡入时环面 billboard 交叉淡出（vol01=0 行为零回退）
       (planeRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.85 * weight;
+        0.85 * weight * m57BillboardFactor(vol01);
+    }
+    if (dwarfRef.current) {
+      // 中心白矮星网格移交体积子场景白矮星色档 sprite（R4-6 色档）
+      (dwarfRef.current.material as THREE.MeshBasicMaterial).opacity =
+        weight * m57BillboardFactor(vol01);
     }
   });
 
@@ -2117,25 +2154,45 @@ function PlanetaryNebula({ body }: BodyProps): JSX.Element {
             side={THREE.DoubleSide}
           />
         </mesh>
-        {/* R2-7 近观环体 3D 粒子（环向软边粒子，侧向观察环体有厚度） */}
+        {/* R2-7 近观环体 3D 粒子（环向软边粒子，侧向观察环体有厚度；
+            R4-14：体积淡入时交叉淡出——+200 环向粒子移交体积壳） */}
         {nearActive && (
           <RingNebulaNearTorus
             sizeUnits={size}
-            getOpacity={() => getWeight() * getNear01()}
+            getOpacity={() =>
+              getWeight() *
+              m57NearLayerFactor(getNear01(), volumeFadeRef.current)
+            }
+          />
+        )}
+        {/* R4-14 近观壳层体积（96³ RG raymarch，三轴椭球壳；位姿参考 =
+            环壳缩放组——倾斜姿态与膨胀动画随动；detailLayer volume 池
+            门控，卸载即 dispose 纹理/RT/材质） */}
+        {volumeActive && (
+          <NebulaVolumeLayer
+            groupRef={shellRef}
+            boxEdgeUnits={m57VolumeBoxEdgeUnits(size)}
+            config={volumeConfig}
+            getWeight={getWeight}
+            getGate01={getVolumeGate01}
+            fadeRef={volumeFadeRef}
           />
         )}
       </group>
-      {/* R2-7 近观外晕壳（外缘 Hα 弥散晕，体积包裹感） */}
+      {/* R2-7 近观外晕壳（外缘 Hα 弥散晕，体积包裹感；R4-14 交叉淡出：
+          体积外晕弱壳接管） */}
       {nearActive && (
         <RingNebulaNearHalo
           sizeUnits={size}
-          getOpacity={() => getWeight() * getNear01()}
+          getOpacity={() =>
+            getWeight() * m57NearLayerFactor(getNear01(), volumeFadeRef.current)
+          }
         />
       )}
-      {/* 中心白矮星 */}
-      <mesh>
+      {/* 中心白矮星（体积激活时交叉淡出，移交体积子场景白矮星色档 sprite） */}
+      <mesh ref={dwarfRef}>
         <sphereGeometry args={[size * 0.07, 12, 12]} />
-        <meshBasicMaterial color="#ffffff" />
+        <meshBasicMaterial color="#ffffff" transparent depthWrite={false} />
       </mesh>
       <BodyLabel body={body} sizeUnits={size} />
     </group>

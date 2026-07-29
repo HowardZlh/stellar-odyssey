@@ -9,13 +9,11 @@ import {
   advanceRgVolumeBuild,
   createRgDensityTexture,
   createRgVolumeBuild,
-  M42_TEXTURE_SIZE,
-  makeM42Sampler,
-  rgVolumeBuildDone,
   rgVolumeBuildProgress01,
 } from '@/utils/nebulaVolume';
+import type { NebulaVolumeLayerConfig } from '@/utils/nebulaVolumeScene';
 import {
-  addTrapeziumSprites,
+  addVolumeStarSprites,
   buildStarSpriteTexture,
 } from '@/components/Scene/volumetric/TrapeziumSprites';
 import {
@@ -41,25 +39,27 @@ import {
 } from '@/components/Scene/volumetric/VolumeHalfRes';
 
 /**
- * 猎户座星云 M42 体积预览（R4-7，`/dev/preview?body=orion-nebula`）
+ * 星云体积预览（R4-7 首建为 OrionNebulaPreview，R4-14 泛化：
+ * `/dev/preview?body=orion-nebula` 与 `?body=ring-nebula` 共用——
+ * 密度场/材质参数/内嵌星点经 `NebulaVolumeLayerConfig` 注入）
  *
- * 密度场：`utils/nebulaVolume.makeM42Sampler`（128³ RG 双通道，FNV-1a
- * 确定性种子），**分帧烘焙**（§R4-7 实现方式登记）：每帧 `useFrame` 内
- * 按 22ms 预算推进 z 切片（单块 < 100ms 卡顿约束），完成后一次性创建
+ * 密度场：`utils/nebulaVolume.makeM42Sampler / makeM57Sampler`（RG 双通道，
+ * FNV-1a 确定性种子），**分帧烘焙**（§R4-7 实现方式登记）：每帧 `useFrame`
+ * 内按 22ms 预算推进 z 切片（单块 < 100ms 卡顿约束），完成后一次性创建
  * Data3DTexture + 材质并打点登记（console.info：总墙钟/计算耗时/块数/
- * 最大单块 ms）；构建期间 HUD 显示进度，Trapezium 星点 sprite 先行可见。
+ * 最大单块 ms）；构建期间 HUD 显示进度，星点 sprite 先行可见。
  *
  * 渲染路径沿用 R4-4：体积 mesh + 星点 sprite 置独立子场景 → 半分辨率 RT
  * （动态视口）→ 主场景全屏三角形合成（预乘 alpha）；自适应质量状态机 +
- * 强制档滑杆。Trapezium 四亮星以 sprite 内嵌于体积子场景（renderOrder
- * 先于体积 mesh——体积发射-吸收按全程透射率压暗星点，近似登记：未按星点
- * 深度截断积分，空腔内密度低、偏差可忽略）。
+ * 强制档滑杆。星点 sprite 内嵌于体积子场景（renderOrder 先于体积 mesh
+ * ——体积发射-吸收按全程透射率压暗星点，近似登记：未按星点深度截断积分，
+ * M42 Trapezium 空腔 / M57 内腔密度低、偏差可忽略）。
  *
- * 仅 dev 预览页动态 import 加载；本阶段不接主场景（R4-8 范围）。
+ * 仅 dev 预览页动态 import 加载。
  */
 
-/** 体积盒世界边长（单位盒经 mesh.scale 放大） */
-const ORION_BOX_SIZE = 2.6;
+/** 体积盒世界边长（单位盒经 mesh.scale 放大；M42/M57 预览共用） */
+const NEBULA_PREVIEW_BOX_EDGE = 2.6;
 
 /** 分帧构建每帧时间预算 ms（单块主线程占用 ≪100ms，卡顿约束 §R4-7） */
 const BUILD_BUDGET_MS = 22;
@@ -70,7 +70,9 @@ const PREVIEW_OVERRIDE_PRIORITY = 0.5;
 /** 体积 RT pass 优先级：晚于 uniform 覆写（0.5）、早于 EffectComposer 渲染（1） */
 const VOLUME_RT_PASS_PRIORITY = 0.7;
 
-export interface OrionNebulaPreviewProps {
+export interface NebulaVolumePreviewProps {
+  /** 层配置（M42 / M57；父层 useMemo 稳定） */
+  config: NebulaVolumeLayerConfig;
   /** 当前滑杆值映射（key → value） */
   values: Record<string, number>;
   /** HUD 虚拟时钟读数节点（每帧直写 textContent，不走 React state） */
@@ -79,11 +81,12 @@ export interface OrionNebulaPreviewProps {
   qualityLabelRef?: RefObject<HTMLSpanElement | null>;
 }
 
-export function OrionNebulaPreview({
+export function NebulaVolumePreview({
+  config,
   values,
   clockLabelRef,
   qualityLabelRef,
-}: OrionNebulaPreviewProps): JSX.Element {
+}: NebulaVolumePreviewProps): JSX.Element {
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
 
@@ -98,11 +101,11 @@ export function OrionNebulaPreview({
   // 构建状态 + 子场景 + RT/合成资源：挂载时创建一次；体积纹理与材质在
   // 分帧构建完成后惰性创建（refs 持有），卸载统一 dispose（附录 A §6）
   const resources = useMemo(() => {
-    const buildState = createRgVolumeBuild(M42_TEXTURE_SIZE, makeM42Sampler());
+    const buildState = createRgVolumeBuild(config.textureSize, config.makeSampler());
     const volumeScene = new THREE.Scene();
     const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
-    // Trapezium 四亮星 sprite（位置与空腔一致；R4-8 起共享工具模块）
-    const starTexture = buildStarSpriteTexture();
+    // 星点 sprite（M42 Trapezium 四星 / M57 中心白矮星色档）
+    const starTexture = buildStarSpriteTexture(config.starTint);
     const starMaterial = new THREE.SpriteMaterial({
       map: starTexture,
       blending: THREE.AdditiveBlending,
@@ -110,7 +113,7 @@ export function OrionNebulaPreview({
       depthTest: false,
       transparent: true,
     });
-    addTrapeziumSprites(volumeScene, starMaterial, ORION_BOX_SIZE, 0.12);
+    addVolumeStarSprites(volumeScene, starMaterial, NEBULA_PREVIEW_BOX_EDGE, config.stars);
     const rt = createVolumeRenderTarget(2, 2); // 首帧按实际缓冲尺寸同步
     const compositeMaterial = createVolumeCompositeMaterial(rt);
     const compositeGeometry = createFullscreenTriangleGeometry();
@@ -130,7 +133,7 @@ export function OrionNebulaPreview({
       drawSize: new THREE.Vector2(),
       savedClearColor: new THREE.Color(),
     };
-  }, []);
+  }, [config]);
 
   useEffect(() => {
     return () => {
@@ -161,7 +164,7 @@ export function OrionNebulaPreview({
       const label = qualityLabelRef?.current;
       if (!done) {
         if (label) {
-          const text = `M42 构建中 ${(rgVolumeBuildProgress01(buildState) * 100).toFixed(0)}%`;
+          const text = `${config.logTag} 构建中 ${(rgVolumeBuildProgress01(buildState) * 100).toFixed(0)}%`;
           if (text !== qualityTextRef.current) {
             qualityTextRef.current = text;
             label.textContent = text;
@@ -169,18 +172,31 @@ export function OrionNebulaPreview({
         }
         return;
       }
-      // 完成：创建纹理 + 材质 + 体积 mesh，打点登记（§R4-7 验收）
+      // 完成：创建纹理 + 材质 + 体积 mesh，打点登记（§R4-7/§R4-14 验收）
       const wallMs = performance.now() - (buildWallStartRef.current ?? performance.now());
-      // §R4-7 构建期打点登记（无头 Chrome 目验取证）
       console.info(
-        `[R4-7] M42 128³ 分帧烘焙完成：墙钟 ${wallMs.toFixed(0)} ms、` +
+        `[${config.logTag}] ${buildState.size}³ 分帧烘焙完成：墙钟 ${wallMs.toFixed(0)} ms、` +
           `计算 ${buildState.computeMs.toFixed(0)} ms、块数 ${buildState.chunkCount}、` +
           `最大单块 ${buildState.maxChunkMs.toFixed(1)} ms（<100ms 卡顿约束）`,
       );
       const texture = createRgDensityTexture(buildState.size, buildState.data);
-      volumeMaterial = createNebulaVolumeMaterial({ map: texture });
+      const { params } = config;
+      volumeMaterial = createNebulaVolumeMaterial({
+        map: texture,
+        steps: params.baseSteps,
+        densityScale: params.densityScale,
+        dustStrength: params.dustStrength,
+        weightBias: params.weightBias,
+        intensity: params.intensity,
+        colorHa: params.colorHa,
+        colorOIII: params.colorOIII,
+        core: params.core,
+        weightInnerR: params.weightInnerR,
+        weightOuterR: params.weightOuterR,
+        weightInvRadii: params.weightInvRadii,
+      });
       const mesh = new THREE.Mesh(resources.boxGeometry, volumeMaterial);
-      mesh.scale.setScalar(ORION_BOX_SIZE);
+      mesh.scale.setScalar(NEBULA_PREVIEW_BOX_EDGE);
       mesh.renderOrder = 1; // 晚于星点 sprite：体积按透射率覆盖压暗
       resources.volumeScene.add(mesh);
       resources.texture = texture;
@@ -193,7 +209,7 @@ export function OrionNebulaPreview({
     const targetTier = forced ?? state.tier;
     const blend = advanceQualityBlend(blendRef.current, targetTier, delta);
 
-    const baseSteps = clampVolumeSteps(values.steps ?? 64);
+    const baseSteps = clampVolumeSteps(values.steps ?? config.params.baseSteps);
     const steps = clampVolumeSteps(baseSteps * blend.stepScale);
 
     const u = volumeMaterial.uniforms;
@@ -201,10 +217,10 @@ export function OrionNebulaPreview({
     u.uSteps.value = steps;
     u.uQuality.value = blend.stepScale;
     u.uJitter.value = (values.jitter ?? 1) >= 0.5 ? 1 : 0;
-    u.uDensityScale.value = values.density ?? 3.2;
-    u.uDustStrength.value = values.dust ?? 1;
-    u.uWeightBias.value = values.weightBias ?? 0;
-    u.uIntensity.value = values.intensity ?? 1.3;
+    u.uDensityScale.value = values.density ?? config.params.densityScale;
+    u.uDustStrength.value = values.dust ?? config.params.dustStrength;
+    u.uWeightBias.value = values.weightBias ?? config.params.weightBias;
+    u.uIntensity.value = values.intensity ?? config.params.intensity;
 
     // HUD 虚拟时钟读数（0.1s 粒度，内容变化才写 DOM）
     const label = clockLabelRef?.current;
@@ -267,4 +283,4 @@ export function OrionNebulaPreview({
   );
 }
 
-export default OrionNebulaPreview;
+export default NebulaVolumePreview;
