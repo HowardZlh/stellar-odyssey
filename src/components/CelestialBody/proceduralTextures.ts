@@ -1057,6 +1057,32 @@ export function createDiffractionSpikeCanvas(color: string, size = 128): HTMLCan
   return canvas;
 }
 
+/**
+ * 色球边缘辉光环贴图（R4-18 恒星近观点缀）：中心透明、峰值位于
+ * 半边长 62%（utils/stellarNearView.CHROMOSPHERE_RING_PEAK_RADIUS01 同源）
+ * 的薄发射环，内缘陡、外缘缓（limb 外薄色球层观感）。颜色由调用方按
+ * 恒星色温联动（chromosphereRGB）传入。
+ */
+export function createChromosphereRingCanvas(color: string, size = 256): HTMLCanvasElement {
+  const canvas = makeCanvas(size, size);
+  const ctx = getContext2D(canvas);
+  const c = hexToRgb(color);
+  const half = size / 2;
+  const grad = ctx.createRadialGradient(half, half, 0, half, half, half);
+  grad.addColorStop(0, rgbToCss(c, 0));
+  grad.addColorStop(0.52, rgbToCss(c, 0));
+  grad.addColorStop(0.58, rgbToCss(c, 0.55));
+  grad.addColorStop(0.62, rgbToCss(c, 0.95));
+  grad.addColorStop(0.7, rgbToCss(c, 0.35));
+  grad.addColorStop(0.82, rgbToCss(c, 0.08));
+  grad.addColorStop(1, rgbToCss(c, 0));
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(half, half, half, 0, Math.PI * 2);
+  ctx.fill();
+  return canvas;
+}
+
 /** 柔和光斑（星系内部构件：核球、旋臂团块等） */
 function drawGlowBlob(
   ctx: CanvasRenderingContext2D,

@@ -131,17 +131,20 @@ export function nearViewGateUpdate(
  * - orion-nebula：体积感云团 sprite ×18
  * - crab-pulsar：丝状遗迹云团 sprite ×16
  * - horsehead-nebula：视差发射层平面 ×2 + 前景暗云团 sprite ×3
- * - sirius / heliopause：近观层为线条/壳层/标记（非粒子），增量 0
+ * - heliopause：近观层为线条/壳层/标记（非粒子），增量 0
+ * - 恒星类（R4-18 近观点缀）：色球环 sprite ×1 + 衍射星芒 sprite ×1 = 2/站；
+ *   sirius = A 环 + A 芒 + B 环 = 3（B 星常驻芒线不重复计，轨道线非粒子）
+ *   （utils/stellarNearView.STAR_NEAR_DRESS_SPRITE_COUNTS 同值单测防漂移）
  * - 其余成员近观细节由 P6 shader 交付（差异登记见文件头），增量 0
  */
 export const NEAR_VIEW_PARTICLE_INCREMENTS: Readonly<Record<string, number>> = {
   heliopause: 0,
   'sgr-a-star': 0,
-  betelgeuse: 0,
-  rigel: 0,
-  sirius: 0,
-  'delta-cephei': 0,
-  'wr-124': 0,
+  betelgeuse: 2,
+  rigel: 2,
+  sirius: 3,
+  'delta-cephei': 2,
+  'wr-124': 2,
   'cygnus-x1': 0,
   'crab-pulsar': 16,
   'orion-nebula': 18,
