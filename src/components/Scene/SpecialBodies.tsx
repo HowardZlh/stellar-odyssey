@@ -122,6 +122,15 @@ import {
   PleiadesReflectionNebula,
   pleiadesSkyViewQuaternion,
 } from "@/components/Scene/PleiadesCluster";
+import { useM13Profile } from "@/hooks/useM13Profile";
+import {
+  M13_BASE_STAR_COUNT,
+  M13_NEAR_STAR_COUNT,
+  buildKingRadiusTable01,
+  buildM13ClusterAttributes,
+  kingShapeFromProfile,
+  type M13ClusterAttributes,
+} from "@/utils/m13Cluster";
 
 /**
  * 特殊天体 LOD 淡入淡出（需求 3.1.5 通用要求）：
@@ -2807,41 +2816,82 @@ function RingNebulaNearHalo({
 
 /**
  * 球状星团（M13）：银晕中的致密老年恒星集团（偏红黄色调）
+ *
+ * R4-19：位置分布按 King (1966) profile 逆变换采样（Harris 目录 NGC 6205
+ * 参数经 m13-profile.json 烘焙产物；潮汐半径映射满视觉半径——核半径仅占
+ * ~3%，中心致密核 + 外围稀疏晕），颜色按 HR 图两档（红黄老年星族 90% +
+ * 蓝离散/水平支 10%）→ blackbodyRGB。加载失败降级现状 rand² 分布（登记）。
  */
 function GlobularCluster({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
 
+  // R4-19：King profile（null = 加载中/失败 → 降级现状程序化分布）
+  const profile = useM13Profile();
+  const kingModel = useMemo(() => {
+    if (!profile) return null;
+    const table = buildKingRadiusTable01(kingShapeFromProfile(profile.profile));
+    return {
+      // 远观基础星场（420 粒）与 R2-7 近观增量（+1,200 粒）：总预算不变，
+      // 种子沿用现状（20260722/20260723，确定性登记）
+      base: buildM13ClusterAttributes({
+        seed: 20260722,
+        count: M13_BASE_STAR_COUNT,
+        radiusUnits: size,
+        table,
+        brightnessMin: 0.6,
+        brightnessMax: 1.0,
+      }),
+      near: buildM13ClusterAttributes({
+        seed: 20260723,
+        count: M13_NEAR_STAR_COUNT,
+        radiusUnits: size,
+        table,
+        brightnessMin: 0.35,
+        brightnessMax: 0.8,
+      }),
+    };
+  }, [profile, size]);
+
   const { geometry, material } = useMemo(() => {
-    const rand = createSeededRandom(20260722);
-    const count = 420;
-    const positions = new Float32Array(count * 3);
-    const colors = new Float32Array(count * 3);
-    // M13 星族色板（P6 §3.2）：老年星族以红黄为主 + 少量蓝离散星
-    // （HST 测光；蓝离散星为并合/物质转移形成的偏蓝恒星）
-    const old = [
-      [1.0, 0.82, 0.55], // 橙黄（K/G 巨星，老年星族主体）
-      [1.0, 0.7, 0.42], // 橙红
-      [1.0, 0.9, 0.72], // 黄白
-    ];
-    const blueStraggler = [0.72, 0.82, 1.0];
-    for (let i = 0; i < count; i += 1) {
-      // 中心致密的球状分布（半径取 rand² 使中心更密）
-      const r = size * rand() * rand();
-      const cosPolar = rand() * 2 - 1;
-      const azimuth = Math.PI * 2 * rand();
-      const sinPolar = Math.sqrt(1 - cosPolar * cosPolar);
-      positions[i * 3] = r * sinPolar * Math.cos(azimuth);
-      positions[i * 3 + 1] = r * cosPolar;
-      positions[i * 3 + 2] = r * sinPolar * Math.sin(azimuth);
-      // 约 8% 蓝离散星，其余老年红黄星族
-      const isBlue = rand() < 0.08;
-      const c = isBlue ? blueStraggler : old[Math.floor(rand() * old.length)];
-      const brightness = 0.6 + 0.4 * rand();
-      colors[i * 3] = c[0] * brightness;
-      colors[i * 3 + 1] = c[1] * brightness;
-      colors[i * 3 + 2] = c[2] * brightness;
+    let positions: Float32Array;
+    let colors: Float32Array;
+    if (kingModel) {
+      ({ positions, colors } = kingModel.base);
+    } else {
+      // 降级现状（R4-19 登记）：rand² 分布 + P6 §3.2 色板
+      const rand = createSeededRandom(20260722);
+      const count = M13_BASE_STAR_COUNT;
+      positions = new Float32Array(count * 3);
+      colors = new Float32Array(count * 3);
+      // M13 星族色板（P6 §3.2）：老年星族以红黄为主 + 少量蓝离散星
+      // （HST 测光；蓝离散星为并合/物质转移形成的偏蓝恒星）
+      const old = [
+        [1.0, 0.82, 0.55], // 橙黄（K/G 巨星，老年星族主体）
+        [1.0, 0.7, 0.42], // 橙红
+        [1.0, 0.9, 0.72], // 黄白
+      ];
+      const blueStraggler = [0.72, 0.82, 1.0];
+      for (let i = 0; i < count; i += 1) {
+        // 中心致密的球状分布（半径取 rand² 使中心更密）
+        const r = size * rand() * rand();
+        const cosPolar = rand() * 2 - 1;
+        const azimuth = Math.PI * 2 * rand();
+        const sinPolar = Math.sqrt(1 - cosPolar * cosPolar);
+        positions[i * 3] = r * sinPolar * Math.cos(azimuth);
+        positions[i * 3 + 1] = r * cosPolar;
+        positions[i * 3 + 2] = r * sinPolar * Math.sin(azimuth);
+        // 约 8% 蓝离散星，其余老年红黄星族
+        const isBlue = rand() < 0.08;
+        const c = isBlue
+          ? blueStraggler
+          : old[Math.floor(rand() * old.length)];
+        const brightness = 0.6 + 0.4 * rand();
+        colors[i * 3] = c[0] * brightness;
+        colors[i * 3 + 1] = c[1] * brightness;
+        colors[i * 3 + 2] = c[2] * brightness;
+      }
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -2857,7 +2907,7 @@ function GlobularCluster({ body }: BodyProps): JSX.Element {
       sizeAttenuation: true,
     });
     return { geometry: geo, material: mat };
-  }, [size]);
+  }, [size, kingModel]);
 
   useEffect(
     () => () => {
@@ -2880,9 +2930,16 @@ function GlobularCluster({ body }: BodyProps): JSX.Element {
   return (
     <group ref={groupRef} name={body.id}>
       <points geometry={geometry} material={material} />
-      {/* R2-7 近观分级星场（+1,200 粒更小的暗星，rand^2.4 分布中心更密——
-          近观时中心密集/边缘稀疏的分辨力提升，粒子均为圆形软边贴图） */}
-      {nearActive && (
+      {/* R2-7 近观分级星场（+1,200 粒更小的暗星）：King 采样（R4-19）或
+          降级现状 rand^2.4 分布，粒子均为圆形软边贴图 */}
+      {nearActive && kingModel && (
+        <M13KingStarField
+          attributes={kingModel.near}
+          pointSizeUnits={size * 0.035}
+          getOpacity={() => getWeight() * getNear01()}
+        />
+      )}
+      {nearActive && !kingModel && (
         <ClusterNearStarField
           seed={20260723}
           count={1200}
@@ -2907,6 +2964,59 @@ function GlobularCluster({ body }: BodyProps): JSX.Element {
       <BodyLabel body={body} sizeUnits={size} />
     </group>
   );
+}
+
+/**
+ * M13 King 采样星场（R4-19）：渲染 `buildM13ClusterAttributes` 预构建的
+ * 位置/颜色属性（King 逆变换采样 + HR 黑体色，构建在消费方 useMemo 完成
+ * ——本组件仅装配几何/材质与帧驱动不透明度）。粒子为圆形软边贴图，
+ * 加色混合；卸载即 dispose。预览页（?body=m13）与主场景近观层共用。
+ */
+export function M13KingStarField({
+  attributes,
+  pointSizeUnits,
+  baseOpacity = 0.85,
+  getOpacity,
+}: {
+  attributes: M13ClusterAttributes;
+  pointSizeUnits: number;
+  /** 满权重不透明度（远观基础层 0.9 / 近观暗星层 0.85 现状对齐） */
+  baseOpacity?: number;
+  getOpacity: () => number;
+}): JSX.Element {
+  const { geometry, material } = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute(
+      "position",
+      new THREE.BufferAttribute(attributes.positions, 3),
+    );
+    geo.setAttribute("color", new THREE.BufferAttribute(attributes.colors, 3));
+    const mat = new THREE.PointsMaterial({
+      map: getSoftPointTexture(),
+      vertexColors: true,
+      size: pointSizeUnits,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: true,
+    });
+    return { geometry: geo, material: mat };
+  }, [attributes, pointSizeUnits]);
+
+  useEffect(
+    () => () => {
+      geometry.dispose();
+      material.dispose();
+    },
+    [geometry, material],
+  );
+
+  useFrame(() => {
+    material.opacity = baseOpacity * getOpacity();
+  });
+
+  return <points geometry={geometry} material={material} />;
 }
 
 /**
