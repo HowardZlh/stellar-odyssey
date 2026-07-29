@@ -14,6 +14,7 @@ import {
 import { useStarParams } from '@/hooks/useStarParams';
 import { stellarPreviewConfigForBody, type PreviewEntry } from '@/utils/devPreview';
 import {
+  crabVolumeLayerConfig,
   horseheadVolumeLayerConfig,
   m57VolumeLayerConfig,
   orionVolumeLayerConfig,
@@ -196,7 +197,7 @@ export function PreviewScene({
   clockLabelRef,
   qualityLabelRef,
 }: PreviewSceneProps): JSX.Element {
-  // 星云体积层配置（R4-14 泛化：M42/M57/马头共用 NebulaVolumePreview）
+  // 星云体积层配置（R4-14 泛化：M42/M57/马头/蟹状共用 NebulaVolumePreview）
   const nebulaConfig = useMemo(
     () =>
       entry.componentKey === 'ring-nebula-volume'
@@ -205,7 +206,9 @@ export function PreviewScene({
           ? orionVolumeLayerConfig()
           : entry.componentKey === 'horsehead-nebula-volume'
             ? horseheadVolumeLayerConfig()
-            : null,
+            : entry.componentKey === 'crab-nebula-volume'
+              ? crabVolumeLayerConfig()
+              : null,
     [entry.componentKey],
   );
   return (

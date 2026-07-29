@@ -121,7 +121,10 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     dynamicsZh:
       "双极射束随中子星自转扫描（灯塔效应），射束扫过视线方向时产生周期性脉冲闪烁；外围为超新星遗迹丝状膨胀星云",
     dataSource:
-      "NASA Chandra/HST 蟹状星云观测；Lyne & Graham-Smith, Pulsar Astronomy",
+      "NASA Chandra/HST 蟹状星云观测；Lyne & Graham-Smith, Pulsar Astronomy；" +
+      "近观体积丝网为程序化近似（Hubble 公版图像形态参考：12 条曲线骨架丝网 + " +
+      "OIII 青弥散，红/青按内外分区径向近似）；PWN 环面/喷流形态参考 Chandra" +
+      "（Weisskopf et al. 2000），环面尺度按可视化放大（真实 ~0.5 ly）",
   },
   {
     id: "sgr-a-star",

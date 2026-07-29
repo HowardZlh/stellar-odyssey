@@ -586,6 +586,371 @@ export function makeHorseheadSampler(
   };
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+ * 蟹状星云 M1 丝状密度场 + PWN 环面强度（R4-16，IMPROVEMENT_REQUIREMENTS_4
+ * §R4-16）
+ *
+ * 形态登记（附录 A §4，数据源 §0.4：NASA/ESA Hubble 公版图像仅作丝状
+ * 网络形态参考、Chandra（Weisskopf et al. 2000）仅作 PWN 环面/喷流形态
+ * 参考，程序化近似构建）：
+ * - 外围丝状网络（§R4-16 省 token 约定：少量参数化曲线骨架沿线增密 +
+ *   噪声扰动，勿做真流体结构）：12 条确定性随机游走折线骨架
+ *   （`crabFilamentPolylines`——起点近内缘、方向随游走缓慢漂移、终点近
+ *   包络外缘），体素到最近骨架线段距离经软衰减成密度脊，采样域经湍流
+ *   值方向场扭曲（±0.06 扭曲 = "方向场扭曲的密度脊"实现登记）+ 沿线
+ *   湍流束状调制（丝上亮结）；
+ * - 内部 OIII 青色弥散：椭球归一化半径 qLen 的平滑充盈（中心满值 →
+ *   包络外缘归零），幅度 ≪ 丝状脊（验收断言 丝状脊 > 弥散区）；
+ * - 整体椭球包络：三轴椭球（蟹状整体略呈椭长形态）+ fBm 轮廓扰动去
+ *   正椭球感；
+ * - 双色：色权重随椭球归一化半径 qLen 上升（`crabColorWeight01`，
+ *   shader 侧以 uWeightInvRadii 椭球归一化镜像）——内部 OIII 青弥散、
+ *   外围 Hα 红橙丝（登记：纯径向近似，真实蟹状丝网红/青按电离层位
+ *   逐丝交织，此处按内外分区近似；丝主要分布于外区 → 呈红橙）；
+ * - 吸收通道恒零登记：蟹状无显著前景尘埃暗结构，G 通道恒 0（单测断言）；
+ * - PWN 环面强度剖面 `crabTorusIntensity`：主环 + 内环（Chandra 内环/
+ *   torus 双环形态）+ 中心弱辉 × 环面平面高斯增强——CPU 纯函数供
+ *   环面 shader GLSL 镜像与"环面平面增强"单测断言（§R4-16 第 4 条
+ *   实现登记：环面为独立 shader 发射体网格、不烘焙进体积纹理）。
+ *
+ * 纹理 128³（§R4-16 指定；RG 双通道 = 4 MB，≤64 MB 总预算，volume 池
+ * 容量 1 与 M42/M57/马头共池 LRU）。
+ * ════════════════════════════════════════════════════════════════════════ */
+
+/** 蟹状星云体积层确定性种子 id（与 data/specialBodies 的天体 id 一致） */
+export const CRAB_VOLUME_ID = 'crab-pulsar';
+
+/** 蟹状密度纹理边长（§R4-16：128³，附录 A §1 上限） */
+export const CRAB_TEXTURE_SIZE = 128;
+
+/** 椭球包络半轴（归一化域 [-1,1]³；蟹状整体略呈椭长形态） */
+export const CRAB_ENVELOPE_RADII: readonly [number, number, number] = [0.78, 0.64, 0.6];
+
+/** 丝状骨架条数（§R4-16 省 token 约定 8–12 条，取 12） */
+export const CRAB_FILAMENT_COUNT = 12;
+
+/** 每条骨架折线段数（点数 = 段数 + 1） */
+const CRAB_FILAMENT_SEGMENTS = 14;
+
+/** 骨架游走的椭球归一化半径带（丝网笼壳带：外围壳层，非径向辐条） */
+const CRAB_FILAMENT_QLEN_MIN = 0.42;
+const CRAB_FILAMENT_QLEN_MAX = 0.95;
+
+/** 每段切向弧步长（rad，单位球上的角步进——长弧丝而非短团块） */
+const CRAB_FILAMENT_ARC_STEP = 0.24;
+
+/** 丝半径（SDF 单位）与软衰减宽度 */
+export const CRAB_FILAMENT_RADIUS = 0.032;
+const CRAB_FILAMENT_SOFTNESS = 0.042;
+
+/** 丝状脊采样域方向场扭曲幅度（±该值，湍流值驱动） */
+const CRAB_FILAMENT_WARP = 0.06;
+
+/** 内部 OIII 弥散基准幅度（丝状脊满值 ~0.9 的 ≈1/6，验收对比度来源） */
+export const CRAB_DIFFUSE_LEVEL = 0.16;
+
+/** 双色权重内径：椭球归一化半径 ≤ 此值 → OIII 权重 1（青弥散区） */
+export const CRAB_COLOR_WEIGHT_INNER_R = 0.35;
+
+/** 双色权重外径：椭球归一化半径 ≥ 此值 → Hα 权重 1（红橙丝区） */
+export const CRAB_COLOR_WEIGHT_OUTER_R = 0.78;
+
+/**
+ * 蟹状 Hα/OIII 混色权重（0 = 内部 OIII 青弥散，1 = 外围 Hα 红橙丝）
+ *
+ * 椭球归一化半径近似登记：权重随 qLen = |(x/a, y/b, z/c)| 平滑上升
+ * （smoothstep INNER → OUTER），shader 侧以 uWeightInvRadii 同式镜像。
+ *
+ * @param qLen 椭球归一化半径（须为非负有限数；包络中面 = 1）
+ */
+export function crabColorWeight01(qLen: number): number {
+  if (!(qLen >= 0) || !Number.isFinite(qLen)) {
+    throw new RangeError(`椭球归一化半径必须为非负有限数，收到 ${qLen}`);
+  }
+  return sstep(CRAB_COLOR_WEIGHT_INNER_R, CRAB_COLOR_WEIGHT_OUTER_R, qLen);
+}
+
+/** 丝状骨架折线（点序列，归一化域坐标） */
+export type CrabFilamentPolyline = readonly (readonly [number, number, number])[];
+
+/**
+ * 生成蟹状丝状骨架折线（确定性：同种子输出逐点一致）
+ *
+ * 每条骨架 = 单位球面上的切向随机游走长弧（笼壳丝网形态：丝主要沿
+ * 外围壳层缠绕、任意视角投影均呈网状长丝，而非径向辐条投影成团块），
+ * 椭球归一化半径 qLen 在壳带内缓慢起伏；点坐标按包络半轴缩放回归一
+ * 化域（骨架随椭球形态伸展）。
+ *
+ * @param seed FNV-1a 种子（默认 `volumeSeed('crab-pulsar')`）
+ */
+export function crabFilamentPolylines(
+  seed: number = volumeSeed(CRAB_VOLUME_ID),
+): readonly CrabFilamentPolyline[] {
+  // 骨架专用子序列（与采样器湍流偏移解耦：任一侧调参不漂移另一侧）
+  const rand = createSeededRandom(((seed ^ 0x6a09e667) >>> 0) || 1);
+  const [ax, ay, az] = CRAB_ENVELOPE_RADII;
+  const polylines: CrabFilamentPolyline[] = [];
+  for (let f = 0; f < CRAB_FILAMENT_COUNT; f += 1) {
+    // 起点方向：单位球均匀采样
+    const cosPolar = rand() * 2 - 1;
+    const azimuth = Math.PI * 2 * rand();
+    const sinPolar = Math.sqrt(Math.max(0, 1 - cosPolar * cosPolar));
+    let ux = sinPolar * Math.cos(azimuth);
+    let uy = cosPolar;
+    let uz = sinPolar * Math.sin(azimuth);
+    // 初始游走矢量（切向分量驱动弧步进；缓慢漂移产生弯曲缠绕）
+    let wx = rand() * 2 - 1;
+    let wy = rand() * 2 - 1;
+    let wz = rand() * 2 - 1;
+    let qLen =
+      CRAB_FILAMENT_QLEN_MIN + (CRAB_FILAMENT_QLEN_MAX - CRAB_FILAMENT_QLEN_MIN) * rand();
+    const points: (readonly [number, number, number])[] = [];
+    for (let s = 0; s <= CRAB_FILAMENT_SEGMENTS; s += 1) {
+      points.push([ux * qLen * ax, uy * qLen * ay, uz * qLen * az] as const);
+      // 切向弧步进：w 去掉径向分量 → 单位切向 → 方向沿弧前进
+      wx += (rand() * 2 - 1) * 0.5;
+      wy += (rand() * 2 - 1) * 0.5;
+      wz += (rand() * 2 - 1) * 0.5;
+      const dotWU = wx * ux + wy * uy + wz * uz;
+      let tx = wx - dotWU * ux;
+      let ty = wy - dotWU * uy;
+      let tz = wz - dotWU * uz;
+      const tLen = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
+      tx /= tLen;
+      ty /= tLen;
+      tz /= tLen;
+      ux += tx * CRAB_FILAMENT_ARC_STEP;
+      uy += ty * CRAB_FILAMENT_ARC_STEP;
+      uz += tz * CRAB_FILAMENT_ARC_STEP;
+      const uLen = Math.sqrt(ux * ux + uy * uy + uz * uz) || 1;
+      ux /= uLen;
+      uy /= uLen;
+      uz /= uLen;
+      // 壳带内半径缓慢起伏（±0.05/步，钳制在笼壳带内）
+      qLen = Math.min(
+        CRAB_FILAMENT_QLEN_MAX,
+        Math.max(CRAB_FILAMENT_QLEN_MIN, qLen + (rand() * 2 - 1) * 0.05),
+      );
+    }
+    polylines.push(points);
+  }
+  return polylines;
+}
+
+/** 预处理后的骨架（扁平段数组 + 包围球，采样循环零分配零开方早退） */
+interface CrabFilamentBaked {
+  /** 段端点扁平数组 [x0,y0,z0, x1,y1,z1, ...]（相邻点即一段） */
+  readonly points: Float64Array;
+  /** 包围球中心 */
+  readonly cx: number;
+  readonly cy: number;
+  readonly cz: number;
+  /** （包围球半径 + 影响截断距离）² —— 平方比较免开方 */
+  readonly cullR2: number;
+}
+
+/** 丝影响截断距离（SDF 单位：半径 + 软衰减 + 扭曲可达范围） */
+const CRAB_FILAMENT_CUTOFF =
+  CRAB_FILAMENT_RADIUS + CRAB_FILAMENT_SOFTNESS + CRAB_FILAMENT_WARP + 0.02;
+
+/** 烘焙骨架为扁平段数组 + 包围球（makeCrabSampler 内部/单测辅助共用） */
+function bakeCrabFilaments(polylines: readonly CrabFilamentPolyline[]): CrabFilamentBaked[] {
+  return polylines.map((poly) => {
+    const points = new Float64Array(poly.length * 3);
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    for (let i = 0; i < poly.length; i += 1) {
+      const [x, y, z] = poly[i];
+      points[i * 3] = x;
+      points[i * 3 + 1] = y;
+      points[i * 3 + 2] = z;
+      cx += x;
+      cy += y;
+      cz += z;
+    }
+    cx /= poly.length;
+    cy /= poly.length;
+    cz /= poly.length;
+    let maxR2 = 0;
+    for (let i = 0; i < poly.length; i += 1) {
+      const dx = points[i * 3] - cx;
+      const dy = points[i * 3 + 1] - cy;
+      const dz = points[i * 3 + 2] - cz;
+      const r2 = dx * dx + dy * dy + dz * dz;
+      if (r2 > maxR2) maxR2 = r2;
+    }
+    const cullR = Math.sqrt(maxR2) + CRAB_FILAMENT_CUTOFF;
+    return { points, cx, cy, cz, cullR2: cullR * cullR };
+  });
+}
+
+/** 点到骨架段集合的最小距离平方（包围球早退；返回值 ≥ cutoff² 时可视为无丝） */
+function filamentMinDist2(
+  baked: readonly CrabFilamentBaked[],
+  x: number,
+  y: number,
+  z: number,
+): number {
+  let best = Infinity;
+  for (const fil of baked) {
+    const bx = x - fil.cx;
+    const by = y - fil.cy;
+    const bz = z - fil.cz;
+    if (bx * bx + by * by + bz * bz > fil.cullR2) continue;
+    const pts = fil.points;
+    const segCount = pts.length / 3 - 1;
+    for (let s = 0; s < segCount; s += 1) {
+      const ax0 = pts[s * 3];
+      const ay0 = pts[s * 3 + 1];
+      const az0 = pts[s * 3 + 2];
+      const ex = pts[s * 3 + 3] - ax0;
+      const ey = pts[s * 3 + 4] - ay0;
+      const ez = pts[s * 3 + 5] - az0;
+      const px = x - ax0;
+      const py = y - ay0;
+      const pz = z - az0;
+      const ee = ex * ex + ey * ey + ez * ez;
+      let t = ee > 0 ? (px * ex + py * ey + pz * ez) / ee : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const qx = px - ex * t;
+      const qy = py - ey * t;
+      const qz = pz - ez * t;
+      const d2 = qx * qx + qy * qy + qz * qz;
+      if (d2 < best) best = d2;
+    }
+  }
+  return best;
+}
+
+/**
+ * 点到默认种子骨架集合的最小距离（单测辅助：定位"远离所有丝"的弥散
+ * 参考点；渲染路径不消费——采样器内部走平方距离 + 包围球早退）
+ */
+export function crabFilamentDistance(x: number, y: number, z: number): number {
+  return Math.sqrt(filamentMinDist2(bakeCrabFilaments(crabFilamentPolylines()), x, y, z));
+}
+
+/** 早退门（qLen 单位）：包络扰动 + 软衰减可达范围之外零噪声/零骨架计算 */
+const CRAB_EARLY_EXIT_QLEN = 1.3;
+
+/**
+ * 生成蟹状双通道密度采样器（确定性：同种子输出逐点一致）
+ *
+ * 性能登记：每体素 ≤3 次 3D 值噪声调用（fBm 3 八度，轮廓扰动/丝状束状
+ * 调制/弥散起伏共用一轮）；包络外体素零噪声零骨架计算（早退）；骨架
+ * 距离经包围球平方距离早退 + 扁平段数组零分配，128³ 全量计算实测
+ * 与 M42 同量级（<1s 基准）。
+ *
+ * @param seed FNV-1a 种子（默认 `volumeSeed('crab-pulsar')`）
+ */
+export function makeCrabSampler(seed: number = volumeSeed(CRAB_VOLUME_ID)): NebulaDualSampler {
+  // 种子 → 噪声域偏移（fbm3 同款注入方式：不同种子 = 平移采样窗口）
+  const rand = createSeededRandom(seed >>> 0);
+  const turbOffsets: number[] = [];
+  for (let i = 0; i < 9; i += 1) turbOffsets.push(rand() * 96);
+  const filaments = bakeCrabFilaments(crabFilamentPolylines(seed));
+
+  const [ax, ay, az] = CRAB_ENVELOPE_RADII;
+  const cutoff2 = CRAB_FILAMENT_CUTOFF * CRAB_FILAMENT_CUTOFF;
+
+  return (x, y, z, out) => {
+    // 吸收通道恒零（蟹状无显著前景尘埃，登记见文件段头）
+    out.absorption = 0;
+
+    // ── 骨架坐标：椭球归一化半径 qLen（包络中面 = 1） ──
+    const qx = x / ax;
+    const qy = y / ay;
+    const qz = z / az;
+    const qLen = Math.sqrt(qx * qx + qy * qy + qz * qz);
+
+    // ── 早退门（无噪声）：包络可达范围之外直接归零 ──
+    if (qLen > CRAB_EARLY_EXIT_QLEN) {
+      out.emission = 0;
+      return;
+    }
+
+    // ── 细节层：3 八度 fBm（轮廓扰动 + 丝束状调制 + 弥散起伏共用） ──
+    let turb = 0;
+    let amp = 1;
+    let freq = 3;
+    let total = 0;
+    for (let o = 0; o < 3; o += 1) {
+      turb +=
+        valueNoise3D(
+          x * freq + turbOffsets[o * 3],
+          y * freq + turbOffsets[o * 3 + 1],
+          z * freq + turbOffsets[o * 3 + 2],
+        ) * amp;
+      total += amp;
+      amp *= 0.5;
+      freq *= 2;
+    }
+    turb /= total;
+
+    // ── 骨架第 1 层：椭球包络（轮廓经湍流扰动 ±0.1 去正椭球感） ──
+    const env01 = sdfDensityFalloff(qLen - 1 - (turb - 0.5) * 0.2, 0.12);
+    if (env01 <= 0) {
+      out.emission = 0;
+      return;
+    }
+
+    // ── 骨架第 2 层：内部 OIII 青色弥散（中心满值 → 外缘归零） ──
+    const diffuse = CRAB_DIFFUSE_LEVEL * sstep(1.05, 0.3, qLen) * (0.6 + 0.4 * turb);
+
+    // ── 骨架第 3 层：丝状网络（采样域经湍流方向场扭曲 → 密度脊缠绕） ──
+    const warp = (turb - 0.5) * (CRAB_FILAMENT_WARP * 2);
+    const d2 = filamentMinDist2(filaments, x + warp, y - warp * 0.7, z + warp * 0.5);
+    let fil = 0;
+    if (d2 < cutoff2) {
+      const fil01 = sdfDensityFalloff(Math.sqrt(d2) - CRAB_FILAMENT_RADIUS, CRAB_FILAMENT_SOFTNESS);
+      // 沿线束状调制（丝上亮结，0.55–1 不撕裂丝）
+      fil = 0.9 * fil01 * (0.55 + 0.45 * turb);
+    }
+
+    out.emission = Math.min(1, Math.max(0, (diffuse + fil) * env01));
+  };
+}
+
+/* ── PWN 环面强度剖面（Chandra 形态参考；shader GLSL 镜像的 CPU 纯函数） ── */
+
+/** 主环中径（环面网格半宽归一化 rho01 单位） */
+export const CRAB_TORUS_RING_RHO01 = 0.62;
+
+/** 主环高斯半宽 */
+export const CRAB_TORUS_RING_SIGMA = 0.14;
+
+/** 内环中径（Chandra 内环，X 射线激波环近似） */
+export const CRAB_TORUS_INNER_RHO01 = 0.28;
+
+/** 内环高斯半宽 */
+export const CRAB_TORUS_INNER_SIGMA = 0.07;
+
+/** 环面平面高斯增强半宽（height01 = 离环面平面归一化高度） */
+export const CRAB_TORUS_HEIGHT_SIGMA = 0.18;
+
+/**
+ * PWN 赤道环面强度剖面（主环 + 内环 + 中心弱辉 × 平面高斯增强）
+ *
+ * 环面 shader 消费径向部分（平面几何承载 height01 = 0 的平面增强项，
+ * 实现登记：CPU 纯函数含高度衰减供"环面平面增强"验收断言——同径向
+ * 半径下环面平面内强度 > 离面强度）。
+ *
+ * @param rho01 环面平面内归一化半径（≥0；主环中径 = CRAB_TORUS_RING_RHO01）
+ * @param height01 离环面平面归一化高度（有限数；平面内 = 0）
+ */
+export function crabTorusIntensity(rho01: number, height01: number): number {
+  if (!(rho01 >= 0) || !Number.isFinite(rho01) || !Number.isFinite(height01)) {
+    throw new RangeError(`环面坐标必须有限且半径非负，收到 rho01=${rho01} height01=${height01}`);
+  }
+  const ring = Math.exp(-(((rho01 - CRAB_TORUS_RING_RHO01) / CRAB_TORUS_RING_SIGMA) ** 2));
+  const inner =
+    0.75 * Math.exp(-(((rho01 - CRAB_TORUS_INNER_RHO01) / CRAB_TORUS_INNER_SIGMA) ** 2));
+  const glow = 0.22 * Math.exp(-((rho01 / 0.5) ** 2));
+  const plane = Math.exp(-((height01 / CRAB_TORUS_HEIGHT_SIGMA) ** 2));
+  return (ring + inner + glow) * plane;
+}
+
 /** RG 双通道体素数据的分帧构建状态（z 切片粒度推进 + 打点登记字段） */
 export interface RgVolumeBuildState {
   /** 纹理边长 */

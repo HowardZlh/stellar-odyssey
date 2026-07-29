@@ -41,6 +41,11 @@ import {
   nearViewExitDistanceUnits,
 } from '@/utils/nearView';
 import {
+  CRAB_COLOR_WEIGHT_INNER_R,
+  CRAB_COLOR_WEIGHT_OUTER_R,
+  CRAB_ENVELOPE_RADII,
+  CRAB_TEXTURE_SIZE,
+  CRAB_VOLUME_ID,
   HORSEHEAD_TEXTURE_SIZE,
   HORSEHEAD_VOLUME_ID,
   M42_TEXTURE_SIZE,
@@ -50,6 +55,7 @@ import {
   M57_SHELL_RADII,
   M57_TEXTURE_SIZE,
   M57_VOLUME_ID,
+  makeCrabSampler,
   makeHorseheadSampler,
   makeM42Sampler,
   makeM57Sampler,
@@ -351,6 +357,152 @@ export function horseheadCurtainFactor(vol01: number): number {
  */
 export function horseheadNearLayerFactor(near01: number, vol01: number): number {
   return clamp01(near01) * (1 - clamp01(vol01));
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+ * 蟹状星云主场景接入配置（R4-16，IMPROVEMENT_REQUIREMENTS_4 §R4-16）
+ *
+ * 接入模式与 R4-8/R4-14/R4-15 完全同构（volume 池容量 1——巡游切换时
+ * LRU 逐出）；差异仅密度场与配置。
+ *
+ * ── 深度关系登记（§R4-16 第 3 条）────────────────────────────────────────
+ * 体积合成三角形维持 depthTest=false（R4-8 结论沿用：volume 池容量 1，
+ * 近观独占视野）；脉冲星本体/射束/环面/喷流为主场景发射体，绘制于体积
+ * 合成之前（renderOrder 默认 0 < VOLUME_RENDER_ORDER），被合成按整盒
+ * 透射率压暗——同 R4-7/R4-8 星点 sprite 先例登记（未按发射体深度截断
+ * 积分；蟹状中心弥散密度低、偏差可忽略），另以 `crabCoreBoostFactor`
+ * 对射束/脉冲闪烁做透射补偿（脉冲节奏函数不变、不回退）。
+ *
+ * ── 位姿尺度登记 ─────────────────────────────────────────────────────────
+ * 包围盒边长 = 视觉尺寸 × 2.6：密度场包络长半轴（归一化域 0.78）折算
+ * 世界半径 ≈ 1.0 × 视觉半径，丝网外缘（0.92 qLen）≈ 1.1×，与 R2-7 遗迹
+ * 壳 billboard（2.6× 宽含淡出边缘 → 半径 1.3×）/丝状云团（1.2× 半径）
+ * 尺度衔接；体积组变换逐帧复制星云组世界矩阵（登记：billboard 的缓慢
+ * 膨胀动画不随动体积——体积激活时 billboard 已交叉淡出，观感无冲突）。
+ *
+ * ── 色彩登记（附录 A §4）──────────────────────────────────────────────────
+ * 自然色近似：外围 Hα 红橙丝（#d95f3b）+ 内部 OIII 青弥散（#7fc4cf）
+ * ——与 R2-7 丝状云团纹理（#ff5545/#bfe0ff）同向降饱和；PWN 环面/喷流
+ * 蓝白同步辐射色由独立 shader 网格承载（非体积双色通道）。
+ *
+ * ── PWN 内核尺度登记（Chandra 形态参考）─────────────────────────────────
+ * 真实环面直径 ~0.5 ly ≪ 星云 ~11 ly（比例 ~0.05），可视化按环面半径
+ * 0.30× 视觉半径夸大（~6×）保近观可辨；喷流沿自转轴（±y，与射束进动
+ * 轴一致）长 0.95× 视觉半径，复用 `RelativisticJet` 锥体 shader 参数化
+ * 缩小（复用登记，勿新造）。
+ * ════════════════════════════════════════════════════════════════════════ */
+
+/** 蟹状体积包围盒边长系数（× visualRadiusLy 场景尺寸，登记见上） */
+export const CRAB_VOLUME_BOX_FACTOR = 2.6;
+
+/** 蟹状中心脉冲星 sprite 边长系数（× 包围盒边长；体积内嵌蓝白核） */
+export const CRAB_VOLUME_STAR_SPRITE_FACTOR = 0.055;
+
+/** PWN 环面外半径系数（× 视觉半径场景尺寸；夸大登记见上） */
+export const CRAB_PWN_TORUS_RADIUS_FACTOR = 0.48;
+
+/** PWN 喷流长度系数（× 视觉半径场景尺寸，单侧） */
+export const CRAB_PWN_JET_LENGTH_FACTOR = 0.95;
+
+/** PWN 同步辐射蓝白色（环面/喷流共用） */
+export const CRAB_PWN_COLOR = '#bfe0ff';
+
+/** 主场景蟹状体积层默认参数（色彩登记见上；步数为自适应基准） */
+export const CRAB_SCENE_VOLUME_PARAMS = {
+  /** 基准步进数（128³ 丝状细节：与 M42 同档 64 步） */
+  baseSteps: 64,
+  /** 发射密度倍率（丝峰值 ~0.9、弥散 ~0.16 → 目验调参恢复亮度） */
+  densityScale: 2.6,
+  /** 尘埃吸收倍率（吸收通道恒零，值无效果——保持 0 登记） */
+  dustStrength: 0,
+  /** 双色权重偏置（默认无偏置） */
+  weightBias: 0,
+  /** 输出亮度（预览页目检 + 主场景 Bloom 联调） */
+  intensity: 1.15,
+  /** 外围 Hα 红橙丝自然色近似 */
+  colorHa: '#d95f3b',
+  /** 内部 OIII 青弥散自然色近似 */
+  colorOIII: '#7fc4cf',
+} as const;
+
+/**
+ * 蟹状体积层细节规格（useDetailLayer 入参；调用方 useMemo 稳定）
+ *
+ * 阈值与 R2-7 近观层同源同值（丝状云团与体积同时机激活，交叉淡出
+ * 无空档）；预算 = 128³ RG 双通道纹理 4 MB。
+ */
+export function crabVolumeDetailLayerSpec(): DetailLayerSpec {
+  const volumeTexBytes = volumeTextureGpuBytes(CRAB_TEXTURE_SIZE, 2, 1);
+  return {
+    bodyId: CRAB_VOLUME_ID,
+    kind: 'volume',
+    enterDistanceUnits: nearViewEnterDistanceUnits(CRAB_VOLUME_ID),
+    exitDistanceUnits: nearViewExitDistanceUnits(CRAB_VOLUME_ID),
+    budget: {
+      volumeTexBytes,
+      gpuBytesEstimate: estimateGpuBytes({ volumeTexBytes }),
+    },
+  };
+}
+
+/** 蟹状体积包围盒世界边长（场景单位） */
+export function crabVolumeBoxEdgeUnits(sizeUnits: number): number {
+  if (!Number.isFinite(sizeUnits) || sizeUnits <= 0) {
+    throw new RangeError(`星云视觉尺寸必须为正有限数，收到 ${sizeUnits}`);
+  }
+  return sizeUnits * CRAB_VOLUME_BOX_FACTOR;
+}
+
+/**
+ * 遗迹壳 billboard 交叉淡出系数（§R4-16 第 3 条）
+ *
+ * R2-7 现状：近观时减淡 45%（1 − 0.45·near01）；R4-16 叠加体积层交叉
+ * 淡出（× (1 − vol01)）——体积淡入至满时 billboard 完全隐去（体积丝网
+ * 接管），退出时反向恢复。vol01=0 时与 R2-7 行为逐点一致（零回退）。
+ */
+export function crabBaseLayerFactor(near01: number, vol01: number): number {
+  return (1 - 0.45 * clamp01(near01)) * (1 - clamp01(vol01));
+}
+
+/**
+ * R2-7 丝状云团（+16 sprite）交叉淡出系数：近观权重 × (1 − 体积权重)
+ *
+ * 体积激活前保持 R2-7 行为（= near01）；体积淡入时同步淡出（§R4-16
+ * 第 3 条登记：+16 丝状云团移交体积丝网）。
+ */
+export function crabNearLayerFactor(near01: number, vol01: number): number {
+  return clamp01(near01) * (1 - clamp01(vol01));
+}
+
+/**
+ * 射束/脉冲闪烁透射补偿系数（深度关系登记见文件段头）
+ *
+ * 体积合成按整盒透射率压暗主场景发射体；对射束与脉冲闪烁按体积淡入
+ * 权重补偿增亮（×(1 + 0.6·vol01)），保证脉冲节奏观感不回退（节奏
+ * 函数 pulsarPulseIntensity 本身零改动）。vol01=0 时恒 1（零回退）。
+ */
+export function crabCoreBoostFactor(vol01: number): number {
+  return 1 + 0.6 * clamp01(vol01);
+}
+
+/** 蟹状体积层通用配置（丝状网络 + OIII 弥散；内嵌中心脉冲星蓝白核 sprite） */
+export function crabVolumeLayerConfig(): NebulaVolumeLayerConfig {
+  const [ax, ay, az] = CRAB_ENVELOPE_RADII;
+  return {
+    volumeId: CRAB_VOLUME_ID,
+    textureSize: CRAB_TEXTURE_SIZE,
+    makeSampler: () => makeCrabSampler(),
+    params: {
+      ...CRAB_SCENE_VOLUME_PARAMS,
+      core: [0, 0, 0],
+      weightInnerR: CRAB_COLOR_WEIGHT_INNER_R,
+      weightOuterR: CRAB_COLOR_WEIGHT_OUTER_R,
+      weightInvRadii: [1 / ax, 1 / ay, 1 / az],
+    },
+    stars: [{ position: [0, 0, 0], scaleFactor: CRAB_VOLUME_STAR_SPRITE_FACTOR }],
+    starTint: [200, 226, 255],
+    logTag: 'R4-16 蟹状',
+  };
 }
 
 /* ════════════════════════════════════════════════════════════════════════
