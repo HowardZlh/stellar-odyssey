@@ -306,8 +306,9 @@ export const KIND_BY_MORPHOLOGY: Readonly<
  * 实现差异登记：
  * - milky-way 不在本表：银河系本身即 4 万粒 3D 粒子盘（Galaxy.tsx），
  *   近观 = 既有渲染（与 R2-7 序列成员 sun 同理），不重复建设；
- * - quasar-3c273（L4 序列第 8 站）非星系贴图平面：近观细节为既有
- *   类星体核心光变 + 双向喷流 shader（ExtragalacticObjects.tsx），不建粒子层。
+ * - quasar-3c273（L4 序列第 8 站）非星系贴图平面、不在本表：R4-21 起
+ *   近观细节层由 utils/quasarNearView 承载（吸积盘 + BLR 辉光 + 尘埃
+ *   环面粒子环，particles 池与本模块共池 LRU），本模块不管理。
  */
 export const GALAXY_NEAR_VIEW_CONFIGS: Readonly<Record<string, GalaxyNearViewConfig>> = {
   // 旋涡：M31 大核球 + 双主旋臂（示意近似）
