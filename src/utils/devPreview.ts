@@ -22,6 +22,10 @@ import {
   BETELGEUSE_SH_AMPLITUDE_DEFAULT,
   BETELGEUSE_SH_EVOLVE_SPEED_DEFAULT,
 } from '@/utils/stellarNearView';
+import {
+  WR124_EXPAND_AMP,
+  WR124_SCENE_VOLUME_PARAMS,
+} from '@/utils/nebulaVolumeScene';
 
 /** 单个天体细节组件可声明的最大调试滑杆数（§R4-1：≤8 个） */
 export const MAX_PREVIEW_PARAMS = 8;
@@ -198,11 +202,33 @@ function makeStellarEntry(bodyId: string, title: string, dataSource: string): Pr
       },
     );
   }
+  // R4-20 WR 124 专属滑杆：抛射壳体积（恒星 + M1-67 团块泡沫壳组合预览，
+  // 默认值与主场景 WR124_SCENE_VOLUME_PARAMS 同源）
+  if (bodyId === 'wr-124') {
+    params.push(
+      {
+        key: 'density',
+        label: '抛射壳密度倍率',
+        min: 0,
+        max: 6,
+        default: WR124_SCENE_VOLUME_PARAMS.densityScale,
+      },
+      {
+        key: 'expandAmp',
+        label: '径向膨胀幅度',
+        min: 0,
+        max: 0.4,
+        default: WR124_EXPAND_AMP,
+      },
+    );
+  }
   return {
     bodyId,
     title,
     componentKey: 'stellar-surface',
-    cameraDistance: 3.2,
+    // R4-20：WR 124 相机外推（抛射壳中面 ≈ 4.2 单位、体积盒半宽 7——
+    // 起始视角覆盖恒星 + 完整壳层；其余恒星维持近观 3.2）
+    cameraDistance: bodyId === 'wr-124' ? 9 : 3.2,
     params,
     dataSource,
   };
@@ -236,8 +262,8 @@ const STELLAR_ENTRIES: readonly PreviewEntry[] = [
   ),
   makeStellarEntry(
     'wr-124',
-    'WR 124（沃尔夫-拉叶星 WN8h · StellarSurface）',
-    'Hamann et al. (2019)；Claret (2000) 临边昏暗近似档（O 档高温近似）',
+    'WR 124（沃尔夫-拉叶星 WN8h · StellarSurface + M1-67 抛射壳体积）',
+    'Hamann et al. (2019)；Claret (2000) 临边昏暗近似档（O 档高温近似）；M1-67 抛射壳：NASA/ESA Hubble 与 JWST（2023）公版图像观感参考（团块泡沫程序化近似 + v∝r 均匀膨胀流，非逐结贴合照片）',
   ),
 ];
 
@@ -529,6 +555,15 @@ export const VOLUME_PREVIEW_COMPONENT_KEYS: ReadonlySet<string> = new Set([
   'horsehead-nebula-volume',
   'crab-nebula-volume',
 ]);
+
+/**
+ * 条目是否含体积层（HUD 体积质量档行显隐；R4-20：wr-124 为
+ * stellar-surface 组合抛射壳体积的特例登记）
+ */
+export function previewHasVolumeLayer(entry: PreviewEntry | null | undefined): boolean {
+  if (!entry) return false;
+  return VOLUME_PREVIEW_COMPONENT_KEYS.has(entry.componentKey) || entry.bodyId === 'wr-124';
+}
 
 /**
  * 预览注册表（后续 R4 阶段在此追加条目）

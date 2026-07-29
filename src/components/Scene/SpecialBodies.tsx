@@ -34,6 +34,8 @@ import {
   blueGiantFlicker,
   cepheidBrightness,
   nebulaExpansionScale,
+  PULSAR_BEAM_AXIAL_EXPONENT,
+  PULSAR_BEAM_EDGE_EXPONENT,
   pulsarBeamAngle,
   pulsarPulseIntensity,
   redGiantPulsation,
@@ -72,6 +74,11 @@ import {
   orionVolumeBoxEdgeUnits,
   orionVolumeDetailLayerSpec,
   orionVolumeLayerConfig,
+  wr124CoreBoostFactor,
+  wr124ShellMeshFactor,
+  wr124VolumeBoxEdgeUnits,
+  wr124VolumeDetailLayerSpec,
+  wr124VolumeLayerConfig,
 } from "@/utils/nebulaVolumeScene";
 import {
   CRAB_TORUS_INNER_RHO01,
@@ -946,6 +953,14 @@ function BlueGiant({ body }: BodyProps): JSX.Element {
 /**
  * 沃尔夫-拉叶星（WR 124，可选需求 3.1.5）：炽热蓝白核心 + 强星风外流
  * + M1-67 抛射星云壳（缓慢膨胀）
+ *
+ * R4-20：近观挂接团块泡沫抛射壳体积层（useDetailLayer volume 池，容量
+ * 1，与 M42/M57/马头/蟹状同池——巡游切换时 LRU 逐出）——跟随/飞往且
+ * 距离达阈值（与 R4-18 近观点缀同源同值）时挂载 NebulaVolumeLayer
+ * （64³ 小型层，径向膨胀 uTime 驱动与既有壳 mesh 动画同参）；既有抛射
+ * 壳 mesh 随体积淡入交叉淡出（wr124ShellMeshFactor），退出反向恢复、
+ * 体积纹理随卸载 dispose；光晕 sprite 按 wr124CoreBoostFactor 补偿体积
+ * 透射压暗（深度关系登记见 nebulaVolumeScene.ts WR 124 段头）。
  */
 function WolfRayet({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
@@ -966,21 +981,39 @@ function WolfRayet({ body }: BodyProps): JSX.Element {
   const getWeight = useGalacticPlacement(body, groupRef);
   // R4-18 近观点缀门控（色球环 + 衍射星芒仅近观挂载）
   const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
+  // R4-20 体积层门控（volume 池容量 1，release-on-exit：退出淡出即卸载）
+  const volumeSpec = useMemo(() => wr124VolumeDetailLayerSpec(), []);
+  const volumeConfig = useMemo(() => wr124VolumeLayerConfig(), []);
+  const { active: volumeActive, opacity01: getVolumeGate01 } = useDetailLayer(
+    volumeSpec,
+    { objectRef: groupRef },
+  );
+  // 体积视觉淡入权重（NebulaVolumeLayer 每帧写入：门控 × 烘焙就绪；
+  // 卸载复位 0——抛射壳 mesh 交叉淡出/光晕透射补偿的唯一消费源）
+  const volumeFadeRef = useRef(0);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
+    const vol01 = volumeFadeRef.current;
     if (glowRef.current) {
-      (glowRef.current.material as THREE.SpriteMaterial).opacity =
-        0.85 * blueGiantFlicker(clock.elapsedTime * 1.4) * weight;
+      // 光晕透射补偿（R4-20：体积合成压暗主场景发射体，登记）
+      (glowRef.current.material as THREE.SpriteMaterial).opacity = Math.min(
+        1,
+        0.85 *
+          blueGiantFlicker(clock.elapsedTime * 1.4) *
+          weight *
+          wr124CoreBoostFactor(vol01),
+      );
     }
     if (shellRef.current) {
-      // M1-67 抛射星云壳：缓慢膨胀（艺术化加速，已登记）
+      // M1-67 抛射星云壳：缓慢膨胀（艺术化加速，已登记）；体积淡入时
+      // 交叉淡出——团块泡沫体积接管壳层（R4-20）
       shellRef.current.scale.setScalar(
         nebulaExpansionScale(clock.elapsedTime, 80, 0.14),
       );
       (shellRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.14 * weight;
+        0.14 * weight * wr124ShellMeshFactor(vol01);
     }
   });
 
@@ -1037,6 +1070,19 @@ function WolfRayet({ body }: BodyProps): JSX.Element {
           teffK={star.teffK}
           getWeight={getWeight}
           getNear01={getNear01}
+        />
+      )}
+      {/* R4-20 近观抛射壳体积层（64³ RG raymarch：团块泡沫 + 径向膨胀；
+          detailLayer volume 池门控，卸载即 dispose 纹理/RT/材质，交叉
+          淡出权重经 volumeFadeRef 输出） */}
+      {volumeActive && (
+        <NebulaVolumeLayer
+          groupRef={groupRef}
+          boxEdgeUnits={wr124VolumeBoxEdgeUnits(size)}
+          config={volumeConfig}
+          getWeight={getWeight}
+          getGate01={getVolumeGate01}
+          fadeRef={volumeFadeRef}
         />
       )}
       <BodyLabel body={body} sizeUnits={size} />
@@ -1864,8 +1910,14 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
   );
   useEffect(() => () => flashTexture.dispose(), [flashTexture]);
 
-  // 射束 shader（P6 §3.2）：径向渐变（轴心亮边缘淡）+ 沿轴噪声扰动，
-  // 替换纯色 cone。锥体侧面 uv.y 为沿轴归一化坐标、uv.x 为环向
+  // 射束 shader（P6 §3.2 → R4-20 轻量体积锥升级）：
+  // - 轴向密度衰减：幂律软衰减（pulsarBeamAxial01 的 GLSL 镜像）；
+  // - 边缘软化：视线穿越圆锥截面的弦长近似（弦长 ∝ |n·v|，
+  //   pulsarBeamChord01 镜像）——轮廓边缘弦长 → 0 平滑消失，替代原
+  //   静态 uv.x 条纹（视角无关的假径向渐变），侧视/斜视均无硬边锥；
+  // - 扫描旋转/脉冲节奏保留（beamsRef 旋转与 pulsarPulseIntensity 零改动）；
+  // - DoubleSide 前后两面各按半弦长贡献（×0.5，相机入锥内仍连续）；
+  // - 补齐 log depth buffer 兼容（附录 A §5，P6 遗留，Starfield 先例）。
   const beamMaterial = useMemo(
     () =>
       new THREE.ShaderMaterial({
@@ -1875,28 +1927,44 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
         blending: THREE.AdditiveBlending,
         uniforms: { uTime: { value: 0 }, uOpacity: { value: 0.5 } },
         vertexShader: /* glsl */ `
+          #include <common>
+          #include <logdepthbuf_pars_vertex>
           varying vec2 vUv;
+          varying vec3 vNormalView;
+          varying vec3 vPosView;
           void main() {
             vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            vNormalView = normalMatrix * normal;
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+            vPosView = mvPosition.xyz;
+            gl_Position = projectionMatrix * mvPosition;
+            #include <logdepthbuf_vertex>
           }
         `,
         fragmentShader: /* glsl */ `
+          #include <common>
+          #include <logdepthbuf_pars_fragment>
           uniform float uTime;
           uniform float uOpacity;
           varying vec2 vUv;
+          varying vec3 vNormalView;
+          varying vec3 vPosView;
           float hash(float x){ return fract(sin(x*127.1)*43758.5453); }
           void main() {
-            // 沿轴：根部（uv.y≈0）亮，尖端淡出
-            float axial = smoothstep(1.0, 0.0, vUv.y);
-            // 环向径向渐变：中心线亮、边缘淡
-            float radial = 1.0 - abs(vUv.x - 0.5) * 2.0;
-            radial = pow(clamp(radial, 0.0, 1.0), 1.5);
-            // 噪声扰动（沿轴流动的等离子体团块）
+            #include <logdepthbuf_fragment>
+            // 轴向密度衰减：根部（uv.y≈0）亮 → 尖端幂律软淡出
+            // （pulsarBeamAxial01 镜像）
+            float axial = pow(1.0 - clamp(vUv.y, 0.0, 1.0), ${PULSAR_BEAM_AXIAL_EXPONENT.toFixed(2)});
+            // 边缘软化：弦长近似 ∝ |n·v|（pulsarBeamChord01 镜像；
+            // 轮廓边缘 n⊥v → 0，无硬边）
+            float cosNV = abs(dot(normalize(vNormalView), normalize(vPosView)));
+            float chord = pow(min(cosNV, 1.0), ${PULSAR_BEAM_EDGE_EXPONENT.toFixed(2)});
+            // 噪声扰动（沿轴流动的等离子体团块，保留）
             float n = hash(floor(vUv.y * 12.0) + floor(uTime * 3.0));
             float flow = 0.7 + 0.3 * n;
             vec3 col = vec3(0.75, 0.9, 1.0);
-            float a = axial * radial * flow * uOpacity;
+            // DoubleSide 前后两面各贡献半弦长（×0.5）
+            float a = axial * chord * flow * uOpacity * 0.5;
             gl_FragColor = vec4(col, a);
           }
         `,

@@ -79,6 +79,8 @@ export interface NebulaVolumePreviewProps {
   clockLabelRef?: RefObject<HTMLSpanElement | null>;
   /** HUD 体积质量档位读数节点（构建期显示进度，完成后显示档位） */
   qualityLabelRef?: RefObject<HTMLSpanElement | null>;
+  /** 体积盒世界边长覆写（R4-20 wr-124 组合预览：与恒星尺度对齐） */
+  boxEdge?: number;
 }
 
 export function NebulaVolumePreview({
@@ -86,6 +88,7 @@ export function NebulaVolumePreview({
   values,
   clockLabelRef,
   qualityLabelRef,
+  boxEdge = NEBULA_PREVIEW_BOX_EDGE,
 }: NebulaVolumePreviewProps): JSX.Element {
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
@@ -113,7 +116,7 @@ export function NebulaVolumePreview({
       depthTest: false,
       transparent: true,
     });
-    addVolumeStarSprites(volumeScene, starMaterial, NEBULA_PREVIEW_BOX_EDGE, config.stars);
+    addVolumeStarSprites(volumeScene, starMaterial, boxEdge, config.stars);
     const rt = createVolumeRenderTarget(2, 2); // 首帧按实际缓冲尺寸同步
     const compositeMaterial = createVolumeCompositeMaterial(rt);
     const compositeGeometry = createFullscreenTriangleGeometry();
@@ -133,7 +136,7 @@ export function NebulaVolumePreview({
       drawSize: new THREE.Vector2(),
       savedClearColor: new THREE.Color(),
     };
-  }, [config]);
+  }, [config, boxEdge]);
 
   useEffect(() => {
     return () => {
@@ -150,7 +153,9 @@ export function NebulaVolumePreview({
 
   // ① 分帧构建推进 + uniform 覆写 + 自适应质量（优先级 0.5）
   useFrame((_, delta) => {
-    virtualTimeRef.current += delta;
+    // R4-20：时间流速滑杆调制虚拟时钟（wr-124 组合预览与恒星层同步；
+    // 其余体积条目无 timeScale 滑杆 → 恒 1 零回退）
+    virtualTimeRef.current += delta * (values.timeScale ?? 1);
     nowMsRef.current += delta * 1000;
 
     const { buildState } = resources;
@@ -194,9 +199,11 @@ export function NebulaVolumePreview({
         weightInnerR: params.weightInnerR,
         weightOuterR: params.weightOuterR,
         weightInvRadii: params.weightInvRadii,
+        expandAmp: params.expandAmp,
+        expandPeriodSec: params.expandPeriodSec,
       });
       const mesh = new THREE.Mesh(resources.boxGeometry, volumeMaterial);
-      mesh.scale.setScalar(NEBULA_PREVIEW_BOX_EDGE);
+      mesh.scale.setScalar(boxEdge);
       mesh.renderOrder = 1; // 晚于星点 sprite：体积按透射率覆盖压暗
       resources.volumeScene.add(mesh);
       resources.texture = texture;
@@ -221,6 +228,8 @@ export function NebulaVolumePreview({
     u.uDustStrength.value = values.dust ?? config.params.dustStrength;
     u.uWeightBias.value = values.weightBias ?? config.params.weightBias;
     u.uIntensity.value = values.intensity ?? config.params.intensity;
+    // R4-20 径向膨胀幅度（无滑杆的条目回落配置值；缺省 0 零回退）
+    u.uExpandAmp.value = values.expandAmp ?? config.params.expandAmp ?? 0;
 
     // HUD 虚拟时钟读数（0.1s 粒度，内容变化才写 DOM）
     const label = clockLabelRef?.current;
