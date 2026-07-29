@@ -18,6 +18,13 @@ import {
   ANTENNAE_STATIC_NEAR_DIM,
   antennaeDetailLayerSpec,
 } from '@/utils/antennaeNearView';
+import {
+  CLUSTER_LENSING_STATIC_ARC_DIM,
+  clusterLensingSource,
+  lensedBackgroundSources,
+  resetClusterLensingSource,
+  writeClusterLensingSource,
+} from '@/utils/clusterLensing';
 import { useDetailLayer } from '@/hooks/useDetailLayer';
 import { useAntennaeSnapshots } from '@/hooks/useAntennaeSnapshots';
 import { QuasarNearCore } from '@/components/Scene/QuasarNearView';
@@ -516,13 +523,27 @@ export function AntennaeGalaxies(): JSX.Element | null {
   );
 }
 
+/** LensingArcs 渲染循环临时向量（世界坐标写入持有者，零分配） */
+const LENSING_TMP_WORLD = new THREE.Vector3();
+
 /**
- * 星系团引力透镜弧（可选需求 3.1.5）：围绕星系团中心的蓝色弧状
- * 背景星系拉伸虚像（示意置于室女座星系团位置，原型 Abell 370，已登记）
+ * 星系团引力透镜弧（可选需求 3.1.5 + R4-23 升级）：围绕星系团中心的
+ * 蓝色弧状背景星系拉伸虚像（示意置于室女座星系团位置，原型 Abell 370，
+ * 已登记）。
+ *
+ * R4-23：近观（跟随/飞往本天体）时由 PostEffects 挂载屏幕空间 SIS
+ * 偏转 Effect（方案 a，登记见 ClusterLensingEffect.tsx）呈现真折射——
+ * 本组件每帧把团块质心世界坐标/可见权重写入 clusterLensingSource
+ * 持有者供后期管线消费；静态示意 ring 弧按效果强度减淡 75% 让位
+ * 真折射弧（保留残影登记）；新增确定性背景源 sprite（团块之后的
+ * "背景星系"，世界系固定 → 绕行视差下被拉伸弧位置随视角一致）与
+ * 团块弥散光晕。非跟随时持有者 visible01 随层级权重写入但 Effect
+ * 不挂载（PostEffects 域判据），仍为零渲染开销。
  */
 export function LensingArcs(): JSX.Element | null {
   const body = getSpecialBodyById('cluster-lensing');
   const groupRef = useRef<THREE.Group>(null);
+  const arcsRef = useRef<THREE.Group>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const showLabels = useSimulationStore((s) => s.showLabels);
   const inRange = useSimulationStore((s) => s.continuousLevel > 3.05);
@@ -541,18 +562,64 @@ export function LensingArcs(): JSX.Element | null {
     [],
   );
 
+  // R4-23 近观背景源（确定性布局，被 SIS Effect 拉伸成切向弧）与
+  // 团块弥散光晕贴图；背景源组姿态：局部 +z 对齐团块视向"更远"方向
+  const sources = useMemo(() => lensedBackgroundSources(), []);
+  const sourceTextures = useMemo(
+    () => ({
+      warm: new THREE.CanvasTexture(createGlowSpriteCanvas('#ffe3c8', 64)),
+      cool: new THREE.CanvasTexture(createGlowSpriteCanvas('#cfe0ff', 64)),
+      core: new THREE.CanvasTexture(createGlowSpriteCanvas('#dfe6ff', 128)),
+    }),
+    [],
+  );
+  useEffect(
+    () => () => {
+      sourceTextures.warm.dispose();
+      sourceTextures.cool.dispose();
+      sourceTextures.core.dispose();
+    },
+    [sourceTextures],
+  );
+  const sourcesQuaternion = useMemo(() => {
+    if (!body?.direction) return new THREE.Quaternion();
+    const dir = new THREE.Vector3(
+      body.direction.x,
+      body.direction.y,
+      body.direction.z,
+    ).normalize();
+    return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+  }, [body]);
+  // 组件卸载：清空持有者（Effect 读到 present=false 即归零）
+  useEffect(() => () => resetClusterLensingSource(), []);
+
   useFrame(({ camera }) => {
     const group = groupRef.current;
     if (!group) return;
     const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
     group.visible = weight > 0.001;
     setObjectTreeRaycastEnabled(group, weight > INTERACTIVE_WEIGHT);
+    // R4-23：团块质心世界坐标 + 可见权重写入持有者（后期 Effect 消费）
+    group.getWorldPosition(LENSING_TMP_WORLD);
+    writeClusterLensingSource(
+      LENSING_TMP_WORLD.x,
+      LENSING_TMP_WORLD.y,
+      LENSING_TMP_WORLD.z,
+      weight,
+    );
     if (!group.visible) return;
-    // 弧面朝向相机（透镜像沿视线方向观察）
-    group.quaternion.copy(camera.quaternion);
+    // 弧面朝向相机（透镜像沿视线方向观察；背景源组保持世界系固定）
+    arcsRef.current?.quaternion.copy(camera.quaternion);
+    // 静态示意弧按效果强度减淡（真折射弧接管，保留残影登记）
+    const staticDim =
+      1 - CLUSTER_LENSING_STATIC_ARC_DIM * clusterLensingSource().effectStrength01;
     group.traverse((obj) => {
       if (obj instanceof THREE.Mesh) {
-        (obj.material as THREE.MeshBasicMaterial).opacity = 0.6 * weight;
+        (obj.material as THREE.MeshBasicMaterial).opacity = 0.6 * weight * staticDim;
+      }
+      if (obj instanceof THREE.Sprite) {
+        const mat = obj.material as THREE.SpriteMaterial;
+        mat.opacity = ((obj.userData.baseOpacity as number | undefined) ?? 0.6) * weight;
       }
     });
   });
@@ -566,26 +633,58 @@ export function LensingArcs(): JSX.Element | null {
       position={[body.direction.x * d, body.direction.y * d, body.direction.z * d]}
       name={body.id}
     >
-      {arcs.map((arc, i) => (
-        <mesh
-          key={i}
-          rotation={[0, 0, arc.tilt]}
-          onClick={(e) => {
-            e.stopPropagation();
-            selectBody(body.id);
-          }}
-        >
-          {/* 细环弧段：背景星系被拉伸成的弧状虚像 */}
-          <ringGeometry args={[arc.radius - 28, arc.radius + 28, 48, 1, arc.start, arc.length]} />
-          <meshBasicMaterial
-            color="#a8d4ff"
-            transparent
-            side={THREE.DoubleSide}
-            blending={THREE.AdditiveBlending}
-            depthWrite={false}
-          />
-        </mesh>
-      ))}
+      {/* 静态示意弧组（面向相机 billboard，近观按效果强度减淡） */}
+      <group ref={arcsRef}>
+        {arcs.map((arc, i) => (
+          <mesh
+            key={i}
+            rotation={[0, 0, arc.tilt]}
+            onClick={(e) => {
+              e.stopPropagation();
+              selectBody(body.id);
+            }}
+          >
+            {/* 细环弧段：背景星系被拉伸成的弧状虚像 */}
+            <ringGeometry args={[arc.radius - 28, arc.radius + 28, 48, 1, arc.start, arc.length]} />
+            <meshBasicMaterial
+              color="#a8d4ff"
+              transparent
+              side={THREE.DoubleSide}
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
+            />
+          </mesh>
+        ))}
+      </group>
+      {/* R4-23 团块弥散光晕（透镜体可见锚点） */}
+      <sprite scale={[900, 900, 1]} userData={{ baseOpacity: 0.4 }}>
+        <spriteMaterial
+          map={sourceTextures.core}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          opacity={0}
+        />
+      </sprite>
+      {/* R4-23 背景源（世界系固定于团块之后，近观被 SIS Effect 拉伸成弧） */}
+      <group quaternion={sourcesQuaternion}>
+        {sources.map((s, i) => (
+          <sprite
+            key={i}
+            position={[s.x, s.y, s.z]}
+            scale={[s.scale, s.scale, 1]}
+            userData={{ baseOpacity: 0.85 }}
+          >
+            <spriteMaterial
+              map={s.warmth01 < 0.5 ? sourceTextures.warm : sourceTextures.cool}
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              opacity={0}
+            />
+          </sprite>
+        ))}
+      </group>
       {showLabels && inRange && !focused && (
         <ClampedHtmlLabel position={[0, 1550, 0]} distanceFactor={12000} style={{ pointerEvents: 'none' }}>
           <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-sky-200">

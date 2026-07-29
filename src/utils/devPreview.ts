@@ -592,6 +592,30 @@ const ANTENNAE_ENTRY: PreviewEntry = {
     'Toomre & Toomre (1972, ApJ 178, 623) 潮汐相互作用图景：受限三体/测试粒子模拟离线烘焙（两 Plummer 软化质心抛物线交会 + 各 2,796 粒顺行盘、倾角 60°、RK4 定步长积分，10 快照；参数登记 scripts/bake-data/antennae.ts）；T&T 原文 Antennae 用 e≈0.5 椭圆、此处按需求取抛物线登记；快照全程 ↔ 600 Myr（三角波往返映射保证插值连续，登记）；双盘暖橙/冷蓝配色为区分尾源盘的艺术化强调档',
 };
 
+/**
+ * 透镜星系团屏幕空间引力透镜（R4-23）：postprocessing 自定义 Effect
+ * （方案 a 登记，ClusterLensingEffect.tsx）——SIS 模型偏转屏幕 UV，
+ * 预览场景放置团块光晕 + 确定性背景源 sprite，绕行/滑杆目验背景被
+ * 拉伸成切向弧/部分爱因斯坦环。
+ *
+ * 滑杆 3 件（≤8 上限）：爱因斯坦半径（预览场景单位，帧写持有者）/
+ * 透镜强度（0 关闭对照）/背景源亮度。Effect 由预览 harness 挂入
+ * EffectComposer（Bloom/ToneMapping 之前），与主场景同一 Effect 实现。
+ */
+const CLUSTER_LENSING_ENTRY: PreviewEntry = {
+  bodyId: 'cluster-lensing',
+  title: '星系团引力透镜（SIS 屏幕空间折射 · 原型 Abell 370）',
+  componentKey: 'cluster-lensing-effect',
+  cameraDistance: 8,
+  params: [
+    { key: 'einsteinRadius', label: '爱因斯坦半径（场景单位）', min: 0.5, max: 4, default: 2 },
+    { key: 'strength', label: '透镜强度', min: 0, max: 1, default: 1 },
+    { key: 'sourceGain', label: '背景源亮度', min: 0, max: 2, default: 1 },
+  ],
+  dataSource:
+    'SIS 奇异等温球透镜方程 β = θ − θ_E·θ̂（Narayan & Bartelmann 1996 §3.1；Schneider, Ehlers & Falco 1992），屏幕空间 UV 重采样近似（仅对团块之后背景严格成立，前景同被偏移登记）；原型 Abell 370（真实 θ_E ≈ 30″–40″，此处压缩至近观十几度可视化档登记）；影响域窗为实现性裁剪（真实 SIS 偏转全域恒为 θ_E）',
+};
+
 /** 体积类预览条目的 componentKey 集（HUD 质量档行按此显隐） */
 export const VOLUME_PREVIEW_COMPONENT_KEYS: ReadonlySet<string> = new Set([
   'volume-raymarch-test',
@@ -629,6 +653,7 @@ export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
     M13_ENTRY,
     QUASAR_ENTRY,
     ANTENNAE_ENTRY,
+    CLUSTER_LENSING_ENTRY,
   ];
   const map = new Map<string, PreviewEntry>();
   for (const e of entries) {
