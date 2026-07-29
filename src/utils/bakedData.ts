@@ -1,10 +1,13 @@
 /**
- * R4-5 烘焙数据运行时加载器：fetch public/data/*.json + 校验 + 内存缓存
+ * R4-5 烘焙数据运行时加载器：fetch public/data/* + 校验 + 内存缓存
  *
  * 产物由 `npm run bake:data`（scripts/bake-data/）离线生成并随仓库提交，
  * 运行时零外部网络请求（仅同源静态资产 fetch）。
  * 数据来源登记见各产物 meta 字段与 scripts/bake-data/index.ts 文件头
  * （Gaia DR3 / SIMBAD+文献 / Harris 目录，IMPROVEMENT_REQUIREMENTS_4.md §0.4）。
+ *
+ * R4-22 起支持二进制产物（antennae.bin，Float32 小端；布局/模拟参数登记
+ * 见 scripts/bake-data/antennae.ts 文件头，Toomre & Toomre 1972 图景）。
  *
  * 失败语义：网络错误 / HTTP 非 2xx / JSON 解析失败 / 结构或数值域校验失败
  * 一律返回 null，消费方须可降级到现状程序化分布；失败不缓存（允许重试），
@@ -66,6 +69,29 @@ export interface M13ProfileData {
   meta: BakedMeta;
   profile: M13Profile;
 }
+
+/**
+ * 触须星系 N-body 烘焙快照（R4-22；antennae.bin 解析产物）。
+ * 坐标为模拟单位（近心距 r_p = 1），场景缩放在消费方进行。
+ */
+export interface AntennaeSnapshotsData {
+  /** 快照数 S（需求域 8–12） */
+  snapshotCount: number;
+  /** 测试粒子总数 N（两盘合计） */
+  particleCount: number;
+  /** 前 diskACount 粒属盘 A（NGC 4038），其余属盘 B（NGC 4039） */
+  diskACount: number;
+  /** 两核位置：快照 s → [Ax,Ay,Az,Bx,By,Bz] 于 cores[s*6..s*6+5] */
+  cores: Float32Array;
+  /** 粒子位置：快照 s 粒子 i → positions[(s*N+i)*3..+2] */
+  positions: Float32Array;
+}
+
+/** antennae.bin 魔数（NGC 4038.4039；文件内为 Float32，按 fround 比较） */
+export const ANTENNAE_MAGIC = 4038.4039;
+
+/** antennae.bin 版本号 */
+export const ANTENNAE_VERSION = 1;
 
 /** star-params.json 必须包含的 6 颗恒星键名（R4-5 需求清单） */
 export const STAR_PARAM_KEYS = [
@@ -191,6 +217,51 @@ export function validateM13Profile(raw: unknown): M13ProfileData | null {
   return { meta, profile };
 }
 
+/** antennae.bin 头部 Float32 数（magic/version/S/N/nA） */
+const ANTENNAE_HEADER_FLOATS = 5;
+
+/** 粒子坐标界（模拟单位；烘焙自校验 <48，运行时留裕量） */
+const ANTENNAE_COORD_BOUND = 64;
+
+/** 跨 realm 安全的 ArrayBuffer 判定（instanceof 在测试环境跨 realm 失效） */
+function isArrayBuffer(value: unknown): value is ArrayBuffer {
+  return Object.prototype.toString.call(value) === '[object ArrayBuffer]';
+}
+
+/**
+ * 校验并解析触须星系二进制快照（R4-22）：魔数/版本/快照数 8–12/
+ * 粒子数域/字节长度精确匹配/坐标有限且 |r| ≤ 64 r_p。
+ * 布局登记见 scripts/bake-data/antennae.ts 文件头。
+ */
+export function validateAntennae(raw: ArrayBuffer | null): AntennaeSnapshotsData | null {
+  if (!isArrayBuffer(raw)) return null;
+  if (raw.byteLength < ANTENNAE_HEADER_FLOATS * 4 || raw.byteLength % 4 !== 0) return null;
+  const data = new Float32Array(raw);
+  if (data[0] !== Math.fround(ANTENNAE_MAGIC)) return null;
+  if (data[1] !== ANTENNAE_VERSION) return null;
+  const snapshotCount = data[2];
+  const particleCount = data[3];
+  const diskACount = data[4];
+  if (!Number.isInteger(snapshotCount) || snapshotCount < 8 || snapshotCount > 12) return null;
+  if (!Number.isInteger(particleCount) || particleCount < 16 || particleCount > 6000) return null;
+  if (!Number.isInteger(diskACount) || diskACount < 1 || diskACount >= particleCount) return null;
+  const floatsPerSnap = 6 + particleCount * 3;
+  const expected = (ANTENNAE_HEADER_FLOATS + snapshotCount * floatsPerSnap) * 4;
+  if (raw.byteLength !== expected) return null;
+  const cores = new Float32Array(snapshotCount * 6);
+  const positions = new Float32Array(snapshotCount * particleCount * 3);
+  for (let s = 0; s < snapshotCount; s += 1) {
+    const base = ANTENNAE_HEADER_FLOATS + s * floatsPerSnap;
+    for (let i = 0; i < floatsPerSnap; i += 1) {
+      const v = data[base + i];
+      if (!Number.isFinite(v) || Math.abs(v) > ANTENNAE_COORD_BOUND) return null;
+      if (i < 6) cores[s * 6 + i] = v;
+      else positions[s * particleCount * 3 + (i - 6)] = v;
+    }
+  }
+  return { snapshotCount, particleCount, diskACount, cores, positions };
+}
+
 // ---------------------------------------------------------------------------
 // 加载（fetch + 内存缓存；失败返回 null 且不缓存）
 // ---------------------------------------------------------------------------
@@ -218,6 +289,16 @@ async function loadValidated<T>(
   return data;
 }
 
+async function fetchArrayBuffer(url: string): Promise<ArrayBuffer | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return await res.arrayBuffer();
+  } catch {
+    return null;
+  }
+}
+
 /** 加载昴星团成员星（失败返回 null，消费方降级到程序化分布） */
 export async function loadPleiades(baseUrl = '/data'): Promise<PleiadesData | null> {
   return loadValidated(`${baseUrl}/pleiades.json`, validatePleiades);
@@ -231,6 +312,19 @@ export async function loadStarParams(baseUrl = '/data'): Promise<StarParamsData 
 /** 加载 M13 King profile 结构参数（失败返回 null） */
 export async function loadM13Profile(baseUrl = '/data'): Promise<M13ProfileData | null> {
   return loadValidated(`${baseUrl}/m13-profile.json`, validateM13Profile);
+}
+
+/**
+ * 加载触须星系 N-body 快照（R4-22 二进制产物；失败返回 null，
+ * 消费方降级到现状静态渲染）。成功结果按 URL 缓存，失败不缓存。
+ */
+export async function loadAntennae(baseUrl = '/data'): Promise<AntennaeSnapshotsData | null> {
+  const url = `${baseUrl}/antennae.bin`;
+  const cached = cache.get(url);
+  if (cached !== undefined) return cached as AntennaeSnapshotsData;
+  const data = validateAntennae(await fetchArrayBuffer(url));
+  if (data !== null) cache.set(url, data);
+  return data;
 }
 
 /** 清空内存缓存（测试用） */

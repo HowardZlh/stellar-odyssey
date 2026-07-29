@@ -14,8 +14,14 @@ import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import { grbFlashState, jetFlowPhase01, quasarFlicker } from '@/utils/specialBodies';
 import { EXTRAGALACTIC_VIEW_RADIUS_UNITS } from '@/utils/cameraFocus';
 import { quasarCoreNearFactor, quasarDetailLayerSpec } from '@/utils/quasarNearView';
+import {
+  ANTENNAE_STATIC_NEAR_DIM,
+  antennaeDetailLayerSpec,
+} from '@/utils/antennaeNearView';
 import { useDetailLayer } from '@/hooks/useDetailLayer';
+import { useAntennaeSnapshots } from '@/hooks/useAntennaeSnapshots';
 import { QuasarNearCore } from '@/components/Scene/QuasarNearView';
+import { AntennaeNearView } from '@/components/Scene/AntennaeNearView';
 import {
   createGalaxySpriteCanvas,
   createGlowSpriteCanvas,
@@ -299,8 +305,37 @@ export function Quasar(): JSX.Element | null {
 }
 
 /**
+ * 触须星系近观层挂载器（R4-22）：仅近观激活时挂载 → 首次激活才 fetch
+ * 烘焙快照；加载中/失败返回 null——外层静态渲染即降级现状（登记）。
+ */
+function AntennaeNearLayer({
+  getOpacity,
+  getSimDays,
+}: {
+  getOpacity: () => number;
+  getSimDays: () => number;
+}): JSX.Element | null {
+  const data = useAntennaeSnapshots();
+  if (!data) return null;
+  return (
+    <AntennaeNearView
+      data={data}
+      baseRadiusUnits={EXTRAGALACTIC_VIEW_RADIUS_UNITS}
+      getOpacity={getOpacity}
+      getSimDays={getSimDays}
+    />
+  );
+}
+
+/**
  * 触须星系（NGC 4038/4039，可选需求 3.1.5）：星系碰撞现场——
  * 两个相互扭曲的旋涡星系盘 + 两条潮汐尾（"触须"）+ 星暴区亮斑
+ *
+ * R4-22：近观挂接细节层（useDetailLayer starCatalog 池，容量 1 与
+ * R4-17 昴星团共池、'lru-retain' L4 语义）——跟随/飞往且距离达阈值时
+ * 挂载 AntennaeNearLayer（两核 + 双潮汐尾烘焙快照粒子，随 simDays
+ * 快照插值缓慢演化）；既有静态层按 ANTENNAE_STATIC_NEAR_DIM 减淡让位
+ * 粒子结构；快照加载失败降级现状静态渲染（AntennaeNearLayer 返回 null）。
  */
 export function AntennaeGalaxies(): JSX.Element | null {
   const body = getSpecialBodyById('antennae-galaxies');
@@ -368,20 +403,41 @@ export function AntennaeGalaxies(): JSX.Element | null {
     [tails],
   );
 
+  // R4-22 近观细节层门控（starCatalog 池；阈值与 resolveFocusTarget 同源）
+  const weightRef = useRef(0);
+  const nearSpec = useMemo(() => antennaeDetailLayerSpec(), []);
+  const { active: nearActive, opacity01: getNear01 } = useDetailLayer(nearSpec, {
+    objectRef: groupRef,
+    retention: 'lru-retain',
+  });
+  /** 近观层不透明度 = 河外层级淡入权重 × 近观激活权重 */
+  const getNearOpacity = useCallback(
+    () => weightRef.current * getNear01(),
+    [getNear01],
+  );
+  /** 快照演化时钟 = 主场景 simDays（时间映射登记见 utils/antennaeNearView） */
+  const getSimDays = useCallback(() => useSimulationStore.getState().simDays, []);
+
   useFrame(() => {
     const group = groupRef.current;
     if (!group) return;
     const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
+    weightRef.current = weight;
     group.visible = weight > 0.001;
     setObjectTreeRaycastEnabled(group, weight > INTERACTIVE_WEIGHT);
     if (!group.visible) return;
+    // R4-22：近观时静态示意层减淡让位烘焙粒子结构（登记；近观层 sprite
+    // 由 AntennaeNearView 自管 —— 标记 userData.nearLayer 跳过）
+    const staticDim = 1 - ANTENNAE_STATIC_NEAR_DIM * getNear01();
     group.traverse((obj) => {
+      if (obj.userData.nearLayer) return;
       if (obj instanceof THREE.Mesh || obj instanceof THREE.Sprite) {
         const mat = obj.material as THREE.Material & { opacity: number };
-        mat.opacity = ((obj.userData.baseOpacity as number | undefined) ?? 0.85) * weight;
+        mat.opacity =
+          ((obj.userData.baseOpacity as number | undefined) ?? 0.85) * weight * staticDim;
       }
       if (obj instanceof THREE.Line) {
-        (obj.material as THREE.LineBasicMaterial).opacity = 0.55 * weight;
+        (obj.material as THREE.LineBasicMaterial).opacity = 0.55 * weight * staticDim;
       }
     });
   });
@@ -445,6 +501,10 @@ export function AntennaeGalaxies(): JSX.Element | null {
       {tails.map((tail, i) => (
         <primitive key={i} object={tail} />
       ))}
+      {/* R4-22 近观细节层：两核 + 双潮汐尾烘焙快照粒子（加载失败降级现状） */}
+      {nearActive && (
+        <AntennaeNearLayer getOpacity={getNearOpacity} getSimDays={getSimDays} />
+      )}
       {showLabels && inRange && !focused && (
         <ClampedHtmlLabel position={[0, 900, 0]} distanceFactor={12000} style={{ pointerEvents: 'none' }}>
           <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-orange-200">

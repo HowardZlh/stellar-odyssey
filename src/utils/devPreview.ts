@@ -571,6 +571,27 @@ const QUASAR_ENTRY: PreviewEntry = {
     '吸积盘 T∝r^(−3/4)（Novikov-Thorne/Shakura-Sunyaev 薄盘近似）+ 多普勒束流 δ³ + 引力红移 √(1−r_s/r)（R4-12 复用；透镜 raymarch 不启用登记）；峰值色温压标 12,000 K（3C 273 真实"大蓝包"~10⁴–10⁵ K）；尘埃环面取 AGN 统一模型（Urry & Padovani 1995）粒子环近似（暗红棕艺术化档）；盘/BLR/环面尺度比例为可视化档（真实跨 3–5 量级）',
 };
 
+/**
+ * 触须星系 N-body 烘焙潮汐尾近观（R4-22）：antennae.bin 快照（两核 +
+ * 双潮汐尾测试粒子）随虚拟时钟映射的 simDays 快照插值演化。
+ *
+ * 滑杆 2 件（≤8 上限）：时间流速（1 秒 = 30 Myr 基准，加速目验演化
+ * 与插值连续性）/粒径增益（帧读 getter 直达 uniform，无材质重建）。
+ * 数据未就绪/失败显示降级占位（主场景降级为现状静态渲染，登记）。
+ */
+const ANTENNAE_ENTRY: PreviewEntry = {
+  bodyId: 'antennae',
+  title: '触须星系 NGC 4038/4039（N-body 烘焙潮汐尾）',
+  componentKey: 'antennae-near-view',
+  cameraDistance: 7,
+  params: [
+    { key: 'timeScale', label: '时间流速', min: 0, max: 8, default: 1 },
+    { key: 'sizeGain', label: '粒径增益', min: 0.3, max: 3, default: 1 },
+  ],
+  dataSource:
+    'Toomre & Toomre (1972, ApJ 178, 623) 潮汐相互作用图景：受限三体/测试粒子模拟离线烘焙（两 Plummer 软化质心抛物线交会 + 各 2,796 粒顺行盘、倾角 60°、RK4 定步长积分，10 快照；参数登记 scripts/bake-data/antennae.ts）；T&T 原文 Antennae 用 e≈0.5 椭圆、此处按需求取抛物线登记；快照全程 ↔ 600 Myr（三角波往返映射保证插值连续，登记）；双盘暖橙/冷蓝配色为区分尾源盘的艺术化强调档',
+};
+
 /** 体积类预览条目的 componentKey 集（HUD 质量档行按此显隐） */
 export const VOLUME_PREVIEW_COMPONENT_KEYS: ReadonlySet<string> = new Set([
   'volume-raymarch-test',
@@ -607,6 +628,7 @@ export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
     PLEIADES_ENTRY,
     M13_ENTRY,
     QUASAR_ENTRY,
+    ANTENNAE_ENTRY,
   ];
   const map = new Map<string, PreviewEntry>();
   for (const e of entries) {

@@ -5,10 +5,12 @@
  *   npm run bake:data            —— 从内嵌快照（snapshots/）烘焙，离线、幂等
  *   npm run bake:data -- --fetch —— 先从 Gaia TAP 重新拉取快照再烘焙（需网络）
  *
- * 产物（均含 meta { source, retrievedAt, license, count }）：
+ * 产物（JSON 均含 meta { source, retrievedAt, license, count }）：
  *   public/data/pleiades.json     昴星团成员星 ≤600 颗（{x,y,z} pc 簇质心系、B−V、V 视星等）
  *   public/data/star-params.json  R4 涉及恒星物理参数（Teff/半径/光度/光谱型）
  *   public/data/m13-profile.json  M13 King profile 结构参数（Harris 目录）
+ *   public/data/antennae.bin      R4-22 触须星系潮汐尾 N-body 快照（Float32，
+ *                                 模拟参数/近似登记见 antennae.ts 文件头）
  *
  * 数据来源登记（IMPROVEMENT_REQUIREMENTS_4.md §0.4）：
  * - 昴星团：Gaia DR3 TAP 查询（ADQL 语句与选星判据见 snapshots/pleiades-gaia-dr3.meta.json）。
@@ -25,6 +27,7 @@
 import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { bakeAntennae } from './antennae.ts';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SNAPSHOT_DIR = join(SCRIPT_DIR, 'snapshots');
@@ -445,10 +448,19 @@ async function main(): Promise<void> {
   ) as SnapshotMeta;
   const rows = parseGaiaCsv(readFileSync(join(SNAPSHOT_DIR, 'pleiades-gaia-dr3.csv'), 'utf8'));
 
+  // R4-22：触须星系潮汐尾 N-body 快照（二进制 Float32，自校验在 bakeAntennae 内）
+  const antennae = bakeAntennae();
+  const antennaePath = join(OUT_DIR, 'antennae.bin');
+  writeFileSync(antennaePath, antennae.buffer);
+  console.log(
+    `[bake-data] antennae：${antennae.snapshotCount} 快照 × ${antennae.particleCount} 粒（盘 A ${antennae.diskACount}）`
+  );
+
   const sizes: Array<[string, number]> = [
     ['pleiades.json', writeProduct('pleiades.json', bakePleiades(rows, snapshotMeta), false)],
     ['star-params.json', writeProduct('star-params.json', bakeStarParams(), true)],
     ['m13-profile.json', writeProduct('m13-profile.json', bakeM13Profile(), true)],
+    ['antennae.bin', statSync(antennaePath).size],
   ];
 
   const total = sizes.reduce((s, [, n]) => s + n, 0);
