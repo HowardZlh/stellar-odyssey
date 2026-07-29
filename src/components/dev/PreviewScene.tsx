@@ -29,6 +29,7 @@ import { PleiadesCatalogPreview } from '@/components/dev/PleiadesCatalogPreview'
 import { M13ClusterPreview } from '@/components/dev/M13ClusterPreview';
 import { QuasarNearViewPreview } from '@/components/dev/QuasarNearViewPreview';
 import { AntennaeNearViewPreview } from '@/components/dev/AntennaeNearViewPreview';
+import { ClusterLensingPreview } from '@/components/dev/ClusterLensingPreview';
 
 /**
  * 预览场景（R4-1）：按条目 componentKey 挂载对应细节组件，注入滑杆参数值。
@@ -284,6 +285,9 @@ export function PreviewScene({
       ) : entry.componentKey === 'antennae-near-view' ? (
         /* R4-22：触须星系 N-body 烘焙潮汐尾（快照插值演化） */
         <AntennaeNearViewPreview values={values} clockLabelRef={clockLabelRef} />
+      ) : entry.componentKey === 'cluster-lensing-effect' ? (
+        /* R4-23：星系团 SIS 屏幕空间引力透镜（Effect 由 harness 挂入 composer） */
+        <ClusterLensingPreview values={values} />
       ) : entry.componentKey === 'galaxy-near-view' ? (
         /* key=bodyId：切换星系时强制重挂载（虚拟时钟与自转姿态重置） */
         <GalaxyNearViewPreview

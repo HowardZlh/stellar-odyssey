@@ -21,6 +21,10 @@ import {
   recordFrame,
 } from '@/utils/performance';
 import { PreviewScene } from '@/components/dev/PreviewScene';
+import { ClusterLensingPass } from '@/components/Scene/ClusterLensingEffect';
+
+/** R4-23 预览透镜强度：常量 1（强度滑杆经持有者 visible01 生效） */
+const LENS_STRENGTH_FULL = (): number => 1;
 
 /**
  * 开发预览工位主界面（R4-1，IMPROVEMENT_REQUIREMENTS_4 §R4-1）
@@ -132,14 +136,25 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
         {/* minDistance 按条目相机距离推导，防止推进到天体内部（单面材质黑屏） */}
         <OrbitControls enablePan minDistance={entry.cameraDistance * 0.5} maxDistance={100} />
         {/* 常驻 Composer：ToneMapping 必须始终在管线末端（曝光的实现载体），
-            Bloom 按开关条件渲染并置于其前（作用于线性 HDR） */}
+            Bloom 按开关条件渲染并置于其前（作用于线性 HDR）；
+            R4-23 透镜 Effect 置于最前（Bloom 采样已透镜化帧缓冲） */}
         {bloom ? (
           <EffectComposer multisampling={4}>
+            {entry.componentKey === 'cluster-lensing-effect' ? (
+              <ClusterLensingPass getStrength={LENS_STRENGTH_FULL} />
+            ) : (
+              <></>
+            )}
             <Bloom intensity={0.6} luminanceThreshold={0.6} luminanceSmoothing={0.2} mipmapBlur />
             <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
           </EffectComposer>
         ) : (
           <EffectComposer multisampling={4}>
+            {entry.componentKey === 'cluster-lensing-effect' ? (
+              <ClusterLensingPass getStrength={LENS_STRENGTH_FULL} />
+            ) : (
+              <></>
+            )}
             <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
           </EffectComposer>
         )}
