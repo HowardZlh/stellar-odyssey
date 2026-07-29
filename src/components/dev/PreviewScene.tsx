@@ -14,6 +14,7 @@ import {
 import { useStarParams } from '@/hooks/useStarParams';
 import { stellarPreviewConfigForBody, type PreviewEntry } from '@/utils/devPreview';
 import {
+  horseheadVolumeLayerConfig,
   m57VolumeLayerConfig,
   orionVolumeLayerConfig,
 } from '@/utils/nebulaVolumeScene';
@@ -195,14 +196,16 @@ export function PreviewScene({
   clockLabelRef,
   qualityLabelRef,
 }: PreviewSceneProps): JSX.Element {
-  // 星云体积层配置（R4-14 泛化：M42/M57 共用 NebulaVolumePreview）
+  // 星云体积层配置（R4-14 泛化：M42/M57/马头共用 NebulaVolumePreview）
   const nebulaConfig = useMemo(
     () =>
       entry.componentKey === 'ring-nebula-volume'
         ? m57VolumeLayerConfig()
         : entry.componentKey === 'orion-nebula-volume'
           ? orionVolumeLayerConfig()
-          : null,
+          : entry.componentKey === 'horsehead-nebula-volume'
+            ? horseheadVolumeLayerConfig()
+            : null,
     [entry.componentKey],
   );
   return (
@@ -223,7 +226,7 @@ export function PreviewScene({
           qualityLabelRef={qualityLabelRef}
         />
       ) : nebulaConfig ? (
-        /* key=bodyId：M42↔M57 切换时强制重挂载（构建状态/纹理随之重置） */
+        /* key=bodyId：M42/M57/马头切换时强制重挂载（构建状态/纹理随之重置） */
         <NebulaVolumePreview
           key={entry.bodyId}
           config={nebulaConfig}

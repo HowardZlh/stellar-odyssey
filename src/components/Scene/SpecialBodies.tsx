@@ -48,6 +48,11 @@ import {
 import { estimateGpuBytes, type DetailLayerSpec } from "@/utils/detailLayer";
 import { useDetailLayer } from "@/hooks/useDetailLayer";
 import {
+  horseheadCurtainFactor,
+  horseheadNearLayerFactor,
+  horseheadVolumeBoxEdgeUnits,
+  horseheadVolumeDetailLayerSpec,
+  horseheadVolumeLayerConfig,
   m57BillboardFactor,
   m57NearLayerFactor,
   m57VolumeBoxEdgeUnits,
@@ -1084,6 +1089,10 @@ function PleiadesSistersNear({
 /**
  * 暗星云（马头星云，可选需求 3.1.5）：剪影遮挡效果——
  * 前景冷分子云（不发光、普通混合的暗色块）遮挡背景发射星云 IC 434 的红光
+ *
+ * R4-15：近观跟随时挂载吸收体积层（96³ RG raymarch——马头轮廓 SDF 暗云柱
+ * + IC 434 发射幕烘焙进体积），前景剪影 billboard 与 R2-7 近观层交叉淡出，
+ * 背景 billboard 保留作幕布远景延伸（方案登记见 utils/nebulaVolumeScene.ts）
  */
 function DarkNebula({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
@@ -1123,16 +1132,35 @@ function DarkNebula({ body }: BodyProps): JSX.Element {
   const getWeight = useGalacticPlacement(body, groupRef);
   // R2-7 近观门控：跟随时挂载视差发射层与前景暗云团，离开即释放
   const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
+  // R4-15 体积层门控（volume 池容量 1 与 M42/M57 共池，release-on-exit）
+  const volumeSpec = useMemo(() => horseheadVolumeDetailLayerSpec(), []);
+  const volumeConfig = useMemo(() => horseheadVolumeLayerConfig(), []);
+  const { active: volumeActive, opacity01: getVolumeGate01 } = useDetailLayer(
+    volumeSpec,
+    { objectRef: groupRef },
+  );
+  // 体积视觉淡入权重（NebulaVolumeLayer 每帧写入：门控 × 烘焙就绪；
+  // 卸载复位 0——剪影/近观层/幕布交叉淡出的唯一消费源）
+  const volumeFadeRef = useRef(0);
   useFrame(() => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
     const near01 = getNear01();
+    const vol01 = volumeFadeRef.current;
     group.traverse((obj) => {
       const base = obj.userData.baseOpacity as number | undefined;
       if (base === undefined) return;
-      // 近观层（视差发射面/前景暗云团）额外乘近观权重淡入
-      const factor = obj.userData.nearLayer ? weight * near01 : weight;
+      // R2-7 近观层（视差发射面/暗云团）近观淡入 × 体积交叉淡出（R4-15）；
+      // 前景剪影 billboard 体积激活时隐去（体积吸收柱接管剪影）；
+      // 背景 IC 434 billboard 保留作幕布远景延伸、部分减淡（方案登记）
+      const factor = obj.userData.nearLayer
+        ? weight * horseheadNearLayerFactor(near01, vol01)
+        : obj.userData.volDim
+          ? weight * (1 - vol01)
+          : obj.userData.curtain
+            ? weight * horseheadCurtainFactor(vol01)
+            : weight;
       if (obj instanceof THREE.Sprite) {
         obj.material.opacity = base * factor;
       } else if (obj instanceof THREE.Mesh) {
@@ -1162,10 +1190,11 @@ function DarkNebula({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 背景发射星云 IC 434（氢α红光不规则云，加色混合） */}
+      {/* 背景发射星云 IC 434（氢α红光不规则云，加色混合；R4-15：体积
+          激活时保留作幕布远景延伸并部分减淡，方案登记见 nebulaVolumeScene） */}
       <mesh
         position={[0, 0, -size * 0.5]}
-        userData={{ baseOpacity: 0.45 }}
+        userData={{ baseOpacity: 0.45, curtain: true }}
         onClick={(e) => {
           e.stopPropagation();
           selectBody(body.id);
@@ -1180,12 +1209,13 @@ function DarkNebula({ body }: BodyProps): JSX.Element {
           side={THREE.DoubleSide}
         />
       </mesh>
-      {/* 前景暗分子云柱剪影（噪声侵蚀边缘的暗云形态，普通混合遮挡背景红光） */}
+      {/* 前景暗分子云柱剪影（噪声侵蚀边缘的暗云形态，普通混合遮挡背景红光；
+          R4-15：体积激活时交叉淡出——体积吸收柱接管剪影） */}
       {silhouette.map((s, i) => (
         <mesh
           key={i}
           position={[s.x, s.y, size * 0.3]}
-          userData={{ baseOpacity: s.opacity }}
+          userData={{ baseOpacity: s.opacity, volDim: true }}
           renderOrder={10}
         >
           <planeGeometry args={[size * s.scale, size * s.scale * 1.4]} />
@@ -1246,6 +1276,19 @@ function DarkNebula({ body }: BodyProps): JSX.Element {
             </sprite>
           ))}
         </>
+      )}
+      {/* R4-15 近观体积层（96³ RG raymarch：吸收暗云柱 + IC 434 发射幕；
+          detailLayer volume 池门控，卸载即 dispose 纹理/RT/材质，交叉
+          淡出权重经 volumeFadeRef 输出） */}
+      {volumeActive && (
+        <NebulaVolumeLayer
+          groupRef={groupRef}
+          boxEdgeUnits={horseheadVolumeBoxEdgeUnits(size)}
+          config={volumeConfig}
+          getWeight={getWeight}
+          getGate01={getVolumeGate01}
+          fadeRef={volumeFadeRef}
+        />
       )}
       <BodyLabel body={body} sizeUnits={size} />
     </group>

@@ -286,6 +286,35 @@ const RING_NEBULA_ENTRY: PreviewEntry = {
 };
 
 /**
+ * 马头星云 Barnard 33 吸收体积（R4-15）：96³ RG 双通道密度场分帧烘焙 +
+ * 吸收为主暗云柱 raymarch + IC 434 红色发射幕（烘焙进体积后半域）
+ *
+ * 密度场：`utils/nebulaVolume.makeHorseheadSampler`（马头轮廓 5 椭球 SDF
+ * 平滑并 + fBm 边缘侵蚀，确定性种子；轮廓内发射近零）；配置：
+ * `utils/nebulaVolumeScene.horseheadVolumeLayerConfig`（主场景同源）。
+ * 注册 id 登记：§R4-15 指定 `?body=horsehead`（短名），与天体 id
+ * `horsehead-nebula`（体积种子/detailLayer bodyId）差异登记。
+ * 滑杆 6 件（≤8 上限）：步数/发射幕密度/尘埃吸收/亮度 + 质量档/抖动；
+ * 无双色权重滑杆（weightBias 恒 +1 取 Hα 红档，IC 434 单色登记）。
+ */
+const HORSEHEAD_ENTRY: PreviewEntry = {
+  bodyId: 'horsehead',
+  title: '马头星云 Barnard 33（吸收体积 raymarch · 暗云柱 + IC 434 发射幕）',
+  componentKey: 'horsehead-nebula-volume',
+  cameraDistance: 3.4,
+  params: [
+    { key: 'steps', label: '基准步进数', min: 16, max: 128, default: 48, step: 1 },
+    { key: 'density', label: '发射幕密度倍率', min: 0, max: 8, default: 3.0 },
+    { key: 'dust', label: '尘埃吸收倍率', min: 0, max: 4, default: 2.2 },
+    { key: 'intensity', label: '亮度', min: 0.1, max: 4, default: 1.1 },
+    { key: 'quality', label: '质量档（0自动 1低 2中 3高）', min: 0, max: 3, default: 0, step: 1 },
+    { key: 'jitter', label: '蓝噪声抖动（0关 1开）', min: 0, max: 1, default: 1, step: 1 },
+  ],
+  dataSource:
+    'NASA/ESA Hubble 公版图像（轮廓形态参考，程序化近似登记：颈柱/头部/吻部/鬃丘 + 底部云堤 5 椭球 SDF 平滑并 + fBm 边缘侵蚀，不逐像素贴合照片）；IC 434 Hα 红色发射幕（低密度大尺度发射层方案登记）',
+};
+
+/**
  * 星系近观多分量预览条目组（R4-10）：M31（旋涡，专属倾角/尘埃环/偏黄
  * 核球）+ LMC（不规则对照——dust/HII 新分量配额为 0，R2-8 团块分量
  * 承载，滑杆对 LMC 的 dust/HII 无可见效果属预期登记；倾角覆写生效）。
@@ -383,6 +412,7 @@ export const VOLUME_PREVIEW_COMPONENT_KEYS: ReadonlySet<string> = new Set([
   'volume-raymarch-test',
   'orion-nebula-volume',
   'ring-nebula-volume',
+  'horsehead-nebula-volume',
 ]);
 
 /**
@@ -396,6 +426,7 @@ export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
     VOLUME_TEST_ENTRY,
     ORION_NEBULA_ENTRY,
     RING_NEBULA_ENTRY,
+    HORSEHEAD_ENTRY,
     ...GALAXY_NEAR_VIEW_ENTRIES,
     BLACKHOLE_LENSED_ENTRY,
   ];

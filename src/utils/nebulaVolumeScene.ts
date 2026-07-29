@@ -41,6 +41,8 @@ import {
   nearViewExitDistanceUnits,
 } from '@/utils/nearView';
 import {
+  HORSEHEAD_TEXTURE_SIZE,
+  HORSEHEAD_VOLUME_ID,
   M42_TEXTURE_SIZE,
   M42_VOLUME_ID,
   M57_COLOR_WEIGHT_INNER_R,
@@ -48,6 +50,7 @@ import {
   M57_SHELL_RADII,
   M57_TEXTURE_SIZE,
   M57_VOLUME_ID,
+  makeHorseheadSampler,
   makeM42Sampler,
   makeM57Sampler,
   trapeziumStarBoxPositions,
@@ -249,6 +252,108 @@ export function m57NearLayerFactor(near01: number, vol01: number): number {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
+ * 马头星云主场景接入配置（R4-15，IMPROVEMENT_REQUIREMENTS_4 §R4-15）
+ *
+ * 接入模式与 R4-8/R4-14 完全同构（volume 池容量 1——M42/M57/马头巡游
+ * 切换时 LRU 逐出旧体积）；差异仅密度场与配置。
+ *
+ * ── 背景发射幕方案登记（§R4-15 第 2 条，二选一）─────────────────────────
+ * 取"低密度大尺度发射层"：IC 434 红色发射幕烘焙进体积后半域（密度场
+ * 登记见 nebulaVolume.ts 马头段头），剪影 = raymarch 内吸收柱按透射率
+ * 物理遮挡幕布，侧向绕行可见云柱纵深；主场景既有背景 billboard **保留**
+ * 并在体积激活时部分减淡（horseheadCurtainFactor：×(1 − 0.35·vol01)）
+ * 作幕布远景延伸——体积盒外围（3.0×2.4 视觉尺寸的 billboard > 盒边）
+ * 无幕布断边。
+ *
+ * ── 交叉淡出登记（§R4-15 第 3 条）────────────────────────────────────────
+ * R2-7 交付的 2 视差发射层 + 3 前景暗云团在体积激活时交叉淡出
+ * （horseheadNearLayerFactor = near01 × (1 − vol01)）；3 块前景暗云柱
+ * 剪影 billboard 同步隐去（volDim 标记 ×(1 − vol01)，体积柱接管剪影）。
+ *
+ * ── 位姿尺度登记 ─────────────────────────────────────────────────────────
+ * 包围盒边长 = 视觉尺寸 × 2.0：马头轮廓全高（归一化域 y ∈ [−1, 0.72]）
+ * 折算世界高度 ≈ 1.7 × 视觉半径，与现有剪影 billboard 组（~1.2×）近观
+ * 放大衔接；发射幕横向经软窗覆盖盒宽 ~2.0×，与背景 billboard（3.0×）
+ * 远景延伸衔接。
+ *
+ * ── 色彩登记（附录 A §4）──────────────────────────────────────────────────
+ * IC 434 为 Hα 主导发射：weightBias = 1 恒取 colorHa 红棕（#c9503a，
+ * 与既有 billboard 纹理 #ff8898/#a03848 同向降饱和）；colorOIII 无效果
+ * （权重恒 1），保留材质默认接口值登记。
+ * ════════════════════════════════════════════════════════════════════════ */
+
+/** 马头体积包围盒边长系数（× visualRadiusLy 场景尺寸，登记见上） */
+export const HORSEHEAD_VOLUME_BOX_FACTOR = 2.0;
+
+/** 主场景马头体积层默认参数（色彩/方案登记见上；步数为自适应基准） */
+export const HORSEHEAD_SCENE_VOLUME_PARAMS = {
+  /** 基准步进数（结构较 M42 简单：48 步足够无分层伪影） */
+  baseSteps: 48,
+  /** 发射密度倍率（发射幕基准 0.16 低密度 → 亮度由此恢复；目验调参） */
+  densityScale: 3.0,
+  /** 尘埃吸收倍率（吸收为主：云柱核心透射率 ≪1 → 剪影近全黑；目验调参） */
+  dustStrength: 2.2,
+  /** 双色权重偏置（+1 恒取 Hα 档：IC 434 红色发射幕，登记见上） */
+  weightBias: 1,
+  /** 输出亮度（预览页目检 + 主场景 Bloom 联调） */
+  intensity: 1.1,
+  /** Hα 发射幕自然色近似：红棕 */
+  colorHa: '#c9503a',
+  /** OIII 档无效果（weightBias=1 恒取 Hα；接口占位登记） */
+  colorOIII: '#8fb3a8',
+} as const;
+
+/**
+ * 马头体积层细节规格（useDetailLayer 入参；调用方 useMemo 稳定）
+ *
+ * 阈值与 R2-7 近观层同源同值（视差发射层/暗云团与体积同时机激活，
+ * 交叉淡出无空档）；预算 = 96³ RG 双通道纹理 ≈ 1.69 MB。
+ */
+export function horseheadVolumeDetailLayerSpec(): DetailLayerSpec {
+  const volumeTexBytes = volumeTextureGpuBytes(HORSEHEAD_TEXTURE_SIZE, 2, 1);
+  return {
+    bodyId: HORSEHEAD_VOLUME_ID,
+    kind: 'volume',
+    enterDistanceUnits: nearViewEnterDistanceUnits(HORSEHEAD_VOLUME_ID),
+    exitDistanceUnits: nearViewExitDistanceUnits(HORSEHEAD_VOLUME_ID),
+    budget: {
+      volumeTexBytes,
+      gpuBytesEstimate: estimateGpuBytes({ volumeTexBytes }),
+    },
+  };
+}
+
+/** 马头体积包围盒世界边长（场景单位） */
+export function horseheadVolumeBoxEdgeUnits(sizeUnits: number): number {
+  if (!Number.isFinite(sizeUnits) || sizeUnits <= 0) {
+    throw new RangeError(`星云视觉尺寸必须为正有限数，收到 ${sizeUnits}`);
+  }
+  return sizeUnits * HORSEHEAD_VOLUME_BOX_FACTOR;
+}
+
+/**
+ * 背景 IC 434 billboard 幕布减淡系数（§R4-15 第 2 条方案登记见上）
+ *
+ * vol01 = 0 时恒 1（R2-7 行为零回退）；体积淡入至满时减淡 35%——
+ * billboard 保留作体积盒外围的幕布远景延伸（非完全隐去），中心区
+ * 亮度由体积内发射幕接管补足，避免叠加过曝（目验调参登记）。
+ */
+export function horseheadCurtainFactor(vol01: number): number {
+  return 1 - 0.35 * clamp01(vol01);
+}
+
+/**
+ * R2-7 近观层（2 视差发射层 + 3 前景暗云团）交叉淡出系数：
+ * 近观权重 × (1 − 体积权重)
+ *
+ * 体积激活前保持 R2-7 行为（= near01）；体积淡入时同步淡出（§R4-15
+ * 第 3 条登记）。
+ */
+export function horseheadNearLayerFactor(near01: number, vol01: number): number {
+  return clamp01(near01) * (1 - clamp01(vol01));
+}
+
+/* ════════════════════════════════════════════════════════════════════════
  * 星云体积层通用配置（R4-14：OrionVolumeLayer 泛化为 NebulaVolumeLayer，
  * M42/M57 共用同一接线，仅密度场与配置不同）
  * ════════════════════════════════════════════════════════════════════════ */
@@ -331,5 +436,19 @@ export function m57VolumeLayerConfig(): NebulaVolumeLayerConfig {
     stars: [{ position: [0, 0, 0], scaleFactor: M57_VOLUME_STAR_SPRITE_FACTOR }],
     starTint: [Math.round(tint.r * 255), Math.round(tint.g * 255), Math.round(tint.b * 255)],
     logTag: 'R4-14 M57',
+  };
+}
+
+/** 马头体积层通用配置（吸收暗云柱 + IC 434 发射幕；无内嵌星点登记：
+ * B33 为冷分子云，无 Trapezium/中心星类点源） */
+export function horseheadVolumeLayerConfig(): NebulaVolumeLayerConfig {
+  return {
+    volumeId: HORSEHEAD_VOLUME_ID,
+    textureSize: HORSEHEAD_TEXTURE_SIZE,
+    makeSampler: () => makeHorseheadSampler(),
+    params: HORSEHEAD_SCENE_VOLUME_PARAMS,
+    stars: [],
+    starTint: [255, 255, 255],
+    logTag: 'R4-15 马头',
   };
 }
