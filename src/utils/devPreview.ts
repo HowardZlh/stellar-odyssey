@@ -436,6 +436,29 @@ const BLACKHOLE_LENSED_ENTRY: PreviewEntry = {
     'Schwarzschild 二阶 PPN 偏转（Keeton & Petters 2005）+ 解析捕获截面 b_crit=3√3/2·r_s（MTW §25.6）；吸积盘 T∝r^(−3/4)（Novikov-Thorne/Shakura-Sunyaev 薄盘近似，内缘截断）+ 多普勒束流 δ³ + 引力红移 √(1−r_s/r)（峰值温度压标至可视化档登记）；观感基准 EHT M87*（2019）/Sgr A*（2022）与 Interstellar 盘翻折像；强场对数发散域以驻留发光高斯核近似（艺术化登记）',
 };
 
+/**
+ * 昴星团 Gaia 真实星表（R4-17）：pleiades.json 600 颗成员星真实 3D 位置
+ * + B−V→blackbodyRGB 颜色 + 视星等→粒径/亮度 + 9 颗命名亮星星芒（悬停
+ * 星名）+ Merope/Maia/Alcyone/Electra 蓝色反射星云分层 sprite。
+ *
+ * 滑杆 3 件（≤8 上限）：粒径增益/星芒尺寸/反射星云强度（帧读 getter 直
+ * 达 uniform，无材质重建）。数据未就绪/失败显示降级占位（主场景降级为
+ * 程序化分布，utils/pleiadesCatalog 文件头登记）。
+ */
+const PLEIADES_ENTRY: PreviewEntry = {
+  bodyId: 'pleiades',
+  title: '昴星团 M45（Gaia DR3 真实成员星 + 蓝色反射星云）',
+  componentKey: 'pleiades-catalog',
+  cameraDistance: 4.5,
+  params: [
+    { key: 'sizeGain', label: '粒径增益', min: 0.3, max: 3, default: 1 },
+    { key: 'spikeGain', label: '星芒尺寸', min: 0, max: 2, default: 1 },
+    { key: 'nebulaStrength', label: '反射星云强度', min: 0, max: 2, default: 1 },
+  ],
+  dataSource:
+    'Gaia DR3（ESA Archive，选星判据见 pleiades.json meta：锥形检索 2.5° + 视差 7.0–7.7 mas + 自行共动，按 G 取最亮 600 颗）；B−V→Teff 取 Ballesteros (2012) 黑体近似；命名星天测 SIMBAD（Gaia 缺失的最亮 5 颗径向取簇质心距离合成，登记）；反射星云为分层 sprite 艺术化近似（蓝色散射色调）',
+};
+
 /** 体积类预览条目的 componentKey 集（HUD 质量档行按此显隐） */
 export const VOLUME_PREVIEW_COMPONENT_KEYS: ReadonlySet<string> = new Set([
   'volume-raymarch-test',
@@ -460,6 +483,7 @@ export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
     CRAB_NEBULA_ENTRY,
     ...GALAXY_NEAR_VIEW_ENTRIES,
     BLACKHOLE_LENSED_ENTRY,
+    PLEIADES_ENTRY,
   ];
   const map = new Map<string, PreviewEntry>();
   for (const e of entries) {
