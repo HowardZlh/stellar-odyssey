@@ -269,6 +269,165 @@ export function makeM42Sampler(seed: number = volumeSeed(M42_VOLUME_ID)): Nebula
   };
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+ * 环状星云 M57 壳层密度场（R4-14，IMPROVEMENT_REQUIREMENTS_4 §R4-14）
+ *
+ * 形态登记（附录 A §4，数据源 §0.4：O'Dell et al. 2013, ApJ 780, 26 的
+ * 三轴椭球壳模型仅作形状参考，程序化近似构建）：
+ * - 骨架：三轴椭球壳（半轴 a:b:c ≈ 1:0.82:0.65，极轴 = +z 朝观察者，
+ *   登记：真实极轴相对视线倾斜 ~30°，主场景由环面姿态组承担倾斜）；
+ *   赤道增密环 + 极向暗瓣（密度随椭球坐标极角余弦平滑衰减至 ~0.22，
+ *   正视呈"环"、侧视呈"桶状/椭球壳"——§R4-14 验收核心）；
+ * - 内腔近空：壳内侧密度经壳层 SDF 软衰减归零，仅留 ~0.05 弱 OIII
+ *   内充盈（真实 M57 腔内有微弱 OIII/HeII 发射）；
+ * - 外晕弱壳：壳中面 ×1.35 的宽软壳（幅度 ~0.06，早期质量抛射晕近似，
+ *   仅取内晕一层、真实双层晕合并登记）；
+ * - 双色：色权重随椭球归一化半径 qLen 上升（`m57ColorWeight01`，
+ *   shader 侧以 uWeightInvRadii 椭球归一化镜像）——壳内缘 OIII 青绿、
+ *   外缘 Hα/NII 红橙（真实观测：内 OIII 绿/外 NII 红，NII 与 Hα 合并
+ *   为单一红橙档登记）；
+ * - 吸收通道恒零登记：M57 无显著前景尘埃暗结构，G 通道恒 0（单测断言）；
+ * - 细节：壳层为解析式塑形（§R4-14 省 token 约定），噪声仅做扰动——
+ *   3 八度 fBm 调制壳半径（±0.1 qLen）与密度束状起伏，无骨架级噪声结构。
+ *
+ * 纹理 96³ 预算登记（§R4-14 第 2 条：结构较简单）：RG 双通道 1 B/通道
+ * = 96³×2 ≈ 1.69 MB（≪128³ 的 4 MB；≤64 MB 总预算）。
+ * ════════════════════════════════════════════════════════════════════════ */
+
+/** M57 体积层确定性种子 id（与 catalog/specialBodies 的天体 id 一致） */
+export const M57_VOLUME_ID = 'ring-nebula';
+
+/** M57 密度纹理边长（§R4-14：96³ 即可，预算登记见上） */
+export const M57_TEXTURE_SIZE = 96;
+
+/** 三轴椭球壳中面半轴（归一化域 [-1,1]³；a:b:c ≈ 1:0.83:0.66） */
+export const M57_SHELL_RADII: readonly [number, number, number] = [0.58, 0.48, 0.38];
+
+/** 壳层全厚（椭球归一化半径 qLen 单位；含软衰减后环宽/环径比 ≈ 真实亮环量级） */
+export const M57_SHELL_THICKNESS = 0.32;
+
+/** 壳层软衰减宽度（qLen 单位） */
+const M57_SHELL_SOFTNESS = 0.08;
+
+/** 壳半径湍流扰动幅度（qLen 单位，±该值；仅扰动不塑形） */
+const M57_SHELL_PERTURB = 0.1;
+
+/** 极向暗瓣残余密度（赤道 = 1 基准；O'Dell 2013 极向低密度瓣近似档） */
+export const M57_POLAR_FLOOR = 0.22;
+
+/** 内腔弱充盈幅度（腔内微弱 OIII/HeII 发射近似） */
+export const M57_CAVITY_FILL = 0.05;
+
+/** 外晕壳中面（qLen 单位）与幅度（早期质量抛射晕，单层近似登记；中面经
+ * "晕外缘 ≤ 归一化域边界"约束标定：(1.35 + 半厚 0.18 + 软衰减 0.2)×0.58 ≈ 1.0） */
+export const M57_HALO_RADII_FACTOR = 1.35;
+export const M57_HALO_STRENGTH = 0.06;
+
+/** 外晕软壳全厚与衰减宽度（qLen 单位；域边界约束的另两项，登记见上） */
+const M57_HALO_THICKNESS = 0.36;
+const M57_HALO_SOFTNESS = 0.2;
+
+/** 早退门（qLen 单位）：晕外缘软衰减可达范围之外零噪声调用 */
+const M57_EARLY_EXIT_QLEN = M57_HALO_RADII_FACTOR + M57_HALO_THICKNESS / 2 + M57_HALO_SOFTNESS;
+
+/** 双色权重内径：椭球归一化半径 ≤ 此值 → OIII 权重 1（青绿） */
+export const M57_COLOR_WEIGHT_INNER_R = 0.82;
+
+/** 双色权重外径：椭球归一化半径 ≥ 此值 → Hα/NII 权重 1（红橙） */
+export const M57_COLOR_WEIGHT_OUTER_R = 1.28;
+
+/**
+ * M57 Hα(NII)/OIII 混色权重（0 = 内缘 OIII 青绿，1 = 外缘 Hα/NII 红橙）
+ *
+ * 椭球归一化半径近似登记：权重随 qLen = |(x/a, y/b, z/c)| 平滑上升
+ * （smoothstep INNER → OUTER），shader 侧以 uWeightInvRadii = (1/a,1/b,1/c)
+ * 同式镜像（单测锚定关键点）。
+ *
+ * @param qLen 椭球归一化半径（须为非负有限数；壳中面 = 1）
+ */
+export function m57ColorWeight01(qLen: number): number {
+  if (!(qLen >= 0) || !Number.isFinite(qLen)) {
+    throw new RangeError(`椭球归一化半径必须为非负有限数，收到 ${qLen}`);
+  }
+  return sstep(M57_COLOR_WEIGHT_INNER_R, M57_COLOR_WEIGHT_OUTER_R, qLen);
+}
+
+/**
+ * 生成 M57 双通道密度采样器（确定性：同种子输出逐点一致）
+ *
+ * 性能登记：每体素 ≤3 次 3D 值噪声调用（fBm 3 八度共用一轮），外晕
+ * 之外的体素零噪声调用（早退）；96³ 全量计算实测远低于 M42 128³ 基准。
+ *
+ * @param seed FNV-1a 种子（默认 `volumeSeed('ring-nebula')`）
+ */
+export function makeM57Sampler(seed: number = volumeSeed(M57_VOLUME_ID)): NebulaDualSampler {
+  // 种子 → 噪声域偏移（fbm3 同款注入方式：不同种子 = 平移采样窗口）
+  const rand = createSeededRandom(seed >>> 0);
+  const turbOffsets: number[] = [];
+  for (let i = 0; i < 9; i += 1) turbOffsets.push(rand() * 96);
+
+  const [ax, ay, az] = M57_SHELL_RADII;
+
+  return (x, y, z, out) => {
+    // 吸收通道恒零（M57 无显著前景尘埃，登记见文件头）
+    out.absorption = 0;
+
+    // ── 骨架坐标：椭球归一化半径 qLen（壳中面 = 1；所有塑形基于 qLen） ──
+    const qx = x / ax;
+    const qy = y / ay;
+    const qz = z / az;
+    const qLen = Math.sqrt(qx * qx + qy * qy + qz * qz);
+
+    // ── 早退门（无噪声）：晕外缘软衰减可达范围之外直接归零 ──
+    if (qLen > M57_EARLY_EXIT_QLEN) {
+      out.emission = 0;
+      return;
+    }
+
+    // ── 细节层：3 八度 fBm（壳半径扰动 + 密度束状起伏共用，仅做扰动） ──
+    let turb = 0;
+    let amp = 1;
+    let freq = 3.5;
+    let total = 0;
+    for (let o = 0; o < 3; o += 1) {
+      turb +=
+        valueNoise3D(
+          x * freq + turbOffsets[o * 3],
+          y * freq + turbOffsets[o * 3 + 1],
+          z * freq + turbOffsets[o * 3 + 2],
+        ) * amp;
+      total += amp;
+      amp *= 0.5;
+      freq *= 2;
+    }
+    turb /= total;
+
+    // ── 骨架：三轴椭球壳（解析式塑形；壳半径经湍流扰动 ±0.1 去正椭球感） ──
+    const dShell = qLen - 1 - (turb - 0.5) * (M57_SHELL_PERTURB * 2);
+    const shell01 = sdfDensityFalloff(shellSdf(dShell, M57_SHELL_THICKNESS), M57_SHELL_SOFTNESS);
+
+    // 赤道增密环 + 极向暗瓣：椭球坐标极角余弦 |qz|/qLen 平滑压暗
+    const cosPolar = qLen > 1e-6 ? Math.abs(qz) / qLen : 0;
+    const equator01 = 1 - (1 - M57_POLAR_FLOOR) * sstep(0.35, 0.9, cosPolar);
+
+    // 内腔弱充盈（qLen < 壳内缘时的微弱 OIII 发射；随 qLen 上升并入壳）
+    const cavityFill = M57_CAVITY_FILL * sstep(1, 0.25, qLen) * equator01;
+
+    // 外晕弱壳（宽软壳；同样受极向压暗，幅度低）
+    const halo01 = sdfDensityFalloff(
+      shellSdf(qLen - M57_HALO_RADII_FACTOR, M57_HALO_THICKNESS),
+      M57_HALO_SOFTNESS,
+    );
+    const halo = M57_HALO_STRENGTH * halo01 * (0.4 + 0.6 * equator01);
+
+    // 密度束状起伏（径向丝缕感：0.55–1 调制，不撕裂壳层）
+    const mod = 0.55 + 0.45 * turb;
+
+    const em = shell01 * equator01 * mod + cavityFill + halo * mod;
+    out.emission = Math.min(1, Math.max(0, em));
+  };
+}
+
 /** RG 双通道体素数据的分帧构建状态（z 切片粒度推进 + 打点登记字段） */
 export interface RgVolumeBuildState {
   /** 纹理边长 */

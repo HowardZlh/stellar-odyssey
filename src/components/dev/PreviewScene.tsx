@@ -13,8 +13,12 @@ import {
 } from '@/utils/starPhysics';
 import { useStarParams } from '@/hooks/useStarParams';
 import { stellarPreviewConfigForBody, type PreviewEntry } from '@/utils/devPreview';
+import {
+  m57VolumeLayerConfig,
+  orionVolumeLayerConfig,
+} from '@/utils/nebulaVolumeScene';
 import { VolumeTestPreview } from '@/components/dev/VolumeTestPreview';
-import { OrionNebulaPreview } from '@/components/dev/OrionNebulaPreview';
+import { NebulaVolumePreview } from '@/components/dev/NebulaVolumePreview';
 import { GalaxyNearViewPreview } from '@/components/dev/GalaxyNearViewPreview';
 import { BlackHoleLensedPreview } from '@/components/dev/BlackHoleLensedPreview';
 
@@ -191,6 +195,16 @@ export function PreviewScene({
   clockLabelRef,
   qualityLabelRef,
 }: PreviewSceneProps): JSX.Element {
+  // 星云体积层配置（R4-14 泛化：M42/M57 共用 NebulaVolumePreview）
+  const nebulaConfig = useMemo(
+    () =>
+      entry.componentKey === 'ring-nebula-volume'
+        ? m57VolumeLayerConfig()
+        : entry.componentKey === 'orion-nebula-volume'
+          ? orionVolumeLayerConfig()
+          : null,
+    [entry.componentKey],
+  );
   return (
     <>
       <ExposureSync exposure={exposure} />
@@ -208,8 +222,11 @@ export function PreviewScene({
           clockLabelRef={clockLabelRef}
           qualityLabelRef={qualityLabelRef}
         />
-      ) : entry.componentKey === 'orion-nebula-volume' ? (
-        <OrionNebulaPreview
+      ) : nebulaConfig ? (
+        /* key=bodyId：M42↔M57 切换时强制重挂载（构建状态/纹理随之重置） */
+        <NebulaVolumePreview
+          key={entry.bodyId}
+          config={nebulaConfig}
           values={values}
           clockLabelRef={clockLabelRef}
           qualityLabelRef={qualityLabelRef}
