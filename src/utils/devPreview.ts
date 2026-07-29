@@ -259,6 +259,33 @@ const ORION_NEBULA_ENTRY: PreviewEntry = {
 };
 
 /**
+ * 环状星云 M57 壳层体积（R4-14）：96³ RG 双通道密度场分帧烘焙 +
+ * 三轴椭球壳 raymarch + 中心白矮星色档 sprite 内嵌
+ *
+ * 密度场：`utils/nebulaVolume.makeM57Sampler`（三轴椭球壳：赤道增密环 +
+ * 极向暗瓣 + 内腔近空 + 外晕弱壳，确定性种子）；配置：
+ * `utils/nebulaVolumeScene.m57VolumeLayerConfig`（主场景同源，预览页与
+ * 主场景观感一致）。滑杆 6 件（≤8 上限）：步数/密度/双色权重/亮度 +
+ * 质量档/抖动；无尘埃滑杆（吸收通道恒零登记）。
+ */
+const RING_NEBULA_ENTRY: PreviewEntry = {
+  bodyId: 'ring-nebula',
+  title: '环状星云 M57（壳层体积 raymarch · 三轴椭球壳密度场）',
+  componentKey: 'ring-nebula-volume',
+  cameraDistance: 3.2,
+  params: [
+    { key: 'steps', label: '基准步进数', min: 16, max: 128, default: 48, step: 1 },
+    { key: 'density', label: '密度倍率', min: 0, max: 6, default: 1.6 },
+    { key: 'weightBias', label: '双色权重（−OIII/+Hα）', min: -1, max: 1, default: 0 },
+    { key: 'intensity', label: '亮度', min: 0.1, max: 4, default: 1.2 },
+    { key: 'quality', label: '质量档（0自动 1低 2中 3高）', min: 0, max: 3, default: 0, step: 1 },
+    { key: 'jitter', label: '蓝噪声抖动（0关 1开）', min: 0, max: 1, default: 1, step: 1 },
+  ],
+  dataSource:
+    "O'Dell et al. (2013, ApJ 780, 26) 三轴椭球壳模型（形状参考，程序化近似登记：赤道增密环/极向暗瓣/内腔近空/外晕弱壳）；内缘 OIII 青绿/外缘 Hα+NII 红橙（NII 合并单档）；中心白矮星 Teff≈125 kK 经 blackbodyRGB 表上限 50 kK 档",
+};
+
+/**
  * 星系近观多分量预览条目组（R4-10）：M31（旋涡，专属倾角/尘埃环/偏黄
  * 核球）+ LMC（不规则对照——dust/HII 新分量配额为 0，R2-8 团块分量
  * 承载，滑杆对 LMC 的 dust/HII 无可见效果属预期登记；倾角覆写生效）。
@@ -355,6 +382,7 @@ const BLACKHOLE_LENSED_ENTRY: PreviewEntry = {
 export const VOLUME_PREVIEW_COMPONENT_KEYS: ReadonlySet<string> = new Set([
   'volume-raymarch-test',
   'orion-nebula-volume',
+  'ring-nebula-volume',
 ]);
 
 /**
@@ -367,6 +395,7 @@ export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
     ...STELLAR_ENTRIES,
     VOLUME_TEST_ENTRY,
     ORION_NEBULA_ENTRY,
+    RING_NEBULA_ENTRY,
     ...GALAXY_NEAR_VIEW_ENTRIES,
     BLACKHOLE_LENSED_ENTRY,
   ];

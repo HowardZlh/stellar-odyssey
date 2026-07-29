@@ -10,10 +10,13 @@
  *   E    += T · e · Δt
  *   T'    = T · exp(−(e·σe + a·σd) · Δt)
  *
- * Hα/OIII 双色映射（§R4-7）：混色权重随"到 Trapezium 中心距离"变化
- * （`m42ColorWeight01` 的 GLSL 镜像：smoothstep(uWeightInnerR, uWeightOuterR, r)
- * + uWeightBias 滑杆偏置）——内区 OIII 偏青、外区 Hα 偏红；权重不烘焙
- * 进纹理（纯径向近似登记于 nebulaVolume.ts 文件头）。
+ * Hα/OIII 双色映射（§R4-7）：混色权重随"到 uCore 的（椭球归一化）距离"
+ * 变化（`m42ColorWeight01` 的 GLSL 镜像：smoothstep(uWeightInnerR,
+ * uWeightOuterR, r) + uWeightBias 滑杆偏置）——内区 OIII 偏青、外区 Hα
+ * 偏红；权重不烘焙进纹理（纯径向近似登记于 nebulaVolume.ts 文件头）。
+ * R4-14 泛化登记：uCore/内外径/uWeightInvRadii（椭球归一化半径的逐轴
+ * 倒数，M42 默认 (1,1,1) = 欧氏距离，行为零回退）可经参数覆写——M57
+ * 以 (1/a,1/b,1/c) 使权重沿三轴椭球壳法向分层（`m57ColorWeight01` 镜像）。
  *
  * 管线兼容（附录 A §5，全部沿用 VolumeMaterial 先例）：log depth buffer
  * include 三件、盒内/盒外入射连续（slab t0 钳 0 + BackSide）、透明排序
@@ -68,7 +71,8 @@ const FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 uColorOIII;     // 内区 OIII 青绿
   uniform vec3 uColorHa;       // 外区 Hα 红
   uniform float uWeightBias;   // 双色权重偏置（滑杆，-1..1）
-  uniform vec3 uCore;          // Trapezium 中心（归一化域 [-1,1]³）
+  uniform vec3 uCore;          // 权重中心（归一化域 [-1,1]³；M42=Trapezium）
+  uniform vec3 uWeightInvRadii; // 椭球归一化逐轴倒数（M42=(1,1,1) 欧氏）
   uniform float uWeightInnerR;
   uniform float uWeightOuterR;
   uniform float uIntensity;
@@ -118,8 +122,9 @@ const FRAGMENT_SHADER = /* glsl */ `
       float a = rg.g * uDustStrength;
       if (e > 0.0005 || a > 0.0005) {
         if (e > 0.0005) {
-          // 双色映射：m42ColorWeight01 的 GLSL 镜像（盒局部 ×2 = 归一化域）
-          float r = length(p * 2.0 - uCore);
+          // 双色映射：m42/m57ColorWeight01 的 GLSL 镜像（盒局部 ×2 =
+          // 归一化域；uWeightInvRadii=(1,1,1) 时退化为欧氏距离）
+          float r = length((p * 2.0 - uCore) * uWeightInvRadii);
           float w = clamp(smoothstep(uWeightInnerR, uWeightOuterR, r) + uWeightBias, 0.0, 1.0);
           vec3 col = mix(uColorOIII, uColorHa, w);
           accum += transmittance * col * (e * stepLen);
@@ -161,6 +166,14 @@ export interface NebulaVolumeMaterialParams {
   weightBias?: number;
   /** 输出亮度（默认 1.3） */
   intensity?: number;
+  /** 双色权重中心（归一化域 [-1,1]³；默认 M42 Trapezium 中心） */
+  core?: readonly [number, number, number];
+  /** 双色权重内径（默认 M42 常量） */
+  weightInnerR?: number;
+  /** 双色权重外径（默认 M42 常量） */
+  weightOuterR?: number;
+  /** 椭球归一化逐轴倒数（默认 (1,1,1) 欧氏距离；M57 = (1/a,1/b,1/c)） */
+  weightInvRadii?: readonly [number, number, number];
   /** 蓝噪声掩码（缺省工厂自建并托管；显式传入归调用方持有） */
   blueNoise?: THREE.DataTexture;
 }
@@ -176,7 +189,8 @@ export function createNebulaVolumeMaterial(
 ): THREE.ShaderMaterial {
   const ownsBlueNoise = params.blueNoise === undefined;
   const blueNoise = params.blueNoise ?? buildBlueNoiseTexture();
-  const [cx, cy, cz] = M42_TRAPEZIUM_CENTER;
+  const [cx, cy, cz] = params.core ?? M42_TRAPEZIUM_CENTER;
+  const [wx, wy, wz] = params.weightInvRadii ?? [1, 1, 1];
   const material = new THREE.ShaderMaterial({
     name: 'NebulaVolumeMaterial',
     vertexShader: VERTEX_SHADER,
@@ -192,8 +206,9 @@ export function createNebulaVolumeMaterial(
       uColorOIII: { value: new THREE.Color(params.colorOIII ?? '#2fd8c4') },
       uWeightBias: { value: params.weightBias ?? 0 },
       uCore: { value: new THREE.Vector3(cx, cy, cz) },
-      uWeightInnerR: { value: M42_COLOR_WEIGHT_INNER_R },
-      uWeightOuterR: { value: M42_COLOR_WEIGHT_OUTER_R },
+      uWeightInvRadii: { value: new THREE.Vector3(wx, wy, wz) },
+      uWeightInnerR: { value: params.weightInnerR ?? M42_COLOR_WEIGHT_INNER_R },
+      uWeightOuterR: { value: params.weightOuterR ?? M42_COLOR_WEIGHT_OUTER_R },
       uIntensity: { value: params.intensity ?? 1.3 },
       uBlueNoise: { value: blueNoise },
       uJitter: { value: 1 },
