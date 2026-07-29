@@ -214,6 +214,8 @@ export function NebulaVolumeLayer({
         weightInnerR: params.weightInnerR,
         weightOuterR: params.weightOuterR,
         weightInvRadii: params.weightInvRadii,
+        expandAmp: params.expandAmp,
+        expandPeriodSec: params.expandPeriodSec,
       });
       const mesh = new THREE.Mesh(resources.boxGeometry, volumeMaterial);
       mesh.scale.setScalar(boxEdgeUnits);

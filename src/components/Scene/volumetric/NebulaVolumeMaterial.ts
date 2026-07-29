@@ -78,8 +78,13 @@ const FRAGMENT_SHADER = /* glsl */ `
   uniform float uIntensity;
   uniform sampler2D uBlueNoise;
   uniform float uJitter;
-  uniform float uTime;    // 预留：密度场流动（R4-8 按需接入）
+  uniform float uTime;    // R4-20：径向膨胀相位驱动（其余星云 uExpandAmp=0 不消费）
   uniform float uQuality; // 档位标量（adaptiveQuality 写入；shader 暂不消费）
+  // R4-20 径向膨胀（采样域齐次缩放 = v∝r 均匀膨胀流近似；CPU 镜像
+  // nebulaExpansionScale(t, period, amp)——1 + amp·sin²(π·fract(t/period))；
+  // uExpandAmp=0 时缩放恒 1，M42/M57/马头/蟹状行为零回退）
+  uniform float uExpandAmp;
+  uniform float uExpandPeriodSec;
 
   // 单位盒 [-0.5, 0.5]³ slab 求交（utils/volume.intersectRayBox 的 GLSL 镜像）
   vec2 hitBox(vec3 orig, vec3 dir) {
@@ -111,13 +116,18 @@ const FRAGMENT_SHADER = /* glsl */ `
     vec3 p = vOrigin + (bounds.x + stepLen * jitter * uJitter) * rd;
     vec3 delta = rd * stepLen;
 
+    // R4-20 径向膨胀：采样域按周期缩放（nebulaExpansionScale 的 GLSL 镜像）
+    float expandPhase = fract(uTime / max(uExpandPeriodSec, 1e-3));
+    float expandSin = sin(${Math.PI.toFixed(8)} * expandPhase);
+    float invExpand = 1.0 / (1.0 + uExpandAmp * expandSin * expandSin);
+
     // 双通道发射-吸收积分（front-to-back，与 CPU 参考实现
     // integrateEmissionAbsorptionDual 同式）
     float transmittance = 1.0;
     vec3 accum = vec3(0.0);
     for (int i = 0; i < ${VOLUME_STEPS_MAX}; i++) {
       if (float(i) >= steps) break;
-      vec2 rg = texture(uMap, p + 0.5).rg;
+      vec2 rg = texture(uMap, p * invExpand + 0.5).rg;
       float e = rg.r * uDensityScale;
       float a = rg.g * uDustStrength;
       if (e > 0.0005 || a > 0.0005) {
@@ -176,6 +186,10 @@ export interface NebulaVolumeMaterialParams {
   weightInvRadii?: readonly [number, number, number];
   /** 蓝噪声掩码（缺省工厂自建并托管；显式传入归调用方持有） */
   blueNoise?: THREE.DataTexture;
+  /** R4-20 径向膨胀幅度（默认 0 = 关闭，既有星云行为零回退） */
+  expandAmp?: number;
+  /** R4-20 径向膨胀周期（秒，默认 80——与 WR 124 抛射壳 mesh 动画同参） */
+  expandPeriodSec?: number;
 }
 
 /**
@@ -214,6 +228,8 @@ export function createNebulaVolumeMaterial(
       uJitter: { value: 1 },
       uTime: { value: 0 },
       uQuality: { value: 1 },
+      uExpandAmp: { value: params.expandAmp ?? 0 },
+      uExpandPeriodSec: { value: params.expandPeriodSec ?? 80 },
     },
     transparent: true,
     depthWrite: false,

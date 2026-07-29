@@ -18,6 +18,8 @@ import {
   horseheadVolumeLayerConfig,
   m57VolumeLayerConfig,
   orionVolumeLayerConfig,
+  wr124VolumeLayerConfig,
+  WR124_VOLUME_BOX_FACTOR,
 } from '@/utils/nebulaVolumeScene';
 import { VolumeTestPreview } from '@/components/dev/VolumeTestPreview';
 import { NebulaVolumePreview } from '@/components/dev/NebulaVolumePreview';
@@ -54,6 +56,13 @@ const PREVIEW_OVERRIDE_PRIORITY = 0.5;
 /** 预览自转基准角速度（rad/s，timeScale=1 档）：高于主场景观感基准，
  * 让时间流速滑杆的反馈数秒内肉眼可辨（bug 修复：原 0.05 过于缓慢） */
 const PREVIEW_SPIN_RAD_PER_SEC = 0.15;
+
+/**
+ * R4-20 wr-124 组合预览的体积盒世界边长：恒星预览半径 1.4 对应主场景
+ * 核心球 0.6×size → size ≡ 1.4/0.6，盒边长 = size × WR124_VOLUME_BOX_FACTOR
+ * ≈ 14（壳中面世界半径 = 3× 恒星半径，与主场景比例一致）
+ */
+const WR124_PREVIEW_BOX_EDGE = (1.4 / 0.6) * WR124_VOLUME_BOX_FACTOR;
 
 /** 预览恒定全可见权重（模块级常量，避免每次渲染新建函数） */
 const WEIGHT_FULL = (): number => 1;
@@ -217,17 +226,35 @@ export function PreviewScene({
               : null,
     [entry.componentKey],
   );
+  // R4-20 wr-124 组合预览：恒星层之外叠挂 M1-67 抛射壳体积
+  const wr124Config = useMemo(
+    () => (entry.bodyId === 'wr-124' ? wr124VolumeLayerConfig() : null),
+    [entry.bodyId],
+  );
   return (
     <>
       <ExposureSync exposure={exposure} />
       {entry.componentKey === 'stellar-surface' ? (
         /* key=bodyId：切换恒星时强制重挂载（材质引用缓存与虚拟时钟随之重置） */
-        <StellarSurfacePreview
-          key={entry.bodyId}
-          entry={entry}
-          values={values}
-          clockLabelRef={clockLabelRef}
-        />
+        <>
+          <StellarSurfacePreview
+            key={entry.bodyId}
+            entry={entry}
+            values={values}
+            clockLabelRef={clockLabelRef}
+          />
+          {/* R4-20：WR 124 抛射壳体积层（64³ 团块泡沫 + 径向膨胀，
+              密度/膨胀滑杆 + timeScale 与恒星层同步虚拟时钟） */}
+          {wr124Config && (
+            <NebulaVolumePreview
+              key={`${entry.bodyId}-ejecta`}
+              config={wr124Config}
+              values={values}
+              boxEdge={WR124_PREVIEW_BOX_EDGE}
+              qualityLabelRef={qualityLabelRef}
+            />
+          )}
+        </>
       ) : entry.componentKey === 'volume-raymarch-test' ? (
         <VolumeTestPreview
           values={values}

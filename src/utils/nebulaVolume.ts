@@ -951,6 +951,140 @@ export function crabTorusIntensity(rho01: number, height01: number): number {
   return (ring + inner + glow) * plane;
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+ * WR 124 / M1-67 星风抛射壳密度场（R4-20，IMPROVEMENT_REQUIREMENTS_4 §R4-20）
+ *
+ * 形态登记（附录 A §4，数据源 §0.4：NASA/ESA Hubble 与 JWST（2023）M1-67
+ * 公版图像仅作观感参考，程序化近似构建）：
+ * - M1-67 为 WR 124 强星风抛射形成的年轻（~2 万年）团块状星云：无规则
+ *   壳层上密布数百个致密气体结（clumps/knots），整体近球形、边缘破碎；
+ * - 骨架：球壳 SDF（中面 0.6、湍流扰动 ±0.12 去正球感）；
+ * - 团块泡沫：第二轮高频 fBm 阈值化（sstep 0.48→0.72）→ 壳上离散气体结
+ *   （知识登记：真实 knot 由星风-星云相互作用瑞利-泰勒不稳定性形成，
+ *   此处以阈值化噪声近似其空间分布，非逐结贴合照片）；
+ * - 壳内近空（中心为恒星本体，主场景 StellarSurface 承载）、吸收通道
+ *   恒零（M1-67 发射主导，Hα/[NII] 红档；单色登记同马头 IC 434 先例）；
+ * - 径向膨胀（§R4-20 第 1 条"径向速度场 uTime 驱动"）不烘焙进纹理：
+ *   shader 侧以采样域齐次缩放实现（v ∝ r 均匀膨胀流近似——抛射壳的
+ *   Hubble 型流场，NebulaVolumeMaterial uExpandAmp/uExpandPeriodSec），
+ *   幅度/周期与既有抛射壳 mesh 动画同参（nebulaExpansionScale(t,80,0.14)）。
+ *
+ * 纹理 64³ 预算登记（§R4-20 指定小型体积层）：RG 双通道 1 B/通道 =
+ * 64³×2 = 512 KB（≤64 MB 总预算，volume 池容量 1 与 M42/M57/马头/蟹状
+ * 共池 LRU）。
+ * ════════════════════════════════════════════════════════════════════════ */
+
+/** WR 124 体积层确定性种子 id（与 data/specialBodies 的天体 id 一致） */
+export const WR124_VOLUME_ID = 'wr-124';
+
+/** WR 124 密度纹理边长（§R4-20：64³ 小型体积层） */
+export const WR124_TEXTURE_SIZE = 64;
+
+/** 抛射壳中面半径（归一化域 [-1,1]³） */
+export const WR124_SHELL_MID_R = 0.6;
+
+/** 抛射壳全厚（半径单位；含软衰减后观感厚度与 M1-67 壳/径比量级一致） */
+export const WR124_SHELL_THICKNESS = 0.34;
+
+/** 壳层软衰减宽度 */
+const WR124_SHELL_SOFTNESS = 0.09;
+
+/** 壳半径湍流扰动幅度（±该值；仅扰动不塑形） */
+const WR124_SHELL_PERTURB = 0.12;
+
+/** 团块泡沫阈值（高频 fBm sstep 下/上边缘：越窄结越离散） */
+export const WR124_FOAM_EDGE_LO = 0.48;
+export const WR124_FOAM_EDGE_HI = 0.72;
+
+/** 泡沫谷底残余密度（壳基底连续性：结间弱发射连接，不完全撕裂壳层；
+ * 低档取值——M1-67 观感强团块化，结/隙对比显著） */
+export const WR124_FOAM_FLOOR = 0.12;
+
+/** 早退门（半径单位）：壳外缘/内缘扰动可达范围之外零噪声调用 */
+const WR124_EARLY_EXIT_OUTER =
+  WR124_SHELL_MID_R + WR124_SHELL_THICKNESS / 2 + WR124_SHELL_SOFTNESS + WR124_SHELL_PERTURB;
+const WR124_EARLY_EXIT_INNER =
+  WR124_SHELL_MID_R - WR124_SHELL_THICKNESS / 2 - WR124_SHELL_SOFTNESS - WR124_SHELL_PERTURB;
+
+/**
+ * 生成 WR 124 / M1-67 双通道密度采样器（确定性：同种子输出逐点一致）
+ *
+ * 性能登记：每体素 ≤6 次 3D 值噪声调用（壳扰动 fBm 3 八度 + 团块泡沫
+ * fBm 3 八度），壳带之外的体素零噪声调用（内/外双早退门）；64³ 全量
+ * 计算远低于 M42 128³ 基准（体素量 1/8 且壳带占比小）。
+ *
+ * @param seed FNV-1a 种子（默认 `volumeSeed('wr-124')`）
+ */
+export function makeWr124Sampler(seed: number = volumeSeed(WR124_VOLUME_ID)): NebulaDualSampler {
+  // 种子 → 噪声域偏移（fbm3 同款注入方式：不同种子 = 平移采样窗口）
+  const rand = createSeededRandom(seed >>> 0);
+  const turbOffsets: number[] = [];
+  for (let i = 0; i < 18; i += 1) turbOffsets.push(rand() * 96);
+
+  return (x, y, z, out) => {
+    // 吸收通道恒零（M1-67 发射主导，登记见文件段头）
+    out.absorption = 0;
+
+    const r = Math.sqrt(x * x + y * y + z * z);
+
+    // ── 双早退门（无噪声）：壳带扰动可达范围之外直接归零 ──
+    if (r > WR124_EARLY_EXIT_OUTER || r < WR124_EARLY_EXIT_INNER) {
+      out.emission = 0;
+      return;
+    }
+
+    // ── 细节层 ①：3 八度 fBm（壳半径扰动，低频去正球感） ──
+    let turb = 0;
+    let amp = 1;
+    let freq = 2.4;
+    let total = 0;
+    for (let o = 0; o < 3; o += 1) {
+      turb +=
+        valueNoise3D(
+          x * freq + turbOffsets[o * 3],
+          y * freq + turbOffsets[o * 3 + 1],
+          z * freq + turbOffsets[o * 3 + 2],
+        ) * amp;
+      total += amp;
+      amp *= 0.5;
+      freq *= 2;
+    }
+    turb /= total;
+
+    // ── 骨架：球壳（中面经湍流扰动 ±0.12 去正球感） ──
+    const dShell = r - WR124_SHELL_MID_R - (turb - 0.5) * (WR124_SHELL_PERTURB * 2);
+    const shell01 = sdfDensityFalloff(shellSdf(dShell, WR124_SHELL_THICKNESS), WR124_SHELL_SOFTNESS);
+    if (shell01 <= 0) {
+      out.emission = 0;
+      return;
+    }
+
+    // ── 细节层 ②：高频 fBm 阈值化 → 团块泡沫（离散气体结） ──
+    let foam = 0;
+    amp = 1;
+    freq = 6.5;
+    total = 0;
+    for (let o = 0; o < 3; o += 1) {
+      foam +=
+        valueNoise3D(
+          x * freq + turbOffsets[9 + o * 3],
+          y * freq + turbOffsets[9 + o * 3 + 1],
+          z * freq + turbOffsets[9 + o * 3 + 2],
+        ) * amp;
+      total += amp;
+      amp *= 0.5;
+      freq *= 2;
+    }
+    foam /= total;
+    const foam01 = sstep(WR124_FOAM_EDGE_LO, WR124_FOAM_EDGE_HI, foam);
+
+    out.emission = Math.min(
+      1,
+      Math.max(0, shell01 * (WR124_FOAM_FLOOR + (1 - WR124_FOAM_FLOOR) * foam01)),
+    );
+  };
+}
+
 /** RG 双通道体素数据的分帧构建状态（z 切片粒度推进 + 打点登记字段） */
 export interface RgVolumeBuildState {
   /** 纹理边长 */

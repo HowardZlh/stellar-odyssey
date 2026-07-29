@@ -10,8 +10,8 @@ import {
   clampParamValue,
   defaultParamValues,
   previewEntryForBody,
+  previewHasVolumeLayer,
   registeredPreviewIds,
-  VOLUME_PREVIEW_COMPONENT_KEYS,
 } from '@/utils/devPreview';
 import {
   createFpsCounter,
@@ -153,7 +153,7 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
         <div>
           虚拟时钟：<span ref={clockLabelRef}>0.0</span> s
         </div>
-        {VOLUME_PREVIEW_COMPONENT_KEYS.has(entry.componentKey) && (
+        {previewHasVolumeLayer(entry) && (
           <div>
             体积质量档：<span ref={qualityLabelRef}>—</span>
           </div>
