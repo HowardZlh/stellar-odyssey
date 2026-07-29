@@ -2,7 +2,7 @@
 
 
 import type { JSX } from 'react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
 import * as THREE from 'three';
@@ -12,6 +12,10 @@ import { useSimulationStore } from '@/store';
 import { cosmicDistanceToSceneUnits, trapezoidWeight } from '@/utils/scale';
 import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import { grbFlashState, jetFlowPhase01, quasarFlicker } from '@/utils/specialBodies';
+import { EXTRAGALACTIC_VIEW_RADIUS_UNITS } from '@/utils/cameraFocus';
+import { quasarCoreNearFactor, quasarDetailLayerSpec } from '@/utils/quasarNearView';
+import { useDetailLayer } from '@/hooks/useDetailLayer';
+import { QuasarNearCore } from '@/components/Scene/QuasarNearView';
 import {
   createGalaxySpriteCanvas,
   createGlowSpriteCanvas,
@@ -178,6 +182,12 @@ export function RelativisticJet({
 
 /**
  * 类星体 3C 273（需求 3.1.5 河外对象）：极亮核心 + 双向相对论喷流 + 光变闪烁
+ *
+ * R4-21：近观挂接细节层（useDetailLayer particles 池，'lru-retain' L4
+ * 语义与 R2-8 星系近观共池）——跟随/飞往且距离达阈值时挂载
+ * QuasarNearCore（吸积盘 + BLR 辉光 + 尘埃环面，盘/环面平面 ⊥ 喷流轴），
+ * 与既有喷流构成内→外四层结构；核心辉光按 quasarCoreNearFactor 减淡
+ * 让出盘视野（光变闪烁保留不回退），退出反向恢复、资源随卸载 dispose。
  */
 export function Quasar(): JSX.Element | null {
   const body = getSpecialBodyById('quasar-3c273');
@@ -198,18 +208,38 @@ export function Quasar(): JSX.Element | null {
   useEffect(() => () => texture.dispose(), [texture]);
 
   const jetDirection = useMemo(() => new THREE.Vector3(0.35, 0.9, 0.25).normalize(), []);
+  // 盘/环面姿态：局部 +y → 喷流轴（盘面 ⊥ 喷流，AGN 统一模型几何）
+  const diskQuaternion = useMemo(
+    () => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), jetDirection),
+    [jetDirection],
+  );
+
+  // R4-21 近观细节层门控（阈值与 resolveFocusTarget 同源，utils/quasarNearView）
+  const weightRef = useRef(0);
+  const nearSpec = useMemo(() => quasarDetailLayerSpec(), []);
+  const { active: nearActive, opacity01: getNear01 } = useDetailLayer(nearSpec, {
+    objectRef: groupRef,
+    retention: 'lru-retain',
+  });
+  /** 近观层不透明度 = 河外层级淡入权重 × 近观激活权重 */
+  const getNearOpacity = useCallback(
+    () => weightRef.current * getNear01(),
+    [getNear01],
+  );
 
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group) return;
     const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
+    weightRef.current = weight;
     group.visible = weight > 0.001;
     setObjectTreeRaycastEnabled(group, weight > INTERACTIVE_WEIGHT);
     if (!group.visible) return;
     if (coreRef.current) {
-      // 光变闪烁（不规则光变，需求 3.1.5）
+      // 光变闪烁（不规则光变，需求 3.1.5）；R4-21 近观减淡让出盘视野
+      // （quasarCoreNearFactor，光变因子保留不回退）
       (coreRef.current.material as THREE.SpriteMaterial).opacity =
-        0.95 * quasarFlicker(clock.elapsedTime) * weight;
+        0.95 * quasarFlicker(clock.elapsedTime) * weight * quasarCoreNearFactor(getNear01());
     }
   });
 
@@ -247,6 +277,15 @@ export function Quasar(): JSX.Element | null {
         bilateral
         baseOpacity={0.8}
       />
+      {/* R4-21 近观细节层：吸积盘 + BLR 辉光 + 尘埃环面（⊥ 喷流轴） */}
+      {nearActive && (
+        <group quaternion={diskQuaternion}>
+          <QuasarNearCore
+            baseRadiusUnits={EXTRAGALACTIC_VIEW_RADIUS_UNITS}
+            getOpacity={getNearOpacity}
+          />
+        </group>
+      )}
       {showLabels && inRange && !focused && (
         // R3-4：近距反向缩放钳制 + 焦点隐藏（治理缺口补齐）
         <ClampedHtmlLabel position={[0, 700, 0]} distanceFactor={12000} style={{ pointerEvents: 'none' }}>

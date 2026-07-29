@@ -27,6 +27,7 @@ import { GalaxyNearViewPreview } from '@/components/dev/GalaxyNearViewPreview';
 import { BlackHoleLensedPreview } from '@/components/dev/BlackHoleLensedPreview';
 import { PleiadesCatalogPreview } from '@/components/dev/PleiadesCatalogPreview';
 import { M13ClusterPreview } from '@/components/dev/M13ClusterPreview';
+import { QuasarNearViewPreview } from '@/components/dev/QuasarNearViewPreview';
 
 /**
  * 预览场景（R4-1）：按条目 componentKey 挂载对应细节组件，注入滑杆参数值。
@@ -276,6 +277,9 @@ export function PreviewScene({
         <PleiadesCatalogPreview values={values} />
       ) : entry.componentKey === 'm13-king-cluster' ? (
         <M13ClusterPreview values={values} />
+      ) : entry.componentKey === 'quasar-near-view' ? (
+        /* R4-21：类星体近观四层结构（盘/BLR/尘埃环面/喷流） */
+        <QuasarNearViewPreview values={values} clockLabelRef={clockLabelRef} />
       ) : entry.componentKey === 'galaxy-near-view' ? (
         /* key=bodyId：切换星系时强制重挂载（虚拟时钟与自转姿态重置） */
         <GalaxyNearViewPreview
