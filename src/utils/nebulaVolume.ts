@@ -428,6 +428,164 @@ export function makeM57Sampler(seed: number = volumeSeed(M57_VOLUME_ID)): Nebula
   };
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+ * 马头星云 Barnard 33 吸收密度场（R4-15，IMPROVEMENT_REQUIREMENTS_4 §R4-15）
+ *
+ * 形态登记（附录 A §4，数据源 §0.4：NASA/ESA Hubble 公版图像仅作轮廓
+ * 参考，程序化近似构建）：
+ * - 吸收为主：马头轮廓 = 5 个椭球 SDF 平滑并（颈柱/头部/吻部/鬃丘 +
+ *   底部暗云堤——B33 从 Lynds 1630 暗云堤伸出的形态近似；§R4-15 省
+ *   token 约定"3–4 个椭球布尔组合"，为补底部云堤取 5 个，登记）
+ *   + 3 八度 fBm 边缘侵蚀（轮廓半径扰动 ±0.09 + 表层湍流阈值化碎散
+ *   云缘）；近似度登记：只复现"垂直颈柱 + 头部朝 +x 突出 + 吻部 +
+ *   顶部鬃丘"的剪影相对方位与量级，不逐像素贴合照片；
+ * - 马头轮廓内发射通道近零（冷分子云不发光，单测断言 ≤0.02）；
+ * - 背景发射幕（§R4-15 第 2 条，二选一登记取"低密度大尺度发射层"）：
+ *   IC 434 红色发射幕烘焙进体积后半域（z ≤ 0 侧软窗过渡 + 盒边缘软窗
+ *   防切边），剪影 = raymarch 内吸收柱按透射率物理遮挡背景幕——侧向
+ *   绕行可见云柱与发射幕的真实纵深（验收核心）；主场景既有背景
+ *   billboard 保留并部分减淡作幕布远景延伸（nebulaVolumeScene 登记）；
+ * - 单色登记：IC 434 为 Hα 主导发射（红），材质双色权重经 weightBias=1
+ *   恒取 colorHa 档（OIII 通道对马头无观测意义）。
+ *
+ * 纹理 96³ 预算登记：RG 双通道 1 B/通道 = 96³×2 ≈ 1.69 MB（≤64 MB
+ * 总预算，volume 池容量 1 与 M42/M57 共池 LRU）。
+ * ════════════════════════════════════════════════════════════════════════ */
+
+/** 马头星云体积层确定性种子 id（与 data/specialBodies 的天体 id 一致） */
+export const HORSEHEAD_VOLUME_ID = 'horsehead-nebula';
+
+/** 马头密度纹理边长（结构较 M42 简单：96³ 即可，预算登记见上） */
+export const HORSEHEAD_TEXTURE_SIZE = 96;
+
+/** 马头轮廓椭球部件（归一化域 [-1,1]³；中心 + 半轴，登记见文件段头） */
+export const HORSEHEAD_PILLAR_PARTS: readonly {
+  readonly center: readonly [number, number, number];
+  readonly radii: readonly [number, number, number];
+}[] = [
+  /** 颈柱（垂直云柱，向下并入底部云堤） */
+  { center: [-0.05, -0.5, 0], radii: [0.3, 0.48, 0.26] },
+  /** 头部（顶部主体） */
+  { center: [0.04, 0.3, 0], radii: [0.3, 0.32, 0.24] },
+  /** 吻部（朝 +x 突出的口鼻） */
+  { center: [0.4, 0.26, 0], radii: [0.27, 0.16, 0.18] },
+  /** 鬃丘（头顶偏 −x 的鬃毛隆起） */
+  { center: [-0.2, 0.5, 0], radii: [0.16, 0.22, 0.15] },
+  /** 底部暗云堤（Lynds 1630 边缘近似，马头由此伸出） */
+  { center: [0, -0.92, 0], radii: [0.92, 0.38, 0.5] },
+] as const;
+
+/** 轮廓平滑并系数（椭球间软融合宽度） */
+const HORSEHEAD_UNION_K = 0.15;
+
+/** fBm 轮廓侵蚀幅度（SDF 单位，±该值的半径起伏） */
+const HORSEHEAD_ERODE_AMP = 0.09;
+
+/** 吸收软衰减宽度（SDF 单位） */
+const HORSEHEAD_ABSORB_SOFTNESS = 0.08;
+
+/** 早退门（SDF 单位）：侵蚀 + 软衰减可达范围之外零噪声调用 */
+const HORSEHEAD_EARLY_EXIT_SDF = HORSEHEAD_ERODE_AMP + HORSEHEAD_ABSORB_SOFTNESS + 0.08;
+
+/** IC 434 发射幕基准密度（低密度大尺度层；亮度由材质 uDensityScale 恢复） */
+export const HORSEHEAD_SCREEN_LEVEL = 0.16;
+
+/** 发射幕 z 向前缘/满值（z ≤ 前缘起软窗上升，登记：幕布居体积后半域） */
+const HORSEHEAD_SCREEN_Z_FRONT = 0.05;
+const HORSEHEAD_SCREEN_Z_FULL = -0.35;
+
+/** 马头轮廓内发射上限（"发射通道近零"验收断言值） */
+export const HORSEHEAD_PILLAR_EMISSION_MAX = 0.02;
+
+/**
+ * 马头轮廓组合 SDF（5 椭球平滑并，无噪声——早退门与侵蚀基准共用）
+ *
+ * @returns 有符号距离（<0 = 轮廓内）
+ */
+export function horseheadPillarSdf(x: number, y: number, z: number): number {
+  let d = Infinity;
+  for (const part of HORSEHEAD_PILLAR_PARTS) {
+    const [cx, cy, cz] = part.center;
+    const [rx, ry, rz] = part.radii;
+    const dPart = ellipsoidSdf(x - cx, y - cy, z - cz, rx, ry, rz);
+    d = d === Infinity ? dPart : smoothUnionSdf(d, dPart, HORSEHEAD_UNION_K);
+  }
+  return d;
+}
+
+/**
+ * 生成马头星云双通道密度采样器（确定性：同种子输出逐点一致）
+ *
+ * 性能登记：每体素 ≤3 次 3D 值噪声调用（fBm 3 八度，轮廓侵蚀/尘埃调制/
+ * 发射幕云絮共用一轮）；轮廓侵蚀可达范围之外且发射幕前方的体素零噪声
+ * 调用（早退）；96³ 全量计算实测远低于 M42 128³ 基准。
+ *
+ * @param seed FNV-1a 种子（默认 `volumeSeed('horsehead-nebula')`）
+ */
+export function makeHorseheadSampler(
+  seed: number = volumeSeed(HORSEHEAD_VOLUME_ID),
+): NebulaDualSampler {
+  // 种子 → 噪声域偏移（fbm3 同款注入方式：不同种子 = 平移采样窗口）
+  const rand = createSeededRandom(seed >>> 0);
+  const turbOffsets: number[] = [];
+  for (let i = 0; i < 9; i += 1) turbOffsets.push(rand() * 96);
+
+  return (x, y, z, out) => {
+    // ── 骨架：马头轮廓组合 SDF（无噪声，早退门与侵蚀基准共用） ──
+    const dBase = horseheadPillarSdf(x, y, z);
+
+    // ── 早退门（无噪声）：轮廓侵蚀可达范围之外且发射幕前方 → 双通道归零 ──
+    if (dBase > HORSEHEAD_EARLY_EXIT_SDF && z > HORSEHEAD_SCREEN_Z_FRONT) {
+      out.emission = 0;
+      out.absorption = 0;
+      return;
+    }
+
+    // ── 细节层：3 八度 fBm（轮廓侵蚀 + 尘埃束状调制 + 幕布云絮共用） ──
+    let turb = 0;
+    let amp = 1;
+    let freq = 3;
+    let total = 0;
+    for (let o = 0; o < 3; o += 1) {
+      turb +=
+        valueNoise3D(
+          x * freq + turbOffsets[o * 3],
+          y * freq + turbOffsets[o * 3 + 1],
+          z * freq + turbOffsets[o * 3 + 2],
+        ) * amp;
+      total += amp;
+      amp *= 0.5;
+      freq *= 2;
+    }
+    turb /= total;
+
+    // ── 吸收通道：轮廓经 fBm 侵蚀（半径起伏 ±0.09）＋ 表层阈值化碎散
+    // 云缘（深处恒 1——轮廓核心不受侵蚀）＋ 尘埃束状调制 ──
+    const dEroded = dBase + (0.5 - turb) * (HORSEHEAD_ERODE_AMP * 2);
+    const pillar01 = sdfDensityFalloff(dEroded, HORSEHEAD_ABSORB_SOFTNESS);
+    // 表层侵蚀混合：dBase ≤ −0.18 恒 1（深处），近表层按湍流阈值碎散
+    const surface01 = sstep(-0.18, -0.02, dBase);
+    const edgeMask = 1 - surface01 * (1 - sstep(0.32, 0.52, turb));
+    // 盒边缘软窗（吸收防切边：底部云堤延伸至域边界处软化）
+    const boxWin =
+      sstep(1, 0.85, Math.abs(x)) * sstep(1, 0.85, Math.abs(y)) * sstep(1, 0.85, Math.abs(z));
+    const absorb = pillar01 * edgeMask * (0.65 + 0.35 * turb) * boxWin;
+    out.absorption = Math.min(1, Math.max(0, absorb));
+
+    // ── 发射通道：IC 434 背景发射幕（低密度大尺度层，轮廓内近零） ──
+    // z 向剖面：前缘软窗上升 × 靠近盒背面软收（防背面切边）
+    const zProfile =
+      sstep(HORSEHEAD_SCREEN_Z_FRONT, HORSEHEAD_SCREEN_Z_FULL, z) * sstep(-1, -0.72, z);
+    // 横向软窗（防 x/y 盒边切边）
+    const xyWin = sstep(1, 0.7, Math.abs(x)) * sstep(1, 0.7, Math.abs(y));
+    // 云絮起伏（0.55–1 调制，大尺度幕布不撕裂）
+    const cloud = 0.55 + 0.45 * turb;
+    // 轮廓内发射近零（×(1 − 轮廓密度)，单测断言 ≤0.02）
+    const em = HORSEHEAD_SCREEN_LEVEL * zProfile * xyWin * cloud * (1 - pillar01);
+    out.emission = Math.min(1, Math.max(0, em));
+  };
+}
+
 /** RG 双通道体素数据的分帧构建状态（z 切片粒度推进 + 打点登记字段） */
 export interface RgVolumeBuildState {
   /** 纹理边长 */
