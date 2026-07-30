@@ -75,6 +75,8 @@ export interface SimulationState {
   showVelocityVectors: boolean;
   /** 真实巡天背景显示（R5-3：2MRS 目录点云；关闭/加载失败回落程序化宇宙网） */
   showGalaxyCatalog: boolean;
+  /** 费米气泡显示（R5-6：银心上下双极体积辉光，Su et al. 2010 登记） */
+  showFermiBubbles: boolean;
   /** 音效开关 */
   audioEnabled: boolean;
   /** 音量（0-1） */
@@ -246,6 +248,7 @@ export interface SimulationState {
   setShowYouAreHere: (show: boolean) => void;
   setShowVelocityVectors: (show: boolean) => void;
   setShowGalaxyCatalog: (show: boolean) => void;
+  setShowFermiBubbles: (show: boolean) => void;
   setAudioEnabled: (enabled: boolean) => void;
   toggleAudio: () => void;
   setAudioVolume: (volume: number) => void;
@@ -518,6 +521,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   showYouAreHere: true,
   showVelocityVectors: true,
   showGalaxyCatalog: true,
+  showFermiBubbles: true,
   audioEnabled: false,
   audioVolume: 0.8,
   selectedBodyId: null,
@@ -708,6 +712,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
 
   setShowVelocityVectors: (show) => set({ showVelocityVectors: show }),
   setShowGalaxyCatalog: (show) => set({ showGalaxyCatalog: show }),
+  setShowFermiBubbles: (show) => set({ showFermiBubbles: show }),
 
   setAudioEnabled: (enabled) => set({ audioEnabled: enabled }),
 
