@@ -141,12 +141,23 @@ describe('M31 专属姿态（§R4-10：真实倾角 77°，其余星系沿用 id
     expect(angleDeg(normal, [d.x, d.y, d.z])).toBeCloseTo(77, 5);
   });
 
-  it('galaxyNearViewOrientation：m31 = 专属姿态且 ≠ 旧哈希；其余 8 星系 = id 哈希公式', () => {
+  it('galaxyNearViewOrientation：m31 = 专属姿态且 ≠ 旧哈希；非影像星系 = id 哈希公式（R5-1 等价迁移）', () => {
     expect(galaxyNearViewOrientation('m31')).toEqual(m31NearViewOrientationRad());
     expect(galaxyNearViewOrientation('m31')).not.toEqual(galaxyOrientationFromId('m31'));
     for (const id of Object.keys(GALAXY_NEAR_VIEW_CONFIGS)) {
-      if (id === 'm31') continue;
+      if (id === 'm31' || ['m33', 'lmc', 'smc'].includes(id)) continue;
       expect(galaxyNearViewOrientation(id)).toEqual(galaxyOrientationFromId(id));
+    }
+  });
+
+  it('R5-1 修订：影像驱动（未反投影）星系盘面正对视线——影像已含投影，防双重投影登记', () => {
+    for (const id of ['m33', 'lmc', 'smc'] as const) {
+      const e = galaxyNearViewOrientation(id);
+      const d = getGalaxyById(id)!.direction;
+      const normal = applyEulerXYZ(e, [0, 1, 0]);
+      // 盘面法线 ∥ 视线（倾角 0 = 正对）
+      expect(angleDeg(normal, [d.x, d.y, d.z])).toBeCloseTo(0, 4);
+      expect(galaxyNearViewOrientation(id)).not.toEqual(galaxyOrientationFromId(id));
     }
   });
 });
@@ -394,13 +405,14 @@ describe('信息面板扩展（§R4-10：结构行 + RC3/S4G 来源）', () => {
   });
 });
 
-describe('预览页注册（§R4-10：?body=m31 + 不规则对照 lmc）', () => {
-  it('m31/lmc 条目注册且 componentKey = galaxy-near-view，滑杆三件（dust/HII/倾角）', () => {
+describe('预览页注册（§R4-10：?body=m31 + 不规则对照 lmc；R5-1 等价迁移：滑杆增影像驱动开关）', () => {
+  it('m31/lmc 条目注册且 componentKey = galaxy-near-view，滑杆四件（影像开关/dust/HII/倾角）', () => {
     for (const id of ['m31', 'lmc']) {
       const entry = previewEntryForBody(id);
       expect(entry).not.toBeNull();
       expect(entry!.componentKey).toBe('galaxy-near-view');
       expect(entry!.params.map((p) => p.key)).toEqual([
+        'imageDriven',
         'dustStrength',
         'hiiDensity',
         'inclinationDeg',
@@ -408,14 +420,17 @@ describe('预览页注册（§R4-10：?body=m31 + 不规则对照 lmc）', () =>
     }
   });
 
-  it('默认值 = 形态参数表登记值（dust/HII/倾角）', () => {
+  it('默认值 = 形态参数表登记值（dust/HII；倾角：M31 = 77 反投影再倾转，LMC = 0 影像已含投影登记）', () => {
     for (const id of ['m31', 'lmc'] as const) {
       const entry = previewEntryForBody(id)!;
       const morph = GALAXY_MORPHOLOGY_PARAMS[id];
       const byKey = new Map(entry.params.map((p) => [p.key, p.default]));
       expect(byKey.get('dustStrength')).toBe(morph.dustStrength);
       expect(byKey.get('hiiDensity')).toBe(morph.hiiDensity);
-      expect(byKey.get('inclinationDeg')).toBe(morph.inclinationDeg);
+      expect(byKey.get('imageDriven')).toBe(1);
+      // R5-1 登记：M31 权重图已反投影到盘面 → 预览按真实倾角再倾转；
+      // 其余星系影像未反投影（已含投影）→ 默认倾角 0
+      expect(byKey.get('inclinationDeg')).toBe(id === 'm31' ? 77 : 0);
     }
   });
 

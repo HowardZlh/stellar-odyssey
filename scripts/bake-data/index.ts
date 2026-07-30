@@ -28,14 +28,18 @@ import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bakeAntennae } from './antennae.ts';
+import { bakeGalaxyMaps } from './galaxyMaps.ts';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SNAPSHOT_DIR = join(SCRIPT_DIR, 'snapshots');
 const OUT_DIR = join(SCRIPT_DIR, '..', '..', 'public', 'data');
 const GAIA_TAP_SYNC = 'https://gea.esac.esa.int/tap-server/tap/sync';
 
-/** public/data/ 总量硬性上限（gzip 前，附录 A）：5 MB */
-const TOTAL_SIZE_LIMIT_BYTES = 5 * 1024 * 1024;
+/**
+ * public/data/ 总量硬性上限（gzip 前）：R5 附录 A §1 修订自 5 MB 上调至
+ * 15 MB（影像权重图/贴图 + 目录，上调理由登记于 IMPROVEMENT_REQUIREMENTS_5）。
+ */
+const TOTAL_SIZE_LIMIT_BYTES = 15 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // 通用工具
@@ -456,11 +460,15 @@ async function main(): Promise<void> {
     `[bake-data] antennae：${antennae.snapshotCount} 快照 × ${antennae.particleCount} 粒（盘 A ${antennae.diskACount}）`
   );
 
+  // R5-1：星系影像权重图/贴图（自校验在 bakeGalaxyMaps 内，单星系 ≤600 KB）
+  const galaxyMaps = bakeGalaxyMaps();
+
   const sizes: Array<[string, number]> = [
     ['pleiades.json', writeProduct('pleiades.json', bakePleiades(rows, snapshotMeta), false)],
     ['star-params.json', writeProduct('star-params.json', bakeStarParams(), true)],
     ['m13-profile.json', writeProduct('m13-profile.json', bakeM13Profile(), true)],
     ['antennae.bin', statSync(antennaePath).size],
+    ...galaxyMaps.sizes,
   ];
 
   const total = sizes.reduce((s, [, n]) => s + n, 0);
@@ -468,7 +476,10 @@ async function main(): Promise<void> {
     console.log(`[bake-data] public/data/${name}  ${(size / 1024).toFixed(1)} KB`);
   }
   console.log(`[bake-data] 总量 ${(total / 1024).toFixed(1)} KB（上限 ${TOTAL_SIZE_LIMIT_BYTES / 1024 / 1024} MB）`);
-  assertBake(total <= TOTAL_SIZE_LIMIT_BYTES, `public/data/ 总量 ${total} B 超出 5 MB 上限`);
+  assertBake(
+    total <= TOTAL_SIZE_LIMIT_BYTES,
+    `public/data/ 总量 ${total} B 超出 ${TOTAL_SIZE_LIMIT_BYTES / 1024 / 1024} MB 上限`
+  );
   console.log('[bake-data] 自校验通过，烘焙完成');
 }
 
