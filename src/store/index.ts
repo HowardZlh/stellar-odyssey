@@ -1008,3 +1008,9 @@ export const useSimulationStore = create<SimulationState>((set) => ({
       };
     }),
 }));
+
+// R4-24 集成回归专用：dev 环境暴露 store 供无头 Chrome CDP 验收脚本读写状态。
+// 生产构建（NODE_ENV=production）下条件恒假，摇树剔除；运行时逻辑零影响。
+if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined') {
+  (window as Window & { __simStore?: unknown }).__simStore = useSimulationStore;
+}
