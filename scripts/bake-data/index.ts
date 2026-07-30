@@ -11,6 +11,10 @@
  *   public/data/m13-profile.json  M13 King profile 结构参数（Harris 目录）
  *   public/data/antennae.bin      R4-22 触须星系潮汐尾 N-body 快照（Float32，
  *                                 模拟参数/近似登记见 antennae.ts 文件头）
+ *   public/data/galaxy-catalog.bin + galaxy-catalog-meta.json
+ *                                 R5-3 2MRS 真实巡天目录（Float32 超星系笛卡尔
+ *                                 坐标 + 形态/亮度档；来源/失真/去重登记见
+ *                                 galaxyCatalog.ts 文件头；--fetch-2mrs 重拉快照）
  *
  * 数据来源登记（IMPROVEMENT_REQUIREMENTS_4.md §0.4）：
  * - 昴星团：Gaia DR3 TAP 查询（ADQL 语句与选星判据见 snapshots/pleiades-gaia-dr3.meta.json）。
@@ -29,6 +33,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bakeAntennae } from './antennae.ts';
 import { bakeGalaxyMaps } from './galaxyMaps.ts';
+import { bakeGalaxyCatalog, refetch2mrsSnapshot } from './galaxyCatalog.ts';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SNAPSHOT_DIR = join(SCRIPT_DIR, 'snapshots');
@@ -444,6 +449,9 @@ async function main(): Promise<void> {
   if (process.argv.includes('--fetch')) {
     await refetchSnapshot();
   }
+  if (process.argv.includes('--fetch-2mrs')) {
+    await refetch2mrsSnapshot(SNAPSHOT_DIR);
+  }
 
   mkdirSync(OUT_DIR, { recursive: true });
 
@@ -463,11 +471,21 @@ async function main(): Promise<void> {
   // R5-1：星系影像权重图/贴图（自校验在 bakeGalaxyMaps 内，单星系 ≤600 KB）
   const galaxyMaps = bakeGalaxyMaps();
 
+  // R5-3：2MRS 真实巡天目录（自校验含室女座超密度断言，≤1 MB）
+  const galaxyCatalog = bakeGalaxyCatalog(SNAPSHOT_DIR);
+  const galaxyCatalogPath = join(OUT_DIR, 'galaxy-catalog.bin');
+  writeFileSync(galaxyCatalogPath, galaxyCatalog.buffer);
+
   const sizes: Array<[string, number]> = [
     ['pleiades.json', writeProduct('pleiades.json', bakePleiades(rows, snapshotMeta), false)],
     ['star-params.json', writeProduct('star-params.json', bakeStarParams(), true)],
     ['m13-profile.json', writeProduct('m13-profile.json', bakeM13Profile(), true)],
     ['antennae.bin', statSync(antennaePath).size],
+    ['galaxy-catalog.bin', statSync(galaxyCatalogPath).size],
+    [
+      'galaxy-catalog-meta.json',
+      writeProduct('galaxy-catalog-meta.json', galaxyCatalog.metaProduct, true),
+    ],
     ...galaxyMaps.sizes,
   ];
 

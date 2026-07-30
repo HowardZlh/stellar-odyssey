@@ -7,7 +7,7 @@ import {
 
 /**
  * R3-8 控制面板选项视角作用域注册表单测（需求 §8.1-E）：
- * 15 选项 × L1–L4 可见性矩阵逐格断言 + 全局项四视角恒真 + 未知 id RangeError
+ * 16 选项 × L1–L4 可见性矩阵逐格断言 + 全局项四视角恒真 + 未知 id RangeError
  */
 describe('panelScopes（R3-8 面板选项视角作用域）', () => {
   /** 期望矩阵（唯一事实来源镜像，需求 §8.1-A 归类表逐行照抄） */
@@ -27,17 +27,18 @@ describe('panelScopes（R3-8 面板选项视角作用域）', () => {
     supernovaDemo: { L1: false, L2: false, L3: true, L4: false },
     velocityVectors: { L1: false, L2: false, L3: false, L4: true },
     mergerDemo: { L1: false, L2: false, L3: false, L4: true },
+    galaxyCatalog: { L1: false, L2: false, L3: false, L4: true },
   };
 
   const OPTION_IDS = Object.keys(EXPECTED) as PanelOptionId[];
   const GLOBAL_IDS: PanelOptionId[] = ['orbits', 'labels', 'realScale', 'bloom', 'performance'];
 
-  it('注册表恰好登记 15 个选项，与期望矩阵键集一致', () => {
-    expect(OPTION_IDS).toHaveLength(15);
+  it('注册表恰好登记 16 个选项，与期望矩阵键集一致', () => {
+    expect(OPTION_IDS).toHaveLength(16);
     expect(Object.keys(PANEL_OPTION_SCOPES).sort()).toEqual([...OPTION_IDS].sort());
   });
 
-  describe('15 选项 × L1–L4 可见性矩阵逐格断言', () => {
+  describe('16 选项 × L1–L4 可见性矩阵逐格断言', () => {
     it.each(OPTION_IDS.flatMap((id) => VIEW_LEVELS.map((level) => [id, level] as const)))(
       '%s @ %s',
       (id, level) => {
