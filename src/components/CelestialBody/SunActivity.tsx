@@ -539,7 +539,8 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
 
   useFrame((_, rawDelta) => {
     const state = useSimulationStore.getState();
-    const { simDays, continuousLevel, activeSolarFlare, activeCme, sunCutawayMode } = state;
+    const { simDays, continuousLevel, viewLevel, activeSolarFlare, activeCme, sunCutawayMode } =
+      state;
 
     // ---- 事件生命周期（组不可见时仍推进，保证事件正常触发/收尾）----
     const last = lastSimDaysRef.current;
@@ -547,11 +548,13 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
     // 时间跳变（回退/超大步进）只重置基准，不触发/不残留（需求 §8）
     const delta = last === null ? 0 : simDays - last;
     const timeJumped = delta < 0 || delta > 50;
-    // R2-4 §4.1-D：耀斑/CME 泊松自动触发显式限定太阳系视角域（≤2.4）。
-    // 此前 L3/L4 停摆仅是高时间压缩比下 delta>50 天恒触发 timeJumped 守卫
-    // 的副作用，非显式设计；timeJumped 本身的时间跳变防护语义保留。
-    // 域外仅抑制新触发，活跃事件的衰减/收尾照常推进（§4.2 验收 3）。
-    const solarAutoTriggerInScope = eventAutoTriggerAllowed('flare', continuousLevel);
+    // R2-4 §4.1-D：耀斑/CME 泊松自动触发显式限定太阳系视角域（R5-8：
+    // 判定源改离散 viewLevel ∈ {L1, L2}——跟随巡游天体期间与 HUD 视角
+    // 标签一致，不随相机距离误触发）。此前 L3/L4 停摆仅是高时间压缩比下
+    // delta>50 天恒触发 timeJumped 守卫的副作用，非显式设计；timeJumped
+    // 本身的时间跳变防护语义保留。域外仅抑制新触发，活跃事件的衰减/收尾
+    // 照常推进（§4.2 验收 3）。
+    const solarAutoTriggerInScope = eventAutoTriggerAllowed('flare', viewLevel);
 
     if (activeSolarFlare) {
       const progress = flareProgress01(

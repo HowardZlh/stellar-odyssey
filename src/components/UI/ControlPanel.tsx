@@ -74,17 +74,14 @@ export function ControlPanel(): JSX.Element {
   const galacticFrameMode = useSimulationStore((s) => s.galacticFrameMode);
   const toggleGalacticFrameMode = useSimulationStore((s) => s.toggleGalacticFrameMode);
   // 演示按钮可见性/可用性双层（R3-8）：可见性按 viewLevel 域外隐藏（panelScopes），
-  // 可用性保留 R2-4 既有 eventDemoEnabled 连续层级域校验（eventScopes 域窗口语义不动；
-  // 选布尔值，仅域边界跨越时重渲染；耀斑/CME 同属太阳系域窗口共用一个判定）
-  const solarDemoInScope = useSimulationStore((s) =>
-    eventDemoEnabled('flare', s.continuousLevel),
-  );
+  // 可用性保留 R2-4 既有 eventDemoEnabled 域校验（R5-8：判定源同改离散
+  // viewLevel——与可见性层同源，跟随巡游天体期间不随相机距离误置灰；
+  // 选布尔值，仅域边界跨越时重渲染；耀斑/CME 同属太阳系域共用一个判定）
+  const solarDemoInScope = useSimulationStore((s) => eventDemoEnabled('flare', s.viewLevel));
   const supernovaDemoInScope = useSimulationStore((s) =>
-    eventDemoEnabled('supernova', s.continuousLevel),
+    eventDemoEnabled('supernova', s.viewLevel),
   );
-  const mergerDemoInScope = useSimulationStore((s) =>
-    eventDemoEnabled('merger', s.continuousLevel),
-  );
+  const mergerDemoInScope = useSimulationStore((s) => eventDemoEnabled('merger', s.viewLevel));
 
   // R3-8：视角专属选项可见性判定（单一事实来源 panelScopes 注册表）
   const visible = (id: PanelOptionId): boolean => panelOptionVisible(id, viewLevel);
@@ -344,8 +341,8 @@ export function ControlPanel(): JSX.Element {
 
       {/* 特殊天体演示（需求 3.1.5：支持用户在设置中手动触发超新星）
           R3-8：按钮按视角域外隐藏（取代 R2-4 置灰 + tooltip）；按钮内部
-          既有 disabled 逻辑（活跃事件/剖面模式/eventDemoEnabled 连续层级
-          域校验）保留——可见性与可用性双层 */}
+          既有 disabled 逻辑（活跃事件/剖面模式/eventDemoEnabled 域校验，
+          R5-8 判定源为离散 viewLevel）保留——可见性与可用性双层 */}
       {anyDemoVisible && (
         <section className="mt-4">
           <h2 className="mb-2 text-xs text-gray-400">动态事件演示</h2>

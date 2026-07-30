@@ -1,6 +1,6 @@
 # 改进需求文档（第三批，R3 迭代）
 
-> **文档版本**: 2.0（R3-3～R3-8 全部交付；R3-8 控制面板功能选项按视角作用域整理（域外隐藏 + V 键 L3 门控）已实现回写）
+> **文档版本**: 2.1（§R3-3/§R3-5 登记"事件域判定基准已被 R5-8 修订为离散 viewLevel 视角集合"，见 IMPROVEMENT_REQUIREMENTS_5 §R5-8；2.0：R3-3～R3-8 全部交付；R3-8 控制面板功能选项按视角作用域整理（域外隐藏 + V 键 L3 门控）已实现回写）
 > **参考文档**: REQUIREMENTS.md v2.8、IMPROVEMENT_REQUIREMENTS_2.md v1.1（R2-4 事件视角域软隔离）、AGENTS.md
 > **状态标记**: ✅ 已完成 / 🔶 部分完成 / 🔲 未实现
 > **调研说明**: §0.2 现状分析中的文件与行号已经代码调研核实（2026-07），实现时若行号漂移以符号名为准。
@@ -55,6 +55,8 @@ R2-4 已交付事件视角域**软隔离**（`src/utils/eventScopes.ts`）：事
 ---
 
 # R3-3 动态事件视角域硬隔离（域外事件直接丢弃）
+
+> **⚠ 域判定基准已被 R5-8 修订为离散视角集合**（IMPROVEMENT_REQUIREMENTS_5 §R5-8，2026-07）：本节各处"连续层级离开事件视角域窗口"的判定源已由 `continuousLevel` 改为离散 `viewLevel`（`eventInScope(kind, viewLevel)`，太阳 {L1, L2} / 超新星 {L3} / 合并 {L4}）——修复 R3 层级锁定下跟随巡游天体时门控错域（银河系视角弹太阳事件/超新星误丢弃）。丢弃宽限（1 秒）/运镜豁免（锚点 2s / 飞往 2.5s）/丢弃语义（整链清空、遗迹保留、恢复预览前时间、回域不恢复）全部不变；storeR33 测试层级设置已等价迁移为 viewLevel 双写。"合并预览启动运镜途中不被误杀"在新基准下由 `startMergePreview` 即时置 viewLevel L4（运镜期间不回写离散层级）恒域内保证，运镜豁免继续兜底其余路径。
 
 ## 3.1 需求
 
@@ -160,6 +162,8 @@ R2-4 已交付事件视角域**软隔离**（`src/utils/eventScopes.ts`）：事
 ---
 
 # R3-5 超新星事件视角域收窄至 L3（宇宙视角不再出现超新星事件）
+
+> **⚠ 判定基准已被 R5-8 修订为离散视角集合**（IMPROVEMENT_REQUIREMENTS_5 §R5-8，2026-07）：本节的连续窗口 [2.5, 3.5] 与 `SUPERNOVA_EVENT_MAX_LEVEL`/`SUPERNOVA_EVENT_MIN_LEVEL` 常量已废弃删除，超新星域改为离散 `viewLevel` = **{L3}** 判定（"仅 L3"收窄语义完整保持，并修复跟随巡游天体时 continuousLevel 漂移导致的误丢弃/按钮误置灰）；自由缩放等效边界不变（离散层级边界 2.5/3.5 与原窗口一致）。特效淡出窗口 `snFadeWeight` trapezoid(2.5, 2.9, 3.5, 4.0) 仍由连续层级驱动不变。
 
 ## 5.0 背景
 
@@ -321,7 +325,7 @@ R2-4 已交付事件视角域**软隔离**（`src/utils/eventScopes.ts`）：事
 | 太阳内部剖面 | Sun/SunCutaway/SunActivity/HudInfo，太阳近观语境；无层级门控（L3/L4 仍渲染仅太阳过小） | 任何视角均显示 |
 | 泛光 / 性能监控 | PostEffects / PerformanceMonitor，全局 | 属全局 |
 | 银心固定（G）区块 | 仅 L3（按钮 disabled={viewLevel !== 'L3'}） | 非 L3 显示置灰按钮占空间 |
-| 事件演示 4 按钮 | 既有视角域窗口（R2-4/R3-5：耀斑/CME ≤2.4、超新星 [2.5,3.5]、合并 ≥3.6） | 域外置灰 + tooltip 仍占空间 |
+| 事件演示 4 按钮 | 既有视角域窗口（R2-4/R3-5：耀斑/CME ≤2.4、超新星 [2.5,3.5]、合并 ≥3.6；已被 R5-8 修订为离散 viewLevel 集合 {L1,L2}/{L3}/{L4}） | 域外置灰 + tooltip 仍占空间 |
 
 **viewLevel 与 continuousLevel 同步关系**（已核实）：滚轮连续缩放经 `syncZoomLevel`/`syncCameraDistance`（store/index.ts :552-592）自动把 viewLevel 同步为 `discreteLevelFromContinuous(continuousLevel)`；跟随/飞往期间层级锁定（locked，R3-1），viewLevel 不变——按 viewLevel 判定选项可见性既与面板视角按钮一致，也保证跟随目标拉近时选项不闪变。
 

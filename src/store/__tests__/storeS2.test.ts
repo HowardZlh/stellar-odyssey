@@ -24,6 +24,8 @@ function resetStore(): void {
     sunCutawayMode: false,
     sunCutawayLayer: null,
     // 通知计时/离域计时依赖 tick：确保处于太阳系视角域且无运镜豁免干扰
+    // （R5-8：域判定基于离散 viewLevel，双写保持状态自洽）
+    viewLevel: 'L2',
     continuousLevel: 2,
     solarEventsOutOfScopeSec: 0,
   });
@@ -205,6 +207,7 @@ describe('CME 抵达通知最短展示时长', () => {
       cmeArrivalNoticeVisible: false,
       cmeArrivalNoticeAgeSec: 0,
       auroraStartedAtSimDays: null,
+      viewLevel: 'L2',
       continuousLevel: 2,
       solarEventsOutOfScopeSec: 0,
     });
