@@ -324,3 +324,11 @@ export function detailLayerGpuBytesInUse(): number {
 export function resetDetailLayerRegistry(): void {
   registryHolders = [];
 }
+
+// R4-24 集成回归专用：dev 环境暴露注册表只读探针供无头 Chrome CDP 验收脚本
+// 验证四类细节层 LRU 交叉逐出与 GPU 预算占用。生产构建剔除；运行时逻辑零影响。
+if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined') {
+  (
+    window as Window & { __detailLayerDebug?: unknown }
+  ).__detailLayerDebug = { detailLayerHolderIds, detailLayerGpuBytesInUse };
+}
