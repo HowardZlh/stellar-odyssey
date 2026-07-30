@@ -86,6 +86,7 @@ import {
   createGlowSpriteCanvas,
 } from "@/components/CelestialBody/proceduralTextures";
 import { SpecialBodies } from "@/components/Scene/SpecialBodies";
+import { FermiBubbles } from "@/components/Scene/FermiBubbles";
 import { Supernova } from "@/components/Scene/Supernova";
 
 /**
@@ -177,6 +178,10 @@ export function Galaxy(): JSX.Element {
       "aHeightLy",
       new THREE.BufferAttribute(particles.heightsLy, 1),
     );
+    geo.setAttribute(
+      "aWarpLy",
+      new THREE.BufferAttribute(particles.warpsLy, 1),
+    );
     geo.setAttribute("aColor", new THREE.BufferAttribute(particles.colors, 3));
     geo.setAttribute("aSize", new THREE.BufferAttribute(particles.sizes, 1));
     geo.setAttribute("aBar", new THREE.BufferAttribute(particles.barFlags, 1));
@@ -215,6 +220,7 @@ export function Galaxy(): JSX.Element {
         attribute float aRadiusLy;
         attribute float aPhase;
         attribute float aHeightLy;
+        attribute float aWarpLy;
         attribute vec3 aColor;
         attribute float aSize;
         attribute float aBar;
@@ -241,13 +247,18 @@ export function Galaxy(): JSX.Element {
           // 保持棒形态不被较差自转剪切（utils/galaxy.barParticleAngle 同源）
           float omega = mix((220.0 * 3.3357) / max(aRadiusLy, 500.0), uBarOmega, aBar);
           float angle = aPhase + omega * uMyr;
+          // R5-6 HI 翘曲：aWarpLy 为生成期烘焙的 m=1 S 形基线位移
+          // （utils/galaxy.warpYLy；内盘/核球/棒为 0），morph 在其上
           vec3 pos = vec3(
             aRadiusLy * cos(angle),
-            aHeightLy,
+            aHeightLy + aWarpLy,
             -aRadiusLy * sin(angle)
           ) * uUnitsPerLy;
           // R2-11 终态椭球（Milkomeda）：盘面按半径比例增厚为椭球粒子云
-          // （目标轴比约 0.5，旋臂/团块调制随 uEll 抹平于亮度分支）
+          // （目标轴比约 0.5，旋臂/团块调制随 uEll 抹平于亮度分支）。
+          // R5-6 登记：椭球目标由未翘曲 aHeightLy 派生 → uEll/uExpand→1
+          // 时翘曲随 morph 淡出（终态椭球无翘曲，防位移被 ~r/1000 倍
+          // 放大的形变异常；CPU 镜像 utils/galaxy.diskWarpMorphYLy 单测）
           float hTargetLy = (aHeightLy / 500.0) * max(aRadiusLy, 6000.0) * 0.5;
           pos.y = mix(pos.y, hTargetLy * uUnitsPerLy, uEll);
           // R3-7 银河系整体垂直展开：同一椭球目标的第二次 mix（组合权重
@@ -279,7 +290,9 @@ export function Galaxy(): JSX.Element {
           // 1.6 —— 俯视时棒状暖黄核心在核球辉光之外可辨）
           vWave = mix(vWave, 1.6, aBar);
           // R2-9 尘埃带侧视剪影：侧视时盘中平面（|h| 小）粒子吸光变暗
-          // + 片元红化（加性混合无法画暗，以衰减近似，登记于 utils/galaxy.ts）
+          // + 片元红化（加性混合无法画暗，以衰减近似，登记于 utils/galaxy.ts）。
+          // R5-6：中平面判据用未翘曲 aHeightLy（盘局部高度）——尘埃带
+          // 随翘曲中平面同步抬升（HI/尘埃同盘翘曲语义，登记）
           float midplane = 1.0 - smoothstep(60.0, 380.0, abs(aHeightLy));
           vDust = uDustLane * midplane;
           vWave *= 1.0 - 0.85 * vDust;
@@ -628,6 +641,9 @@ export function Galaxy(): JSX.Element {
   // 保证目标天体及其所在的银河系环境可见；取消跟随后恢复层级门控。
   const focusBoostRef = useRef(0);
 
+  // R5-6 费米气泡：本帧银河系层级权重（useFrame 写入，闭包只读消费）
+  const galaxyWeightRef = useRef(0);
+
   /**
    * 刷新未来预测线（P6 §3.1.2）：前方约 1/4 银河年的**非闭合弧段**，
    * 随时间滚动刷新，与历史尾迹首尾衔接不重叠；y 分量按视觉增益放大
@@ -674,6 +690,8 @@ export function Galaxy(): JSX.Element {
       trapezoidWeight(continuousLevel, 2.5, 2.9, 4.5, 5),
       focusBoostRef.current,
     );
+    // R5-6 费米气泡可见性链路：层级权重经闭包注入（FermiBubbles 消费）
+    galaxyWeightRef.current = weight;
     group.visible = weight > 0.001;
     diskMaterial.uniforms.uOpacity.value = weight;
     // R2-9：银晕淡（包裹感背景层）、星团亮（点簇可辨）
@@ -948,6 +966,11 @@ export function Galaxy(): JSX.Element {
           blending={THREE.AdditiveBlending}
         />
       </sprite>
+
+      {/* R5-6 费米气泡：银心上下双极椭球体积（64³ 单纹理双泡直绘
+          raymarch，Su et al. 2010 形态登记；层级权重闭包注入 ×
+          showFermiBubbles 开关淡入淡出，组本地原点 = 银心） */}
+      <FermiBubbles getOpacity={() => galaxyWeightRef.current} />
 
       {/* 特殊天体系统（需求 3.1.5，P2）：黑洞（银心人马座A*）、脉冲星、
           红巨星/蓝巨星/天狼星双星、星云类——银心系本地坐标，随组变换 */}
