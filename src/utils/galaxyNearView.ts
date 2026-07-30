@@ -229,11 +229,26 @@ export function m31NearViewOrientationRad(): [number, number, number] {
 }
 
 /**
- * 星系近观粒子层朝向统一入口（R4-10）：M31 = 专属倾角姿态，
- * 其余星系沿用贴图平面时期 id 哈希公式（galaxyOrientationFromId）。
+ * 星系近观粒子层朝向统一入口（R4-10 交付，R5-1 影像驱动修订）：
+ * - M31 = 专属倾角姿态（77°/PA 38°——权重图已反投影到盘面，再倾转
+ *   后自银河系视线看回投影 ≈ 公版影像）；
+ * - M33/LMC/SMC（R5-1 影像驱动、未反投影）= 盘面正对视线
+ *   （inclinedOrientationRad 倾角 0：影像已含天空投影，id 哈希姿态
+ *   会造成双重投影——近侧视观感与照片不可对应；远近景过渡结构对应
+ *   要求同源影像同姿态，修订登记）；
+ * - 其余星系沿用贴图平面时期 id 哈希公式（galaxyOrientationFromId，
+ *   零变化）。
  */
 export function galaxyNearViewOrientation(id: string): [number, number, number] {
-  return id === 'm31' ? m31NearViewOrientationRad() : galaxyOrientationFromId(id);
+  if (id === 'm31') return m31NearViewOrientationRad();
+  if (isImageDrivenGalaxy(id)) {
+    const galaxy = getGalaxyById(id);
+    if (!galaxy) {
+      throw new RangeError(`星系数据缺少 ${id}`);
+    }
+    return inclinedOrientationRad(galaxy.direction, 0, 0);
+  }
+  return galaxyOrientationFromId(id);
 }
 
 // ---------------------------------------------------------------------------
@@ -1253,6 +1268,444 @@ export function generateGalaxyNearViewComposite(
 }
 
 // ---------------------------------------------------------------------------
+// R5-1 影像驱动采样（IMPROVEMENT_REQUIREMENTS_5 §R5-1 B / §0.3 方案 E）
+//
+// 数据源：public/data/galaxy-maps/<id>-{density,color,dust}.png（R5-1 烘焙
+// 产物，DSS2 彩色合成公版影像 → 256² 权重图；来源/授权/失真登记见产物
+// meta 与 scripts/bake-data/galaxyMaps.ts 文件头）。像素解码在组件层
+// hook（useGalaxyImageMaps）完成，本节仅消费原始字节数组（纯函数）。
+//
+// ── 口径登记（§R5-1 B）─────────────────────────────────────────────────
+// "盘面分布真实、垂直分布参数化"：密度图 2D 逆变换采样提供盘面 (x,z)
+// 位置（M31 已在烘焙期反投影到盘面坐标），z 向厚度沿用 R4-9 参数模型
+// （旋涡 = cfg.thicknessLy 高斯薄层；不规则 = 半径×flattenY×系数）。
+// HII/年轻星团分量改为"密度图高亮蓝区加权布点"（替代 R4-9 泊松盘随机，
+// 权重 = 密度² × 蓝色超出，NGC 206/NGC 604 类蓝色恒星云自然聚集）；
+// 尘埃分量改为尘埃遮罩图加权布点（真实暗带走向；M31 10 kpc 尘埃环由
+// 影像自带 → 参数化 M31_DUST_RING/applyBulgeTint 在影像路径不套用，登记）。
+// 产物缺失/加载失败降级 R4-9 参数化生成（generateGalaxyNearViewCompositeAuto）。
+// 确定性：mulberry32 种子派生沿用 FNV-1a（galaxyNearViewSeed），
+// 每粒子固定随机数消耗 → 两次进入逐字节一致（单测断言）。
+// ---------------------------------------------------------------------------
+
+/** 影像驱动覆盖清单（§R5-1 C/D：四星系；椭圆类不套用——Sérsic 解析
+ * 分布已足够，登记；其余星系沿用参数化/程序化现状） */
+export const IMAGE_DRIVEN_GALAXY_IDS = ['m31', 'm33', 'lmc', 'smc'] as const;
+
+/** 是否为影像驱动覆盖星系 */
+export function isImageDrivenGalaxy(id: string): boolean {
+  return (IMAGE_DRIVEN_GALAXY_IDS as readonly string[]).includes(id);
+}
+
+/** 烘焙产物基路径（同源静态资产） */
+export const GALAXY_MAPS_BASE_URL = '/data/galaxy-maps';
+
+/**
+ * 远景贴图源选择（§R5-1 E）：覆盖星系返回影像贴图 URL，未覆盖返回
+ * null（GalaxyObject 沿用程序化 canvas 现状，覆盖清单登记）。
+ */
+export function galaxySpriteImageUrl(id: string): string | null {
+  return isImageDrivenGalaxy(id) ? `${GALAXY_MAPS_BASE_URL}/${id}-sprite.png` : null;
+}
+
+/** 权重图产物 URL 组（hook 消费；未覆盖星系返回 null） */
+export function galaxyMapUrls(
+  id: string,
+): { meta: string; density: string; color: string; dust: string } | null {
+  if (!isImageDrivenGalaxy(id)) return null;
+  return {
+    meta: `${GALAXY_MAPS_BASE_URL}/${id}-meta.json`,
+    density: `${GALAXY_MAPS_BASE_URL}/${id}-density.png`,
+    color: `${GALAXY_MAPS_BASE_URL}/${id}-color.png`,
+    dust: `${GALAXY_MAPS_BASE_URL}/${id}-dust.png`,
+  };
+}
+
+/** 单通道权重图（0-255 字节，size² 行主序） */
+export interface GalaxyChannelMap {
+  size: number;
+  data: Uint8Array;
+}
+
+/** RGB 颜色图（0-255 字节，size²×3 行主序） */
+export interface GalaxyColorMapData {
+  size: number;
+  data: Uint8Array;
+}
+
+/** 影像驱动图组（hook 解码产物；mapRadiusLy 来自产物 meta） */
+export interface GalaxyImageMaps {
+  /** 图半宽对应的物理半径（光年，meta.mapRadiusLy） */
+  mapRadiusLy: number;
+  density: GalaxyChannelMap;
+  color: GalaxyColorMapData;
+  dust: GalaxyChannelMap;
+}
+
+/** 不规则星系 z 向厚度 = radiusLy × flattenY × 本系数（参数化口径登记） */
+export const IRREGULAR_MAP_THICKNESS_FACTOR = 0.55;
+
+/**
+ * 权重数组 → 逆变换采样 CDF（前缀和；全零/含负值/含 NaN 抛 RangeError）。
+ */
+export function buildSamplingCdf(weights: ArrayLike<number>): Float64Array {
+  const n = weights.length;
+  if (n === 0) throw new RangeError('采样权重数组不得为空');
+  const cdf = new Float64Array(n);
+  let sum = 0;
+  for (let i = 0; i < n; i += 1) {
+    const w = weights[i];
+    if (!Number.isFinite(w) || w < 0) {
+      throw new RangeError(`采样权重必须为非负有限数，index=${i} 收到 ${w}`);
+    }
+    sum += w;
+    cdf[i] = sum;
+  }
+  if (!(sum > 0)) throw new RangeError('采样权重总和必须为正（图无有效信号）');
+  return cdf;
+}
+
+/** CDF 逆变换：u01 ∈ [0,1) → 像素索引（二分查找） */
+export function sampleCdfIndex(cdf: Float64Array, u01: number): number {
+  const target = u01 * cdf[cdf.length - 1];
+  let lo = 0;
+  let hi = cdf.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (cdf[mid] <= target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** 影像采样公共选项 */
+export interface MapSamplingOptions {
+  /** 图半宽物理半径（光年） */
+  mapRadiusLy: number;
+  /** z 向全厚度（光年；z = 截断高斯 × thicknessLy/2） */
+  thicknessLy: number;
+}
+
+/** 校验图组尺寸/入参（内部工具） */
+function assertMapInputs(
+  density: GalaxyChannelMap,
+  color: GalaxyColorMapData,
+  count: number,
+  opts: MapSamplingOptions,
+): void {
+  if (!Number.isInteger(count) || count < 0) {
+    throw new RangeError(`采样粒子数必须为非负整数，收到 ${count}`);
+  }
+  if (density.data.length !== density.size * density.size) {
+    throw new RangeError('密度图数据长度与尺寸不符');
+  }
+  if (color.size !== density.size || color.data.length !== color.size * color.size * 3) {
+    throw new RangeError('颜色图尺寸必须与密度图一致（RGB 三通道）');
+  }
+  if (!Number.isFinite(opts.mapRadiusLy) || opts.mapRadiusLy <= 0) {
+    throw new RangeError(`图物理半径必须为正数，收到 ${opts.mapRadiusLy}`);
+  }
+  if (!Number.isFinite(opts.thicknessLy) || opts.thicknessLy < 0) {
+    throw new RangeError(`厚度必须为非负数，收到 ${opts.thicknessLy}`);
+  }
+}
+
+/**
+ * 密度图 2D 逆变换采样基础层（§R5-1 B 入口）：盘面位置按密度图
+ * 加权布点（像素内均匀抖动）+ 颜色图查色（亮度抖动档）+ z 向参数化
+ * 薄层。粒径 = 1.0 + 1.5×密度（亮区大颗粒）+ 抖动。确定性：每粒子
+ * 固定消耗 7 个随机数。
+ */
+export function sampleParticlesFromMap(
+  densityMap: GalaxyChannelMap,
+  colorMap: GalaxyColorMapData,
+  count: number,
+  seed: number,
+  opts: MapSamplingOptions,
+): GalaxyNearViewParticles {
+  assertMapInputs(densityMap, colorMap, count, opts);
+  const cdf = buildSamplingCdf(densityMap.data);
+  const rand = createSeededRandom(seed);
+  const size = densityMap.size;
+  const positionsLy = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  for (let i = 0; i < count; i += 1) {
+    const idx = sampleCdfIndex(cdf, rand());
+    const col = idx % size;
+    const row = Math.floor(idx / size);
+    const u = ((col + rand()) / size) * 2 - 1;
+    const v = ((row + rand()) / size) * 2 - 1;
+    const height = clampedGaussian(rand) * (opts.thicknessLy / 2);
+    positionsLy[i * 3] = u * opts.mapRadiusLy;
+    positionsLy[i * 3 + 1] = height;
+    positionsLy[i * 3 + 2] = v * opts.mapRadiusLy;
+    // 亮度按密度调制（密集区逆变换采样已高度聚集，逐粒亮度压低防
+    // 加性混合过曝——目验调参登记）+ 抖动
+    const d01 = densityMap.data[idx] / 255;
+    const brightness = (0.5 + 0.22 * rand()) * (0.3 + 0.7 * d01);
+    colors[i * 3] = (colorMap.data[idx * 3] / 255) * brightness;
+    colors[i * 3 + 1] = (colorMap.data[idx * 3 + 1] / 255) * brightness;
+    colors[i * 3 + 2] = (colorMap.data[idx * 3 + 2] / 255) * brightness;
+    sizes[i] = 0.9 + 1.2 * d01 + 0.3 * rand();
+  }
+  return { count, positionsLy, colors, sizes };
+}
+
+/** 影像分量采样风格（内部：分量间差异参数） */
+interface MapComponentStyle {
+  component: GalaxyNearViewComponentName;
+  palette: readonly string[];
+  /** 粒径 = sizeBase + sizeSpread×rand */
+  sizeBase: number;
+  sizeSpread: number;
+  /** z 厚度系数（×opts.thicknessLy/2） */
+  thicknessFactor: number;
+  /** 亮度域 [brightBase, brightBase+brightSpread] */
+  brightBase: number;
+  brightSpread: number;
+}
+
+/**
+ * 加权布点分量采样（内部共用）：权重 = weightFn(像素)，全零权重时
+ * 返回空分量（count=0，消费方按无分量渲染——降级语义，登记）。
+ * 每粒子固定消耗 7 个随机数（与基础层一致，确定性）。
+ */
+function sampleComponentFromMap(
+  maps: GalaxyImageMaps,
+  count: number,
+  seed: number,
+  weightFn: (d01: number, r01: number, g01: number, b01: number, dust01: number) => number,
+  style: MapComponentStyle,
+  opts: MapSamplingOptions,
+): GalaxyComponentParticles {
+  assertMapInputs(maps.density, maps.color, count, opts);
+  const size = maps.density.size;
+  const weights = new Float64Array(size * size);
+  let total = 0;
+  for (let i = 0; i < size * size; i += 1) {
+    const w = weightFn(
+      maps.density.data[i] / 255,
+      maps.color.data[i * 3] / 255,
+      maps.color.data[i * 3 + 1] / 255,
+      maps.color.data[i * 3 + 2] / 255,
+      maps.dust.data[i] / 255,
+    );
+    weights[i] = w;
+    total += w;
+  }
+  if (!(total > 0) || count === 0) {
+    return {
+      component: style.component,
+      count: 0,
+      positionsLy: new Float32Array(0),
+      colors: new Float32Array(0),
+      sizes: new Float32Array(0),
+    };
+  }
+  const cdf = buildSamplingCdf(weights);
+  const rand = createSeededRandom(seed);
+  const positionsLy = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const palette = style.palette.map(hexToRgb);
+  for (let i = 0; i < count; i += 1) {
+    const idx = sampleCdfIndex(cdf, rand());
+    const col = idx % size;
+    const row = Math.floor(idx / size);
+    const u = ((col + rand()) / size) * 2 - 1;
+    const v = ((row + rand()) / size) * 2 - 1;
+    const height = clampedGaussian(rand) * (opts.thicknessLy / 2) * style.thicknessFactor;
+    positionsLy[i * 3] = u * opts.mapRadiusLy;
+    positionsLy[i * 3 + 1] = height;
+    positionsLy[i * 3 + 2] = v * opts.mapRadiusLy;
+    const color = palette[Math.floor(rand() * palette.length)];
+    const brightness = style.brightBase + style.brightSpread * rand();
+    colors[i * 3] = color.r * brightness;
+    colors[i * 3 + 1] = color.g * brightness;
+    colors[i * 3 + 2] = color.b * brightness;
+    sizes[i] = style.sizeBase + style.sizeSpread * rand();
+  }
+  return { component: style.component, count, positionsLy, colors, sizes };
+}
+
+/** 高亮蓝区权重（HII/年轻星团布点，§R5-1 B）：密度² × 蓝色超出 */
+export function blueRegionWeight(d01: number, r01: number, b01: number): number {
+  return d01 * d01 * Math.max(0, b01 - r01);
+}
+
+/** HII 区分量（影像驱动）：高亮蓝区加权 + 粉色大颗粒（R4-9 观感同档） */
+export function generateHiiRegionParticlesFromMap(
+  maps: GalaxyImageMaps,
+  count: number,
+  seed: number,
+  opts: MapSamplingOptions,
+): GalaxyComponentParticles {
+  return sampleComponentFromMap(
+    maps,
+    count,
+    seed,
+    (d01, r01, _g01, b01) => blueRegionWeight(d01, r01, b01),
+    {
+      component: 'hii',
+      palette: HII_PALETTE,
+      sizeBase: 3.0,
+      sizeSpread: 1.5,
+      thicknessFactor: 0.3,
+      brightBase: 0.85,
+      brightSpread: 0.15,
+    },
+    opts,
+  );
+}
+
+/** 年轻星团分量（影像驱动）：高亮蓝区加权 + 蓝白小颗粒串 */
+export function generateYoungClusterParticlesFromMap(
+  maps: GalaxyImageMaps,
+  count: number,
+  seed: number,
+  opts: MapSamplingOptions,
+): GalaxyComponentParticles {
+  return sampleComponentFromMap(
+    maps,
+    count,
+    seed,
+    (d01, r01, _g01, b01) => blueRegionWeight(d01, r01, b01),
+    {
+      component: 'youngClusters',
+      palette: YOUNG_CLUSTER_PALETTE,
+      sizeBase: 0.8,
+      sizeSpread: 0.6,
+      thicknessFactor: 0.25,
+      brightBase: 0.85,
+      brightSpread: 0.15,
+    },
+    opts,
+  );
+}
+
+/** 尘埃分量（影像驱动）：尘埃遮罩图加权布点（真实暗带走向，含 M31
+ * 10 kpc 尘埃环——影像自带，参数化环不再叠加，登记）+ 深棕暗粒子 */
+export function generateDustLaneParticlesFromMap(
+  maps: GalaxyImageMaps,
+  count: number,
+  seed: number,
+  opts: MapSamplingOptions,
+): GalaxyComponentParticles {
+  return sampleComponentFromMap(
+    maps,
+    count,
+    seed,
+    // 权重 × 密度：暗纹粒子只叠在发光盘上（normal 混合"吸光"依赖
+    // 背后有星光；盘外缘无背景处的漂浮棕点目验修正登记）
+    (d01, _r01, _g01, _b01, dust01) => dust01 * dust01 * d01,
+    {
+      component: 'dust',
+      palette: DUST_PALETTE,
+      sizeBase: 1.6,
+      sizeSpread: 1.0,
+      thicknessFactor: DUST_LANE_THICKNESS_FACTOR,
+      brightBase: 0.45,
+      brightSpread: 0.3,
+    },
+    opts,
+  );
+}
+
+/** 影像驱动基础层 z 向厚度（光年；旋涡 = 盘厚、不规则 = 参数化系数） */
+export function imageDrivenThicknessLy(galaxyId: string): number {
+  const cfg = GALAXY_NEAR_VIEW_CONFIGS[galaxyId];
+  if (!cfg || !isImageDrivenGalaxy(galaxyId)) {
+    throw new RangeError(`非影像驱动覆盖星系 id：${galaxyId}`);
+  }
+  if (cfg.kind === 'spiral') return cfg.thicknessLy;
+  if (cfg.kind === 'irregular') return cfg.radiusLy * cfg.flattenY * IRREGULAR_MAP_THICKNESS_FACTOR;
+  throw new RangeError(`椭圆星系不套用影像驱动（登记）：${galaxyId}`);
+}
+
+/**
+ * 影像驱动多分量组合（§R5-1 C/D）：基础层 = 密度图逆变换采样 + 颜色图
+ * 查色；旋涡新分量 = 蓝区/尘埃遮罩加权布点（配额与参数化路径同源
+ * galaxyComponentQuota → 总量/GPU 预算零变化）；不规则新分量配额为 0
+ * （R4-9 登记沿用——粉色 HII/蓝白年轻星由影像颜色自带）。
+ * M31 差异登记：applyBulgeTint / M31_DUST_RING 不套用（偏黄核球与
+ * 10 kpc 尘埃环由影像自带）。种子按分量派生（`:map` 后缀与参数化
+ * 路径区分），两次生成逐字节一致。
+ */
+export function generateGalaxyNearViewCompositeFromMaps(
+  galaxyId: string,
+  maps: GalaxyImageMaps,
+  overrides?: GalaxyCompositeOverrides,
+): GalaxyNearViewComposite {
+  const cfg = GALAXY_NEAR_VIEW_CONFIGS[galaxyId];
+  if (!cfg) {
+    throw new RangeError(`未定义近观粒子层配置的星系 id：${galaxyId}`);
+  }
+  if (maps.dust.size !== maps.density.size || maps.dust.data.length !== maps.dust.size ** 2) {
+    throw new RangeError('尘埃图尺寸必须与密度图一致');
+  }
+  const quota = galaxyComponentQuota(galaxyId, overrides);
+  const opts: MapSamplingOptions = {
+    mapRadiusLy: maps.mapRadiusLy,
+    thicknessLy: imageDrivenThicknessLy(galaxyId),
+  };
+  const base = sampleParticlesFromMap(
+    maps.density,
+    maps.color,
+    quota.base,
+    galaxyNearViewSeed(`${galaxyId}:map`),
+    opts,
+  );
+  if (cfg.kind !== 'spiral') {
+    return { base, components: [], totalCount: base.count };
+  }
+  const components: GalaxyComponentParticles[] = [
+    generateDustLaneParticlesFromMap(
+      maps,
+      quota.dust,
+      galaxyNearViewSeed(`${galaxyId}:dust:map`),
+      opts,
+    ),
+    generateHiiRegionParticlesFromMap(
+      maps,
+      quota.hii,
+      galaxyNearViewSeed(`${galaxyId}:hii:map`),
+      opts,
+    ),
+    generateYoungClusterParticlesFromMap(
+      maps,
+      quota.youngClusters,
+      galaxyNearViewSeed(`${galaxyId}:youngClusters:map`),
+      opts,
+    ),
+  ];
+  let totalCount = base.count;
+  for (const c of components) totalCount += c.count;
+  if (totalCount > GALAXY_NEAR_VIEW_MAX_PARTICLES) {
+    throw new RangeError(
+      `星系 ${galaxyId} 影像驱动分量合计 ${totalCount} 超出单星系上限 ${GALAXY_NEAR_VIEW_MAX_PARTICLES}`,
+    );
+  }
+  return { base, components, totalCount };
+}
+
+/**
+ * 组合统一入口（§R5-1 B 降级路径）：maps 就绪且属覆盖星系 → 影像驱动；
+ * 否则（产物缺失/加载失败/未覆盖星系）降级 R4-9 参数化生成——降级
+ * 输出与 generateGalaxyNearViewComposite 逐字节一致（单测逐星系断言）。
+ */
+export function generateGalaxyNearViewCompositeAuto(
+  galaxyId: string,
+  maps: GalaxyImageMaps | null,
+  overrides?: GalaxyCompositeOverrides,
+): GalaxyNearViewComposite {
+  if (maps !== null && isImageDrivenGalaxy(galaxyId)) {
+    return generateGalaxyNearViewCompositeFromMaps(galaxyId, maps, overrides);
+  }
+  return generateGalaxyNearViewComposite(galaxyId, overrides);
+}
+
+// ---------------------------------------------------------------------------
 // 近观激活距离（与 resolveFocusTarget 同源）与 LRU 门控
 // ---------------------------------------------------------------------------
 
@@ -1372,6 +1825,7 @@ export const GALAXY_STRUCTURE_NOTE_BY_MORPHOLOGY_ZH: Readonly<
   irregular: '无对称核球与盘结构：恒星与气体呈团块状分布（活跃恒星形成区），受邻近星系潮汐扰动塑形',
 };
 
-/** 结构说明数据来源（catalog 拼接展示；R4-10 追加 RC3/S4G 形态参数来源） */
+/** 结构说明数据来源（catalog 拼接展示；R4-10 追加 RC3/S4G 形态参数
+ * 来源；R5-1 追加影像来源署名——附录 A §2 应用内署名呈现位置登记） */
 export const GALAXY_STRUCTURE_SOURCE_ZH =
-  '结构分类：Hubble 形态序列（NED）；形态参数（倾角/臂数/尘埃带/HII 区）：RC3（de Vaucouleurs et al. 1991）、S4G（Sheth et al. 2010）近似档；近观粒子层为按形态类型的示意重构（椭圆星系按 Sérsic 1963 亮度分布近似），已登记';
+  '结构分类：Hubble 形态序列（NED）；形态参数（倾角/臂数/尘埃带/HII 区）：RC3（de Vaucouleurs et al. 1991）、S4G（Sheth et al. 2010）近似档；近观粒子层为按形态类型的示意重构（椭圆星系按 Sérsic 1963 亮度分布近似），已登记；M31/M33/LMC/SMC 近观分布与远景贴图源自 DSS2 彩色合成影像（STScI Digitized Sky Survey / AAO / ROE / Caltech，经 CDS hips2fits 烘焙为权重图，M31 已做倾角反投影，盘面分布真实、垂直厚度参数化，登记）';

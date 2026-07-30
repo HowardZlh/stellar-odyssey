@@ -10,18 +10,21 @@ import {
   inclinedOrientationRad,
   type GalaxyCompositeOverrides,
 } from '@/utils/galaxyNearView';
+import { useGalaxyImageMaps } from '@/hooks/useGalaxyImageMaps';
 import { galaxyPlaneSizeUnits } from '@/utils/universe';
 import { galaxyPreviewConfigForBody, type PreviewEntry } from '@/utils/devPreview';
 
 /**
- * 星系近观多分量粒子层预览（R4-10，`/dev/preview?body=m31|lmc`）
+ * 星系近观多分量粒子层预览（R4-10 交付，R5-1 影像驱动扩展，
+ * `/dev/preview?body=m31|m33|lmc|smc`）
  *
  * 复用主场景 `GalaxyNearViewLayer`（含 R4-10 dust normal 混合暗纹 /
- * HII·年轻星团加性层 / M31 尘埃环与偏黄核球），经缩放组适配预览相机
- * 尺度（贴图平面尺寸 → 直径 PREVIEW_DIAMETER_UNITS）。滑杆三件
- * （§R4-10）：dust 强度 / HII 密度（GalaxyCompositeOverrides 重新生成
- * 分量，dev 页滑杆变更重建几何可接受登记）/ 倾角覆写
- * （inclinedOrientationRad，预览视线 = 相机初始 +z 方向）。
+ * HII·年轻星团加性层），经缩放组适配预览相机尺度（贴图平面尺寸 →
+ * 直径 PREVIEW_DIAMETER_UNITS）。滑杆：R5-1 影像驱动对比开关
+ * （0 = R4-9 参数化对照 / 1 = 影像驱动，目检对照用）+ R4-10 三件
+ * （dust 强度 / HII 密度 / 倾角覆写，inclinedOrientationRad 预览视线
+ * = 相机初始 +z 方向）。影像产物加载失败时开关无效果 = 参数化降级
+ * （登记）。
  *
  * 仅 dev 动态 import 加载（主 bundle 零增大）；GalaxyNearViewLayer 内部
  * 已托管几何/材质 dispose。
@@ -55,6 +58,10 @@ export function GalaxyNearViewPreview({
   // 注册期校验过的星系条目，配置与数据必存在
   const config = galaxyPreviewConfigForBody(entry.bodyId)!;
   const galaxy = getGalaxyById(config.galaxyId)!;
+
+  // R5-1：影像驱动对比开关（滑杆 0/1；关闭时不加载 = 参数化对照）
+  const imageDriven = (values.imageDriven ?? 1) >= 0.5;
+  const maps = useGalaxyImageMaps(imageDriven ? config.galaxyId : null);
 
   const scale = useMemo(
     () => PREVIEW_DIAMETER_UNITS / galaxyPlaneSizeUnits(galaxy.diameterLy),
@@ -105,6 +112,7 @@ export function GalaxyNearViewPreview({
           overrides={overrides}
           orientationOverride={orientation}
           pointScaleOverride={PREVIEW_DIAMETER_UNITS * 4}
+          maps={imageDriven ? maps : null}
         />
       </group>
     </group>

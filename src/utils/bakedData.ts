@@ -217,6 +217,82 @@ export function validateM13Profile(raw: unknown): M13ProfileData | null {
   return { meta, profile };
 }
 
+/**
+ * R5-1 星系影像权重图 meta（public/data/galaxy-maps/<id>-meta.json；
+ * 来源/授权/反投影方法与残差/失真登记随产物分发，附录 A §2/§3）。
+ */
+export interface GalaxyMapMeta {
+  meta: BakedMeta;
+  id: string;
+  nameZh: string;
+  credit: string;
+  sourceUrl: string;
+  mapSizePx: number;
+  spriteSizePx: number;
+  mapRadiusLy: number;
+  pixelScaleLyPerPx: number;
+  inclinationDeg: number;
+  positionAngleDeg: number;
+  deprojection: {
+    applied: boolean;
+    method: string;
+    residualAxisRatio: number | null;
+  };
+  distortionNote: string;
+}
+
+/**
+ * 校验星系影像 meta 产物（R5-1）：尺寸 256/512、物理半径与像素比例
+ * 数值域、倾角 [0,90]、反投影登记结构齐全。失败返回 null（消费方
+ * 降级参数化路径）。
+ */
+export function validateGalaxyMapMeta(raw: unknown): GalaxyMapMeta | null {
+  if (!isRecord(raw)) return null;
+  const meta = validateMeta(raw.meta);
+  if (!meta) return null;
+  const {
+    id,
+    nameZh,
+    credit,
+    sourceUrl,
+    mapSizePx,
+    spriteSizePx,
+    mapRadiusLy,
+    pixelScaleLyPerPx,
+    inclinationDeg,
+    positionAngleDeg,
+    deprojection,
+    distortionNote,
+  } = raw;
+  if (!isNonEmptyString(id) || !isNonEmptyString(nameZh)) return null;
+  if (!isNonEmptyString(credit) || !isNonEmptyString(sourceUrl)) return null;
+  if (!isNonEmptyString(distortionNote)) return null;
+  if (mapSizePx !== 256 || spriteSizePx !== 512) return null;
+  if (!isFiniteNumber(mapRadiusLy) || mapRadiusLy <= 0) return null;
+  if (!isFiniteNumber(pixelScaleLyPerPx) || pixelScaleLyPerPx <= 0) return null;
+  if (!isFiniteNumber(inclinationDeg) || inclinationDeg < 0 || inclinationDeg > 90) return null;
+  if (!isFiniteNumber(positionAngleDeg)) return null;
+  if (!isRecord(deprojection)) return null;
+  const { applied, method, residualAxisRatio } = deprojection;
+  if (typeof applied !== 'boolean' || !isNonEmptyString(method)) return null;
+  if (residualAxisRatio !== null && !isFiniteNumber(residualAxisRatio)) return null;
+  return {
+    meta,
+    id,
+    nameZh,
+    credit,
+    sourceUrl,
+    mapSizePx,
+    spriteSizePx,
+    mapRadiusLy,
+    pixelScaleLyPerPx,
+    inclinationDeg,
+    positionAngleDeg,
+    deprojection: { applied, method, residualAxisRatio },
+    distortionNote,
+  };
+}
+
 /** antennae.bin 头部 Float32 数（magic/version/S/N/nA） */
 const ANTENNAE_HEADER_FLOATS = 5;
 
@@ -325,6 +401,14 @@ export async function loadAntennae(baseUrl = '/data'): Promise<AntennaeSnapshots
   const data = validateAntennae(await fetchArrayBuffer(url));
   if (data !== null) cache.set(url, data);
   return data;
+}
+
+/** 加载星系影像权重图 meta（R5-1；失败返回 null，消费方降级参数化） */
+export async function loadGalaxyMapMeta(
+  galaxyId: string,
+  baseUrl = '/data/galaxy-maps'
+): Promise<GalaxyMapMeta | null> {
+  return loadValidated(`${baseUrl}/${galaxyId}-meta.json`, validateGalaxyMapMeta);
 }
 
 /** 清空内存缓存（测试用） */
