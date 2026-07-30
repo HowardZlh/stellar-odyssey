@@ -1,14 +1,16 @@
 /**
- * eventScopes 单元测试（R2-4 §4.1-A/D 三层窗口 + R3-3 §3.1-A 丢弃纯函数）
+ * eventScopes 单元测试（R5-8 离散视角集合三层门控 + R3-3 §3.1-A 丢弃纯函数）
+ *
+ * R5-8 语义变迁：判定基准由 R2-4 连续层级窗口改为离散 viewLevel 视角
+ * 集合（太阳 {L1, L2} / 超新星 {L3} / 合并 {L4}）——原连续窗口常量与
+ * 闭区间边界断言随之删除，重写为四视角 × 五事件类别矩阵。
  */
 
+import type { ViewLevel } from '@/types';
+import { VIEW_LEVELS } from '@/types';
 import {
   EVENT_DISCARD_GRACE_SEC,
   FLY_TO_DISCARD_EXEMPT_SEC,
-  MERGER_EVENT_MIN_LEVEL,
-  SOLAR_EVENT_MAX_LEVEL,
-  SUPERNOVA_EVENT_MAX_LEVEL,
-  SUPERNOVA_EVENT_MIN_LEVEL,
   VIEW_TRANSITION_DISCARD_EXEMPT_SEC,
   eventAutoTriggerAllowed,
   eventDemoDisabledHintZh,
@@ -17,8 +19,8 @@ import {
   eventInScope,
   EVENT_NOTICE_MIN_VISIBLE_REAL_SEC,
   eventNoticeVisibleInScope,
+  eventScopeLevels,
   eventScopeNameZh,
-  eventScopeWindow,
   noticeAgeUpdate,
   noticeAutoHideDue,
   outOfScopeElapsedUpdate,
@@ -28,84 +30,53 @@ import {
 const ALL_KINDS: ScopedEventKind[] = ['flare', 'cme', 'cmeArrival', 'supernova', 'merger'];
 const SOLAR_KINDS: ScopedEventKind[] = ['flare', 'cme', 'cmeArrival'];
 
-describe('eventScopeWindow：事件 → 视角域窗口映射（§4.1-A）', () => {
-  it('太阳活动事件（耀斑/CME/CME 抵达）窗口为 [1, 2.4]，对齐 SunActivity 平台上缘', () => {
+describe('eventScopeLevels：事件 → 离散视角集合映射（R5-8 §8.2-A）', () => {
+  it('太阳活动事件（耀斑/CME/CME 抵达）→ {L1, L2}（太阳系尺度）', () => {
     for (const kind of SOLAR_KINDS) {
-      expect(eventScopeWindow(kind)).toEqual({ minLevel: 1, maxLevel: SOLAR_EVENT_MAX_LEVEL });
-    }
-    expect(SOLAR_EVENT_MAX_LEVEL).toBe(2.4);
-  });
-
-  it('超新星窗口为 [2.5, 3.5]（R3-5 收窄，L3 专属），对齐 Supernova 淡入起点与平台终点', () => {
-    expect(eventScopeWindow('supernova')).toEqual({
-      minLevel: SUPERNOVA_EVENT_MIN_LEVEL,
-      maxLevel: SUPERNOVA_EVENT_MAX_LEVEL,
-    });
-    expect(SUPERNOVA_EVENT_MIN_LEVEL).toBe(2.5);
-    expect(SUPERNOVA_EVENT_MAX_LEVEL).toBe(3.5);
-  });
-
-  it('合并预览窗口为 [3.6, 4]（L4 视角段）', () => {
-    expect(eventScopeWindow('merger')).toEqual({
-      minLevel: MERGER_EVENT_MIN_LEVEL,
-      maxLevel: 4,
-    });
-    expect(MERGER_EVENT_MIN_LEVEL).toBe(3.6);
-  });
-
-  it('太阳活动域上缘与超新星域下缘互补无重叠（2.4 / 2.5 之间无双活跃区）', () => {
-    expect(SOLAR_EVENT_MAX_LEVEL).toBeLessThan(SUPERNOVA_EVENT_MIN_LEVEL);
-  });
-
-  it('超新星域上缘与合并预览域下缘互补无重叠（3.5 / 3.6，R3-5）', () => {
-    expect(SUPERNOVA_EVENT_MAX_LEVEL).toBeLessThan(MERGER_EVENT_MIN_LEVEL);
-  });
-});
-
-describe('eventInScope：闭区间边界判定', () => {
-  it('太阳活动事件：2.4（含）内为真，2.41 起为假', () => {
-    for (const kind of SOLAR_KINDS) {
-      expect(eventInScope(kind, 1)).toBe(true);
-      expect(eventInScope(kind, 2)).toBe(true);
-      expect(eventInScope(kind, 2.4)).toBe(true);
-      expect(eventInScope(kind, 2.41)).toBe(false);
-      expect(eventInScope(kind, 3)).toBe(false);
-      expect(eventInScope(kind, 4)).toBe(false);
+      expect(eventScopeLevels(kind)).toEqual(['L1', 'L2']);
     }
   });
 
-  it('超新星：[2.5, 3.5] 闭区间（R3-5），3.51 起与 L4 为假', () => {
-    expect(eventInScope('supernova', 2.49)).toBe(false);
-    expect(eventInScope('supernova', 2.5)).toBe(true);
-    expect(eventInScope('supernova', 3)).toBe(true);
-    expect(eventInScope('supernova', 3.5)).toBe(true);
-    expect(eventInScope('supernova', 3.51)).toBe(false);
-    expect(eventInScope('supernova', 4)).toBe(false);
-    expect(eventInScope('supernova', 1)).toBe(false);
-    expect(eventInScope('supernova', 2)).toBe(false);
+  it('超新星 → {L3}（银河系视角专属，R3-5 收窄语义保持）', () => {
+    expect(eventScopeLevels('supernova')).toEqual(['L3']);
   });
 
-  it('合并预览：3.6（含）起为真，3.59 及以下为假', () => {
-    expect(eventInScope('merger', 3.59)).toBe(false);
-    expect(eventInScope('merger', 3.6)).toBe(true);
-    expect(eventInScope('merger', 4)).toBe(true);
-    expect(eventInScope('merger', 3)).toBe(false);
-    expect(eventInScope('merger', 1)).toBe(false);
+  it('合并预览 → {L4}（宇宙视角专属）', () => {
+    expect(eventScopeLevels('merger')).toEqual(['L4']);
   });
 
-  it('非有限层级抛 RangeError（编程错误显式暴露）', () => {
-    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
-      expect(() => eventInScope('flare', bad)).toThrow(RangeError);
+  it('五类事件视角集合两两无重叠歧义：每个视角至多归属一个事件域组', () => {
+    // L1/L2 → 太阳域；L3 → 超新星域；L4 → 合并域（互斥覆盖全部四视角）
+    for (const level of VIEW_LEVELS) {
+      const solar = eventInScope('flare', level);
+      const sn = eventInScope('supernova', level);
+      const merger = eventInScope('merger', level);
+      expect(Number(solar) + Number(sn) + Number(merger)).toBe(1);
     }
   });
 });
 
-describe('三层门控（§4.1-D）：自动触发域 / 通知可见域 / 按钮可用域', () => {
-  const LEVEL_SAMPLES = [1, 1.5, 2, 2.4, 2.41, 2.49, 2.5, 3, 3.59, 3.6, 4];
+describe('eventInScope：四视角 × 五事件类别矩阵（R5-8 离散判定）', () => {
+  const EXPECT_MATRIX: Record<ScopedEventKind, boolean[]> = {
+    // [L1, L2, L3, L4]
+    flare: [true, true, false, false],
+    cme: [true, true, false, false],
+    cmeArrival: [true, true, false, false],
+    supernova: [false, false, true, false],
+    merger: [false, false, false, true],
+  };
 
-  it('三层窗口当前取值一致（同事件同窗口，语义独立便于未来分层微调）', () => {
+  it('矩阵逐格判定与预期一致', () => {
     for (const kind of ALL_KINDS) {
-      for (const level of LEVEL_SAMPLES) {
+      expect(VIEW_LEVELS.map((level) => eventInScope(kind, level))).toEqual(
+        EXPECT_MATRIX[kind],
+      );
+    }
+  });
+
+  it('三层门控（自动触发/通知可见/演示按钮）与基础判定逐格一致', () => {
+    for (const kind of ALL_KINDS) {
+      for (const level of VIEW_LEVELS) {
         const base = eventInScope(kind, level);
         expect(eventAutoTriggerAllowed(kind, level)).toBe(base);
         expect(eventNoticeVisibleInScope(kind, level)).toBe(base);
@@ -113,32 +84,25 @@ describe('三层门控（§4.1-D）：自动触发域 / 通知可见域 / 按钮
       }
     }
   });
+});
 
-  it('L1-L4 锚点矩阵：耀斑/CME 仅 L1/L2 可触发，超新星仅 L3（R3-5），合并仅 L4', () => {
-    // 锚点连续层级：L1=1, L2=2, L3=3, L4=4（store LEVEL_TO_CONTINUOUS）
-    const expectMatrix: Record<ScopedEventKind, boolean[]> = {
-      flare: [true, true, false, false],
-      cme: [true, true, false, false],
-      cmeArrival: [true, true, false, false],
-      supernova: [false, false, true, false],
-      merger: [false, false, false, true],
-    };
-    const anchors = [1, 2, 3, 4];
-    for (const kind of ALL_KINDS) {
-      expect(anchors.map((level) => eventAutoTriggerAllowed(kind, level))).toEqual(
-        expectMatrix[kind],
-      );
-      expect(anchors.map((level) => eventNoticeVisibleInScope(kind, level))).toEqual(
-        expectMatrix[kind],
-      );
-      expect(anchors.map((level) => eventDemoEnabled(kind, level))).toEqual(expectMatrix[kind]);
+describe('R5-8 用户场景回归：银河系巡游跟随 L3 特殊天体（造父一/天狼星）', () => {
+  // R3 层级锁定：跟随期间 viewLevel 锁定为域主层级 L3，continuousLevel
+  // 随相机距离 ≈2.2（造父一距原点 ~190 单位）——门控只看 viewLevel
+  const lockedLevel: ViewLevel = 'L3';
+
+  it('太阳事件（耀斑/CME/抵达）三层门控全域外：不触发、通知隐藏、按钮置灰', () => {
+    for (const kind of SOLAR_KINDS) {
+      expect(eventAutoTriggerAllowed(kind, lockedLevel)).toBe(false);
+      expect(eventNoticeVisibleInScope(kind, lockedLevel)).toBe(false);
+      expect(eventDemoEnabled(kind, lockedLevel)).toBe(false);
     }
   });
 
-  it('三层门控对非有限层级同样抛 RangeError', () => {
-    expect(() => eventAutoTriggerAllowed('supernova', Number.NaN)).toThrow(RangeError);
-    expect(() => eventNoticeVisibleInScope('cme', Number.NaN)).toThrow(RangeError);
-    expect(() => eventDemoEnabled('merger', Number.NaN)).toThrow(RangeError);
+  it('镜像缺陷修复：超新星三层门控全域内（可触发、通知可见、按钮可用）', () => {
+    expect(eventAutoTriggerAllowed('supernova', lockedLevel)).toBe(true);
+    expect(eventNoticeVisibleInScope('supernova', lockedLevel)).toBe(true);
+    expect(eventDemoEnabled('supernova', lockedLevel)).toBe(true);
   });
 });
 
@@ -161,7 +125,7 @@ describe('文案（tooltip / 折叠提醒）', () => {
   // （eventOutOfScopeSummaryZh 删除），域外零事件 UI，相关断言移除。
 });
 
-describe('R3-3 §3.1-A：离域计时与丢弃判定纯函数', () => {
+describe('R3-3 §3.1-A：离域计时与丢弃判定纯函数（R5-8 语义不变）', () => {
   it('宽限期为 1 真实秒；运镜豁免窗口与锚点/飞往运镜时长一致', () => {
     expect(EVENT_DISCARD_GRACE_SEC).toBe(1);
     expect(VIEW_TRANSITION_DISCARD_EXEMPT_SEC).toBe(2);
