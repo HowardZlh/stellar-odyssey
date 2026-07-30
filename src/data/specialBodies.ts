@@ -455,7 +455,9 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     ],
     dynamicsZh:
       "恒星核坍缩产生的相对论喷流正对观察者：数秒内的极亮伽马闪光（FRED 光变曲线：快升指数衰减）+ 余辉衰减",
-    dataSource: "NASA Swift/Fermi GRB 221009A 观测；Burns et al. (2023)",
+    // R5-5：近观双喷流/余辉膨胀壳的图景来源（详细登记 utils/grbNearView）
+    dataSource:
+      "NASA Swift/Fermi GRB 221009A 观测；Burns et al. (2023)；近观双喷流（全开角 ~5°）与余辉膨胀壳（R ∝ t^(1/4)、幂律减暗）：相对论火球模型图景（Piran 2004 综述）近似登记",
   },
 ] as const;
 

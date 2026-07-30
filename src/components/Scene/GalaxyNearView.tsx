@@ -35,6 +35,7 @@ import {
   type GalaxyNearViewParticles,
 } from '@/utils/galaxyNearView';
 import { galaxyPlaneSizeUnits } from '@/utils/universe';
+import { LmcTarantulaOverlay } from '@/components/Scene/LmcTarantula';
 
 /** 尘埃暗纹层 renderOrder（晚于默认 0 的加性星光层与远观贴图平面） */
 export const DUST_LAYER_RENDER_ORDER = 2;
@@ -153,6 +154,10 @@ interface GalaxyNearViewLayerProps {
    * R4-10 现状。不传 = 恒 0（零回退）。
    */
   getDustDim?: () => number;
+  /** R5-5：30 Dor 亮度倍率覆写（预览页滑杆专用；主场景不传 = 1） */
+  getTarantulaBoost?: () => number;
+  /** R5-5：30 Dor 放大系数覆写（预览页滑杆专用；主场景不传 = 3.5 登记档） */
+  getTarantulaScaleBoost?: () => number;
 }
 
 /** 近观多分量粒子层（几何/材质随组件卸载 dispose） */
@@ -164,6 +169,8 @@ export function GalaxyNearViewLayer({
   pointScaleOverride,
   maps,
   getDustDim,
+  getTarantulaBoost,
+  getTarantulaScaleBoost,
 }: GalaxyNearViewLayerProps): JSX.Element {
   const orientation = useMemo(
     () => orientationOverride ?? galaxyNearViewOrientation(galaxy.id),
@@ -231,6 +238,9 @@ export function GalaxyNearViewLayer({
       emissiveMaterial,
       dustGeometry,
       dustMaterial,
+      // R5-5：30 Dor 叠加层消费（影像驱动激活时才挂载，降级零回退登记）
+      unitsPerLy,
+      imageDriven: activeMaps !== null,
     };
   }, [galaxy.id, galaxy.diameterLy, overrides, pointScaleOverride, maps]);
 
@@ -281,6 +291,16 @@ export function GalaxyNearViewLayer({
           renderOrder={DUST_LAYER_RENDER_ORDER}
           frustumCulled={false}
           raycast={() => null}
+        />
+      )}
+      {/* R5-5：LMC 30 Doradus 叠加层（真实相对位置的体积发射区 + R136
+          亮核；影像驱动就绪才挂载——参数化降级无棒/亮区几何对应，登记） */}
+      {galaxy.id === 'lmc' && layers.imageDriven && (
+        <LmcTarantulaOverlay
+          unitsPerLy={layers.unitsPerLy}
+          getOpacity={getOpacity}
+          getBoost={getTarantulaBoost}
+          getScaleBoost={getTarantulaScaleBoost}
         />
       )}
     </group>

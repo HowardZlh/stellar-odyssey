@@ -58,8 +58,16 @@ import {
   detailLruUpdate,
   estimateGpuBytes,
   releaseDetailLayer,
+  volumeTextureGpuBytes,
   type DetailLayerSpec,
 } from '@/utils/detailLayer';
+import {
+  LMC_BAR_TINT,
+  LMC_BAR_TINT_BLEND,
+  lmcBarWeight01,
+  TARANTULA_SPRITE_COUNT,
+  TARANTULA_VOLUME_TEXTURE_SIZE,
+} from '@/utils/lmcStructures';
 
 /**
  * 单星系近观粒子总量上限（基础层 + R4-9 新分量合计；§R4-9 自 8,000 上调
@@ -943,6 +951,33 @@ export function applyBulgeTint(
 }
 
 /**
+ * 对 LMC 影像驱动基础层应用中央棒色彩分层（R5-5 A 第 2 条，纯函数副本
+ * 语义与 applyBulgeTint 一致）：盘面 (x,z) 落于棒椭圆域内的粒子按
+ * `lmcBarWeight01` 向老年星族偏黄 tint 混合（几何/密度零改动——R5-1
+ * 密度图已含棒亮区，本函数只做颜色通道加权，登记见 utils/lmcStructures
+ * 文件头）；参数化降级路径不套用（团块分布无棒几何对应，登记）。
+ */
+export function applyLmcBarTint(particles: GalaxyNearViewParticles): GalaxyNearViewParticles {
+  const colors = new Float32Array(particles.colors);
+  const tint = LMC_BAR_TINT;
+  for (let i = 0; i < particles.count; i += 1) {
+    const w =
+      LMC_BAR_TINT_BLEND *
+      lmcBarWeight01(particles.positionsLy[i * 3], particles.positionsLy[i * 3 + 2]);
+    if (w <= 0) continue;
+    colors[i * 3] += (tint.r - colors[i * 3]) * w;
+    colors[i * 3 + 1] += (tint.g - colors[i * 3 + 1]) * w;
+    colors[i * 3 + 2] += (tint.b - colors[i * 3 + 2]) * w;
+  }
+  return {
+    count: particles.count,
+    positionsLy: particles.positionsLy,
+    colors,
+    sizes: particles.sizes,
+  };
+}
+
+/**
  * 旋臂脊线相位（弧度）：与基础层 generateGalaxyDiskParticles 的对数螺旋
  * 公式逐字一致（armIndex·2π/armCount + tightness·ln(1+r/r_bulge)），
  * 保证新分量与基础层旋臂对齐（单测以此复算脊线残差）。
@@ -1649,13 +1684,15 @@ export function generateGalaxyNearViewCompositeFromMaps(
     mapRadiusLy: maps.mapRadiusLy,
     thicknessLy: imageDrivenThicknessLy(galaxyId),
   };
-  const base = sampleParticlesFromMap(
+  const sampled = sampleParticlesFromMap(
     maps.density,
     maps.color,
     quota.base,
     galaxyNearViewSeed(`${galaxyId}:map`),
     opts,
   );
+  // R5-5：LMC 中央棒色彩分层（只做颜色加权，几何/密度零改动登记）
+  const base = galaxyId === 'lmc' ? applyLmcBarTint(sampled) : sampled;
   if (cfg.kind !== 'spiral') {
     return { base, components: [], totalCount: base.count };
   }
@@ -1766,7 +1803,15 @@ export function galaxyDetailLayerSpec(galaxyId: string): DetailLayerSpec {
     throw new RangeError(`未定义近观粒子层配置的星系 id：${galaxyId}`);
   }
   const enterDistanceUnits = galaxyNearViewEnterDistanceUnits(galaxyId);
-  const totalParticles = galaxyComponentQuota(galaxyId).total;
+  // R5-5 LMC 例外登记：30 Dor 叠加层并入 lmc 近观预算——R136 亮核
+  // sprite ×1 计入 particles、48³ R8 体积纹理（≈110 KB）计入
+  // volumeTexBytes（影像降级时不挂载，估算取上界口径与 R4-10 一致）
+  const isLmc = galaxyId === 'lmc';
+  const totalParticles =
+    galaxyComponentQuota(galaxyId).total + (isLmc ? TARANTULA_SPRITE_COUNT : 0);
+  const volumeTexBytes = isLmc
+    ? volumeTextureGpuBytes(TARANTULA_VOLUME_TEXTURE_SIZE, 1, 1)
+    : undefined;
   return {
     bodyId: galaxyId,
     kind: 'particles',
@@ -1774,7 +1819,8 @@ export function galaxyDetailLayerSpec(galaxyId: string): DetailLayerSpec {
     exitDistanceUnits: enterDistanceUnits * NEAR_VIEW_EXIT_RATIO,
     budget: {
       particles: totalParticles,
-      gpuBytesEstimate: estimateGpuBytes({ particles: totalParticles }),
+      ...(volumeTexBytes !== undefined ? { volumeTexBytes } : {}),
+      gpuBytesEstimate: estimateGpuBytes({ particles: totalParticles, volumeTexBytes }),
     },
   };
 }

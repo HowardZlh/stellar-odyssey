@@ -31,6 +31,11 @@ import {
   isDustVolumeGalaxy,
 } from '@/utils/galaxyDustVolume';
 import { M87_ENVIRONMENT_SOURCE_ZH } from '@/utils/m87Environment';
+import {
+  LMC_LANDMARK_SOURCE_ZH,
+  TARANTULA_SCALE_BOOST_DEFAULT,
+} from '@/utils/lmcStructures';
+import { GRB_NEAR_SOURCE_ZH, GRB_NEAR_JET_FULL_ANGLE_DEG } from '@/utils/grbNearView';
 
 /** 单个天体细节组件可声明的最大调试滑杆数（§R4-1：≤8 个） */
 export const MAX_PREVIEW_PARAMS = 8;
@@ -561,7 +566,7 @@ const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
   },
   {
     bodyId: 'lmc',
-    title: '大麦哲伦云 LMC（近观粒子云 · 影像驱动/棒与 30 Dor）',
+    title: '大麦哲伦云 LMC（近观粒子云 · 影像驱动/30 Dor 与棒分层）',
     componentKey: 'galaxy-near-view',
     cameraDistance: 4.2,
     params: [
@@ -570,9 +575,18 @@ const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
       { key: 'hiiDensity', label: 'HII 区密度（LMC 配额 0，登记）', min: 0, max: 1, default: 0.85 },
       { key: 'inclinationDeg', label: '倾角覆写（°，影像已含投影默认 0）', min: 0, max: 90, default: 0, step: 1 },
       ...dustVolumeParams('lmc'),
+      // R5-5：30 Doradus 亮度/尺度（§R5-5 A 第 3 条；共 8 个 = 上限）
+      { key: 'dor30Boost', label: '30 Dor 亮度（0 关闭）', min: 0, max: 3, default: 1 },
+      {
+        key: 'dor30Scale',
+        label: '30 Dor 尺度放大系数（登记默认 5）',
+        min: 1,
+        max: 8,
+        default: TARANTULA_SCALE_BOOST_DEFAULT,
+      },
     ],
     dataSource:
-      `RC3（de Vaucouleurs et al. 1991）SB(s)m；倾角 35°（NED）；HII 粉与蓝白年轻星由影像颜色自带（不规则新分量配额 0，R4-9 登记沿用）；${GALAXY_IMAGE_SOURCE_ZH}；${GALAXY_DUST_VOLUME_SOURCE_ZH}（LMC 尘埃弱 σ 弱档登记）`,
+      `RC3（de Vaucouleurs et al. 1991）SB(s)m；倾角 35°（NED）；HII 粉与蓝白年轻星由影像颜色自带（不规则新分量配额 0，R4-9 登记沿用）；${GALAXY_IMAGE_SOURCE_ZH}；${GALAXY_DUST_VOLUME_SOURCE_ZH}（LMC 尘埃弱 σ 弱档登记）；${LMC_LANDMARK_SOURCE_ZH}`,
   },
   {
     bodyId: 'smc',
@@ -762,6 +776,36 @@ const CLUSTER_LENSING_ENTRY: PreviewEntry = {
     'SIS 奇异等温球透镜方程 β = θ − θ_E·θ̂（Narayan & Bartelmann 1996 §3.1；Schneider, Ehlers & Falco 1992），屏幕空间 UV 重采样近似（仅对团块之后背景严格成立，前景同被偏移登记）；原型 Abell 370（真实 θ_E ≈ 30″–40″，此处压缩至近观十几度可视化档登记）；影响域窗为实现性裁剪（真实 SIS 偏转全域恒为 θ_E）',
 };
 
+/**
+ * 伽马射线暴近观（R5-5 B）：相对论双喷流（`RelativisticJet` 参数化复用：
+ * 开角 ~5° 更窄、蓝白更亮）+ 余辉膨胀壳（壳层 mesh 渐变，随周期时钟
+ * 膨胀减暗；Piran 2004 火球模型图景登记 utils/grbNearView）+ 极亮闪光
+ * sprite（FRED 光变，主场景 grbFlashState 同源）。
+ *
+ * 滑杆 4 件（≤8 上限）：时间流速（45s 演示周期加速目验两帧演化）/
+ * 喷流开角（°）/喷流亮度/余辉强度。
+ */
+const GRB_ENTRY: PreviewEntry = {
+  bodyId: 'grb',
+  title: '伽马射线暴 GRB 221009A（近观双喷流 + 余辉膨胀壳）',
+  componentKey: 'grb-near-view',
+  cameraDistance: 7,
+  params: [
+    { key: 'timeScale', label: '时间流速', min: 0, max: 8, default: 1 },
+    {
+      key: 'jetAngleDeg',
+      label: '喷流全开角（°，登记默认 5）',
+      min: 2,
+      max: 12,
+      default: GRB_NEAR_JET_FULL_ANGLE_DEG,
+      step: 0.5,
+    },
+    { key: 'jetGain', label: '喷流亮度', min: 0, max: 2, default: 1 },
+    { key: 'shellGain', label: '余辉强度', min: 0, max: 2, default: 1 },
+  ],
+  dataSource: GRB_NEAR_SOURCE_ZH,
+};
+
 /** 体积类预览条目的 componentKey 集（HUD 质量档行按此显隐） */
 export const VOLUME_PREVIEW_COMPONENT_KEYS: ReadonlySet<string> = new Set([
   'volume-raymarch-test',
@@ -806,6 +850,7 @@ export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
     QUASAR_ENTRY,
     ANTENNAE_ENTRY,
     CLUSTER_LENSING_ENTRY,
+    GRB_ENTRY,
   ];
   const map = new Map<string, PreviewEntry>();
   for (const e of entries) {

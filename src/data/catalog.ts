@@ -33,6 +33,7 @@ import {
   GALAXY_STRUCTURE_NOTE_BY_MORPHOLOGY_ZH,
   GALAXY_STRUCTURE_SOURCE_ZH,
 } from '@/utils/galaxyNearView';
+import { LMC_LANDMARK_NOTE_ZH, LMC_LANDMARK_SOURCE_ZH } from '@/utils/lmcStructures';
 
 /** 信息面板中的一行（标签 + 值） */
 export interface BodyInfoLine {
@@ -192,6 +193,10 @@ function galaxyLines(g: GalaxyData): BodyInfoLine[] {
   }
   if (g.id === 'm87') {
     lines.push(...M87_EXTRA_INFO_LINES_ZH);
+  }
+  // R5-5：LMC 标志结构行（30 Doradus + 中央棒色彩分层，近观联动）
+  if (g.id === 'lmc') {
+    lines.push({ label: '标志结构', value: LMC_LANDMARK_NOTE_ZH });
   }
   lines.push({ label: '描述', value: g.descriptionZh });
   return lines;
@@ -371,7 +376,10 @@ function buildCatalog(): Map<string, BodyInfo> {
       dataSource:
         g.id === 'm87'
           ? `${g.dataSource}；${GALAXY_STRUCTURE_SOURCE_ZH}；${M87_ENVIRONMENT_SOURCE_ZH}`
-          : `${g.dataSource}；${GALAXY_STRUCTURE_SOURCE_ZH}`,
+          : g.id === 'lmc'
+            ? // R5-5：LMC 标志结构来源（30 Dor 位置换算/棒分层登记）
+              `${g.dataSource}；${GALAXY_STRUCTURE_SOURCE_ZH}；${LMC_LANDMARK_SOURCE_ZH}`
+            : `${g.dataSource}；${GALAXY_STRUCTURE_SOURCE_ZH}`,
     });
   }
 

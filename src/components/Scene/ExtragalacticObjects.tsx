@@ -14,6 +14,7 @@ import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import { grbFlashState, jetFlowPhase01, quasarFlicker } from '@/utils/specialBodies';
 import { EXTRAGALACTIC_VIEW_RADIUS_UNITS } from '@/utils/cameraFocus';
 import { quasarCoreNearFactor, quasarDetailLayerSpec } from '@/utils/quasarNearView';
+import { GRB_STATIC_NEAR_DIM, grbDetailLayerSpec } from '@/utils/grbNearView';
 import {
   ANTENNAE_STATIC_NEAR_DIM,
   antennaeDetailLayerSpec,
@@ -33,6 +34,7 @@ import {
 import { useDetailLayer } from '@/hooks/useDetailLayer';
 import { useAntennaeSnapshots } from '@/hooks/useAntennaeSnapshots';
 import { QuasarNearCore } from '@/components/Scene/QuasarNearView';
+import { GrbNearCore } from '@/components/Scene/GrbNearView';
 import { AntennaeNearView } from '@/components/Scene/AntennaeNearView';
 import {
   createGalaxySpriteCanvas,
@@ -61,7 +63,13 @@ interface JetProps {
   /** 可见权重读取覆写（默认河外 LOD fadeWeight；R4-16 蟹状 PWN 极向
    * 双喷流复用登记——注入 L3 近观权重、参数化缩小尺度，锥体 shader 不变） */
   getWeight?: () => number;
+  /** 锥体半径系数（锥底半径 = 长度 × 系数；缺省 0.035 ≈ 4° 全开角现状
+   * 锚定零回退；R5-5 GRB 近观以 tan(全开角/2) 覆写 ~5° 档） */
+  radiusFactor?: number;
 }
+
+/** 锥体半径系数默认档（现状 0.035 锚定，R5-5 参数化登记） */
+const JET_CONE_RADIUS_FACTOR_DEFAULT = 0.035;
 
 /**
  * 相对论喷流：细长锥体 + 沿喷流方向循环流动的辉光节点（流动动画）
@@ -75,6 +83,7 @@ export function RelativisticJet({
   bilateral,
   baseOpacity,
   getWeight,
+  radiusFactor,
 }: JetProps): JSX.Element {
   const nodesRef = useRef<THREE.Group>(null);
   const texture = useMemo(() => new THREE.CanvasTexture(createGlowSpriteCanvas(color, 64)), [color]);
@@ -176,7 +185,15 @@ export function RelativisticJet({
           ]}
           material={jetMaterial}
         >
-          <coneGeometry args={[lengthUnits * 0.035, lengthUnits, 16, 1, true]} />
+          <coneGeometry
+            args={[
+              lengthUnits * (radiusFactor ?? JET_CONE_RADIUS_FACTOR_DEFAULT),
+              lengthUnits,
+              16,
+              1,
+              true,
+            ]}
+          />
         </mesh>
       ))}
       {/* 流动节点 */}
@@ -701,9 +718,19 @@ export function LensingArcs(): JSX.Element | null {
   );
 }
 
+/** GRB 双喷流轴姿态（静态双锥与 R5-5 近观细节层共用，单点同源） */
+const GRB_JET_ROTATION_RAD: readonly [number, number, number] = [0.4, 0, 0.9];
+
 /**
  * 伽马射线暴（GRB 221009A，可选需求 3.1.5）：周期性重放的
  * 极亮闪光 + 双向窄喷流（真实为一次性事件，演示示意已登记）
+ *
+ * R5-5：近观挂接细节层（useDetailLayer particles 池，'lru-retain' L4
+ * 语义与星系近观/类星体共池）——跟随/飞往且距离达阈值时挂载
+ * GrbNearCore（相对论双喷流 ~5° 蓝白更亮 + 余辉膨胀壳）。现状核对
+ * 结论登记（§R5-5 B）：GRB 为常驻演示物（周期重放 45s，非事件触发），
+ * 近观层随周期时钟出现/衰减（utils/grbNearView 文件头）；静态双锥按
+ * GRB_STATIC_NEAR_DIM 减淡让位细节喷流，退出反向恢复。
  */
 export function GammaRayBurst(): JSX.Element | null {
   const body = getSpecialBodyById('grb-221009a');
@@ -724,10 +751,24 @@ export function GammaRayBurst(): JSX.Element | null {
   );
   useEffect(() => () => texture.dispose(), [texture]);
 
+  // R5-5 近观细节层门控（阈值与 resolveFocusTarget 同源，utils/grbNearView）
+  const weightRef = useRef(0);
+  const nearSpec = useMemo(() => grbDetailLayerSpec(), []);
+  const { active: nearActive, opacity01: getNear01 } = useDetailLayer(nearSpec, {
+    objectRef: groupRef,
+    retention: 'lru-retain',
+  });
+  /** 近观层不透明度 = 河外层级淡入权重 × 近观激活权重 */
+  const getNearOpacity = useCallback(
+    () => weightRef.current * getNear01(),
+    [getNear01],
+  );
+
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group) return;
     const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
+    weightRef.current = weight;
     group.visible = weight > 0.001;
     setObjectTreeRaycastEnabled(group, weight > INTERACTIVE_WEIGHT);
     if (!group.visible) return;
@@ -739,9 +780,12 @@ export function GammaRayBurst(): JSX.Element | null {
     }
     if (beamsRef.current) {
       beamsRef.current.visible = intensity01 > 0.02;
+      // R5-5：近观时静态双锥减淡让位细节喷流（退出随 near01 回落恢复）
+      const staticDim = 1 - GRB_STATIC_NEAR_DIM * getNear01();
       beamsRef.current.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
-          (obj.material as THREE.MeshBasicMaterial).opacity = 0.5 * intensity01 * weight;
+          (obj.material as THREE.MeshBasicMaterial).opacity =
+            0.5 * intensity01 * weight * staticDim;
         }
       });
     }
@@ -772,7 +816,7 @@ export function GammaRayBurst(): JSX.Element | null {
         />
       </sprite>
       {/* 双向窄相对论喷流（核坍缩喷流示意） */}
-      <group ref={beamsRef} rotation={[0.4, 0, 0.9]}>
+      <group ref={beamsRef} rotation={GRB_JET_ROTATION_RAD as [number, number, number]}>
         {[1, -1].map((dir) => (
           <mesh key={dir} position={[0, dir * 900, 0]} rotation={[dir < 0 ? Math.PI : 0, 0, 0]}>
             <coneGeometry args={[70, 1800, 10, 1, true]} />
@@ -786,6 +830,16 @@ export function GammaRayBurst(): JSX.Element | null {
           </mesh>
         ))}
       </group>
+      {/* R5-5 近观细节层：双喷流（~5° 蓝白更亮）+ 余辉膨胀壳（轴与
+          静态双锥同姿态；随周期时钟演化，登记 utils/grbNearView） */}
+      {nearActive && (
+        <group rotation={GRB_JET_ROTATION_RAD as [number, number, number]}>
+          <GrbNearCore
+            baseRadiusUnits={EXTRAGALACTIC_VIEW_RADIUS_UNITS}
+            getOpacity={getNearOpacity}
+          />
+        </group>
+      )}
       {showLabels && inRange && !focused && (
         <ClampedHtmlLabel position={[0, 800, 0]} distanceFactor={12000} style={{ pointerEvents: 'none' }}>
           <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-violet-200">
