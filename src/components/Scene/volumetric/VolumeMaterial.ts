@@ -21,7 +21,12 @@
  *   `disposeVolumeMaterial` 一并释放（附录 A §6）；
  * - 预留 uniforms：uTime（R4-7 流动）、uQuality（档位标量 0.5–1，由
  *   adaptiveQuality 每帧写入，本阶段步数/RT 比例在 CPU 侧落地，shader
- *   暂不消费该标量——R4-7 细节淡出可按需接入）。
+ *   暂不消费该标量——R4-7 细节淡出可按需接入）；
+ * - 各向异性光程（R5-2）：uWorldStepScale（默认 (1,1,1) 零行为变化）
+ *   ——非均匀缩放盒（如星系薄盘）在单位盒局部空间步进时，局部步长不
+ *   反映世界光程；积分步长乘 |rd ⊙ uWorldStepScale| 校正，使斜视/侧视
+ *   （长光程）消光强于正视（短光程）。消费方按 utils/galaxyDustVolume
+ *   dustWorldStepScale（最长轴归一化）写入。
  *
  * GLSL 版本登记：sampler3D/inverse() 需要 GLSL ES 3.0——three r169 WebGL2-only，
  * ShaderMaterial 默认路径即以 `#version 300 es` + 兼容 define（varying/gl_FragColor/
@@ -83,6 +88,7 @@ const FRAGMENT_SHADER = /* glsl */ `
   uniform float uJitter;        // 抖动强度（0 关 / 1 开，预览页 A/B 对比）
   uniform float uTime;    // 预留：R4-7 密度场流动
   uniform float uQuality; // 档位标量（0.5–1，adaptiveQuality 写入；shader 暂不消费）
+  uniform vec3 uWorldStepScale; // 各向异性光程缩放（R5-2；默认 (1,1,1) 零行为变化）
 
   // 单位盒 [-0.5, 0.5]³ slab 求交（utils/volume.intersectRayBox 的 GLSL 镜像）
   vec2 hitBox(vec3 orig, vec3 dir) {
@@ -112,6 +118,8 @@ const FRAGMENT_SHADER = /* glsl */ `
 
     float steps = clamp(uSteps, ${VOLUME_STEPS_MIN.toFixed(1)}, ${VOLUME_STEPS_MAX.toFixed(1)});
     float stepLen = (bounds.y - bounds.x) / steps;
+    // 各向异性光程（R5-2）：局部步长 → 相对世界光程（默认 |rd|≈1 零变化）
+    float pathLen = stepLen * length(rd * uWorldStepScale);
     // 蓝噪声抖动：步进起点逐像素偏移 [0,1) 个步长，打散条带（R4-4）。
     // 掩码 Repeat 平铺（环绕核生成无缝），gl_FragCoord 随 RT 视口缩放，
     // 半分辨率下仍按 RT 像素取值——抖动粒度与渲染分辨率一致。
@@ -129,8 +137,8 @@ const FRAGMENT_SHADER = /* glsl */ `
       if (d > 0.0005) {
         // 双色映射：原始密度绕阈值平滑混色（低密度 A → 高密度 B）
         vec3 col = mix(uColorA, uColorB, smoothstep(uThreshold - 0.12, uThreshold + 0.12, raw));
-        accum += transmittance * col * (d * stepLen);
-        transmittance *= exp(-d * uAbsorption * stepLen);
+        accum += transmittance * col * (d * pathLen);
+        transmittance *= exp(-d * uAbsorption * pathLen);
         if (transmittance < 0.004) break; // 提前终止（不透明饱和）
       }
       p += delta;
@@ -170,6 +178,11 @@ export interface VolumeMaterialParams {
    * 显式传入时归调用方持有并负责 dispose。
    */
   blueNoise?: THREE.DataTexture;
+  /**
+   * 各向异性光程缩放（R5-2 非均匀盒；默认 (1,1,1) 零行为变化）。
+   * 按 utils/galaxyDustVolume.dustWorldStepScale 最长轴归一化传入。
+   */
+  worldStepScale?: readonly [number, number, number];
 }
 
 /**
@@ -199,6 +212,9 @@ export function createVolumeMaterial(params: VolumeMaterialParams): THREE.Shader
       uJitter: { value: 1 },
       uTime: { value: 0 },
       uQuality: { value: 1 },
+      uWorldStepScale: {
+        value: new THREE.Vector3(...(params.worldStepScale ?? [1, 1, 1])),
+      },
     },
     transparent: true,
     depthWrite: false,
