@@ -38,7 +38,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }): JSX.Element {
   return (
     <html lang="zh-CN">
-      <body className="bg-space-dark text-gray-100 antialiased">
+      {/* suppressHydrationWarning：浏览器扩展（如 Grammarly）会在 React 水合前向
+          <body> 注入自有属性（data-gr-ext-installed 等）造成 SSR/客户端属性不一致的
+          水合警告——仅抑制该元素自身的属性差异告警，子树水合校验不受影响 */}
+      <body suppressHydrationWarning className="bg-space-dark text-gray-100 antialiased">
         {children}
         {/* Cloudflare Web Analytics（RUM beacon，手动嵌码：仅统计本站，隐私友好无 cookie） */}
         <Script
