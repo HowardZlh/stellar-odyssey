@@ -293,6 +293,34 @@ export function validateGalaxyMapMeta(raw: unknown): GalaxyMapMeta | null {
   };
 }
 
+/**
+ * R5-3 真实巡天目录（galaxy-catalog.bin 解析产物；2MRS，Huchra et al. 2012）。
+ * 坐标为超星系笛卡尔（Mpc），场景旋转/压缩在 utils/galaxyCatalog 进行。
+ */
+export interface GalaxyCatalogData {
+  /** 星系数 N */
+  count: number;
+  /** 超星系笛卡尔位置（N×3，Mpc） */
+  positionsMpc: Float32Array;
+  /** 形态档（N；0 早型/椭圆、1 晚型/旋涡、2 未知——galaxyCatalogCore 登记） */
+  morphTiers: Uint8Array;
+  /** 亮度档（N；0–1，K_s 星等线性归一） */
+  brightness01: Float32Array;
+}
+
+/** galaxy-catalog.bin 魔数（2MRS Ks ≤ 11.75 极限；scripts/bake-data/galaxyCatalog.ts 同值） */
+export const GALAXY_CATALOG_MAGIC = 21175;
+
+/** galaxy-catalog.bin 版本号 */
+export const GALAXY_CATALOG_VERSION = 1;
+
+/** 目录星系数域（烘焙自校验同判据） */
+const GALAXY_CATALOG_COUNT_MIN = 20000;
+const GALAXY_CATALOG_COUNT_MAX = 60000;
+
+/** 目录坐标界（Mpc；烘焙自校验 ≤800） */
+const GALAXY_CATALOG_COORD_BOUND_MPC = 800;
+
 /** antennae.bin 头部 Float32 数（magic/version/S/N/nA） */
 const ANTENNAE_HEADER_FLOATS = 5;
 
@@ -336,6 +364,49 @@ export function validateAntennae(raw: ArrayBuffer | null): AntennaeSnapshotsData
     }
   }
   return { snapshotCount, particleCount, diskACount, cores, positions };
+}
+
+/**
+ * 校验并解析真实巡天目录二进制（R5-3）：魔数/版本/星系数域/字节长度
+ * 精确匹配/坐标有限且 |r| ≤ 800 Mpc/w 通道为 [0,2999] 整数且形态档 ≤ 2。
+ * 布局登记见 scripts/bake-data/galaxyCatalog.ts 文件头。
+ * 失败返回 null（消费方降级现状程序化宇宙网）。
+ */
+export function validateGalaxyCatalog(raw: ArrayBuffer | null): GalaxyCatalogData | null {
+  if (!isArrayBuffer(raw)) return null;
+  if (raw.byteLength < 3 * 4 || raw.byteLength % 4 !== 0) return null;
+  const data = new Float32Array(raw);
+  if (data[0] !== GALAXY_CATALOG_MAGIC) return null;
+  if (data[1] !== GALAXY_CATALOG_VERSION) return null;
+  const count = data[2];
+  if (
+    !Number.isInteger(count) ||
+    count < GALAXY_CATALOG_COUNT_MIN ||
+    count > GALAXY_CATALOG_COUNT_MAX
+  ) {
+    return null;
+  }
+  if (raw.byteLength !== (3 + count * 4) * 4) return null;
+  const positionsMpc = new Float32Array(count * 3);
+  const morphTiers = new Uint8Array(count);
+  const brightness01 = new Float32Array(count);
+  for (let i = 0; i < count; i += 1) {
+    const x = data[3 + i * 4];
+    const y = data[3 + i * 4 + 1];
+    const z = data[3 + i * 4 + 2];
+    const w = data[3 + i * 4 + 3];
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
+    const r = Math.hypot(x, y, z);
+    if (r <= 0 || r > GALAXY_CATALOG_COORD_BOUND_MPC) return null;
+    if (!Number.isInteger(w) || w < 0 || w > 2999) return null;
+    const tier = Math.floor(w / 1000);
+    positionsMpc[i * 3] = x;
+    positionsMpc[i * 3 + 1] = y;
+    positionsMpc[i * 3 + 2] = z;
+    morphTiers[i] = tier;
+    brightness01[i] = (w - tier * 1000) / 999;
+  }
+  return { count, positionsMpc, morphTiers, brightness01 };
 }
 
 // ---------------------------------------------------------------------------
@@ -399,6 +470,19 @@ export async function loadAntennae(baseUrl = '/data'): Promise<AntennaeSnapshots
   const cached = cache.get(url);
   if (cached !== undefined) return cached as AntennaeSnapshotsData;
   const data = validateAntennae(await fetchArrayBuffer(url));
+  if (data !== null) cache.set(url, data);
+  return data;
+}
+
+/**
+ * 加载真实巡天目录（R5-3 二进制产物；失败返回 null，消费方降级
+ * 现状程序化宇宙网）。成功结果按 URL 缓存，失败不缓存。
+ */
+export async function loadGalaxyCatalog(baseUrl = '/data'): Promise<GalaxyCatalogData | null> {
+  const url = `${baseUrl}/galaxy-catalog.bin`;
+  const cached = cache.get(url);
+  if (cached !== undefined) return cached as GalaxyCatalogData;
+  const data = validateGalaxyCatalog(await fetchArrayBuffer(url));
   if (data !== null) cache.set(url, data);
   return data;
 }

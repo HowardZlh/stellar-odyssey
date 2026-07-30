@@ -73,6 +73,8 @@ export interface SimulationState {
   showYouAreHere: boolean;
   /** 速度矢量箭头显示（本星系群本动等，需求 3.1.3） */
   showVelocityVectors: boolean;
+  /** 真实巡天背景显示（R5-3：2MRS 目录点云；关闭/加载失败回落程序化宇宙网） */
+  showGalaxyCatalog: boolean;
   /** 音效开关 */
   audioEnabled: boolean;
   /** 音量（0-1） */
@@ -243,6 +245,7 @@ export interface SimulationState {
   setShowLabels: (show: boolean) => void;
   setShowYouAreHere: (show: boolean) => void;
   setShowVelocityVectors: (show: boolean) => void;
+  setShowGalaxyCatalog: (show: boolean) => void;
   setAudioEnabled: (enabled: boolean) => void;
   toggleAudio: () => void;
   setAudioVolume: (volume: number) => void;
@@ -514,6 +517,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   showLabels: true,
   showYouAreHere: true,
   showVelocityVectors: true,
+  showGalaxyCatalog: true,
   audioEnabled: false,
   audioVolume: 0.8,
   selectedBodyId: null,
@@ -703,6 +707,7 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   setShowYouAreHere: (show) => set({ showYouAreHere: show }),
 
   setShowVelocityVectors: (show) => set({ showVelocityVectors: show }),
+  setShowGalaxyCatalog: (show) => set({ showGalaxyCatalog: show }),
 
   setAudioEnabled: (enabled) => set({ audioEnabled: enabled }),
 
