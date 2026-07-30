@@ -38,6 +38,7 @@ import {
   type SpiralNearViewConfig,
 } from '@/utils/galaxyNearView';
 import { GPU_BYTES_PER_PARTICLE } from '@/utils/detailLayer';
+import { TARANTULA_SPRITE_COUNT } from '@/utils/lmcStructures';
 import { galaxyPreviewConfigForBody, previewEntryForBody } from '@/utils/devPreview';
 
 /** 欧拉角 XYZ（three.js 'XYZ' 约定 R = Rx·Ry·Rz）作用于向量 */
@@ -380,11 +381,14 @@ describe('galaxyDetailLayerSpec GPU 估算迁移（R4-9 登记项兑现）', () 
     expect(spec.budget.gpuBytesEstimate).toBe(9850 * GPU_BYTES_PER_PARTICLE);
   });
 
-  it('非旋涡：配额合计 = 基础层（阈值语义零回退）', () => {
-    for (const id of ['m87', 'lmc', 'smc', 'm32']) {
+  it('非旋涡：配额合计 = 基础层（阈值语义零回退；R5-5 lmc 例外登记：30 Dor R136 亮核 sprite ×1 并入预算）', () => {
+    for (const id of ['m87', 'smc', 'm32']) {
       const spec = galaxyDetailLayerSpec(id);
       expect(spec.budget.particles).toBe(GALAXY_NEAR_VIEW_CONFIGS[id].particleCount);
     }
+    expect(galaxyDetailLayerSpec('lmc').budget.particles).toBe(
+      GALAXY_NEAR_VIEW_CONFIGS.lmc.particleCount + TARANTULA_SPRITE_COUNT,
+    );
   });
 });
 
@@ -406,7 +410,7 @@ describe('信息面板扩展（§R4-10：结构行 + RC3/S4G 来源）', () => {
 });
 
 describe('预览页注册（§R4-10：?body=m31 + 不规则对照 lmc；R5-1 等价迁移：滑杆增影像驱动开关；R5-2：增体积消光/盘厚两件）', () => {
-  it('m31/lmc 条目注册且 componentKey = galaxy-near-view，滑杆六件（影像开关/dust/HII/倾角 + R5-2 体积消光/盘厚）', () => {
+  it('m31/lmc 条目注册且 componentKey = galaxy-near-view，滑杆六件（影像开关/dust/HII/倾角 + R5-2 体积消光/盘厚；R5-5：lmc 增 30 Dor 亮度/尺度两件 = 8 恰达上限）', () => {
     for (const id of ['m31', 'lmc']) {
       const entry = previewEntryForBody(id);
       expect(entry).not.toBeNull();
@@ -418,6 +422,8 @@ describe('预览页注册（§R4-10：?body=m31 + 不规则对照 lmc；R5-1 等
         'inclinationDeg',
         'volExtinction',
         'volThicknessLy',
+        // R5-5：30 Doradus 亮度/尺度（lmc 专属）
+        ...(id === 'lmc' ? ['dor30Boost', 'dor30Scale'] : []),
       ]);
     }
   });

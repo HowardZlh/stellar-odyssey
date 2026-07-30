@@ -12,6 +12,7 @@ import {
   type GalaxyCompositeOverrides,
 } from '@/utils/galaxyNearView';
 import { isDustVolumeGalaxy } from '@/utils/galaxyDustVolume';
+import { TARANTULA_SCALE_BOOST_DEFAULT } from '@/utils/lmcStructures';
 import { useGalaxyImageMaps } from '@/hooks/useGalaxyImageMaps';
 import { galaxyPlaneSizeUnits } from '@/utils/universe';
 import { galaxyPreviewConfigForBody, type PreviewEntry } from '@/utils/devPreview';
@@ -63,6 +64,17 @@ export function GalaxyNearViewPreview({
   const clockTextRef = useRef('');
   const dustVolumeFadeRef = useRef(0);
   const getDustDim = useMemo(() => () => dustVolumeFadeRef.current, []);
+  // R5-5：30 Dor 滑杆帧读 getter（lmc 条目专用；直达 uniform 零重建）
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
+  const tarantulaGetters = useMemo(
+    () => ({
+      boost: () => valuesRef.current.dor30Boost ?? 1,
+      scaleBoost: () =>
+        valuesRef.current.dor30Scale ?? TARANTULA_SCALE_BOOST_DEFAULT,
+    }),
+    [],
+  );
 
   // R5-2：`&spin=0` 关闭自转（dev 专用；无头目验 A/B 截图需固定姿态，
   // 默认自转 0.15 rad/s 保持 R4-10 交互现状）
@@ -145,6 +157,8 @@ export function GalaxyNearViewPreview({
           pointScaleOverride={PREVIEW_DIAMETER_UNITS * 4}
           maps={imageDriven ? maps : null}
           getDustDim={getDustDim}
+          getTarantulaBoost={tarantulaGetters.boost}
+          getTarantulaScaleBoost={tarantulaGetters.scaleBoost}
         />
         {dustVolumeMounted && maps && (
           <GalaxyDustVolumeLayer

@@ -43,6 +43,10 @@ import {
   galaxyNearViewEnterDistanceUnits,
   nearViewLruUpdate,
 } from '@/utils/galaxyNearView';
+import {
+  TARANTULA_SPRITE_COUNT,
+  TARANTULA_VOLUME_TEXTURE_SIZE,
+} from '@/utils/lmcStructures';
 
 /** 便捷构造：测试用细节层规格 */
 function specOf(
@@ -339,13 +343,22 @@ describe('galaxyDetailLayerSpec（R2-8 星系近观规格，阈值同源零回�
       );
       // R4-10 等价迁移登记：GPU 估算自基础层粒子改为多分量配额合计
       // （R4-9 登记的"随渲染接入一并更新"；非旋涡 quota.total = 基础层，
-      // 阈值语义零回退）
-      const particles = galaxyComponentQuota(galaxyId).total;
+      // 阈值语义零回退）；R5-5 LMC 例外登记：30 Dor 叠加层并入 lmc 预算
+      // （R136 亮核 sprite ×1 + 48³ R8 体积纹理）
+      const isLmc = galaxyId === 'lmc';
+      const particles =
+        galaxyComponentQuota(galaxyId).total + (isLmc ? TARANTULA_SPRITE_COUNT : 0);
       expect(particles).toBeGreaterThanOrEqual(
         GALAXY_NEAR_VIEW_CONFIGS[galaxyId].particleCount,
       );
       expect(spec.budget.particles).toBe(particles);
-      expect(spec.budget.gpuBytesEstimate).toBe(particles * GPU_BYTES_PER_PARTICLE);
+      const volumeTexBytes = isLmc
+        ? volumeTextureGpuBytes(TARANTULA_VOLUME_TEXTURE_SIZE, 1, 1)
+        : 0;
+      expect(spec.budget.volumeTexBytes ?? 0).toBe(volumeTexBytes);
+      expect(spec.budget.gpuBytesEstimate).toBe(
+        particles * GPU_BYTES_PER_PARTICLE + volumeTexBytes,
+      );
       // 附录 A：任一星系近观层估算远低于 64 MB 总预算
       expect(spec.budget.gpuBytesEstimate).toBeLessThan(DETAIL_GPU_BUDGET_BYTES);
     },
