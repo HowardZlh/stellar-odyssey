@@ -16,6 +16,7 @@ import {
   GALAXY_CATALOG_DISTORTIONS_ZH,
   GALAXY_CATALOG_SOURCE_ZH,
 } from '@/utils/galaxyCatalog';
+import { FERMI_BUBBLES_SOURCE_ZH } from '@/utils/fermiBubbles';
 import { SN_DEFAULT_DURATION_SEC } from '@/utils/supernova';
 import { rollSupernovaParams } from '@/components/Scene/Supernova';
 import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunActivity';
@@ -53,6 +54,9 @@ export function ControlPanel(): JSX.Element {
   // R5-3：真实巡天背景（2MRS 目录点云）开关
   const showGalaxyCatalog = useSimulationStore((s) => s.showGalaxyCatalog);
   const setShowGalaxyCatalog = useSimulationStore((s) => s.setShowGalaxyCatalog);
+  // R5-6：费米气泡（银心双极体积辉光）开关
+  const showFermiBubbles = useSimulationStore((s) => s.showFermiBubbles);
+  const setShowFermiBubbles = useSimulationStore((s) => s.setShowFermiBubbles);
   const realScaleMode = useSimulationStore((s) => s.realScaleMode);
   const setRealScaleMode = useSimulationStore((s) => s.setRealScaleMode);
   // R3-6：银河系视角天体垂直展开（V 键）+ 增益滑块
@@ -276,6 +280,21 @@ export function ControlPanel(): JSX.Element {
             <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
               {GALAXY_CATALOG_SOURCE_ZH}；失真登记：{GALAXY_CATALOG_DISTORTIONS_ZH}。
               关闭或数据缺失时回落程序化宇宙网示意
+            </p>
+          </>
+        )}
+        {visible('fermiBubbles') && (
+          <>
+            <label className="mb-1 flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={showFermiBubbles}
+                onChange={(e) => setShowFermiBubbles(e.target.checked)}
+              />
+              费米气泡
+            </label>
+            <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
+              {FERMI_BUBBLES_SOURCE_ZH}
             </p>
           </>
         )}
