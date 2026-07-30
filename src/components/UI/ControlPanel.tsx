@@ -12,6 +12,10 @@ import {
   GALAXY_EXPAND_GAIN_MIN,
   GALAXY_EXPAND_GAIN_STEP,
 } from '@/utils/galacticLatitude';
+import {
+  GALAXY_CATALOG_DISTORTIONS_ZH,
+  GALAXY_CATALOG_SOURCE_ZH,
+} from '@/utils/galaxyCatalog';
 import { SN_DEFAULT_DURATION_SEC } from '@/utils/supernova';
 import { rollSupernovaParams } from '@/components/Scene/Supernova';
 import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunActivity';
@@ -46,6 +50,9 @@ export function ControlPanel(): JSX.Element {
   const setShowYouAreHere = useSimulationStore((s) => s.setShowYouAreHere);
   const showVelocityVectors = useSimulationStore((s) => s.showVelocityVectors);
   const setShowVelocityVectors = useSimulationStore((s) => s.setShowVelocityVectors);
+  // R5-3：真实巡天背景（2MRS 目录点云）开关
+  const showGalaxyCatalog = useSimulationStore((s) => s.showGalaxyCatalog);
+  const setShowGalaxyCatalog = useSimulationStore((s) => s.setShowGalaxyCatalog);
   const realScaleMode = useSimulationStore((s) => s.realScaleMode);
   const setRealScaleMode = useSimulationStore((s) => s.setRealScaleMode);
   // R3-6：银河系视角天体垂直展开（V 键）+ 增益滑块
@@ -255,6 +262,22 @@ export function ControlPanel(): JSX.Element {
             />
             速度矢量箭头
           </label>
+        )}
+        {visible('galaxyCatalog') && (
+          <>
+            <label className="mb-1 flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={showGalaxyCatalog}
+                onChange={(e) => setShowGalaxyCatalog(e.target.checked)}
+              />
+              真实巡天背景（2MRS）
+            </label>
+            <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
+              {GALAXY_CATALOG_SOURCE_ZH}；失真登记：{GALAXY_CATALOG_DISTORTIONS_ZH}。
+              关闭或数据缺失时回落程序化宇宙网示意
+            </p>
+          </>
         )}
         {visible('verticalExpand') && (
           <>

@@ -1,0 +1,34 @@
+{
+  "meta": {
+    "source": "2MASS Redshift Survey (2MRS)，Huchra et al. 2012, ApJS 199, 26；VizieR J/ApJS/199/26/table3（CDS）",
+    "retrievedAt": "2026-07-30T08:19:04.546Z",
+    "license": "公开科学数据：引用 Huchra et al. (2012, ApJS 199, 26)；VizieR/CDS 数据使用规范",
+    "count": 43488
+  },
+  "h0KmSMpc": 70,
+  "czMinKmS": 100,
+  "dedup": {
+    "matchRadiusDeg": 0.5,
+    "removedTotal": 10,
+    "removedByEntity": {
+      "lmc": 4,
+      "m33": 1,
+      "m87": 5
+    }
+  },
+  "virgoSelfCheck": {
+    "coneRadiusDeg": 6,
+    "shellMpc": [
+      5,
+      30
+    ],
+    "countInCone": 153,
+    "countInShell": 1716,
+    "overdensityRatio": 32.55
+  },
+  "distortions": [
+    "红移距离为 cz/H₀ 哈勃流近似（H₀=70 km/s/Mpc）：本动速度污染视向速度，星系团沿视线拉长（指状效应）",
+    "近距（cz < 100 km/s 剔除；cz ≲ 1,000 km/s）哈勃流距离分数误差可达数十%",
+    "银道遮挡带（|b| < 5°，银心方向 8°）为 2MRS 尘埃消光观测限制，非真实空洞"
+  ]
+}

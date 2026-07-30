@@ -18,12 +18,14 @@ import {
   SATELLITE_GALAXY_ORBITS,
 } from '@/data/galaxies';
 import { useSimulationStore } from '@/store';
-import { cosmicDistanceToSceneUnits, lyToSceneUnits, trapezoidWeight } from '@/utils/scale';
+import { cosmicDistanceToSceneUnits, lyToSceneUnits } from '@/utils/scale';
+import { supergalacticPlanePointScene } from '@/utils/galaxyCatalog';
 import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import { getSoftPointTexture } from '@/components/CelestialBody/sharedTextures';
 import {
   M31_APPROACH_FLOW_COUNT,
   OBSERVABLE_UNIVERSE_RADIUS_LY,
+  UNIVERSE_FADE,
   galaxyPlaneSizeUnits,
   generateCosmicWeb,
   hubbleScaleFactor,
@@ -34,6 +36,7 @@ import {
   satelliteGalaxyPositionLy,
   satelliteOrbitPointsLy,
   tidalStreamPointsLy,
+  universeFadeWeight,
 } from '@/utils/universe';
 import {
   mergerEllipticalMix01,
@@ -51,8 +54,10 @@ import {
 } from '@/utils/galaxyNearView';
 import { isDustVolumeGalaxy } from '@/utils/galaxyDustVolume';
 import { useDetailLayer } from '@/hooks/useDetailLayer';
+import { useGalaxyCatalog } from '@/hooks/useGalaxyCatalog';
 import { useGalaxyImageMaps } from '@/hooks/useGalaxyImageMaps';
 import { useBitmapTexture } from '@/hooks/useBitmapTexture';
+import { GalaxyCatalog } from '@/components/Scene/GalaxyCatalog';
 import { GalaxyNearViewLayer } from '@/components/Scene/GalaxyNearView';
 import { GalaxyDustVolume } from '@/components/Scene/GalaxyDustVolumeLayer';
 import {
@@ -67,13 +72,12 @@ import {
   Quasar,
 } from '@/components/Scene/ExtragalacticObjects';
 
-/** 宇宙级内容 LOD 渐变区间（连续层级） */
-const FADE = { start: 3.05, full: 3.6 } as const;
-
-function fadeWeight(continuousLevel: number): number {
-  // 连续层级上限为 4，平台区延伸至 4 以上保证 L4 锚点处不淡出
-  return trapezoidWeight(continuousLevel, FADE.start, FADE.full, 4.5, 5);
-}
+/**
+ * 宇宙级内容 LOD 渐变区间（连续层级）：R5-3 起同源公式收敛至
+ * utils/universe.universeFadeWeight / UNIVERSE_FADE（真实巡天目录层共用）
+ */
+const FADE = UNIVERSE_FADE;
+const fadeWeight = universeFadeWeight;
 
 interface GalaxyObjectProps {
   galaxy: GalaxyData;
@@ -324,6 +328,14 @@ export function Universe(): JSX.Element {
   // Html 标签不随父级 visible 隐藏，需单独按层级门控
   const inRange = useSimulationStore((s) => s.continuousLevel > FADE.start);
 
+  // ---------- 真实巡天目录（R5-3：2MRS 点云；进入 L4 淡入窗口才加载） ----------
+  const showGalaxyCatalog = useSimulationStore((s) => s.showGalaxyCatalog);
+  const galaxyCatalog = useGalaxyCatalog(inRange);
+  /** 目录激活 = 加载成功 × 显示开关（关闭/降级时程序化宇宙网恢复主层亮度） */
+  const catalogActive = galaxyCatalog !== null && showGalaxyCatalog;
+  const catalogActiveRef = useRef(false);
+  catalogActiveRef.current = catalogActive;
+
   // ---------- 宇宙网（确定性，节点—纤维—空洞） ----------
   const { webGeometry, webMaterial } = useMemo(() => {
     const web = generateCosmicWeb({
@@ -380,16 +392,20 @@ export function Universe(): JSX.Element {
     return line;
   }, [approachGeometry, approachMaterial]);
 
-  // ---------- 拉尼亚凯亚边界示意 ----------
+  // ---------- 拉尼亚凯亚边界示意（R5-3：改置于真实超星系平面） ----------
   const laniakeaRadius = cosmicDistanceToSceneUnits(LANIAKEA.diameterLy / 2);
   const { boundaryGeometry, boundaryMaterial } = useMemo(() => {
     const segments = 128;
     const positions = new Float32Array((segments + 1) * 3);
     for (let s = 0; s <= segments; s += 1) {
       const a = (s / segments) * Math.PI * 2;
-      positions[s * 3] = Math.cos(a) * laniakeaRadius;
-      positions[s * 3 + 1] = 0;
-      positions[s * 3 + 2] = Math.sin(a) * laniakeaRadius;
+      // R5-3 对齐核对：边界环由场景 XZ 平面改置真实超星系平面（SGZ=0，
+      // 室女座团 SGB ≈ −2.3° 落在该面内 → 环穿过目录室女座超密度处；
+      // 相对银盘面倾角 ≈ 84.5° 为真实几何，登记于 utils/galaxyCatalog 文件头）
+      const p = supergalacticPlanePointScene(laniakeaRadius, a);
+      positions[s * 3] = p.x;
+      positions[s * 3 + 1] = p.y;
+      positions[s * 3 + 2] = p.z;
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -399,6 +415,11 @@ export function Universe(): JSX.Element {
       opacity: 0,
     });
     return { boundaryGeometry: geo, boundaryMaterial: mat };
+  }, [laniakeaRadius]);
+  /** 边界标签落点：超星系平面环上 0.72R 处（与环同面，抬升 800 单位避让） */
+  const laniakeaLabelPosition = useMemo<[number, number, number]>(() => {
+    const p = supergalacticPlanePointScene(laniakeaRadius * 0.72, 0);
+    return [p.x, p.y + 800, p.z];
   }, [laniakeaRadius]);
   const boundaryLine = useMemo(
     () => new THREE.Line(boundaryGeometry, boundaryMaterial),
@@ -583,7 +604,9 @@ export function Universe(): JSX.Element {
     group.visible = weight > 0.001;
     if (!group.visible) return;
 
-    webMaterial.opacity = 0.75 * weight;
+    // R5-3 关系登记（§0.3 方案 G 推荐方案）：真实目录激活时程序化宇宙网
+    // 降为低透明度氛围底层（0.75 → 0.2），目录关闭/降级时恢复主层现状
+    webMaterial.opacity = (catalogActiveRef.current ? 0.2 : 0.75) * weight;
     boundaryMaterial.opacity = 0.28 * weight;
     approachMaterial.opacity = 0.7 * weight;
     observableMaterial.opacity = 0.22 * weight;
@@ -828,8 +851,14 @@ export function Universe(): JSX.Element {
       )}
 
       {/* 宇宙网：星系团（节点）—纤维—空洞（确定性分布）；
-          整体缩放表达哈勃膨胀（可选需求），远端星系颜色偏红（红移示意） */}
+          整体缩放表达哈勃膨胀（可选需求），远端星系颜色偏红（红移示意）；
+          R5-3：真实目录激活时降为氛围底层（opacity 0.2，useFrame 内切换） */}
       <points ref={webRef} geometry={webGeometry} material={webMaterial} />
+
+      {/* 真实巡天背景（R5-3）：2MRS ~43,500 星系两级点云（室女座团聚集/
+          银道空带/纤维走向为真实数据）；加载失败或开关关闭时不挂载——
+          程序化宇宙网恢复主层（降级登记） */}
+      {catalogActive && galaxyCatalog && <GalaxyCatalog data={galaxyCatalog} />}
 
       {/* 拉尼亚凯亚超星系团边界示意 + 巨引源标记 */}
       <primitive object={boundaryLine} />
@@ -849,7 +878,8 @@ export function Universe(): JSX.Element {
       )}
       {showLabels && inRange && (
         <ClampedHtmlLabel
-          position={[laniakeaRadius * 0.72, 800, 0]}
+          /* R5-3：标签随边界环迁至真实超星系平面（环上一点 + 少量抬升） */
+          position={laniakeaLabelPosition}
           distanceFactor={14000}
           style={{ pointerEvents: 'none' }}
         >
