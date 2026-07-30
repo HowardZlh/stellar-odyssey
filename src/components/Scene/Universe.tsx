@@ -71,6 +71,7 @@ import {
   M87Jet,
   Quasar,
 } from '@/components/Scene/ExtragalacticObjects';
+import { M87Environment } from '@/components/Scene/M87Environment';
 
 /**
  * 宇宙级内容 LOD 渐变区间（连续层级）：R5-3 起同源公式收敛至
@@ -769,6 +770,8 @@ export function Universe(): JSX.Element {
           可选项：触须星系碰撞现场 + 星系团引力透镜弧 + 伽马射线暴 */}
       <Quasar />
       <M87Jet />
+      {/* R5-4：M87 纵深与星系团环境（球状星团/室女座成员/ICM + M87* 透镜） */}
+      <M87Environment />
       <AntennaeGalaxies />
       <LensingArcs />
       <GammaRayBurst />

@@ -19,6 +19,11 @@ import {
   antennaeDetailLayerSpec,
 } from '@/utils/antennaeNearView';
 import {
+  M87_JET_KNOTS,
+  m87JetKnotOpacity01,
+  m87JetKnotT01,
+} from '@/utils/m87Environment';
+import {
   CLUSTER_LENSING_STATIC_ARC_DIM,
   clusterLensingSource,
   lensedBackgroundSources,
@@ -793,8 +798,70 @@ export function GammaRayBurst(): JSX.Element | null {
 }
 
 /**
+ * M87 喷流亮节点（R5-4：HST-1 类 knot，sprite 方案登记于 utils/m87Environment
+ * 文件头）：3–5 个亮 knot 沿喷流轴分布，亮度沿轴衰减 + 循环缓慢外移
+ * （视觉化登记，非真实视超光速运动）。主场景 M87Jet 与预览页共用。
+ */
+export function M87JetKnots({
+  direction,
+  lengthUnits,
+  getWeight,
+}: {
+  direction: THREE.Vector3;
+  lengthUnits: number;
+  /** 读取本帧可见权重（主场景 = 宇宙层级淡入；预览 = 恒 1） */
+  getWeight: () => number;
+}): JSX.Element {
+  const knotsRef = useRef<THREE.Group>(null);
+  const texture = useMemo(
+    () => new THREE.CanvasTexture(createGlowSpriteCanvas('#e8f1ff', 64)),
+    [],
+  );
+  useEffect(() => () => texture.dispose(), [texture]);
+
+  useFrame(({ clock }) => {
+    const group = knotsRef.current;
+    if (!group) return;
+    const weight = getWeight();
+    group.visible = weight > 0.001;
+    if (!group.visible) return;
+    for (let i = 0; i < M87_JET_KNOTS.length; i += 1) {
+      const sprite = group.children[i] as THREE.Sprite | undefined;
+      if (!sprite) continue;
+      const knot = M87_JET_KNOTS[i];
+      const t = m87JetKnotT01(knot.t0, clock.elapsedTime);
+      const d = t * lengthUnits;
+      sprite.position.set(direction.x * d, direction.y * d, direction.z * d);
+      (sprite.material as THREE.SpriteMaterial).opacity =
+        m87JetKnotOpacity01(t, knot.brightness) * weight;
+    }
+  });
+
+  return (
+    <group ref={knotsRef}>
+      {M87_JET_KNOTS.map((knot, i) => (
+        <sprite
+          key={i}
+          scale={[lengthUnits * knot.sizeFactor, lengthUnits * knot.sizeFactor, 1]}
+          raycast={() => null}
+        >
+          <spriteMaterial
+            map={texture}
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </sprite>
+      ))}
+    </group>
+  );
+}
+
+/**
  * M87 活动星系核喷流（需求 3.1.5）：与室女座星系团 M87 条目联动为同一对象
  * （附着于 Universe 中 M87 星系的静态位置），单侧可见喷流。
+ *
+ * R5-4：叠加 HST-1 类亮节点（M87JetKnots，登记见 utils/m87Environment）。
  */
 export function M87Jet(): JSX.Element | null {
   const galaxy = getGalaxyById('m87');
@@ -824,6 +891,17 @@ export function M87Jet(): JSX.Element | null {
         bilateral={false}
         baseOpacity={0.7}
       />
+      {/* R5-4：HST-1 类亮节点（亮度沿轴衰减 + 缓慢外移，视觉化登记） */}
+      <M87JetKnots
+        direction={jetDirection}
+        lengthUnits={1500}
+        getWeight={m87JetWeight}
+      />
     </group>
   );
+}
+
+/** M87 喷流可见权重（模块级常量函数：宇宙层级淡入，零逐帧分配） */
+function m87JetWeight(): number {
+  return fadeWeight(useSimulationStore.getState().continuousLevel);
 }

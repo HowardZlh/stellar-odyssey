@@ -26,6 +26,10 @@ import {
 } from '@/utils/heliopause';
 import { SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
 import {
+  M87_ENVIRONMENT_SOURCE_ZH,
+  M87_EXTRA_INFO_LINES_ZH,
+} from '@/utils/m87Environment';
+import {
   GALAXY_STRUCTURE_NOTE_BY_MORPHOLOGY_ZH,
   GALAXY_STRUCTURE_SOURCE_ZH,
 } from '@/utils/galaxyNearView';
@@ -173,7 +177,8 @@ function formatRadialVelocity(v: number): string {
 }
 
 /** 星系信息行（R2-8 §8.1：补结构说明行——核球/盘/晕，随时可见含跟随近观语境；
- * R2-10：补"运动（模拟）"行——轨迹线与运动同源核对结论逐星系登记） */
+ * R2-10：补"运动（模拟）"行——轨迹线与运动同源核对结论逐星系登记；
+ * R5-4：M87 增补 M87*·球状星团·室女座团三行（utils/m87Environment 登记） */
 function galaxyLines(g: GalaxyData): BodyInfoLine[] {
   const lines: BodyInfoLine[] = [
     { label: '距离', value: formatLightYears(g.distanceLy) },
@@ -184,6 +189,9 @@ function galaxyLines(g: GalaxyData): BodyInfoLine[] {
   const motion = GALAXY_MOTION_NOTE_ZH[g.id];
   if (motion) {
     lines.push({ label: '运动（模拟）', value: motion });
+  }
+  if (g.id === 'm87') {
+    lines.push(...M87_EXTRA_INFO_LINES_ZH);
   }
   lines.push({ label: '描述', value: g.descriptionZh });
   return lines;
@@ -360,7 +368,10 @@ function buildCatalog(): Map<string, BodyInfo> {
       nameZh: g.nameZh,
       typeZh: MORPHOLOGY_ZH[g.morphology],
       lines: galaxyLines(g),
-      dataSource: `${g.dataSource}；${GALAXY_STRUCTURE_SOURCE_ZH}`,
+      dataSource:
+        g.id === 'm87'
+          ? `${g.dataSource}；${GALAXY_STRUCTURE_SOURCE_ZH}；${M87_ENVIRONMENT_SOURCE_ZH}`
+          : `${g.dataSource}；${GALAXY_STRUCTURE_SOURCE_ZH}`,
     });
   }
 
