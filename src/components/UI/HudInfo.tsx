@@ -74,12 +74,13 @@ export function HudInfo(): JSX.Element {
   const cmeArrivalNoticeVisible = useSimulationStore((s) => s.cmeArrivalNoticeVisible);
   const dismissCmeArrivalNotice = useSimulationStore((s) => s.dismissCmeArrivalNotice);
   // R2-4 §4.1-B：事件通知按视角域过滤（选布尔值，仅域边界跨越时重渲染；
-  // 耀斑/CME/CME 抵达同属太阳系域窗口，共用一个判定）
+  // 耀斑/CME/CME 抵达同属太阳系域，共用一个判定）。R5-8：判定源改离散
+  // viewLevel——跟随巡游天体期间与 HUD 视角标签一致，不随相机距离漂移
   const solarNoticeInScope = useSimulationStore((s) =>
-    eventNoticeVisibleInScope('flare', s.continuousLevel),
+    eventNoticeVisibleInScope('flare', s.viewLevel),
   );
   const supernovaNoticeInScope = useSimulationStore((s) =>
-    eventNoticeVisibleInScope('supernova', s.continuousLevel),
+    eventNoticeVisibleInScope('supernova', s.viewLevel),
   );
   const sunCutawayMode = useSimulationStore((s) => s.sunCutawayMode);
   const setSunCutawayMode = useSimulationStore((s) => s.setSunCutawayMode);

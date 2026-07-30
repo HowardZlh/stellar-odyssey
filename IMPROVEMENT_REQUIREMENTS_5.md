@@ -1,6 +1,6 @@
 # 改进需求文档（第五批，R5 迭代：宇宙视角天体深度优化）
 
-> **文档版本**: 1.2（追加 R5-8 事件门控层级与视角域锁定对齐——P0 缺陷修复，独立于 R5 主线可先行；其余粒度沿 1.1：12 阶段合并为 7 阶段，按"单 Agent 保质量的最大内聚粒度"组织；全部 🔲 未实现）
+> **文档版本**: 1.3（R5-8 交付回写 ✅——事件门控判定基准改离散 viewLevel 视角集合，实现差异逐条登记于 §8.2/§8.3；1.2 追加 R5-8 事件门控层级与视角域锁定对齐——P0 缺陷修复，独立于 R5 主线可先行；其余粒度沿 1.1：12 阶段合并为 7 阶段，按"单 Agent 保质量的最大内聚粒度"组织，主线 R5-1～R5-7 全部 🔲 未实现）
 > **参考文档**: REQUIREMENTS.md、IMPROVEMENT_REQUIREMENTS_4.md（R4 基础设施与 L4 近观基线）、IMPROVEMENT_REQUIREMENTS_2.md（R2-8/R2-9/R2-10）、AGENTS.md
 > **状态标记**: ✅ 已完成 / 🔶 部分完成 / 🔲 未实现
 > **前置基线（强制）**: 本批次以 **R4 交付后的状态为基线**——各阶段"依赖"列注明所需 R4 阶段，未交付前对应 R5 阶段不得启动；启动任何 R5 阶段前先核对 `IMPROVEMENT_REQUIREMENTS_4.md` 总览表对应条目已 ✅。
@@ -18,7 +18,7 @@
 | R5-5 | P1 | 本星系群与河外长尾细节（LMC 30 Doradus/棒分层 + GRB 近观） | M | R5-1, R4-8 | 🔲 |
 | R5-6 | P1 | 银河系 L4 增补（费米气泡 + HI 翘曲盘） | M | R4-3 | 🔲 |
 | R5-7 | 收尾 | 集成回归验收 + 文档回写 | M | R5-1~R5-6 | 🔲 |
-| R5-8 | P0 | 事件门控层级与视角域锁定对齐（离散视角判定，修复银河系视角下太阳事件仍触发） | M | 无（独立缺陷修复，可先行或与主线并行） | 🔲 |
+| R5-8 | P0 | 事件门控层级与视角域锁定对齐（离散视角判定，修复银河系视角下太阳事件仍触发） | M | 无（独立缺陷修复，可先行或与主线并行） | ✅ |
 
 > 优先级依据：P0 = 观感跃升最大的"真实数据驱动"主线 + 交互正确性缺陷修复（R5-8）；P1 = 标志性结构与真实宇宙背景；收尾 = 集成验收。
 > 建议实施顺序：**R5-8（缺陷修复，建议最先）** → R5-1 → R5-2 → R5-3 → R5-4 → R5-5 → R5-6 → R5-7。
@@ -235,28 +235,28 @@
 ### 8.2 需求
 
 **A. eventScopes 判定基准改为离散视角集合（`src/utils/eventScopes.ts` 重构）**
-- 🔲 事件 → 视角集合映射替代连续层级窗口：耀斑/CME/CME 抵达 → **{L1, L2}**；超新星 → **{L3}**（R3-5 收窄语义保持）；合并预览 → **{L4}**；`eventInScope(kind, viewLevel)` 及三层门控（`eventAutoTriggerAllowed`/`eventNoticeVisibleInScope`/`eventDemoEnabled`）签名改收 `ViewLevel`
-- 🔲 原连续窗口常量（`SOLAR_EVENT_MAX_LEVEL`/`SUPERNOVA_EVENT_MIN_LEVEL`/`SUPERNOVA_EVENT_MAX_LEVEL`/`MERGER_EVENT_MIN_LEVEL`）废弃删除（文件头登记语义变迁：R2-4 连续窗口 → R5-8 离散视角集合）；R3-3 丢弃纯函数（宽限/运镜豁免/`outOfScopeElapsedUpdate`/`eventDiscardDue`）语义不变
-- 🔲 特效 LOD 淡入淡出**仍由连续层级驱动**（`SunActivity` trapezoid(0.5, 0.9, 2.4, 3.0)、`Supernova` snFadeWeight(2.5, 2.9, 3.5, 4.0) 均不动——保持缩放平滑，不随离散层级跳变；已知边界登记：跟随 L3 天体但相机贴近时超新星通知可见而爆发特效可能已随连续层级淡出，"飞往观看"按钮可直达，可接受差异）
+- ✅ 事件 → 视角集合映射替代连续层级窗口：耀斑/CME/CME 抵达 → **{L1, L2}**；超新星 → **{L3}**（R3-5 收窄语义保持）；合并预览 → **{L4}**；`eventInScope(kind, viewLevel)` 及三层门控（`eventAutoTriggerAllowed`/`eventNoticeVisibleInScope`/`eventDemoEnabled`）签名改收 `ViewLevel`（实现说明：`eventScopeWindow`（连续闭区间）替换为 `eventScopeLevels`（只读视角集合）；ViewLevel 为字符串联合类型，原"非有限数抛 RangeError"校验随数值参数一并移除——类型系统静态兜底）
+- ✅ 原连续窗口常量（`SOLAR_EVENT_MAX_LEVEL`/`SUPERNOVA_EVENT_MIN_LEVEL`/`SUPERNOVA_EVENT_MAX_LEVEL`/`MERGER_EVENT_MIN_LEVEL`）废弃删除（文件头登记语义变迁：R2-4 连续窗口 → R5-8 离散视角集合）；R3-3 丢弃纯函数（宽限/运镜豁免/`outOfScopeElapsedUpdate`/`eventDiscardDue`）语义不变（零改动，单测原样通过）
+- ✅ 特效 LOD 淡入淡出**仍由连续层级驱动**（`SunActivity` trapezoid(0.5, 0.9, 2.4, 3.0)、`Supernova` snFadeWeight(2.5, 2.9, 3.5, 4.0) 均不动——保持缩放平滑，不随离散层级跳变；已知边界登记：跟随 L3 天体但相机贴近时超新星通知可见而爆发特效可能已随连续层级淡出，"飞往观看"按钮可直达，可接受差异——登记于 eventScopes.ts 文件头与 Supernova.tsx snFadeWeight 注释）
 
 **B. 边界微调登记（自由缩放场景的行为变更，用户已确认）**
-- 🔲 自由缩放（无跟随）时 `viewLevel` 随距离同步离散层级（`utils/scale.ts` `discreteLevelFromContinuous` :231：L1 <1.5 / L2 [1.5, 2.5) / L3 [2.5, 3.5) / L4 ≥3.5），等效边界较原连续窗口两处微调：太阳事件上界 2.4 → **2.5**（宽 0.1，落在特效淡出带 2.4–3.0 内，消除原 2.4–2.5"事件已域外但特效仍满值"空窗）；合并预览下界 3.6 → **3.5**（宽 0.1，无实质影响）；CHANGELOG 登记
+- ✅ 自由缩放（无跟随）时 `viewLevel` 随距离同步离散层级（`utils/scale.ts` `discreteLevelFromContinuous`：L1 <1.5 / L2 [1.5, 2.5) / L3 [2.5, 3.5) / L4 ≥3.5），等效边界较原连续窗口两处微调：太阳事件上界 2.4 → **2.5**（宽 0.1，落在特效淡出带 2.4–3.0 内，消除原 2.4–2.5"事件已域外但特效仍满值"空窗）；合并预览下界 3.6 → **3.5**（宽 0.1，无实质影响）；CHANGELOG [Unreleased] 已登记
 
 **C. 四处消费方统一接入**
-- 🔲 HudInfo 通知选择器、ControlPanel 演示按钮、SunActivity/Supernova 自动触发、store `eventScopeDiscardUpdates` 丢弃计时——层级来源全部改为 `viewLevel`（单一语义，杜绝再次分叉）；R3-3 运镜豁免（`viewTransitionId`/`flyToRequestId` 代次消费）保持——按 1-4 显式切换时 `viewLevel` 即时变更而相机仍在运镜，豁免窗口继续防误丢弃
+- ✅ HudInfo 通知选择器（:79/:82）、ControlPanel 演示按钮（:80-84）、SunActivity（:557）/Supernova（:385）自动触发、store `eventScopeDiscardUpdates` 丢弃计时（:400-405）——层级来源全部改为 `viewLevel`（单一语义，杜绝再次分叉）；R3-3 运镜豁免（`viewTransitionId`/`flyToRequestId` 代次消费）保持零改动——按 1-4 显式切换时 `viewLevel` 即时变更而相机仍在运镜，豁免窗口继续防误丢弃
 
 **D. 测试与回归**
-- 🔲 eventScopes 单测重写为 ViewLevel 矩阵（四视角 × 五事件类别；三层门控一致性）；storeR33 丢弃套件层级设置改为 `viewLevel`（原 `continuousLevel` 设置等价迁移登记）
-- 🔲 **用户场景回归单测**：跟随造父一态（`viewLevel: 'L3'` 锁定 + `continuousLevel: 2.2`）——活跃耀斑/CME/抵达链 1 秒宽限后被丢弃、新耀斑不触发、超新星可正常触发且通知可见、超新星演示按钮可用
-- 🔲 覆盖率 gate ≥90% 保持；CHANGELOG [Unreleased] 登记（行为变更）；REQUIREMENTS.md §3.1.5 同步；IMPROVEMENT_REQUIREMENTS_2.md §R2-4 / IMPROVEMENT_REQUIREMENTS_3.md §R3-3/§R3-5 登记"判定基准已被 R5-8 修订为离散视角集合"
+- ✅ eventScopes 单测重写为 ViewLevel 矩阵（四视角 × 五事件类别逐格 + 三层门控一致性 + 视角互斥覆盖断言）；storeR33 丢弃套件层级设置等价迁移为 `viewLevel` + `continuousLevel` 双写（迁移逐条登记于该测试文件头；原"合并预览启动运镜途中 continuousLevel <3.6 不误杀"例迁移登记：R5-8 后 startMergePreview 即时置 viewLevel L4 且运镜期间不回写离散层级——恒域内，运镜豁免语义由独立套件继续覆盖）
+- ✅ **用户场景回归单测**：eventScopes 层（`viewLevel 'L3'`：太阳三层门控全域外/超新星三层门控全域内）+ storeR33 层（跟随造父一态 `viewLevel: 'L3'` 锁定 + `continuousLevel: 2.2` + followBodyId——活跃耀斑/CME/抵达链 1 秒宽限后整链丢弃、离域计时持续累加、活跃超新星保留不误杀）
+- ✅ 覆盖率 gate ≥90% 保持（语句 98.55%，eventScopes.ts 100%）；CHANGELOG [Unreleased] 登记（行为变更 + 两处边界微调）；REQUIREMENTS.md §3.1.5 同步；IMPROVEMENT_REQUIREMENTS_2.md §R2-4 / IMPROVEMENT_REQUIREMENTS_3.md §R3-3/§R3-5 登记"判定基准已被 R5-8 修订为离散视角集合"
 
 ### 8.3 验收标准
 
-- 🔲 复现用户截图场景：银河系巡游跟随任一 L3 天体（造父一/天狼星等，相机距离任意）——无耀斑/CME/CME 抵达通知弹出、不再自动触发；切换前已活跃的太阳事件约 1 秒后被丢弃（含在途抵达链整链）；同场景超新星可自动触发、通知正常、演示按钮可用
-- 🔲 四视角锚点 × 四类事件矩阵按 `viewLevel` 逐格复验（触发/通知/按钮三层一致）：L1/L2 仅太阳事件、L3 仅超新星、L4 仅合并预览
-- 🔲 自由缩放跨边界（滚轮 2.4↔2.6、3.4↔3.6 往返）：门控随离散层级切换、<1 秒折返宽限保留事件（R3-3 语义回归）；按 1-4 锚点切换与合并预览启动运镜不误丢弃（豁免回归）
-- 🔲 特效渲染回归：L2 耀斑特效、L3 超新星特效、L4 合并演化观感零回退（LOD 权重未改动）
-- 🔲 单测全通过、覆盖率 gate ≥90% 保持；60 FPS 不跌破
+- ✅ 复现用户截图场景（无头 Chrome，截图 r58-01/02 登记）：银河系巡游跟随造父一（viewLevel L3 锁定、continuousLevel 2.25——正落用户缺陷区间）——无耀斑/CME/CME 抵达通知弹出、不再自动触发；种入的活跃太阳事件整链（耀斑/CME/在途抵达/极光/通知）1.8 秒采样点确认全链丢弃；同场景超新星可触发、通知正常、演示按钮域内可用（活跃期间按既有语义禁用显示"进行中"）
+- ✅ 四视角锚点 × 四类事件矩阵按 `viewLevel` 逐格复验（截图 r58-03-matrix-L1~L4）：L1/L2 仅太阳事件（L2 耀斑短时长自然走完生命周期、通知按最短展示时长驻留=域内语义）、L3 仅超新星、L4 仅合并预览；触发/通知/按钮三层一致（按钮层由单测矩阵覆盖）
+- ✅ 自由缩放跨边界宽限（<1 秒折返保留）与按 1-4 锚点切换/飞往/合并预览启动运镜豁免——storeR33 全套件回归通过（R3-3 语义零回退）；合并预览启动无头复验（viewLevel 即时 L4 恒域内，mergePreviewActive 保持）
+- ✅ 特效渲染回归：LOD 权重函数零改动（trapezoid/snFadeWeight 未触碰），跟随造父一 + 活跃超新星特效场景 60 FPS
+- ✅ 单测全通过（2,659 用例/139 套件）、覆盖率 gate ≥90% 保持；60 FPS 不跌破、控制台零错误
 
 ---
 

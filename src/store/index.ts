@@ -397,7 +397,9 @@ function eventScopeDiscardUpdates(
     merger = Math.min(merger, -FLY_TO_DISCARD_EXEMPT_SEC);
     updates.eventScopeSeenFlyToId = state.flyToRequestId;
   }
-  const level = state.continuousLevel;
+  // R5-8：域判定基于离散 viewLevel（视角集合），不再读 continuousLevel——
+  // 跟随巡游天体期间层级锁定为域主层级，门控与 HUD 视角标签严格一致
+  const level = state.viewLevel;
   solar = outOfScopeElapsedUpdate(solar, eventInScope('flare', level), dtSec);
   supernova = outOfScopeElapsedUpdate(supernova, eventInScope('supernova', level), dtSec);
   merger = outOfScopeElapsedUpdate(merger, eventInScope('merger', level), dtSec);

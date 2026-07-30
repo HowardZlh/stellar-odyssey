@@ -1,6 +1,6 @@
 # 改进需求文档（第二批，R2 迭代）
 
-> **文档版本**: 1.1（R2-1～R2-12 全部交付，集成回归验收通过，文档回写完成）
+> **文档版本**: 1.2（§R2-4 登记"事件门控判定基准已被 R5-8 修订为离散 viewLevel 视角集合"，见 IMPROVEMENT_REQUIREMENTS_5 §R5-8；1.1：R2-1～R2-12 全部交付，集成回归验收通过，文档回写完成）
 > **参考文档**: REQUIREMENTS.md v2.7、IMPROVEMENT_REQUIREMENTS.md v3.3（P5/P6/P7）、AGENTS.md
 > **状态标记**: ✅ 已完成 / 🔶 部分完成 / 🔲 未实现
 > **调研说明**: §0.2 现状分析中的文件与行号已经代码调研核实（2026-07），实现时若行号漂移以符号名为准。
@@ -127,12 +127,15 @@
 ### 4.1 需求
 
 **A. 事件视角域定义（数据层）**
-- ✅ 建立事件 → 视角域映射（纯逻辑，`src/utils/eventScopes.ts`，`eventScopeWindow` 闭区间窗口，含 `cmeArrival` 独立类别便于逐事件文案）：
-  | 事件 | 所属视角域（连续层级窗口） |
+
+> **⚠ 判定基准已被 R5-8 修订为离散视角集合**（IMPROVEMENT_REQUIREMENTS_5 §R5-8，2026-07）：本节的连续层级窗口（`eventScopeWindow` 闭区间 + 四个窗口常量）已废弃删除，改为 `eventScopeLevels` 离散 `viewLevel` 视角集合判定（太阳事件 {L1, L2} / 超新星 {L3} / 合并 {L4}），三层门控签名改收 `ViewLevel`、不再判断相机距离——修复 R3 层级锁定下跟随巡游天体时 continuousLevel 与 viewLevel 分叉导致的门控错域（银河系视角弹太阳事件）；自由缩放等效边界两处微调（太阳上界 2.4→2.5、合并下界 3.6→3.5，用户确认）。下表窗口取值仅存档 R2-4 交付时语义。
+
+- ✅ 建立事件 → 视角域映射（纯逻辑，`src/utils/eventScopes.ts`，原 `eventScopeWindow` 闭区间窗口，含 `cmeArrival` 独立类别便于逐事件文案）：
+  | 事件 | 所属视角域（连续层级窗口，已被 R5-8 修订） |
   |---|---|
-  | 太阳耀斑、CME、CME 抵达地球/极光 | L1/L2（≤2.4，与 SunActivity levelWeight 平台一致） |
-  | 超新星爆发 | L3/L4（≥2.5）；**已被 R3-5 收窄为 [2.5, 3.5] 仅 L3**（IMPROVEMENT_REQUIREMENTS_3 §R3-5） |
-  | 银河系—仙女座合并预览 | L4（≥3.6） |
+  | 太阳耀斑、CME、CME 抵达地球/极光 | L1/L2（≤2.4，与 SunActivity levelWeight 平台一致）→ R5-8 起 {L1, L2} |
+  | 超新星爆发 | L3/L4（≥2.5）；**已被 R3-5 收窄为 [2.5, 3.5] 仅 L3**（IMPROVEMENT_REQUIREMENTS_3 §R3-5）→ R5-8 起 {L3} |
+  | 银河系—仙女座合并预览 | L4（≥3.6）→ R5-8 起 {L4} |
 
 **B. 通知 UI 按视角过滤**
 - ✅ `HudInfo.tsx` 事件通知列渲染条件增加视角域判定：当前连续层级在事件视角域窗口外时**不显示**该事件通知（`eventNoticeVisibleInScope` 布尔选择器，仅域边界跨越时重渲染；事件状态照常推进、通知标志位不改动，回到域内且事件仍活跃时通知恢复——无头目验 B6/D4 复验）
@@ -140,11 +143,11 @@
 - ✅ 域外发生的事件提供轻量提醒策略：**采用方案 b**（登记）——通知折叠为一行小字（`eventOutOfScopeSummaryZh` 逐事件文案，如"☀ 太阳耀斑进行中（切回太阳系视角查看）"，与完整通知卡片一一对应，域外每个活跃事件各一行）；**已被 R3-3 硬隔离取代**（IMPROVEMENT_REQUIREMENTS_3 §3.1-C：折叠提醒废止、域外零事件 UI，域外活跃事件离域 >1 秒直接丢弃——高时间压缩比下折叠小字频繁闪现为用户反馈问题源）
 
 **C. 演示按钮按视角门控**
-- ✅ 控制面板"触发超新星/耀斑/CME 演示"与"预览碰撞合并"按钮：**采用默认"置灰 + 提示"方案**（登记）——域外禁用 + `title` tooltip"请切换到 XX 视角触发"+ 按钮文案同步提示（`eventDemoEnabled`/`eventDemoDisabledHintZh`）；🔶 差异登记：合并预览按钮此前点击会经 `startMergePreview` 自动切到 L4 再预览，按默认方案统一改为域外置灰（L4 内点击行为不变，store 的 L4 切换逻辑保留）；**⚠ R3-8 起本方案被"域外隐藏"取代**（IMPROVEMENT_REQUIREMENTS_3 §R3-8，行为变更）——演示按钮域外整体不渲染（非置灰占空间），按钮内部 `eventDemoEnabled` 连续层级域校验与 disabled 逻辑保留（可见性与可用性双层，eventScopes 域窗口语义不动）
+- ✅ 控制面板"触发超新星/耀斑/CME 演示"与"预览碰撞合并"按钮：**采用默认"置灰 + 提示"方案**（登记）——域外禁用 + `title` tooltip"请切换到 XX 视角触发"+ 按钮文案同步提示（`eventDemoEnabled`/`eventDemoDisabledHintZh`）；🔶 差异登记：合并预览按钮此前点击会经 `startMergePreview` 自动切到 L4 再预览，按默认方案统一改为域外置灰（L4 内点击行为不变，store 的 L4 切换逻辑保留）；**⚠ R3-8 起本方案被"域外隐藏"取代**（IMPROVEMENT_REQUIREMENTS_3 §R3-8，行为变更）——演示按钮域外整体不渲染（非置灰占空间），按钮内部 `eventDemoEnabled` 域校验与 disabled 逻辑保留（可见性与可用性双层；**R5-8 起校验判定源改离散 viewLevel**，与可见性层同源）
 - ✅ 触发音效联动保持现状（域内触发才有音效；音效路径未改动，域外按钮不可点击天然无触发音效）
 
 **D. 自动触发显式门控**
-- ✅ 耀斑/CME 泊松自动触发显式限定 L1/L2（连续层级 ≤2.4，`SunActivity.tsx` 触发分支接入 `eventAutoTriggerAllowed`），移除对 `timeJumped`（Δ>50 天守卫）副作用的隐式依赖（`timeJumped` 本身的时间跳变防护语义保留）；超新星自动触发显式限定 L3/L4（`Supernova.tsx` 补显式判定与注释，登记此前 L1/L2 不触发仅是低压缩比 ΔMyr≈0 的概率副作用）；域外仅抑制新触发，活跃事件衰减/收尾照常推进（**"照常推进"语义已被 R3-3 收窄**：离域 >1 秒宽限后活跃事件被 store.tick 直接丢弃，见 IMPROVEMENT_REQUIREMENTS_3 §3.1-B）
+- ✅ 耀斑/CME 泊松自动触发显式限定 L1/L2（原连续层级 ≤2.4，**R5-8 起改离散 viewLevel ∈ {L1, L2}**；`SunActivity.tsx` 触发分支接入 `eventAutoTriggerAllowed`），移除对 `timeJumped`（Δ>50 天守卫）副作用的隐式依赖（`timeJumped` 本身的时间跳变防护语义保留）；超新星自动触发显式限定 L3/L4（`Supernova.tsx` 补显式判定与注释，登记此前 L1/L2 不触发仅是低压缩比 ΔMyr≈0 的概率副作用；R3-5 收窄仅 L3、R5-8 起判 viewLevel = L3）；域外仅抑制新触发，活跃事件衰减/收尾照常推进（**"照常推进"语义已被 R3-3 收窄**：离域 >1 秒宽限后活跃事件被 store.tick 直接丢弃，见 IMPROVEMENT_REQUIREMENTS_3 §3.1-B）
 - ✅ 门控判定纯函数化并单测（`eventAutoTriggerAllowed`/`eventNoticeVisibleInScope`/`eventDemoEnabled` 三层窗口，当前取值一致、语义独立便于未来分层微调；`eventScopes.test.ts` 15 例覆盖率 100%）
 
 ### 4.2 验收标准
