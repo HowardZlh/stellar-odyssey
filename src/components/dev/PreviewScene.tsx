@@ -30,6 +30,7 @@ import { M13ClusterPreview } from '@/components/dev/M13ClusterPreview';
 import { QuasarNearViewPreview } from '@/components/dev/QuasarNearViewPreview';
 import { AntennaeNearViewPreview } from '@/components/dev/AntennaeNearViewPreview';
 import { ClusterLensingPreview } from '@/components/dev/ClusterLensingPreview';
+import { GrbNearViewPreview } from '@/components/dev/GrbNearViewPreview';
 import { M87EnvironmentPreview } from '@/components/dev/M87EnvironmentPreview';
 
 /**
@@ -289,6 +290,9 @@ export function PreviewScene({
       ) : entry.componentKey === 'cluster-lensing-effect' ? (
         /* R4-23：星系团 SIS 屏幕空间引力透镜（Effect 由 harness 挂入 composer） */
         <ClusterLensingPreview values={values} />
+      ) : entry.componentKey === 'grb-near-view' ? (
+        /* R5-5：GRB 近观（相对论双喷流 + 余辉膨胀壳，周期时钟演化） */
+        <GrbNearViewPreview values={values} clockLabelRef={clockLabelRef} />
       ) : entry.componentKey === 'm87-environment' ? (
         /* R5-4：M87 星系团中心语境（椭球近观 + 球状星团 + 成员点缀 +
            ICM + 节点喷流 + 核心推近 EHT 透镜） */
