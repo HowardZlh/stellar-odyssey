@@ -289,12 +289,14 @@ export function PreviewScene({
         /* R4-23：星系团 SIS 屏幕空间引力透镜（Effect 由 harness 挂入 composer） */
         <ClusterLensingPreview values={values} />
       ) : entry.componentKey === 'galaxy-near-view' ? (
-        /* key=bodyId：切换星系时强制重挂载（虚拟时钟与自转姿态重置） */
+        /* key=bodyId：切换星系时强制重挂载（虚拟时钟与自转姿态重置）；
+           R5-2：m31/m33/lmc 叠挂体积尘埃盘（qualityLabelRef 接 HUD 档位行） */
         <GalaxyNearViewPreview
           key={entry.bodyId}
           entry={entry}
           values={values}
           clockLabelRef={clockLabelRef}
+          qualityLabelRef={qualityLabelRef}
         />
       ) : (
         <mesh>
