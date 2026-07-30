@@ -26,6 +26,10 @@ import {
   WR124_EXPAND_AMP,
   WR124_SCENE_VOLUME_PARAMS,
 } from '@/utils/nebulaVolumeScene';
+import {
+  GALAXY_DUST_VOLUME_PARAMS,
+  isDustVolumeGalaxy,
+} from '@/utils/galaxyDustVolume';
 
 /** 单个天体细节组件可声明的最大调试滑杆数（§R4-1：≤8 个） */
 export const MAX_PREVIEW_PARAMS = 8;
@@ -443,6 +447,34 @@ export function galaxyPreviewConfigForBody(
   return GALAXY_PREVIEW_CONFIGS.get(id) ?? null;
 }
 
+/** R5-2：体积尘埃盘滑杆对（覆盖星系条目共用工厂；消光强度 0 = 关闭
+ * 体积层 = R4-10 dust 暗粒子对照档，A/B 目检对比用） */
+function dustVolumeParams(galaxyId: string): readonly PreviewParam[] {
+  const p = GALAXY_DUST_VOLUME_PARAMS[galaxyId];
+  return [
+    {
+      key: 'volExtinction',
+      label: '体积消光强度 σ（0 = R4-10 暗粒子对照）',
+      min: 0,
+      max: 40,
+      default: p.extinctionSigma,
+      step: 0.5,
+    },
+    {
+      key: 'volThicknessLy',
+      label: '尘埃盘厚（光年）',
+      min: 400,
+      max: 6000,
+      default: p.boxThicknessLy,
+      step: 50,
+    },
+  ];
+}
+
+/** R5-2：体积尘埃盘来源登记（覆盖星系条目 dataSource 共用后缀） */
+const GALAXY_DUST_VOLUME_SOURCE_ZH =
+  '体积尘埃盘（R5-2）：尘埃通道 2D 图 × z 向指数薄层（伪 3D）纯吸收体积消光，方案 a（体积层置于星光粒子后按透过率调制，与逐粒子采样方案 b 差异登记于 utils/galaxyDustVolume）；盘厚/标高为艺术化登记值（真实尘埃盘标高 ~100–200 pc 量级）';
+
 /** R5-1：影像来源登记（四星系条目 dataSource 共用后缀） */
 const GALAXY_IMAGE_SOURCE_ZH =
   '影像驱动（R5-1）：DSS2 彩色合成（STScI Digitized Sky Survey / AAO / ROE / Caltech，经 CDS hips2fits 烘焙为 256² 权重图）——密度图逆变换布点 + 颜色图查色 + 尘埃遮罩布点，z 向厚度参数化（口径登记）';
@@ -458,9 +490,10 @@ const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
       { key: 'dustStrength', label: '尘埃带强度', min: 0, max: 1, default: 0.8 },
       { key: 'hiiDensity', label: 'HII 区密度', min: 0, max: 1, default: 0.5 },
       { key: 'inclinationDeg', label: '倾角覆写（°）', min: 0, max: 90, default: 77, step: 1 },
+      ...dustVolumeParams('m31'),
     ],
     dataSource:
-      `RC3（de Vaucouleurs et al. 1991）SA(s)b；S4G（Sheth et al. 2010）B/D 分解近似档；倾角 77°（NED/Walterbos & Kennicutt 1988）；10 kpc 尘埃环与偏黄核球在影像驱动路径由影像自带（参数化对照档保留 M31_DUST_RING/applyBulgeTint）；${GALAXY_IMAGE_SOURCE_ZH}，M31 已做 77° 倾角反投影（方法/残差见产物 meta）`,
+      `RC3（de Vaucouleurs et al. 1991）SA(s)b；S4G（Sheth et al. 2010）B/D 分解近似档；倾角 77°（NED/Walterbos & Kennicutt 1988）；10 kpc 尘埃环与偏黄核球在影像驱动路径由影像自带（参数化对照档保留 M31_DUST_RING/applyBulgeTint）；${GALAXY_IMAGE_SOURCE_ZH}，M31 已做 77° 倾角反投影（方法/残差见产物 meta）；${GALAXY_DUST_VOLUME_SOURCE_ZH}`,
   },
   {
     bodyId: 'm33',
@@ -472,9 +505,10 @@ const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
       { key: 'dustStrength', label: '尘埃带强度', min: 0, max: 1, default: 0.35 },
       { key: 'hiiDensity', label: 'HII 区密度', min: 0, max: 1, default: 0.9 },
       { key: 'inclinationDeg', label: '倾角覆写（°，影像已含投影默认 0）', min: 0, max: 90, default: 0, step: 1 },
+      ...dustVolumeParams('m33'),
     ],
     dataSource:
-      `RC3（de Vaucouleurs et al. 1991）SA(s)cd；倾角 56°（NED，登记值——影像未反投影）；${GALAXY_IMAGE_SOURCE_ZH}`,
+      `RC3（de Vaucouleurs et al. 1991）SA(s)cd；倾角 56°（NED，登记值——影像未反投影）；${GALAXY_IMAGE_SOURCE_ZH}；${GALAXY_DUST_VOLUME_SOURCE_ZH}（M33/LMC 尘埃图为天空投影直贴盘面近似，登记）`,
   },
   {
     bodyId: 'lmc',
@@ -486,9 +520,10 @@ const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
       { key: 'dustStrength', label: '尘埃带强度（LMC 配额 0，登记）', min: 0, max: 1, default: 0.3 },
       { key: 'hiiDensity', label: 'HII 区密度（LMC 配额 0，登记）', min: 0, max: 1, default: 0.85 },
       { key: 'inclinationDeg', label: '倾角覆写（°，影像已含投影默认 0）', min: 0, max: 90, default: 0, step: 1 },
+      ...dustVolumeParams('lmc'),
     ],
     dataSource:
-      `RC3（de Vaucouleurs et al. 1991）SB(s)m；倾角 35°（NED）；HII 粉与蓝白年轻星由影像颜色自带（不规则新分量配额 0，R4-9 登记沿用）；${GALAXY_IMAGE_SOURCE_ZH}`,
+      `RC3（de Vaucouleurs et al. 1991）SB(s)m；倾角 35°（NED）；HII 粉与蓝白年轻星由影像颜色自带（不规则新分量配额 0，R4-9 登记沿用）；${GALAXY_IMAGE_SOURCE_ZH}；${GALAXY_DUST_VOLUME_SOURCE_ZH}（LMC 尘埃弱 σ 弱档登记）`,
   },
   {
     bodyId: 'smc',
@@ -664,11 +699,16 @@ export const VOLUME_PREVIEW_COMPONENT_KEYS: ReadonlySet<string> = new Set([
 
 /**
  * 条目是否含体积层（HUD 体积质量档行显隐；R4-20：wr-124 为
- * stellar-surface 组合抛射壳体积的特例登记）
+ * stellar-surface 组合抛射壳体积的特例登记；R5-2：m31/m33/lmc 为
+ * galaxy-near-view 组合体积尘埃盘的特例登记）
  */
 export function previewHasVolumeLayer(entry: PreviewEntry | null | undefined): boolean {
   if (!entry) return false;
-  return VOLUME_PREVIEW_COMPONENT_KEYS.has(entry.componentKey) || entry.bodyId === 'wr-124';
+  return (
+    VOLUME_PREVIEW_COMPONENT_KEYS.has(entry.componentKey) ||
+    entry.bodyId === 'wr-124' ||
+    (entry.componentKey === 'galaxy-near-view' && isDustVolumeGalaxy(entry.bodyId))
+  );
 }
 
 /**

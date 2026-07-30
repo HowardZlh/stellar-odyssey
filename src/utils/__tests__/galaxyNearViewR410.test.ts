@@ -405,8 +405,8 @@ describe('信息面板扩展（§R4-10：结构行 + RC3/S4G 来源）', () => {
   });
 });
 
-describe('预览页注册（§R4-10：?body=m31 + 不规则对照 lmc；R5-1 等价迁移：滑杆增影像驱动开关）', () => {
-  it('m31/lmc 条目注册且 componentKey = galaxy-near-view，滑杆四件（影像开关/dust/HII/倾角）', () => {
+describe('预览页注册（§R4-10：?body=m31 + 不规则对照 lmc；R5-1 等价迁移：滑杆增影像驱动开关；R5-2：增体积消光/盘厚两件）', () => {
+  it('m31/lmc 条目注册且 componentKey = galaxy-near-view，滑杆六件（影像开关/dust/HII/倾角 + R5-2 体积消光/盘厚）', () => {
     for (const id of ['m31', 'lmc']) {
       const entry = previewEntryForBody(id);
       expect(entry).not.toBeNull();
@@ -416,6 +416,8 @@ describe('预览页注册（§R4-10：?body=m31 + 不规则对照 lmc；R5-1 等
         'dustStrength',
         'hiiDensity',
         'inclinationDeg',
+        'volExtinction',
+        'volThicknessLy',
       ]);
     }
   });

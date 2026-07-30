@@ -49,10 +49,12 @@ import {
   galaxySpriteImageUrl,
   resetGalaxyNearViewHolders,
 } from '@/utils/galaxyNearView';
+import { isDustVolumeGalaxy } from '@/utils/galaxyDustVolume';
 import { useDetailLayer } from '@/hooks/useDetailLayer';
 import { useGalaxyImageMaps } from '@/hooks/useGalaxyImageMaps';
 import { useBitmapTexture } from '@/hooks/useBitmapTexture';
 import { GalaxyNearViewLayer } from '@/components/Scene/GalaxyNearView';
+import { GalaxyDustVolume } from '@/components/Scene/GalaxyDustVolumeLayer';
 import {
   createGalaxySpriteCanvas,
   createGlowSpriteCanvas,
@@ -121,6 +123,11 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
     () => weightRef.current * getNear01(),
     [getNear01],
   );
+  /** R5-2 体积尘埃盘视觉淡入权重（GalaxyDustVolumeLayer 输出；
+   * dust 暗粒子互斥淡出消费，体积未挂载/降级时恒 0 零回退） */
+  const dustVolumeFadeRef = useRef(0);
+  const getDustDim = useCallback(() => dustVolumeFadeRef.current, []);
+  const getWeight = useCallback(() => weightRef.current, []);
 
   // R5-1：近观影像权重图懒加载（近观层激活时才 fetch/解码；
   // 加载完成前与失败时为 null → GalaxyNearViewLayer 参数化降级，登记）
@@ -263,7 +270,24 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
       {/* R2-8 近观 3D 粒子层（LRU 容量 1；卸载即 dispose）；
           R5-1：影像权重图就绪时切换影像驱动采样（缺失降级参数化） */}
       {nearMounted && (
-        <GalaxyNearViewLayer galaxy={galaxy} getOpacity={getNearOpacity} maps={imageMaps} />
+        <GalaxyNearViewLayer
+          galaxy={galaxy}
+          getOpacity={getNearOpacity}
+          maps={imageMaps}
+          getDustDim={getDustDim}
+        />
+      )}
+      {/* R5-2 体积尘埃盘（视线消光）：覆盖星系（m31/m33/lmc）经
+          useDetailLayer volume 池（容量 1，与星云体积层互逐）门控；
+          影像产物缺失时不挂载（dust 暗粒子保持 R4-10 现状，登记） */}
+      {isDustVolumeGalaxy(galaxy.id) && (
+        <GalaxyDustVolume
+          galaxy={galaxy}
+          groupRef={groupRef}
+          maps={imageMaps}
+          getWeight={getWeight}
+          fadeRef={dustVolumeFadeRef}
+        />
       )}
       {showLabels && inRange && !focusedNow && !mergedAway && (
         // R3-4：近距反向缩放钳制（焦点隐藏 R2-8 保留）

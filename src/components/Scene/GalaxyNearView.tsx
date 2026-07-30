@@ -144,6 +144,13 @@ interface GalaxyNearViewLayerProps {
    * 切换影像驱动采样；null/undefined 降级 R4-9 参数化生成（登记）。
    */
   maps?: GalaxyImageMaps | null;
+  /**
+   * R5-2 体积尘埃盘互斥淡出权重读取（∈[0,1]，GalaxyDustVolumeLayer
+   * fadeRef）：dust 暗粒子 uOpacity 乘 (1 - dim)——体积消光激活时暗
+   * 粒子淡出（§0.3 方案 F 互斥登记），体积卸载/降级时权重回 0 恢复
+   * R4-10 现状。不传 = 恒 0（零回退）。
+   */
+  getDustDim?: () => number;
 }
 
 /** 近观多分量粒子层（几何/材质随组件卸载 dispose） */
@@ -154,6 +161,7 @@ export function GalaxyNearViewLayer({
   orientationOverride,
   pointScaleOverride,
   maps,
+  getDustDim,
 }: GalaxyNearViewLayerProps): JSX.Element {
   const orientation = useMemo(
     () => orientationOverride ?? galaxyNearViewOrientation(galaxy.id),
@@ -242,7 +250,9 @@ export function GalaxyNearViewLayer({
       layers.emissiveMaterial.uniforms.uOpacity.value = opacity;
     }
     if (layers.dustMaterial) {
-      layers.dustMaterial.uniforms.uOpacity.value = opacity;
+      // R5-2：体积尘埃盘激活时暗粒子互补淡出（互斥登记，见 props 注释）
+      const dim = getDustDim ? getDustDim() : 0;
+      layers.dustMaterial.uniforms.uOpacity.value = opacity * (1 - dim);
     }
   });
 
