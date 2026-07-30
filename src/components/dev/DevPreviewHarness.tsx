@@ -2,7 +2,7 @@
 
 import type { JSX } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid } from '@react-three/drei';
 import { Bloom, EffectComposer, ToneMapping } from '@react-three/postprocessing';
 import { ToneMappingMode } from 'postprocessing';
@@ -11,6 +11,7 @@ import {
   defaultParamValues,
   previewEntryForBody,
   previewHasVolumeLayer,
+  previewMinCameraDistance,
   registeredPreviewIds,
 } from '@/utils/devPreview';
 import {
@@ -25,6 +26,28 @@ import { ClusterLensingPass } from '@/components/Scene/ClusterLensingEffect';
 
 /** R4-23 预览透镜强度：常量 1（强度滑杆经持有者 visible01 生效） */
 const LENS_STRENGTH_FULL = (): number => 1;
+
+/**
+ * 预设视角应用器（R5-4）：点击预设按钮后把相机沿当前视线方向移到目标
+ * 距离（OrbitControls target 恒为原点；无 damping，外部写位置即生效）
+ */
+function CameraDistancePreset({
+  preset,
+}: {
+  preset: { distance: number; nonce: number } | null;
+}): null {
+  const camera = useThree((s) => s.camera);
+  useEffect(() => {
+    if (!preset) return;
+    const len = camera.position.length();
+    if (len < 1e-6) {
+      camera.position.set(0, 0, preset.distance);
+    } else {
+      camera.position.multiplyScalar(preset.distance / len);
+    }
+  }, [preset, camera]);
+  return null;
+}
 
 /**
  * 开发预览工位主界面（R4-1，IMPROVEMENT_REQUIREMENTS_4 §R4-1）
@@ -73,6 +96,8 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
   const [bloom, setBloom] = useState(true);
   const [exposure, setExposure] = useState(1);
   const [showGrid, setShowGrid] = useState(true);
+  // R5-4 预设视角：nonce 递增保证同一预设可重复触发
+  const [preset, setPreset] = useState<{ distance: number; nonce: number } | null>(null);
 
   // body 变化时重置滑杆
   useEffect(() => {
@@ -133,8 +158,10 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
           clockLabelRef={clockLabelRef}
           qualityLabelRef={qualityLabelRef}
         />
-        {/* minDistance 按条目相机距离推导，防止推进到天体内部（单面材质黑屏） */}
-        <OrbitControls enablePan minDistance={entry.cameraDistance * 0.5} maxDistance={100} />
+        {/* minDistance 按条目相机距离推导（可被 minCameraDistance 覆写——
+            R5-4 核心推近需允许更近），防止推进到天体内部（单面材质黑屏） */}
+        <OrbitControls enablePan minDistance={previewMinCameraDistance(entry)} maxDistance={100} />
+        <CameraDistancePreset preset={preset} />
         {/* 常驻 Composer：ToneMapping 必须始终在管线末端（曝光的实现载体），
             Bloom 按开关条件渲染并置于其前（作用于线性 HDR）；
             R4-23 透镜 Effect 置于最前（Bloom 采样已透镜化帧缓冲） */}
@@ -207,6 +234,28 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
             onChange={(e) => setExposure(Number(e.target.value))}
           />
         </div>
+        {entry.viewPresets && entry.viewPresets.length > 0 && (
+          <div>
+            <div className="border-t border-white/10 pt-2 text-gray-400">预设视角</div>
+            <div className="mt-2 flex flex-col gap-1">
+              {entry.viewPresets.map((v) => (
+                <button
+                  key={v.key}
+                  type="button"
+                  className="rounded bg-sky-900/60 px-2 py-1 text-left text-sky-200 hover:bg-sky-800/60"
+                  onClick={() =>
+                    setPreset((prev) => ({
+                      distance: v.distanceUnits,
+                      nonce: (prev?.nonce ?? 0) + 1,
+                    }))
+                  }
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="border-t border-white/10 pt-2 text-gray-400">调试参数</div>
         {entry.params.map((p) => (
           <div key={p.key}>
