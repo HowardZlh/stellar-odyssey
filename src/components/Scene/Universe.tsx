@@ -46,9 +46,12 @@ import {
 } from '@/utils/galaxyMerger';
 import {
   galaxyDetailLayerSpec,
+  galaxySpriteImageUrl,
   resetGalaxyNearViewHolders,
 } from '@/utils/galaxyNearView';
 import { useDetailLayer } from '@/hooks/useDetailLayer';
+import { useGalaxyImageMaps } from '@/hooks/useGalaxyImageMaps';
+import { useBitmapTexture } from '@/hooks/useBitmapTexture';
 import { GalaxyNearViewLayer } from '@/components/Scene/GalaxyNearView';
 import {
   createGalaxySpriteCanvas,
@@ -119,7 +122,11 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
     [getNear01],
   );
 
-  const texture = useMemo(() => {
+  // R5-1：近观影像权重图懒加载（近观层激活时才 fetch/解码；
+  // 加载完成前与失败时为 null → GalaxyNearViewLayer 参数化降级，登记）
+  const imageMaps = useGalaxyImageMaps(nearMounted ? galaxy.id : null);
+
+  const canvasTexture = useMemo(() => {
     // M31/M33 专属形态（P6 §3.4，与通用旋涡星系区分）
     const variant =
       galaxy.id === 'm31' ? 'm31' : galaxy.id === 'm33' ? 'm33' : undefined;
@@ -137,9 +144,16 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
 
   useEffect(() => {
     return () => {
-      texture.dispose();
+      canvasTexture.dispose();
     };
-  }, [texture]);
+  }, [canvasTexture]);
+
+  // R5-1 远景贴图源选择（§R5-1 E）：覆盖星系影像贴图优先（经共享
+  // textureManager 懒加载并计入既有纹理预算/进度体系；L4 淡入域内才
+  // 请求），加载完成前与未覆盖星系降级程序化 canvas（覆盖清单登记于
+  // galaxySpriteImageUrl）。billboard/尺寸/淡入淡出逻辑零改动。
+  const spriteBitmap = useBitmapTexture(galaxySpriteImageUrl(galaxy.id), 6, inRange);
+  const texture = spriteBitmap ?? canvasTexture;
 
   // 视觉尺寸：直径相对银河系换算（同源公式 utils/universe.galaxyPlaneSizeUnits，
   // 登记：×0.55 抑制压缩距离下的透视夸大）
@@ -246,9 +260,10 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
           blending={THREE.AdditiveBlending}
         />
       </mesh>
-      {/* R2-8 近观 3D 粒子层（LRU 容量 1；卸载即 dispose） */}
+      {/* R2-8 近观 3D 粒子层（LRU 容量 1；卸载即 dispose）；
+          R5-1：影像权重图就绪时切换影像驱动采样（缺失降级参数化） */}
       {nearMounted && (
-        <GalaxyNearViewLayer galaxy={galaxy} getOpacity={getNearOpacity} />
+        <GalaxyNearViewLayer galaxy={galaxy} getOpacity={getNearOpacity} maps={imageMaps} />
       )}
       {showLabels && inRange && !focusedNow && !mergedAway && (
         // R3-4：近距反向缩放钳制（焦点隐藏 R2-8 保留）

@@ -27,9 +27,11 @@ import * as THREE from 'three';
 import type { GalaxyData } from '@/types';
 import {
   galaxyNearViewOrientation,
-  generateGalaxyNearViewComposite,
+  generateGalaxyNearViewCompositeAuto,
+  isImageDrivenGalaxy,
   nearViewReferenceRadiusLy,
   type GalaxyCompositeOverrides,
+  type GalaxyImageMaps,
   type GalaxyNearViewParticles,
 } from '@/utils/galaxyNearView';
 import { galaxyPlaneSizeUnits } from '@/utils/universe';
@@ -137,6 +139,11 @@ interface GalaxyNearViewLayerProps {
   orientationOverride?: [number, number, number];
   /** 点径缩放覆写（预览页缩放场景专用；主场景不传 = sizeUnits×4 现状公式） */
   pointScaleOverride?: number;
+  /**
+   * R5-1 影像权重图（useGalaxyImageMaps 产物）：就绪且属覆盖星系时
+   * 切换影像驱动采样；null/undefined 降级 R4-9 参数化生成（登记）。
+   */
+  maps?: GalaxyImageMaps | null;
 }
 
 /** 近观多分量粒子层（几何/材质随组件卸载 dispose） */
@@ -146,6 +153,7 @@ export function GalaxyNearViewLayer({
   overrides,
   orientationOverride,
   pointScaleOverride,
+  maps,
 }: GalaxyNearViewLayerProps): JSX.Element {
   const orientation = useMemo(
     () => orientationOverride ?? galaxyNearViewOrientation(galaxy.id),
@@ -153,11 +161,17 @@ export function GalaxyNearViewLayer({
   );
 
   const layers = useMemo(() => {
-    const composite = generateGalaxyNearViewComposite(galaxy.id, overrides);
+    // R5-1：影像权重图就绪 → 影像驱动采样；否则参数化降级（登记）
+    const activeMaps = maps && isImageDrivenGalaxy(galaxy.id) ? maps : null;
+    const composite = generateGalaxyNearViewCompositeAuto(galaxy.id, activeMaps, overrides);
     // 光年 → 场景单位：粒子参考半径对齐贴图平面半边长（同源公式，
-    // 交叉淡出时 3D 结构与贴图平面尺寸一致无跳变）
+    // 交叉淡出时 3D 结构与贴图平面尺寸一致无跳变）；影像驱动路径的
+    // 参考半径 = 产物 meta 图半径（贴图平面 = 同源影像裁剪域，对应）
     const sizeUnits = galaxyPlaneSizeUnits(galaxy.diameterLy);
-    const unitsPerLy = sizeUnits / 2 / nearViewReferenceRadiusLy(galaxy.id);
+    const referenceRadiusLy = activeMaps
+      ? activeMaps.mapRadiusLy
+      : nearViewReferenceRadiusLy(galaxy.id);
+    const unitsPerLy = sizeUnits / 2 / referenceRadiusLy;
     const pointScale = pointScaleOverride ?? sizeUnits * 4;
 
     // 基础层：R2-8 现状参数（加性、点径上限 6、alpha 0.35+0.65×falloff）
@@ -208,7 +222,7 @@ export function GalaxyNearViewLayer({
       dustGeometry,
       dustMaterial,
     };
-  }, [galaxy.id, galaxy.diameterLy, overrides, pointScaleOverride]);
+  }, [galaxy.id, galaxy.diameterLy, overrides, pointScaleOverride, maps]);
 
   useEffect(() => {
     return () => {

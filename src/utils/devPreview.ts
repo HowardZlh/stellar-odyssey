@@ -426,10 +426,13 @@ export interface GalaxyPreviewConfig {
   positionAngleDeg: number;
 }
 
-/** 预览 bodyId → 星系近观配置（组件层据此挂载 GalaxyNearViewLayer） */
+/** 预览 bodyId → 星系近观配置（组件层据此挂载 GalaxyNearViewLayer；
+ * R5-1 扩展 m33/smc——影像驱动四星系全量可预览对比） */
 export const GALAXY_PREVIEW_CONFIGS: ReadonlyMap<string, GalaxyPreviewConfig> = new Map([
   ['m31', { galaxyId: 'm31', positionAngleDeg: 38 }],
+  ['m33', { galaxyId: 'm33', positionAngleDeg: 23 }],
   ['lmc', { galaxyId: 'lmc', positionAngleDeg: 0 }],
+  ['smc', { galaxyId: 'smc', positionAngleDeg: 45 }],
 ]);
 
 /** 按预览 bodyId 查星系近观配置（非星系条目返回 null） */
@@ -440,32 +443,66 @@ export function galaxyPreviewConfigForBody(
   return GALAXY_PREVIEW_CONFIGS.get(id) ?? null;
 }
 
+/** R5-1：影像来源登记（四星系条目 dataSource 共用后缀） */
+const GALAXY_IMAGE_SOURCE_ZH =
+  '影像驱动（R5-1）：DSS2 彩色合成（STScI Digitized Sky Survey / AAO / ROE / Caltech，经 CDS hips2fits 烘焙为 256² 权重图）——密度图逆变换布点 + 颜色图查色 + 尘埃遮罩布点，z 向厚度参数化（口径登记）';
+
 const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
   {
     bodyId: 'm31',
-    title: '仙女座星系 M31（近观多分量粒子层 · 倾角 77°/10 kpc 尘埃环）',
+    title: '仙女座星系 M31（近观多分量粒子层 · 倾角 77°/影像驱动）',
     componentKey: 'galaxy-near-view',
     cameraDistance: 4.2,
     params: [
+      { key: 'imageDriven', label: '影像驱动（0 参数化对照/1 影像）', min: 0, max: 1, default: 1, step: 1 },
       { key: 'dustStrength', label: '尘埃带强度', min: 0, max: 1, default: 0.8 },
       { key: 'hiiDensity', label: 'HII 区密度', min: 0, max: 1, default: 0.5 },
       { key: 'inclinationDeg', label: '倾角覆写（°）', min: 0, max: 90, default: 77, step: 1 },
     ],
     dataSource:
-      'RC3（de Vaucouleurs et al. 1991）SA(s)b；S4G（Sheth et al. 2010）B/D 分解近似档；倾角 77°（NED/Walterbos & Kennicutt 1988）；10 kpc 尘埃环（Spitzer/Herschel 观测，环宽/占比为示意档登记）',
+      `RC3（de Vaucouleurs et al. 1991）SA(s)b；S4G（Sheth et al. 2010）B/D 分解近似档；倾角 77°（NED/Walterbos & Kennicutt 1988）；10 kpc 尘埃环与偏黄核球在影像驱动路径由影像自带（参数化对照档保留 M31_DUST_RING/applyBulgeTint）；${GALAXY_IMAGE_SOURCE_ZH}，M31 已做 77° 倾角反投影（方法/残差见产物 meta）`,
   },
   {
-    bodyId: 'lmc',
-    title: '大麦哲伦云 LMC（近观团块粒子云 · 不规则对照）',
+    bodyId: 'm33',
+    title: '三角座星系 M33（近观多分量粒子层 · 影像驱动/NGC 604）',
     componentKey: 'galaxy-near-view',
     cameraDistance: 4.2,
     params: [
-      { key: 'dustStrength', label: '尘埃带强度（LMC 配额 0，登记）', min: 0, max: 1, default: 0.3 },
-      { key: 'hiiDensity', label: 'HII 区密度（LMC 配额 0，登记）', min: 0, max: 1, default: 0.85 },
-      { key: 'inclinationDeg', label: '倾角覆写（°）', min: 0, max: 90, default: 35, step: 1 },
+      { key: 'imageDriven', label: '影像驱动（0 参数化对照/1 影像）', min: 0, max: 1, default: 1, step: 1 },
+      { key: 'dustStrength', label: '尘埃带强度', min: 0, max: 1, default: 0.35 },
+      { key: 'hiiDensity', label: 'HII 区密度', min: 0, max: 1, default: 0.9 },
+      { key: 'inclinationDeg', label: '倾角覆写（°，影像已含投影默认 0）', min: 0, max: 90, default: 0, step: 1 },
     ],
     dataSource:
-      'RC3（de Vaucouleurs et al. 1991）SB(s)m；倾角 35°（NED）；HII 粉与蓝白年轻星由 R2-8 团块分量承载（新分量配额 0，R4-9 登记）',
+      `RC3（de Vaucouleurs et al. 1991）SA(s)cd；倾角 56°（NED，登记值——影像未反投影）；${GALAXY_IMAGE_SOURCE_ZH}`,
+  },
+  {
+    bodyId: 'lmc',
+    title: '大麦哲伦云 LMC（近观粒子云 · 影像驱动/棒与 30 Dor）',
+    componentKey: 'galaxy-near-view',
+    cameraDistance: 4.2,
+    params: [
+      { key: 'imageDriven', label: '影像驱动（0 参数化对照/1 影像）', min: 0, max: 1, default: 1, step: 1 },
+      { key: 'dustStrength', label: '尘埃带强度（LMC 配额 0，登记）', min: 0, max: 1, default: 0.3 },
+      { key: 'hiiDensity', label: 'HII 区密度（LMC 配额 0，登记）', min: 0, max: 1, default: 0.85 },
+      { key: 'inclinationDeg', label: '倾角覆写（°，影像已含投影默认 0）', min: 0, max: 90, default: 0, step: 1 },
+    ],
+    dataSource:
+      `RC3（de Vaucouleurs et al. 1991）SB(s)m；倾角 35°（NED）；HII 粉与蓝白年轻星由影像颜色自带（不规则新分量配额 0，R4-9 登记沿用）；${GALAXY_IMAGE_SOURCE_ZH}`,
+  },
+  {
+    bodyId: 'smc',
+    title: '小麦哲伦云 SMC（近观粒子云 · 影像驱动/延展形状）',
+    componentKey: 'galaxy-near-view',
+    cameraDistance: 4.2,
+    params: [
+      { key: 'imageDriven', label: '影像驱动（0 参数化对照/1 影像）', min: 0, max: 1, default: 1, step: 1 },
+      { key: 'dustStrength', label: '尘埃带强度（SMC 配额 0，登记）', min: 0, max: 1, default: 0.25 },
+      { key: 'hiiDensity', label: 'HII 区密度（SMC 配额 0，登记）', min: 0, max: 1, default: 0.6 },
+      { key: 'inclinationDeg', label: '倾角覆写（°，影像已含投影默认 0）', min: 0, max: 90, default: 0, step: 1 },
+    ],
+    dataSource:
+      `RC3（de Vaucouleurs et al. 1991）SB(s)m pec；前景球状星团 47 Tuc/NGC 362 已遮罩（产物 meta 登记）；${GALAXY_IMAGE_SOURCE_ZH}`,
   },
 ];
 

@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "source": "DSS2 彩色合成（STScI Digitized Sky Survey 2，HiPS CDS/P/DSS2/color），经 CDS hips2fits 服务切取",
+    "retrievedAt": "2026-07-30T00:00:00Z",
+    "license": "DSS 基于 AAO/ROE/Caltech 摄影底片数字化数据（© AAO/ROE/Caltech/STScI），许可科学与教育用途使用并要求署名；仅分发烘焙产物（权重图/贴图），源图不随构建分发",
+    "count": 4
+  },
+  "id": "m33",
+  "nameZh": "三角座星系",
+  "credit": "STScI Digitized Sky Survey / AAO / ROE / Caltech；hips2fits (CDS, Strasbourg)",
+  "sourceUrl": "https://alasky.cds.unistra.fr/hips-image-services/hips2fits?hips=CDS%2FP%2FDSS2%2Fcolor&format=png&projection=TAN&width=1024&height=1024&object=M33&fov=1.5",
+  "mapSizePx": 256,
+  "spriteSizePx": 512,
+  "mapRadiusLy": 29541,
+  "pixelScaleLyPerPx": 230.8,
+  "inclinationDeg": 56,
+  "positionAngleDeg": 23,
+  "deprojection": {
+    "applied": false,
+    "method": "未反投影（M33 倾角为登记值——近观姿态由现状承载；不规则星系密度图直接驱动团块分布，无旋臂模型，登记）",
+    "residualAxisRatio": null
+  },
+  "distortionNote": "真实数据失真登记（附录 A §3）：前景星去除为局部中值对比钳制（亮星残芯 256² 降采样后不可辨）；伴系/前景球状星团圆形遮罩以宿主径向剖面填充；密度 gamma 压缩抬升暗弱结构（非线性流量标度）；颜色为亮度归一色调（非测光校准色）；盘面外 z 向厚度由参数模型承载（盘面分布真实、垂直分布参数化口径）",
+  "contaminantMasks": []
+}
