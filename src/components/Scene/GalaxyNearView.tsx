@@ -39,8 +39,9 @@ import { galaxyPlaneSizeUnits } from '@/utils/universe';
 /** 尘埃暗纹层 renderOrder（晚于默认 0 的加性星光层与远观贴图平面） */
 export const DUST_LAYER_RENDER_ORDER = 2;
 
-/** 软圆点 shader 参数（层间差异经 uniform 注入，shader 源共享） */
-interface SoftPointsOptions {
+/** 软圆点 shader 参数（层间差异经 uniform 注入，shader 源共享；
+ * R5-4 起导出供 M87 环境层复用——"复用既有点云样式"，禁止两套 shader） */
+export interface SoftPointsOptions {
   blending: THREE.Blending;
   /** gl_PointSize 上限（px）：基础层 6 与 R2-8 现状一致；HII 层放宽 */
   maxSizePx: number;
@@ -51,7 +52,7 @@ interface SoftPointsOptions {
 }
 
 /** 与 Galaxy.tsx 银盘粒子同风格的软边圆点 shader（尺寸随距离衰减） */
-function createSoftPointsMaterial(opts: SoftPointsOptions): THREE.ShaderMaterial {
+export function createSoftPointsMaterial(opts: SoftPointsOptions): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -94,8 +95,9 @@ function createSoftPointsMaterial(opts: SoftPointsOptions): THREE.ShaderMaterial
   });
 }
 
-/** 粒子集（光年坐标）→ BufferGeometry（场景单位；boundingSphere 手设免计算） */
-function buildPointsGeometry(
+/** 粒子集（光年坐标）→ BufferGeometry（场景单位；boundingSphere 手设免计算；
+ * R5-4 起导出供 M87 环境层复用（成员点缀传 unitsPerLy=1 直用场景单位） */
+export function buildPointsGeometry(
   particles: GalaxyNearViewParticles,
   unitsPerLy: number,
   boundingRadiusUnits: number,

@@ -30,6 +30,7 @@ import {
   GALAXY_DUST_VOLUME_PARAMS,
   isDustVolumeGalaxy,
 } from '@/utils/galaxyDustVolume';
+import { M87_ENVIRONMENT_SOURCE_ZH } from '@/utils/m87Environment';
 
 /** 单个天体细节组件可声明的最大调试滑杆数（§R4-1：≤8 个） */
 export const MAX_PREVIEW_PARAMS = 8;
@@ -53,6 +54,19 @@ export interface PreviewParam {
 }
 
 /**
+ * 预设视角按钮声明（R5-4：m87 核心推近；harness 渲染为按钮，点击把
+ * 相机沿当前视线方向移到指定距离）
+ */
+export interface PreviewViewPreset {
+  /** 按钮键（同一条目内唯一） */
+  key: string;
+  /** 按钮显示标签 */
+  label: string;
+  /** 目标相机距离（预览场景单位） */
+  distanceUnits: number;
+}
+
+/**
  * 预览条目：天体 id 对应的细节模型挂载配置
  */
 export interface PreviewEntry {
@@ -66,8 +80,18 @@ export interface PreviewEntry {
   params: readonly PreviewParam[];
   /** 相机初始距离（场景单位；OrbitControls 起始半径） */
   cameraDistance: number;
+  /** 相机最近距离覆写（默认 cameraDistance × 0.5；R5-4 核心推近条目
+   * 需允许推得更近） */
+  minCameraDistance?: number;
+  /** 预设视角按钮（可选；R5-4 m87 核心推近） */
+  viewPresets?: readonly PreviewViewPreset[];
   /** 数据/近似来源登记（附录 A §4） */
   dataSource?: string;
+}
+
+/** 条目相机最近距离（覆写优先，默认 cameraDistance × 0.5——历史行为不变） */
+export function previewMinCameraDistance(entry: PreviewEntry): number {
+  return entry.minCameraDistance ?? entry.cameraDistance * 0.5;
 }
 
 /**
@@ -106,6 +130,31 @@ export function validatePreviewEntry(entry: PreviewEntry): void {
       throw new RangeError(
         `预览参数 ${entry.bodyId}.${p.key} 的步进必须为正数，收到 ${p.step}`,
       );
+    }
+  }
+  if (entry.minCameraDistance !== undefined) {
+    if (
+      !(entry.minCameraDistance > 0) ||
+      !Number.isFinite(entry.minCameraDistance) ||
+      entry.minCameraDistance > entry.cameraDistance
+    ) {
+      throw new RangeError(
+        `预览条目 ${entry.bodyId} 的相机最近距离必须为正且 ≤ 相机初始距离，收到 ${entry.minCameraDistance}`,
+      );
+    }
+  }
+  if (entry.viewPresets) {
+    const presetKeys = new Set<string>();
+    for (const v of entry.viewPresets) {
+      if (presetKeys.has(v.key)) {
+        throw new RangeError(`预览条目 ${entry.bodyId} 存在重复预设视角键 ${v.key}`);
+      }
+      presetKeys.add(v.key);
+      if (!Number.isFinite(v.distanceUnits) || v.distanceUnits < previewMinCameraDistance(entry)) {
+        throw new RangeError(
+          `预设视角 ${entry.bodyId}.${v.key} 的距离 ${v.distanceUnits} 必须 ≥ 相机最近距离 ${previewMinCameraDistance(entry)}`,
+        );
+      }
     }
   }
 }
@@ -542,6 +591,31 @@ const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
 ];
 
 /**
+ * R5-4：M87 纵深与星系团环境预览（椭球近观 + 球状星团 + 节点喷流 +
+ * 室女座成员/ICM + 核心推近 EHT 光子环）。预设视角按钮：全景语境 /
+ * 核心推近（相机沿视线推至透镜激活阈值内，M87* 参数档光子环）。
+ * 预览尺度：主场景阈值 × (预览直径 3.2 / 贴图平面 3300)——核心激活
+ * 900 units ≈ 预览 0.87，预设 0.4 落于阈值内且在包围球（≈0.12）外。
+ */
+const M87_ENVIRONMENT_ENTRY: PreviewEntry = {
+  bodyId: 'm87',
+  title: '室女座A M87（星系团中心语境 · 球状星团/成员点缀/EHT 联动）',
+  componentKey: 'm87-environment',
+  cameraDistance: 4.2,
+  minCameraDistance: 0.15,
+  viewPresets: [
+    { key: 'overview', label: '全景语境', distanceUnits: 4.2 },
+    { key: 'core', label: '核心推近（EHT 光子环）', distanceUnits: 0.4 },
+  ],
+  params: [
+    { key: 'gcCount', label: '球状星团数（呈现缩减登记）', min: 200, max: 2000, default: 2000, step: 100 },
+    { key: 'members', label: '室女座成员点缀（0 关/1 开）', min: 0, max: 1, default: 1, step: 1 },
+    { key: 'icmOpacity', label: 'ICM 弥散辉光强度', min: 0, max: 0.4, default: 0.14, step: 0.01 },
+  ],
+  dataSource: M87_ENVIRONMENT_SOURCE_ZH,
+};
+
+/**
  * 黑洞引力透镜 raymarch（R4-11 原型 + R4-12 吸积盘，人工目检检查点）：
  * 包围球弯折 raymarch——弱场积分核 + 二阶闭式预算 + 解析阴影判据 +
  * 光子环沿程积累发光 + 薄盘求交（温度黑体色/多普勒束流/引力红移/
@@ -725,6 +799,7 @@ export const PREVIEW_REGISTRY: ReadonlyMap<string, PreviewEntry> = (() => {
     HORSEHEAD_ENTRY,
     CRAB_NEBULA_ENTRY,
     ...GALAXY_NEAR_VIEW_ENTRIES,
+    M87_ENVIRONMENT_ENTRY,
     BLACKHOLE_LENSED_ENTRY,
     PLEIADES_ENTRY,
     M13_ENTRY,
