@@ -5,6 +5,7 @@ import type { JSX } from 'react';
 import { VIEW_LEVELS } from '@/types';
 import { VIEW_LEVEL_NAME_KEYS } from '@/i18n';
 import { useT, useTf } from '@/hooks/useI18n';
+import { kioskNowSec } from '@/hooks/useKiosk';
 import { useSimulationStore } from '@/store';
 import { eventDemoEnabled } from '@/utils/eventScopes';
 import { panelOptionVisible, type PanelOptionId } from '@/utils/panelScopes';
@@ -122,6 +123,13 @@ export function ControlPanel(): JSX.Element {
 
   const handleCmeDemo = (): void => {
     triggerCme(rollCmeParams(useSimulationStore.getState().simDays));
+  };
+
+  // B5 §5.1-D 入口 1：展馆模式按钮——用户手势内请求全屏（被拒/不支持
+  // 静默降级为不全屏照常巡游，登记）+ 派发状态机 start 事件
+  const handleKioskStart = (): void => {
+    document.documentElement.requestFullscreen?.()?.catch(() => undefined);
+    useSimulationStore.getState().kioskEvent('start', kioskNowSec());
   };
 
   return (
@@ -424,6 +432,20 @@ export function ControlPanel(): JSX.Element {
           />
           {tr('controlPanel.performance')}
         </label>
+      </section>
+
+      {/* 展馆模式（B5 §5.1-D：启动即隐 UI 自动巡游，任意输入暂停；
+          暂停角标 KioskBadge 提供退出入口） */}
+      <section className="mt-4">
+        <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.kioskSection')}</h2>
+        <button
+          type="button"
+          onClick={handleKioskStart}
+          className="w-full rounded bg-space-accent/20 px-2 py-1.5 text-xs text-space-accent hover:bg-space-accent/30"
+        >
+          🎪 {tr('controlPanel.kioskStart')}
+        </button>
+        <p className="mt-1 text-[10px] leading-4 text-gray-500">{tr('controlPanel.kioskNote')}</p>
       </section>
 
       {/* 特殊天体演示（需求 3.1.5：支持用户在设置中手动触发超新星）
