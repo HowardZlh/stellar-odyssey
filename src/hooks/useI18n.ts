@@ -7,14 +7,29 @@
  * （订阅 locale 的 UI 组件），不触发 3D 场景重建。
  */
 import { useCallback, useEffect } from 'react';
+import type { Locale } from '@/types';
 import type { MessageKey } from '@/i18n';
-import { readStoredLocale, resolveInitialLocale, t } from '@/i18n';
+import { readStoredLocale, resolveInitialLocale, t, tf } from '@/i18n';
 import { useSimulationStore } from '@/store';
 
 /** 组件字典查找 hook：返回绑定当前 locale 的查找函数（locale 变更即重渲染） */
 export function useT(): (key: MessageKey) => string {
   const locale = useSimulationStore((s) => s.locale);
   return useCallback((key: MessageKey) => t(locale, key), [locale]);
+}
+
+/** 带参数插值的字典查找 hook（B3：`{param}` 占位符经 tf 替换） */
+export function useTf(): (key: MessageKey, params: Readonly<Record<string, string | number>>) => string {
+  const locale = useSimulationStore((s) => s.locale);
+  return useCallback(
+    (key: MessageKey, params: Readonly<Record<string, string | number>>) => tf(locale, key, params),
+    [locale],
+  );
+}
+
+/** 当前 locale 订阅 hook（displayBodyName/localizeCatalogText 消费方用） */
+export function useLocale(): Locale {
+  return useSimulationStore((s) => s.locale);
 }
 
 /**

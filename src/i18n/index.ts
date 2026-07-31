@@ -19,7 +19,8 @@
  *   （zh → 'zh-CN' 与 SSR 初始值一致，en → 'en'）；SEO metadata 保持
  *   zh-CN 不动（档位 3 边界登记）。
  */
-import type { Locale } from '@/types';
+import type { Locale, ViewLevel } from '@/types';
+import type { CycleScope } from '@/utils/cycleScopes';
 import { en } from './en';
 import { zh } from './zh';
 
@@ -76,6 +77,69 @@ const MESSAGES: Readonly<Record<Locale, Record<string, string>>> = {
 export function t(locale: Locale, key: MessageKey): string {
   return MESSAGES[locale][key] ?? MESSAGES.zh[key] ?? key;
 }
+
+/**
+ * 带参数插值的字典查找（B3 登记）：`{param}` 占位符简单替换，
+ * 未提供的占位符原样保留（防御性：便于发现漏传参数）。
+ * 同一键在 zh/en 可使用不同占位符子集（如 `hud.mergerTau` 的 {yi}/{myr}），
+ * 消费侧一次性传入全部参数、按 locale 取用。
+ */
+export function tf(
+  locale: Locale,
+  key: MessageKey,
+  params: Readonly<Record<string, string | number>>,
+): string {
+  return t(locale, key).replace(/\{(\w+)\}/g, (match, name: string) =>
+    Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match,
+  );
+}
+
+/** catalogText 组键前缀（键=中文原文，见 zh.ts 登记） */
+const CATALOG_TEXT_PREFIX = 'catalogText.';
+
+/**
+ * 信息面板标签列/类型行本地化（B3 方案 K3 迁移边界）：
+ * zh 态零开销直返原文；en 态查 `catalogText` 直映射，
+ * 未收录条目（数据驱动的长尾标签）回退中文原文（豁免登记——
+ * 英文态混排为已知可接受）。
+ */
+export function localizeCatalogText(locale: Locale, zhText: string): string {
+  if (locale === 'zh') return zhText;
+  return MESSAGES[locale][CATALOG_TEXT_PREFIX + zhText] ?? zhText;
+}
+
+/**
+ * 天体显示名收口函数（B3-C 登记锚点）：en 取既有 `name` 英文字段、
+ * zh 取 `nameZh`；无英文名（或空串）回退中文（豁免清单登记——当前
+ * catalog 全量条目均有 name，仅防御数据驱动长尾）。
+ *
+ * @param fallback body 缺失（如 id 未入目录）时的回退文案（一般传 id）
+ */
+export function displayBodyName(
+  locale: Locale,
+  body: { name?: string; nameZh: string } | null | undefined,
+  fallback = '',
+): string {
+  if (!body) return fallback;
+  if (locale === 'en' && body.name !== undefined && body.name !== '') return body.name;
+  return body.nameZh;
+}
+
+/** 视角层级 → 视角名键（ControlPanel 锚点按钮 + HUD 标题共用） */
+export const VIEW_LEVEL_NAME_KEYS: Readonly<Record<ViewLevel, MessageKey>> = {
+  L1: 'viewLevel.L1',
+  L2: 'viewLevel.L2',
+  L3: 'viewLevel.L3',
+  L4: 'viewLevel.L4',
+};
+
+/** 巡游域 → 域名键（BodyCycleSwitcher；SCOPE_NAME_ZH 常量保留供纯逻辑侧） */
+export const SCOPE_NAME_KEYS: Readonly<Record<CycleScope, MessageKey>> = {
+  system: 'scopeName.system',
+  solar: 'scopeName.solar',
+  galaxy: 'scopeName.galaxy',
+  universe: 'scopeName.universe',
+};
 
 /**
  * 解析 URL 查询串中的 `lang` 参数（纯函数）
