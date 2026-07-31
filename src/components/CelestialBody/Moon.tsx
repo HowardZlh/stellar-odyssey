@@ -5,6 +5,7 @@ import type { JSX } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
+import { BodyNameText } from '@/components/Scene/LocalizedLabelText';
 import * as THREE from 'three';
 import type { MoonData, OrbitalElements } from '@/types';
 import { useSimulationStore } from '@/store';
@@ -411,7 +412,9 @@ export function Moon({ data, parentRadiusKm }: MoonProps): JSX.Element {
             distanceFactor={16}
             style={{ pointerEvents: 'none' }}
           >
-            <span className="whitespace-nowrap text-[10px] text-gray-300/70">{data.nameZh}</span>
+            <span className="whitespace-nowrap text-[10px] text-gray-300/70">
+              <BodyNameText body={data} />
+            </span>
           </ClampedHtmlLabel>
         )}
       </group>

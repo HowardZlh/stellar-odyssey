@@ -23,7 +23,7 @@ export const en: I18nDict = {
     disclaimer:
       'Star twinkling appears only in the planet view (stars do not twinkle in a vacuum; twinkling comes from atmospheric turbulence — an artistic touch); audio is an artistic design (space is silent), with planet ambient sound differentiated by each atmosphere (Mercury / dwarf planets are near-vacuum and almost silent); in default mode dwarf planets and artificial satellites are enlarged for recognizability — being invisible at real scale is a scientific fact honored by real-scale mode; in the galaxy view the wavy rise and fall of the Sun\u2019s vertical oscillation is visually amplified ×10 (true amplitude only ±300 ly; not amplified in real-scale mode); special-object heights are derived from true galactic latitude (SIMBAD) while horizontal distances are schematic, and vertical expansion (V) is a visual exaggeration to aid observation (indicator lines mark the unamplified derived height) — when enabled the whole disk morphs into an oblate spheroid (face-on / top-down outline stays circular and spiral arms remain readable from above; side-on arm patterns being vertically dispersed is an accepted trade-off), supernovae rise with the disk, the halo brightens, and the dust lane fades; Sun watching: fly to the Sun for a close view of granulation / sunspots / prominences, and select the Sun to open the interior cutaway — sunspot / prominence sizes and activity frequency are demo-amplified and flare duration is slowed for presentation (all registered), with chromosphere thickness exaggerated to +1.5%; universe view: satellite galaxies move along thin orbit lines (toggled with O), the Magellanic Stream / Sagittarius tidal stream are gas and stars stripped along historical paths (diffuse particle bands, not orbit lines), and the cosmic web staying static apart from Hubble-expansion scaling is expected; the large-scale background is the 2MASS Redshift Survey (2MRS) point cloud of ~43,000 real galaxies (ellipticals yellowish / spirals blue-white; the Virgo Cluster overdensity and the galactic-plane gap are real data — three registered distortions: redshift distances follow the Hubble-flow approximation with finger-of-god effects, nearby-distance errors, and the galactic obscuration band, the gap being a dust-obscuration observational limit rather than a true void), with the procedural cosmic web demoted to an ambience layer; the side-on galaxy view shows the outer-disk S-shaped HI warp (Levine et al. 2006; rim amplitude artistically amplified for side-on visibility) and the diffuse Fermi bubbles above and below the Galactic Center (Su et al. 2010; gamma-ray glow rendered in artistic violet/magenta, can be turned off in display options)',
     langNote:
-      'Language 语言: use the zh/EN buttons on the top-left panel to switch the UI language instantly (UI text only; science notes and data values remain in Chinese for now)',
+      'Language 语言: use the zh/EN buttons on the top-left panel to switch the UI language instantly (UI, body labels, and descriptions all switch; data-source attributions keep their original language)',
     kioskNote:
       'H hides/shows the UI · Kiosk mode: start from the top-left panel (fullscreen auto tour; any input pauses, and it resumes after a short idle) or launch via a ?mode=kiosk link',
     closeAria: 'Dismiss the guide',
@@ -176,6 +176,37 @@ export const en: I18nDict = {
   },
   loading: {
     textures: 'Loading textures',
+    scene: 'Loading the galaxy scene…',
+  },
+  notFound: {
+    title: 'You have drifted beyond the known universe',
+    body:
+      'No celestial object can be observed at these coordinates — the page does not exist, or has been slingshotted elsewhere by gravity.',
+    autoReturn: 'Returning to the star map in {sec}s',
+    returnNow: 'Return to the star map now',
+  },
+  sceneLabel: {
+    siriusA: 'Sirius A · main sequence',
+    siriusB: 'Sirius B · white dwarf',
+    youAreHere: 'You are here (Solar System)',
+    galacticYearPercent: 'Galactic year {percent}%',
+    oortCloud: 'Oort Cloud outer edge (schematic; actually 2,000–100,000 AU)',
+    terminationShock: 'Termination shock (schematic, ~{au} AU)',
+    heliosheath: 'Heliosheath (transition region)',
+    heliopause: 'Heliopause (schematic; actually ~120 AU)',
+    voyagerCrossedSuffix: ' (crossed {year})',
+    quasarSuffix: ' (~2.4 billion ly)',
+    antennaeSuffix: ' (galaxy collision, ~45 million ly)',
+    lensingArcs: 'Cluster gravitational lensing arcs (schematic, prototype Abell 370)',
+    grbSuffix: ' (demo replay, ~2 billion ly)',
+    localGroupMotion:
+      'Local Group peculiar motion ~{v} km/s (toward the Great Attractor / Shapley, relative to the CMB)',
+    observableEdge: 'Observable-universe boundary (schematic, radius ~46.5 billion ly)',
+    laniakeaBoundary: 'Laniakea Supercluster boundary (schematic, ~520 million ly across)',
+    greatAttractor: 'Great Attractor',
+    mergerCountdown:
+      'Milky Way and Andromeda closing in (~110 km/s), colliding and merging in ~{gyr} billion years',
+    mergerStage: 'Milky Way–Andromeda merger: {stage}',
   },
   catalogText: {
     // ── Info-panel labels ────────────────────────────────────────────

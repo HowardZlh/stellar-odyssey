@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
+import { BodyNameText } from '@/components/Scene/LocalizedLabelText';
 import type { CometData } from '@/types';
 import { useSimulationStore } from '@/store';
 import {
@@ -621,7 +622,7 @@ export function Comet({ data }: CometProps): JSX.Element {
           style={{ pointerEvents: 'none' }}
         >
           <span ref={labelElRef} className="whitespace-nowrap text-xs text-cyan-200/80">
-            {data.nameZh}
+            <BodyNameText body={data} />
           </span>
         </ClampedHtmlLabel>
       )}

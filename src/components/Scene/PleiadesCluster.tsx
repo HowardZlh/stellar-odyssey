@@ -22,6 +22,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
+import { useLocale } from '@/hooks/useI18n';
 import { createDiffractionSpikeCanvas } from '@/components/CelestialBody/proceduralTextures';
 import { getNebulaTexture } from '@/components/CelestialBody/nebulaTextures';
 import { blueGiantFlicker } from '@/utils/specialBodies';
@@ -153,6 +154,21 @@ export interface PleiadesNamedStarsProps {
   interactive?: boolean;
 }
 
+/**
+ * 悬停星名叶组件（i18n）：zh 中英并列（"昴宿六 Alcyone"）、en 仅英文名
+ * （locale 订阅限制在悬停标签 DOM 层，不触发星芒 sprite 组重建）
+ */
+function PleiadesHoverName({
+  placement,
+}: {
+  placement: PleiadesNamedPlacement;
+}): JSX.Element {
+  const locale = useLocale();
+  return (
+    <>{locale === 'en' ? placement.name : `${placement.nameZh} ${placement.name}`}</>
+  );
+}
+
 /** 命名亮星：真实相对位置 + 衍射星芒 sprite + 悬停星名（§R4-17 需求 2） */
 export function PleiadesNamedStars({
   placements,
@@ -225,7 +241,7 @@ export function PleiadesNamedStars({
           style={{ pointerEvents: 'none' }}
         >
           <span className="whitespace-nowrap rounded bg-black/50 px-1.5 py-0.5 text-xs text-sky-100">
-            {placements[hovered].nameZh} {placements[hovered].name} · V{' '}
+            <PleiadesHoverName placement={placements[hovered]} /> · V{' '}
             {placements[hovered].vMag.toFixed(2)}
           </span>
         </ClampedHtmlLabel>

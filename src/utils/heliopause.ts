@@ -119,6 +119,10 @@ export const HELIOSHEATH_SHELL_COUNT = 3;
 export const HELIOPAUSE_SHAPE_NOTE_ZH =
   '真实日球层并非球形：迎星际风一侧（鼻部）被压缩、背风侧拉长为彗尾状不对称形（此处以球壳示意，已登记）';
 
+/** 真实为彗尾状不对称的登记文案（英文） */
+export const HELIOPAUSE_SHAPE_NOTE_EN =
+  'The real heliosphere is not spherical: the side facing the interstellar wind (the nose) is compressed while the downwind side stretches into a comet-tail-like asymmetric shape (shown here as a spherical shell, registered)';
+
 /**
  * 日球层结构层半径（场景单位）：压缩比例沿用现有登记——
  * 层半径 = 示意球壳半径 × 真实 AU / 120 AU。
@@ -185,6 +189,8 @@ export interface VoyagerMarker {
   nameZh: string;
   /** 发射日期（中文文案） */
   launchDateZh: string;
+  /** 发射日期（英文文案） */
+  launchDateEn?: string;
   /** 穿越日球层顶年份 */
   crossedYear: number;
   /** 穿越时距太阳距离（AU，NASA/JPL 实测） */
@@ -193,6 +199,8 @@ export interface VoyagerMarker {
   direction: Vec3;
   /** 备注（信息面板） */
   noteZh: string;
+  /** 备注（英文，信息面板） */
+  noteEn?: string;
 }
 
 /** 单位化（模块加载时一次性执行，保证导出方向严格为单位向量） */
@@ -207,20 +215,26 @@ export const VOYAGER_MARKERS: readonly VoyagerMarker[] = [
     name: 'Voyager 1',
     nameZh: '旅行者 1 号',
     launchDateZh: '1977 年 9 月 5 日',
+    launchDateEn: 'September 5, 1977',
     crossedYear: 2012,
     crossedDistanceAu: 121.6,
     direction: unitVec({ x: 0.55, y: 0.57, z: -0.61 }),
     noteZh: '首个进入星际空间的人造物体（2012-08-25 穿越，朝日球层鼻部方向偏北）',
+    noteEn:
+      'The first human-made object to enter interstellar space (crossed on 2012-08-25, heading north of the heliospheric nose direction)',
   },
   {
     id: 'voyager-2',
     name: 'Voyager 2',
     nameZh: '旅行者 2 号',
     launchDateZh: '1977 年 8 月 20 日',
+    launchDateEn: 'August 20, 1977',
     crossedYear: 2018,
     crossedDistanceAu: 119.0,
     direction: unitVec({ x: 0.73, y: -0.54, z: 0.42 }),
     noteZh: '2018-11-05 穿越（黄道以南）；等离子体仪器直接测得星际等离子体密度跃升',
+    noteEn:
+      'Crossed on 2018-11-05 (south of the ecliptic); its plasma instrument directly measured the jump in interstellar plasma density',
   },
 ] as const;
 

@@ -5,6 +5,8 @@ import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
+import { BodyNameText, LabelText } from '@/components/Scene/LocalizedLabelText';
+import { tf } from '@/i18n';
 import * as THREE from 'three';
 import type { GalaxyData } from '@/types';
 import {
@@ -41,7 +43,7 @@ import {
 import {
   mergerEllipticalMix01,
   mergerStage,
-  mergerStageLabelZh,
+  mergerStageLabel,
   mergerStarburst01,
   mergerTidalDistortion01,
   mwM31SignedSeparationLy,
@@ -302,7 +304,9 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
           distanceFactor={9000}
           style={{ pointerEvents: 'none' }}
         >
-          <span className="whitespace-nowrap text-xs text-gray-200/80">{galaxy.nameZh}</span>
+          <span className="whitespace-nowrap text-xs text-gray-200/80">
+            <BodyNameText body={galaxy} />
+          </span>
         </ClampedHtmlLabel>
       )}
     </group>
@@ -734,14 +738,17 @@ export function Universe(): JSX.Element {
         flowPos.needsUpdate = true;
       }
 
-      // 碰撞倒计时 / 合并演化阶段提示（R2-11 HUD 标签联动）
+      // 碰撞倒计时 / 合并演化阶段提示（R2-11 HUD 标签联动；
+      // i18n：locale 经 getState 读取，逐帧写入即时随语言切换）
       if (mergeLabelRef.current) {
-        const stageLabel = mergerStageLabelZh(state.simDays);
+        const stageLabel = mergerStageLabel(state.locale, state.simDays);
         const countdown = mwM31MergeCountdownMyr(state.simDays);
         mergeLabelRef.current.textContent =
           stageLabel === null
-            ? `银河系—仙女座相互接近（~110 km/s），约 ${(countdown / 1000).toFixed(1)} 十亿年后碰撞合并`
-            : `银河系—仙女座合并演化：${stageLabel}`;
+            ? tf(state.locale, 'sceneLabel.mergerCountdown', {
+                gyr: (countdown / 1000).toFixed(1),
+              })
+            : tf(state.locale, 'sceneLabel.mergerStage', { stage: stageLabel });
       }
 
       // 合并辉光（碰撞合并过程示意）——接近后期在两者之间显现增强；
@@ -867,7 +874,7 @@ export function Universe(): JSX.Element {
             style={{ pointerEvents: 'none' }}
           >
             <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-amber-200">
-              本星系群本动 ~{LG_CMB_VELOCITY_KM_S} km/s（朝巨引源/沙普利方向，相对 CMB）
+              <LabelText k="sceneLabel.localGroupMotion" params={{ v: LG_CMB_VELOCITY_KM_S }} />
             </span>
           </ClampedHtmlLabel>
         </group>
@@ -901,7 +908,7 @@ export function Universe(): JSX.Element {
           style={{ pointerEvents: 'none' }}
         >
           <span className="whitespace-nowrap text-xs text-rose-300/60">
-            可观测宇宙边界示意（半径约 465 亿光年）
+            <LabelText k="sceneLabel.observableEdge" />
           </span>
         </ClampedHtmlLabel>
       )}
@@ -913,7 +920,7 @@ export function Universe(): JSX.Element {
           style={{ pointerEvents: 'none' }}
         >
           <span className="whitespace-nowrap text-xs text-purple-300/70">
-            {LANIAKEA.nameZh}边界示意（直径约 5.2 亿光年）
+            <LabelText k="sceneLabel.laniakeaBoundary" />
           </span>
         </ClampedHtmlLabel>
       )}
@@ -927,7 +934,9 @@ export function Universe(): JSX.Element {
           distanceFactor={14000}
           style={{ pointerEvents: 'none' }}
         >
-          <span className="whitespace-nowrap text-xs text-amber-300/70">{LANIAKEA.greatAttractorZh}</span>
+          <span className="whitespace-nowrap text-xs text-amber-300/70">
+            <LabelText k="sceneLabel.greatAttractor" />
+          </span>
         </ClampedHtmlLabel>
       )}
     </group>

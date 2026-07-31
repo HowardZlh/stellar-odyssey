@@ -114,8 +114,11 @@ export function eclipticToScene(ecliptic: Vec3): Vec3 {
  * 尺度标尺文案（需求 3.2.2：UI 实时显示当前所处尺度）
  *
  * 根据距离量级自动选择单位：km → AU → 光年 → Mpc
+ *
+ * i18n：唯一语言相关单位词为"光年/ly"，按 locale 输出（默认 zh——
+ * 既有测试断言零改动）。
  */
-export function formatScaleLabel(distanceAu: number): string {
+export function formatScaleLabel(distanceAu: number, locale: 'zh' | 'en' = 'zh'): string {
   if (!Number.isFinite(distanceAu) || distanceAu < 0) {
     throw new RangeError(`距离必须为非负有限数，收到 ${distanceAu}`);
   }
@@ -128,7 +131,7 @@ export function formatScaleLabel(distanceAu: number): string {
   }
   const ly = distanceAu / LIGHT_YEAR_AU;
   if (ly < 1e6 * PARSEC_LY) {
-    return `${formatNumber(ly)} 光年`;
+    return `${formatNumber(ly)} ${locale === 'en' ? 'ly' : '光年'}`;
   }
   const mpc = ly / (1e6 * PARSEC_LY);
   return `${formatNumber(mpc)} Mpc`;
@@ -274,14 +277,18 @@ export function inverseCosmicDistanceToLy(units: number): number {
  * 分层场景中同一场景距离在不同层级代表不同真实尺度（尺度归一化方案，
  * 需求 5.1），标尺按当前层级语义显示。
  */
-export function formatSceneScaleLabel(distanceUnits: number, continuousLevel: number): string {
+export function formatSceneScaleLabel(
+  distanceUnits: number,
+  continuousLevel: number,
+  locale: 'zh' | 'en' = 'zh',
+): string {
   if (continuousLevel < 2.5) {
-    return formatScaleLabel(sceneUnitsToAu(distanceUnits));
+    return formatScaleLabel(sceneUnitsToAu(distanceUnits), locale);
   }
   if (continuousLevel < 3.5) {
-    return formatScaleLabel((distanceUnits / SCENE_UNITS_PER_LY) * LIGHT_YEAR_AU);
+    return formatScaleLabel((distanceUnits / SCENE_UNITS_PER_LY) * LIGHT_YEAR_AU, locale);
   }
-  return formatScaleLabel(inverseCosmicDistanceToLy(distanceUnits) * LIGHT_YEAR_AU);
+  return formatScaleLabel(inverseCosmicDistanceToLy(distanceUnits) * LIGHT_YEAR_AU, locale);
 }
 
 /**
