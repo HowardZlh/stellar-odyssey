@@ -27,6 +27,9 @@ export function HelpHint(): JSX.Element | null {
           <span className="text-gray-500">✦ {tr('helpHint.disclaimer')}</span>
           <br />
           <span className="text-gray-500">🌐 {tr('helpHint.langNote')}</span>
+          <br />
+          {/* B5：H 键与展馆模式说明（附录 A#4 快捷键表同步） */}
+          <span className="text-gray-500">🖥 {tr('helpHint.kioskNote')}</span>
         </p>
         <button
           type="button"
