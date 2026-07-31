@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { CAMERA_VIEWS } from '@/data/cameraViews';
 import { useLocaleInit } from '@/hooks/useI18n';
+import { useLaunchInit } from '@/hooks/useLaunchParams';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { AudioController } from '@/components/Audio/AudioController';
 import { SpatialAudio } from '@/components/Audio/SpatialAudio';
@@ -16,6 +17,7 @@ import { BodyCycleSwitcher } from '@/components/UI/BodyCycleSwitcher';
 import { ContactBadge } from '@/components/UI/ContactBadge';
 import { ControlPanel } from '@/components/UI/ControlPanel';
 import { HudInfo } from '@/components/UI/HudInfo';
+import { LaunchLogo } from '@/components/UI/LaunchLogo';
 import { LoadingProgress } from '@/components/UI/LoadingProgress';
 import { PerformanceMonitor } from '@/components/UI/PerformanceMonitor';
 import { HelpHint } from '@/components/UI/HelpHint';
@@ -31,8 +33,11 @@ import { Universe } from '@/components/Scene/Universe';
  */
 export default function SolarSystemApp(): JSX.Element {
   useKeyboardShortcuts();
-  // B2 i18n：启动 locale 初始化（?lang= > localStorage > 默认 zh）
+  // B2 i18n：启动 locale 初始化（?lang= > localStorage > 默认 zh，
+  // lang 解析经 B4 统一入口 utils/launchParams.ts）
   useLocaleInit();
+  // B4 启动 URL 参数：挂载后解析写入 store + body 就绪飞往（方案 K4）
+  useLaunchInit();
 
   // 应用卸载时释放全部位图纹理与 glTF 模型（AGENTS.md 内存管理）
   useEffect(() => {
@@ -82,6 +87,8 @@ export default function SolarSystemApp(): JSX.Element {
       <HelpHint />
       {/* 商业合作角标（左下角常驻，事件通知/剖面卡片占位时避让隐藏） */}
       <ContactBadge />
+      {/* B4 启动参数客户 logo（?logo=，右侧 top-64；B5 kiosk 隐藏 UI 时保持显示） */}
+      <LaunchLogo />
       <AudioController />
     </div>
   );
