@@ -26,9 +26,6 @@
 .DS_Store
 *.pem
 
-# 内部商业策略文档（不公开）
-/BUSINESS_ROADMAP_B2B.md
-
 # 内部提示词文档（不公开）
 *_PROMPT.md
 
