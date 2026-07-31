@@ -233,10 +233,17 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 
 欢迎 issue 与 PR！请先阅读 [贡献指南](CONTRIBUTING.md)——代码贡献需签署 [CLA](CLA.md)（许可授予型，你保留自己贡献的版权），以维持本项目 AGPL-3.0 + 商业授权的双许可模式。
 
+## 💼 商业合作
+
+欢迎教育机构、科技馆与展陈集成商联系合作。合作方向示例：展馆大屏部署、定制开发、课程内容。
+
+- 📮 邮箱：[stevenzearo@163.com](mailto:stevenzearo@163.com)
+- 💬 GitHub Issues：[HowardZlh/stellar-odyssey/issues](https://github.com/HowardZlh/stellar-odyssey/issues)
+
 ## ⚖️ 开源协议
 
 本项目代码以 [GNU AGPL-3.0](LICENSE) 协议开源：
 
 - **个人学习、教育教学、科研用途**：自由使用、修改与分发（遵循 AGPL 条款）
-- **商业闭源集成**（如展馆展项、商业产品嵌入等不愿以 AGPL 开源衍生代码的场景）：请联系作者获取商业授权
+- **商业闭源集成**（如展馆展项、商业产品嵌入等不愿以 AGPL 开源衍生代码的场景）：请联系作者获取商业授权——邮箱 [stevenzearo@163.com](mailto:stevenzearo@163.com)，或通过 [GitHub Issues](https://github.com/HowardZlh/stellar-odyssey/issues) 留言
 - 纹理、3D 模型等素材的许可归属见上方「素材许可（Attribution）」一节，不适用代码协议
