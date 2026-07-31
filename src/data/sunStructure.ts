@@ -164,3 +164,7 @@ export const SOLAR_WIND_NOTE_EN =
 /** 结构数据来源（信息面板/剖面卡片展示） */
 export const SUN_STRUCTURE_DATA_SOURCE =
   'NASA Sun Fact Sheet；标准太阳模型 Christensen-Dalsgaard et al. (1996)；日冕加热 Klimchuk (2006)';
+
+/** 结构数据来源（英文，i18n 全站覆盖） */
+export const SUN_STRUCTURE_DATA_SOURCE_EN =
+  'NASA Sun Fact Sheet; standard solar model Christensen-Dalsgaard et al. (1996); coronal heating Klimchuk (2006)';

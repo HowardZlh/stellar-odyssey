@@ -73,6 +73,7 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     dynamicsEn:
       "Semiregular variable: surface brightness pulsates slowly and irregularly (multiple pulsation periods superimposed), with a diffuse gas envelope around the outer layers",
     dataSource: "NASA/ESA Hipparcos-Gaia；ESO VLT 干涉测量",
+    dataSourceEn: "NASA/ESA Hipparcos–Gaia; ESO VLT interferometry",
   },
   {
     id: "rigel",
@@ -108,6 +109,7 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     dynamicsEn:
       "High-frequency micro-flickering (atmospheric turbulence and stellar wind), with a strong halo and outflowing stellar-wind particles",
     dataSource: "NASA/ESA Hipparcos-Gaia 光谱与视差数据",
+    dataSourceEn: "NASA/ESA Hipparcos–Gaia spectroscopy and parallax data",
   },
   {
     id: "sirius",
@@ -151,6 +153,7 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     dynamicsEn:
       "The white dwarf Sirius B and the primary Sirius A form a binary system, orbiting their common center of mass (mass ratio about 2:1, with the white dwarf on the larger orbit)",
     dataSource: "NASA HST 双星轨道测量；Bond et al. (2017)",
+    dataSourceEn: "NASA HST binary-orbit astrometry; Bond et al. (2017)",
   },
   {
     id: "crab-pulsar",
@@ -198,6 +201,12 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
       "近观体积丝网为程序化近似（Hubble 公版图像形态参考：12 条曲线骨架丝网 + " +
       "OIII 青弥散，红/青按内外分区径向近似）；PWN 环面/喷流形态参考 Chandra" +
       "（Weisskopf et al. 2000），环面尺度按可视化放大（真实 ~0.5 ly）",
+    dataSourceEn:
+      "NASA Chandra/HST observations of the Crab Nebula; Lyne & Graham-Smith, Pulsar Astronomy; " +
+      "the close-view volumetric filament web is a procedural approximation (morphology referenced " +
+      "to public Hubble imagery: a 12-curve skeleton web + cyan OIII haze, red/cyan zoned radially); " +
+      "the PWN torus/jet morphology follows Chandra (Weisskopf et al. 2000), with the torus scale " +
+      "enlarged for visualization (real ~0.5 ly)",
   },
   {
     id: "sgr-a-star",
@@ -240,6 +249,12 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
       "The accretion disk follows Keplerian differential rotation (angular velocity ∝ r^-3/2, faster inside and slower outside), with the approaching side brightened by Doppler beaming; the close-up view switches to a gravitational-lensing raymarch: photon ring + bent background starlight + folded images of the disk's upper and lower faces",
     dataSource:
       "GRAVITY Collaboration (2019)；EHT 2022 人马座A* 成像；近观透镜为 Schwarzschild 二阶弯曲近似（视界渲染半径按可视化比例压缩、背景为程序化星场近似）；盘色为黑体色档艺术化映射（峰值 ≈4,600 K 橙红，实际银心吸积流为射电/亚毫米波段亮度）",
+    dataSourceEn:
+      "GRAVITY Collaboration (2019); EHT 2022 Sagittarius A* imaging; the close-view lensing is a " +
+      "second-order Schwarzschild bending approximation (event-horizon render radius compressed for " +
+      "visualization, background is a procedural star field); disk colors are an artistic blackbody " +
+      "mapping (peak ≈4,600 K orange-red; the real Galactic Center accretion flow shines in " +
+      "radio/submillimeter bands)",
   },
   {
     id: "orion-nebula",
@@ -286,6 +301,11 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
       "Ultraviolet radiation from young massive stars inside ionizes the hydrogen gas, which glows red in hydrogen-alpha; the misty gas drifts slowly",
     dataSource:
       "NASA HST 猎户座星云观测（M42）；近观体积形态参考 NASA/ESA Hubble 公版图像（程序化近似）；体积色彩为自然色近似（Hα 红棕 + OIII 青灰），与哈勃调色板（SII/Hα/OIII→RGB 假彩色，Hα 显绿）存在映射差异",
+    dataSourceEn:
+      "NASA HST observations of the Orion Nebula (M42); close-view volume morphology referenced to " +
+      "public NASA/ESA Hubble imagery (procedural approximation); volume colors approximate natural " +
+      "color (Hα red-brown + OIII cyan-gray), differing from the Hubble palette (SII/Hα/OIII→RGB " +
+      "false color, where Hα appears green)",
   },
   {
     id: "ring-nebula",
@@ -322,6 +342,7 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     dynamicsEn:
       "A Sun-like star shed its outer layers late in life to form the ring shell, leaving a white dwarf at the center; the shell keeps expanding slowly (animation artistically accelerated)",
     dataSource: "NASA HST 环状星云观测（M57）",
+    dataSourceEn: "NASA HST observations of the Ring Nebula (M57)",
   },
   {
     id: "m13-cluster",
@@ -357,6 +378,7 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     dynamicsEn:
       "A dense, spherical assembly of old stars, orbiting the Galactic center with a long period",
     dataSource: "NASA HST 球状星团 M13 观测",
+    dataSourceEn: "NASA HST observations of globular cluster M13",
   },
   // ---- 可选项扩展（需求 3.1.5 可选特殊天体，L3） ----
   {
@@ -401,6 +423,12 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
       "Material stripped from the blue-supergiant companion forms an accretion disk emitting strong X-rays; the disk rotates differentially (faster inside, slower outside), and the close-up view switches to a gravitational-lensing raymarch: photon ring + bent background starlight + folded images of the disk's upper and lower faces",
     dataSource:
       "Miller-Jones et al. (2021), Science；NASA Chandra 天鹅座X-1 观测；近观透镜为 Schwarzschild 二阶弯曲近似（视界渲染半径按可视化比例压缩、背景为程序化星场近似）；盘色为黑体色档艺术化映射（峰值 ≈9,800 K 蓝白，真实盘内区 ~10⁷ K X 射线域不可光学表现）",
+    dataSourceEn:
+      "Miller-Jones et al. (2021), Science; NASA Chandra observations of Cygnus X-1; the close-view " +
+      "lensing is a second-order Schwarzschild bending approximation (event-horizon render radius " +
+      "compressed for visualization, background is a procedural star field); disk colors are an " +
+      "artistic blackbody mapping (peak ≈9,800 K blue-white; the real inner disk at ~10⁷ K shines " +
+      "in X-rays and cannot be shown optically)",
   },
   {
     id: "wr-124",
@@ -448,6 +476,7 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     dynamicsEn:
       "Strong stellar-wind particles stream radially outward (several thousand km/s), surrounded by the expanding M1-67 nebular shell ejected by the star itself",
     dataSource: "JWST ERO 2022（WR 124 / M1-67）；Crowther (2007) WR 星综述",
+    dataSourceEn: "JWST ERO 2022 (WR 124 / M1-67); Crowther (2007) Wolf–Rayet review",
   },
   {
     id: "delta-cephei",
@@ -491,6 +520,7 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     dynamicsEn:
       "The star's outer layers periodically expand and contract (κ mechanism), producing a sawtooth light curve: rapid rise, slow decline; the period–luminosity relation makes Cepheids the 'cosmic yardstick'",
     dataSource: "AAVSO δ Cephei 光变数据；Leavitt & Pickering (1912)",
+    dataSourceEn: "AAVSO δ Cephei light-curve data; Leavitt & Pickering (1912)",
   },
   {
     id: "pleiades",
@@ -534,6 +564,7 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     dynamicsEn:
       "A loosely gravitationally bound group of young stars (in contrast to the dense old stars of globular clusters); the hot blue stars flicker faintly, surrounded by blue reflection nebulae",
     dataSource: "Gaia DR3 昴星团成员星测量；NASA APOD M45",
+    dataSourceEn: "Gaia DR3 Pleiades member astrometry; NASA APOD M45",
   },
   {
     id: "horsehead-nebula",
@@ -576,6 +607,7 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     dynamicsEn:
       "The foreground cold molecular cloud absorbs the red light of the background ionized hydrogen region, creating a silhouette effect (dark nebulae emit no light and are seen by what they block)",
     dataSource: "NASA HST / ESO 马头星云观测（Barnard 33）",
+    dataSourceEn: "NASA HST / ESO observations of the Horsehead Nebula (Barnard 33)",
   },
   {
     id: "quasar-3c273",
@@ -612,6 +644,7 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     dynamicsEn:
       "Accretion onto the central supermassive black hole powers an extremely bright core and twin relativistic jets (with flowing animation); the brightness flickers irregularly",
     dataSource: "NASA/IPAC Extragalactic Database (NED)；Schmidt (1963)",
+    dataSourceEn: "NASA/IPAC Extragalactic Database (NED); Schmidt (1963)",
   },
   // ---- 可选项扩展（需求 3.1.5 可选河外对象，L4） ----
   {
@@ -657,6 +690,8 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
       'Two spiral galaxies passing through each other and merging: gravitational tides fling stars into two "antenna"-like tidal tails, while compressed gas ignites a starburst (a preview of the Milky Way–Andromeda future fate)',
     dataSource:
       "NASA HST 触须星系观测（NGC 4038/4039）；Toomre & Toomre (1972)",
+    dataSourceEn:
+      "NASA HST observations of the Antennae Galaxies (NGC 4038/4039); Toomre & Toomre (1972)",
   },
   {
     id: "cluster-lensing",
@@ -704,6 +739,8 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
       "Light from background galaxies is bent by the cluster's gravitational field into blue, arc-shaped stretched images distributed around the cluster center — a direct probe of the dark-matter mass distribution",
     dataSource:
       "Soucail et al. (1987) Abell 370 巨弧；NASA HST Frontier Fields",
+    dataSourceEn:
+      "Soucail et al. (1987) Abell 370 giant arc; NASA HST Frontier Fields",
   },
   {
     id: "grb-221009a",
@@ -750,6 +787,10 @@ export const SPECIAL_BODIES: readonly SpecialBodyData[] = [
     // R5-5：近观双喷流/余辉膨胀壳的图景来源（详细登记 utils/grbNearView）
     dataSource:
       "NASA Swift/Fermi GRB 221009A 观测；Burns et al. (2023)；近观双喷流（全开角 ~5°）与余辉膨胀壳（R ∝ t^(1/4)、幂律减暗）：相对论火球模型图景（Piran 2004 综述）近似登记",
+    dataSourceEn:
+      "NASA Swift/Fermi observations of GRB 221009A; Burns et al. (2023); the close-view twin jets " +
+      "(full opening angle ~5°) and expanding afterglow shell (R ∝ t^(1/4), power-law dimming) " +
+      "approximate the relativistic fireball picture (Piran 2004 review), registered",
   },
 ] as const;
 

@@ -100,7 +100,7 @@ describe('getBodyInfoById 英文目录（i18n 全站覆盖）', () => {
     expect(sn.lines.find((l) => l.label === '阶段')!.value).toContain('Brightening');
   });
 
-  it('en 目录全量扫描：全部条目值行无中文残留（标签列/类型行除外）', () => {
+  it('en 目录全量扫描：全部条目值行与 dataSource 无中文残留（标签列/类型行除外）', () => {
     const ids = [
       SUN.id,
       ...PLANETS.map((p) => p.id),
@@ -114,6 +114,7 @@ describe('getBodyInfoById 英文目录（i18n 全站覆盖）', () => {
       'heliopause',
       'voyager-1',
       'voyager-2',
+      'sn-scan',
     ];
     for (const id of ids) {
       const info = getBodyInfoById(id, 'en');
@@ -125,7 +126,21 @@ describe('getBodyInfoById 英文目录（i18n 全站覆盖）', () => {
           hasCjk: false,
         });
       }
+      // dataSource 署名同随 locale（含中文的署名已补英文版）
+      expect({ id, dataSourceHasCjk: CJK_RE.test(info!.dataSource) }).toEqual({
+        id,
+        dataSourceHasCjk: false,
+      });
     }
+  });
+
+  it('zh 目录 dataSource 保持既有中文署名不变（默认签名零改动）', () => {
+    expect(getBodyInfoById('wr-124')!.dataSource).toBe(
+      'JWST ERO 2022（WR 124 / M1-67）；Crowther (2007) WR 星综述',
+    );
+    expect(getBodyInfoById('wr-124', 'en')!.dataSource).toBe(
+      'JWST ERO 2022 (WR 124 / M1-67); Crowther (2007) Wolf–Rayet review',
+    );
   });
 });
 
@@ -194,7 +209,9 @@ describe('3D 标签叶组件（BodyNameText / LabelText）', () => {
     const body = { name: 'Earth', nameZh: '地球' };
     const { rerender } = render(<span data-testid="n"><BodyNameText body={body} /></span>);
     expect(screen.getByTestId('n').textContent).toBe('地球');
-    useSimulationStore.setState({ locale: 'en' });
+    act(() => {
+      useSimulationStore.setState({ locale: 'en' });
+    });
     rerender(<span data-testid="n"><BodyNameText body={body} /></span>);
     expect(screen.getByTestId('n').textContent).toBe('Earth');
     rerender(<span data-testid="n"><BodyNameText body={{ nameZh: '仅中文' }} /></span>);
@@ -212,6 +229,23 @@ describe('3D 标签叶组件（BodyNameText / LabelText）', () => {
       useSimulationStore.setState({ locale: 'en' });
     });
     expect(screen.getByTestId('l').textContent).toBe('Termination shock (schematic, ~94 AU)');
+  });
+});
+
+describe('ControlPanel 显示开关说明段与来源常量（原豁免解除）', () => {
+  it('en 字典说明段无中文残留（catalogNote/expandNote/realScaleNote/cutawayNote）', () => {
+    for (const key of [
+      'controlPanel.expandNote',
+      'controlPanel.realScaleNote',
+      'controlPanel.cutawayNote',
+    ] as const) {
+      expect({ key, hasCjk: CJK_RE.test(t('en', key)) }).toEqual({ key, hasCjk: false });
+    }
+    expect(
+      CJK_RE.test(
+        tf('en', 'controlPanel.catalogNote', { source: 'S', distortions: 'D' }),
+      ),
+    ).toBe(false);
   });
 });
 

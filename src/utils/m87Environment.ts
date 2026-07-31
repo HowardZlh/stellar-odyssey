@@ -428,6 +428,10 @@ export const M87_EXTRA_INFO_LINES_EN: readonly BodyInfoLine[] = [
 export const M87_ENVIRONMENT_SOURCE_ZH =
   'M87* 参数 EHT Collaboration (2019)；喷流节点 HST（Biretta et al. 1999，外移为视觉化示意）；球状星团 Tamura et al. (2006) 计数（呈现 2,000 缩减登记）；室女座成员 2MRS（Huchra et al. 2012）子集（相对位置线性压缩登记）；ICM 辉光为 X 射线热气体艺术化';
 
+/** M87 环境数据来源（英文，i18n 全站覆盖；内容与 ZH 版一一对应） */
+export const M87_ENVIRONMENT_SOURCE_EN =
+  'M87* parameters: EHT Collaboration (2019); jet knots: HST (Biretta et al. 1999, outward drift is a visual cue); globular clusters: Tamura et al. (2006) counts (rendered as 2,000, reduction registered); Virgo members: 2MRS (Huchra et al. 2012) subset (relative positions linearly compressed, registered); ICM glow is an artistic rendering of X-ray hot gas';
+
 // ---------------------------------------------------------------------------
 // 配置自洽校验（模块加载即执行；导出供单测覆盖异常分支）
 // ---------------------------------------------------------------------------

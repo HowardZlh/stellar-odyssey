@@ -43,6 +43,7 @@ import {
 } from '@/utils/heliopause';
 import { SN_REAL_FREQUENCY_NOTE_EN, SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
 import {
+  M87_ENVIRONMENT_SOURCE_EN,
   M87_ENVIRONMENT_SOURCE_ZH,
   M87_EXTRA_INFO_LINES_EN,
   M87_EXTRA_INFO_LINES_ZH,
@@ -50,11 +51,13 @@ import {
 import {
   GALAXY_STRUCTURE_NOTE_BY_MORPHOLOGY_EN,
   GALAXY_STRUCTURE_NOTE_BY_MORPHOLOGY_ZH,
+  GALAXY_STRUCTURE_SOURCE_EN,
   GALAXY_STRUCTURE_SOURCE_ZH,
 } from '@/utils/galaxyNearView';
 import {
   LMC_LANDMARK_NOTE_EN,
   LMC_LANDMARK_NOTE_ZH,
+  LMC_LANDMARK_SOURCE_EN,
   LMC_LANDMARK_SOURCE_ZH,
 } from '@/utils/lmcStructures';
 
@@ -318,7 +321,9 @@ function buildCatalog(locale: Locale): Map<string, BodyInfo> {
           : '约 11 年消长（黑子数/耀斑/CME 频率/日冕形态随周期变化，磁场 22 年反转即 Hale 周期）',
       },
     ],
-    dataSource: `${SUN.dataSource}；较差自转 Snodgrass & Ulrich (1990)；日冕加热 Klimchuk (2006)`,
+    dataSource: en
+      ? `${SUN.dataSource}; differential rotation Snodgrass & Ulrich (1990); coronal heating Klimchuk (2006)`
+      : `${SUN.dataSource}；较差自转 Snodgrass & Ulrich (1990)；日冕加热 Klimchuk (2006)`,
   });
 
   // 八大行星
@@ -329,7 +334,7 @@ function buildCatalog(locale: Locale): Map<string, BodyInfo> {
       nameZh: p.nameZh,
       typeZh: '行星',
       lines: planetLines(p, locale),
-      dataSource: p.dataSource,
+      dataSource: pickLocalized(locale, p.dataSource, p.dataSourceEn),
     });
   }
 
@@ -374,7 +379,7 @@ function buildCatalog(locale: Locale): Map<string, BodyInfo> {
       nameZh: d.nameZh,
       typeZh: '矮行星',
       lines,
-      dataSource: d.dataSource,
+      dataSource: pickLocalized(locale, d.dataSource, d.dataSourceEn),
     });
   }
 
@@ -386,7 +391,7 @@ function buildCatalog(locale: Locale): Map<string, BodyInfo> {
       nameZh: m.nameZh,
       typeZh: m.kind === 'natural' ? '卫星' : '人造卫星',
       lines: moonLines(m, locale),
-      dataSource: m.dataSource,
+      dataSource: pickLocalized(locale, m.dataSource, m.dataSourceEn),
     });
   }
 
@@ -413,7 +418,7 @@ function buildCatalog(locale: Locale): Map<string, BodyInfo> {
       nameZh: c.nameZh,
       typeZh: '彗星',
       lines,
-      dataSource: c.dataSource,
+      dataSource: pickLocalized(locale, c.dataSource, c.dataSourceEn),
     });
   }
 
@@ -532,13 +537,20 @@ function buildCatalog(locale: Locale): Map<string, BodyInfo> {
       nameZh: g.nameZh,
       typeZh: MORPHOLOGY_ZH[g.morphology],
       lines: galaxyLines(g, locale),
-      dataSource:
-        g.id === 'm87'
-          ? `${g.dataSource}；${GALAXY_STRUCTURE_SOURCE_ZH}；${M87_ENVIRONMENT_SOURCE_ZH}`
-          : g.id === 'lmc'
-            ? // R5-5：LMC 标志结构来源（30 Dor 位置换算/棒分层登记）
-              `${g.dataSource}；${GALAXY_STRUCTURE_SOURCE_ZH}；${LMC_LANDMARK_SOURCE_ZH}`
-            : `${g.dataSource}；${GALAXY_STRUCTURE_SOURCE_ZH}`,
+      // i18n：来源段按 locale 取用（分隔符 zh 全角"；"/ en "; "）
+      dataSource: ((): string => {
+        const sep = en ? '; ' : '；';
+        const structure = en ? GALAXY_STRUCTURE_SOURCE_EN : GALAXY_STRUCTURE_SOURCE_ZH;
+        const base = `${g.dataSource}${sep}${structure}`;
+        if (g.id === 'm87') {
+          return `${base}${sep}${en ? M87_ENVIRONMENT_SOURCE_EN : M87_ENVIRONMENT_SOURCE_ZH}`;
+        }
+        if (g.id === 'lmc') {
+          // R5-5：LMC 标志结构来源（30 Dor 位置换算/棒分层登记）
+          return `${base}${sep}${en ? LMC_LANDMARK_SOURCE_EN : LMC_LANDMARK_SOURCE_ZH}`;
+        }
+        return base;
+      })(),
     });
   }
 
@@ -562,7 +574,7 @@ function buildCatalog(locale: Locale): Map<string, BodyInfo> {
         })),
         { label: '动态效果', value: pickLocalized(locale, b.dynamicsZh, b.dynamicsEn) },
       ],
-      dataSource: b.dataSource,
+      dataSource: pickLocalized(locale, b.dataSource, b.dataSourceEn),
     });
   }
 
@@ -590,7 +602,9 @@ function buildCatalog(locale: Locale): Map<string, BodyInfo> {
         value: en ? MILKY_WAY.sagittariusAStarEn : MILKY_WAY.sagittariusAStarZh,
       },
     ],
-    dataSource: `${MILKY_WAY.dataSource}；${GALAXY_STRUCTURE_SOURCE_ZH}`,
+    dataSource: en
+      ? `${MILKY_WAY.dataSourceEn}; ${GALAXY_STRUCTURE_SOURCE_EN}`
+      : `${MILKY_WAY.dataSource}；${GALAXY_STRUCTURE_SOURCE_ZH}`,
   });
 
   return catalog;
@@ -640,7 +654,9 @@ function supernovaInfo(locale: Locale): Omit<BodyInfo, 'id'> {
         value: en ? SN_REAL_FREQUENCY_NOTE_EN : SN_REAL_FREQUENCY_NOTE_ZH,
       },
     ],
-    dataSource: 'Sedov (1959) 冲击波自相似解；核坍缩超新星理论（Woosley & Janka 2005）',
+    dataSource: en
+      ? 'Sedov (1959) self-similar blast-wave solution; core-collapse supernova theory (Woosley & Janka 2005)'
+      : 'Sedov (1959) 冲击波自相似解；核坍缩超新星理论（Woosley & Janka 2005）',
   };
 }
 

@@ -85,13 +85,22 @@ describe('ControlPanel 双语 + 语言切换入口（B3-D）', () => {
     expect(screen.getByRole('button', { name: 'Universe View' })).toBeInTheDocument();
   });
 
-  it('en 态豁免段（显示开关来源/科学说明）保持中文（登记口径）', () => {
+  it('en 态显示开关下方说明段随语言切英文（i18n 全站覆盖：原豁免解除）', () => {
     useSimulationStore.setState({ locale: 'en' });
     useSimulationStore.setState({ realScaleMode: true });
     render(<ControlPanel />);
-    // 真实比例开关标签为英文、其下科学说明段留中文
+    // 真实比例开关标签与其下科学说明段均为英文
     expect(screen.getByText('Real-scale mode (true body sizes)')).toBeInTheDocument();
-    expect(screen.getByText(/真实比例下行星\/矮行星极小/)).toBeInTheDocument();
+    expect(screen.getByText(/At real scale, planets and dwarf planets are tiny/)).toBeInTheDocument();
+    expect(screen.queryByText(/真实比例下行星/)).not.toBeInTheDocument();
+  });
+
+  it('zh 态显示开关下方说明段与迁移前文案逐字符一致（空白折叠口径）', () => {
+    useSimulationStore.setState({ realScaleMode: true });
+    render(<ControlPanel />);
+    expect(
+      screen.getByText(/真实比例下行星\/矮行星极小（矮行星过小不可见属科学事实）， 可飞往\/跟随后近距离观察/),
+    ).toBeInTheDocument();
   });
 });
 

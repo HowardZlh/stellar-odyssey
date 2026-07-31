@@ -61,6 +61,12 @@ export const FERMI_BUBBLES_SOURCE_ZH =
   '形态参数：Su, Slatyer & Finkbeiner 2010（Fermi-LAT，单泡 ~25,000 光年）；' +
   '伽马射线辉光以淡紫/品红低透明度艺术化呈现（非可见光真实形态）';
 
+/** 显示选项区来源与艺术化登记（英文，i18n 全站覆盖） */
+export const FERMI_BUBBLES_SOURCE_EN =
+  'Morphology parameters: Su, Slatyer & Finkbeiner 2010 (Fermi-LAT, single lobe ~25,000 ly); ' +
+  'the gamma-ray glow is rendered as a faint violet/magenta artistic visualization ' +
+  '(not its true appearance in visible light)';
+
 /** SDF 平滑并宽度（归一化坐标；银心处收腰的沙漏过渡带宽，目验调参） */
 const LOBE_UNION_K = 0.14;
 

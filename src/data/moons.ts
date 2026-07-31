@@ -83,6 +83,7 @@ export const MOONS: readonly MoonData[] = [
     noteEn:
       'Orbital altitude about 400 km, circling Earth once every ~92 minutes; the main truss is 109 m long and carries 8 solar array wings',
     dataSource: 'NASA Spot the Station（轨道高度约 400 km，倾角 51.6°）',
+    dataSourceEn: 'NASA Spot the Station (orbital altitude ~400 km, inclination 51.6°)',
   },
   {
     id: 'tiangong',
@@ -112,6 +113,8 @@ export const MOONS: readonly MoonData[] = [
     noteEn:
       "China's crewed space station, completed in its three-module form in 2022: the Tianhe core module plus the Wentian and Mengtian lab modules form a T-shaped configuration, equipped with flexible solar wings",
     dataSource: '中国载人航天工程办公室（CMSA）公开数据 / CelesTrak TLE（高度约 390 km，倾角 41.5°）',
+    dataSourceEn:
+      'China Manned Space Agency (CMSA) public data / CelesTrak TLE (altitude ~390 km, inclination 41.5°)',
   },
   {
     id: 'hubble',
@@ -140,6 +143,7 @@ export const MOONS: readonly MoonData[] = [
     noteEn:
       'Optical space telescope launched in 1990, orbiting at about 540 km altitude; the tube is 13.2 m long with a 2.4 m primary mirror',
     dataSource: 'STScI / NASA Hubble 公开轨道数据（高度约 540 km，倾角 28.5°）',
+    dataSourceEn: 'STScI / NASA Hubble public orbital data (altitude ~540 km, inclination 28.5°)',
   },
   {
     id: 'geo-satellite',
@@ -170,6 +174,8 @@ export const MOONS: readonly MoonData[] = [
     noteEn:
       'Orbital period equal to Earth\'s rotation period (one sidereal day), so it appears stationary relative to the ground; a schematic geostationary communications satellite modeled on NASA TDRS (Tracking and Data Relay Satellite, solar-array span about 21 m, parabolic antennas)',
     dataSource: 'ITU / NASA TDRS 静止轨道定义（半径 42,164 km，周期 23.934 小时）',
+    dataSourceEn:
+      'ITU / NASA TDRS geostationary orbit definition (radius 42,164 km, period 23.934 h)',
   },
   // ---- 火星卫星（可选需求 3.1.1） ----
   {
@@ -334,6 +340,8 @@ export const MOONS: readonly MoonData[] = [
     noteEn:
       'The Pluto–Charon binary dwarf-planet system: mutually tidally locked (Pluto also always shows the same face to Charon), with the barycenter lying outside Pluto',
     dataSource: 'NASA New Horizons / NASA Planetary Satellite Fact Sheet（半径 606 km，公转 6.39 天）',
+    dataSourceEn:
+      'NASA New Horizons / NASA Planetary Satellite Fact Sheet (radius 606 km, orbital period 6.39 days)',
   },
   // ---- 伽利略四卫星（木星）：io:europa:ganymede 轨道共振 1:2:4 ----
   {
