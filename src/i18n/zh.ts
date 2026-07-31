@@ -44,6 +44,9 @@ export const zh = {
     /** B3-D 语言切换说明（新增行，实现差异登记） */
     langNote:
       '语言 Language：左上角面板 zh/EN 按钮即时切换界面语言（仅界面文案；科学说明与数据值暂为中文）',
+    /** B5 展馆模式与 H 键说明（新增行） */
+    kioskNote:
+      'H 隐藏/显示界面 · 展馆模式：左上角面板启动（全屏自动巡游，任意操作暂停、片刻无操作自动恢复）或以 ?mode=kiosk 链接启动',
     closeAria: '关闭引导',
   },
   /** 四视角锚点名（cameraViews.nameZh 迁移，ControlPanel 按钮 + HUD 标题共用） */
@@ -59,6 +62,14 @@ export const zh = {
     solar: '太阳系巡游',
     galaxy: '银河系巡游',
     universe: '宇宙巡游',
+  },
+  /** B5 展馆模式（kiosk）暂停角标 */
+  kiosk: {
+    /** 暂停角标正文（{sec} = 自动恢复倒计时秒数） */
+    pausedBadge: '展馆模式（暂停中，{sec} 秒后恢复）',
+    /** 退出按钮 */
+    exit: '退出',
+    exitAria: '退出展馆模式',
   },
   controlPanel: {
     title: '星海奥德赛',
@@ -92,6 +103,9 @@ export const zh = {
     sunCutaway: '太阳内部剖面（1/4 切除视图）',
     bloom: '泛光效果（Bloom，低性能设备可关闭）',
     performance: '性能监控（FPS/内存）',
+    kioskSection: '展馆模式',
+    kioskStart: '启动展馆模式（全屏自动巡游）',
+    kioskNote: '按当前巡游域自动逐站飞往；任意操作暂停，片刻无操作自动恢复',
     demoSection: '动态事件演示',
     supernovaActive: '超新星爆发进行中…',
     supernovaTrigger: '触发超新星演示（旋臂内随机）',

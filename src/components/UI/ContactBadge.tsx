@@ -23,8 +23,9 @@ export const CONTACT_GITHUB_ISSUES_URL =
  *   点击外部收起经 window pointerdown 被动监听实现（不拦截、不 preventDefault），
  *   canvas 拖拽/滚轮不受影响；
  * - 样式口径与 ControlPanel 一致（bg-space-panel 深色半透明 + backdrop-blur）；
- * - 待 B4 接入：kiosk 模式 store `uiVisible` 字段尚不存在，B4 交付时接入
- *   （uiVisible=false 时角标同隐藏）。
+ * - kiosk 接入收口（B5 §5.1-A）：store `uiVisible` 已交付，本组件经
+ *   SolarSystemApp 顶层包裹统一受控（uiVisible=false 时角标同隐藏，
+ *   组件自身零改动）。
  *
  * i18n（B2 打样件）：全部文案经字典查找（`contactBadge.*` 键组），
  * 作为客户端 locale 机制的验证件；六大 UI 组件批量迁移属 B3。

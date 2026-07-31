@@ -24,6 +24,8 @@ export const en: I18nDict = {
       'Star twinkling appears only in the planet view (stars do not twinkle in a vacuum; twinkling comes from atmospheric turbulence — an artistic touch); audio is an artistic design (space is silent), with planet ambient sound differentiated by each atmosphere (Mercury / dwarf planets are near-vacuum and almost silent); in default mode dwarf planets and artificial satellites are enlarged for recognizability — being invisible at real scale is a scientific fact honored by real-scale mode; in the galaxy view the wavy rise and fall of the Sun\u2019s vertical oscillation is visually amplified ×10 (true amplitude only ±300 ly; not amplified in real-scale mode); special-object heights are derived from true galactic latitude (SIMBAD) while horizontal distances are schematic, and vertical expansion (V) is a visual exaggeration to aid observation (indicator lines mark the unamplified derived height) — when enabled the whole disk morphs into an oblate spheroid (face-on / top-down outline stays circular and spiral arms remain readable from above; side-on arm patterns being vertically dispersed is an accepted trade-off), supernovae rise with the disk, the halo brightens, and the dust lane fades; Sun watching: fly to the Sun for a close view of granulation / sunspots / prominences, and select the Sun to open the interior cutaway — sunspot / prominence sizes and activity frequency are demo-amplified and flare duration is slowed for presentation (all registered), with chromosphere thickness exaggerated to +1.5%; universe view: satellite galaxies move along thin orbit lines (toggled with O), the Magellanic Stream / Sagittarius tidal stream are gas and stars stripped along historical paths (diffuse particle bands, not orbit lines), and the cosmic web staying static apart from Hubble-expansion scaling is expected; the large-scale background is the 2MASS Redshift Survey (2MRS) point cloud of ~43,000 real galaxies (ellipticals yellowish / spirals blue-white; the Virgo Cluster overdensity and the galactic-plane gap are real data — three registered distortions: redshift distances follow the Hubble-flow approximation with finger-of-god effects, nearby-distance errors, and the galactic obscuration band, the gap being a dust-obscuration observational limit rather than a true void), with the procedural cosmic web demoted to an ambience layer; the side-on galaxy view shows the outer-disk S-shaped HI warp (Levine et al. 2006; rim amplitude artistically amplified for side-on visibility) and the diffuse Fermi bubbles above and below the Galactic Center (Su et al. 2010; gamma-ray glow rendered in artistic violet/magenta, can be turned off in display options)',
     langNote:
       'Language 语言: use the zh/EN buttons on the top-left panel to switch the UI language instantly (UI text only; science notes and data values remain in Chinese for now)',
+    kioskNote:
+      'H hides/shows the UI · Kiosk mode: start from the top-left panel (fullscreen auto tour; any input pauses, and it resumes after a short idle) or launch via a ?mode=kiosk link',
     closeAria: 'Dismiss the guide',
   },
   viewLevel: {
@@ -37,6 +39,11 @@ export const en: I18nDict = {
     solar: 'Solar System tour',
     galaxy: 'Galaxy tour',
     universe: 'Universe tour',
+  },
+  kiosk: {
+    pausedBadge: 'Kiosk mode (paused — resuming in {sec}s)',
+    exit: 'Exit',
+    exitAria: 'Exit kiosk mode',
   },
   controlPanel: {
     title: 'Stellar Odyssey',
@@ -71,6 +78,9 @@ export const en: I18nDict = {
     sunCutaway: 'Sun interior cutaway (quarter-section view)',
     bloom: 'Bloom effect (can be disabled on low-end devices)',
     performance: 'Performance monitor (FPS/memory)',
+    kioskSection: 'Kiosk mode',
+    kioskStart: 'Start kiosk mode (fullscreen auto tour)',
+    kioskNote: 'Flies stop to stop within the current tour domain; any input pauses, resuming after a short idle',
     demoSection: 'Dynamic event demos',
     supernovaActive: 'Supernova in progress…',
     supernovaTrigger: 'Trigger supernova demo (random spot in a spiral arm)',

@@ -6,8 +6,10 @@ import { useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { CAMERA_VIEWS } from '@/data/cameraViews';
 import { useLocaleInit } from '@/hooks/useI18n';
+import { useSimulationStore } from '@/store';
 import { useLaunchInit } from '@/hooks/useLaunchParams';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { useKiosk } from '@/hooks/useKiosk';
 import { AudioController } from '@/components/Audio/AudioController';
 import { SpatialAudio } from '@/components/Audio/SpatialAudio';
 import { CameraController } from '@/components/Camera/CameraController';
@@ -17,6 +19,7 @@ import { BodyCycleSwitcher } from '@/components/UI/BodyCycleSwitcher';
 import { ContactBadge } from '@/components/UI/ContactBadge';
 import { ControlPanel } from '@/components/UI/ControlPanel';
 import { HudInfo } from '@/components/UI/HudInfo';
+import { KioskBadge } from '@/components/UI/KioskBadge';
 import { LaunchLogo } from '@/components/UI/LaunchLogo';
 import { LoadingProgress } from '@/components/UI/LoadingProgress';
 import { PerformanceMonitor } from '@/components/UI/PerformanceMonitor';
@@ -33,11 +36,16 @@ import { Universe } from '@/components/Scene/Universe';
  */
 export default function SolarSystemApp(): JSX.Element {
   useKeyboardShortcuts();
+  // B5 §5.1-A：UI 显隐总开关（受控组件顶层包裹，见下方 JSX 登记）
+  const uiVisible = useSimulationStore((s) => s.uiVisible);
   // B2 i18n：启动 locale 初始化（?lang= > localStorage > 默认 zh，
   // lang 解析经 B4 统一入口 utils/launchParams.ts）
   useLocaleInit();
   // B4 启动 URL 参数：挂载后解析写入 store + body 就绪飞往（方案 K4）
   useLaunchInit();
+  // B5 展馆模式驱动（方案 K5）：须在 useLaunchInit 之后挂载——同批
+  // effect 按 hook 声明序执行，?mode=kiosk 读取时 launch 已写入
+  useKiosk();
 
   // 应用卸载时释放全部位图纹理与 glTF 模型（AGENTS.md 内存管理）
   useEffect(() => {
@@ -78,15 +86,25 @@ export default function SolarSystemApp(): JSX.Element {
         <PostEffects />
       </Canvas>
 
-      <ControlPanel />
-      <HudInfo />
-      {/* 行星视角天体切换（P4，需求 3.2.4：仅 L1 语境显示） */}
-      <BodyCycleSwitcher />
+      {/* B5 §5.1-A UI 显隐受控组件（受控方式登记 = 顶层包裹二选一取此：
+          单点 hidden（display:none）覆盖全部受控组件并保留组件内部状态，
+          各组件零改动）；LoadingProgress（加载期必须可见）与 LaunchLogo
+          （B4 §4.1 登记）不受控，置于包裹外 */}
+      <div hidden={!uiVisible}>
+        <ControlPanel />
+        <HudInfo />
+        {/* 行星视角天体切换（P4，需求 3.2.4：仅 L1 语境显示） */}
+        <BodyCycleSwitcher />
+        <PerformanceMonitor />
+        <HelpHint />
+        {/* 商业合作角标（左下角常驻，事件通知/剖面卡片占位时避让隐藏；
+            B1 预留登记收口：经本包裹接入 uiVisible） */}
+        <ContactBadge />
+      </div>
       <LoadingProgress />
-      <PerformanceMonitor />
-      <HelpHint />
-      {/* 商业合作角标（左下角常驻，事件通知/剖面卡片占位时避让隐藏） */}
-      <ContactBadge />
+      {/* B5 展馆模式暂停角标（仅 paused 态显示；置于包裹外——作为退出
+          入口须不受 uiVisible 影响恒可达，登记） */}
+      <KioskBadge />
       {/* B4 启动参数客户 logo（?logo=，右侧 top-64；B5 kiosk 隐藏 UI 时保持显示） */}
       <LaunchLogo />
       <AudioController />

@@ -34,6 +34,13 @@ import {
 import type { CycleScope } from '@/utils/cycleScopes';
 import { resolveFocusTarget } from '@/utils/cameraFocus';
 import {
+  KIOSK_INACTIVE,
+  KIOSK_RESUME_DEFAULT_SEC,
+  kioskTick,
+  planKioskAdvance,
+} from '@/utils/kiosk';
+import type { KioskEvent, KioskState } from '@/utils/kiosk';
+import {
   FLY_TO_DISCARD_EXEMPT_SEC,
   VIEW_TRANSITION_DISCARD_EXEMPT_SEC,
   eventDiscardDue,
@@ -242,6 +249,21 @@ export interface SimulationState {
    * `mode=kiosk` 无行为，登记）；`logo` 由 LaunchLogo 组件消费。
    */
   launch: LaunchParams;
+  /**
+   * UI 显隐总开关（B5 §5.1-A，默认 true）：false 时隐藏受控 UI 组件
+   * （受控方式登记 = SolarSystemApp 顶层包裹 `<div hidden>`，保留组件
+   * 内部状态；清单：ControlPanel/HudInfo/PerformanceMonitor/
+   * BodyCycleSwitcher/HelpHint/ContactBadge）；LoadingProgress（加载期
+   * 必须可见）与 LaunchLogo（B4 §4.1 登记）不受控。快捷键 H 切换
+   * （非 kiosk 亦独立可用）。
+   */
+  uiVisible: boolean;
+  /**
+   * 展馆模式状态机状态（B5 §5.1-B，utils/kiosk.ts 纯逻辑三态）：
+   * 一切转移经 kioskEvent action（事件来源：useKiosk 定时器/全局输入
+   * 监听、ControlPanel 启动按钮、KioskBadge 退出、?mode=kiosk 启动）
+   */
+  kiosk: KioskState;
 
   // actions
   tick: (realDeltaSeconds: number) => void;
@@ -256,6 +278,21 @@ export interface SimulationState {
   setLocale: (locale: Locale) => void;
   /** 写入启动 URL 参数解析结果（B4：挂载后一次性调用） */
   setLaunchParams: (params: LaunchParams) => void;
+  /** 设置 UI 显隐（B5：kiosk 巡游隐藏 / 暂停恢复显示） */
+  setUiVisible: (visible: boolean) => void;
+  /** 切换 UI 显隐（B5：H 快捷键） */
+  toggleUiVisible: () => void;
+  /**
+   * kiosk 状态机事件入口（B5 §5.1-C）：kioskTick 纯函数转移后消费
+   * 副作用指令——hideUi/showUi 写 uiVisible；advance 按 planKioskAdvance
+   * 推进：域内下一站 = cycleScopeBody(1)（复用全语义：飞往 + 跟随 +
+   * 层级锁定 + 面板跟随），进入域起点 = setViewLevel(level) 后
+   * requestFlyTo(bodyId)（顺序强制，域切换语义登记于 utils/kiosk.ts）。
+   * dwell 取 launch.dwell（B4 解析）、resume 取 KIOSK_RESUME_DEFAULT_SEC；
+   * nowSec 由调用方传入（useKiosk 统一 performance.now()/1000，可测性）。
+   * 全屏进入/退出属 DOM 层（ControlPanel/KioskBadge），本 action 不触达。
+   */
+  kioskEvent: (event: KioskEvent, nowSec: number) => void;
   /** 相机缩放驱动的连续层级同步（不触发锚点过渡动画） */
   syncZoomLevel: (continuousLevel: number) => void;
   /**
@@ -530,7 +567,7 @@ function eventNoticeLingerUpdates(
   return updates;
 }
 
-export const useSimulationStore = create<SimulationState>((set) => ({
+export const useSimulationStore = create<SimulationState>((set, get) => ({
   simDays: initialSimDays(),
   paused: false,
   speedMultiplier: 1,
@@ -597,8 +634,47 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   eventScopeSeenFlyToId: 0,
   locale: 'zh',
   launch: DEFAULT_LAUNCH_PARAMS,
+  uiVisible: true,
+  kiosk: KIOSK_INACTIVE,
 
   setLaunchParams: (params) => set({ launch: params }),
+
+  setUiVisible: (visible) => set({ uiVisible: visible }),
+
+  toggleUiVisible: () => set((state) => ({ uiVisible: !state.uiVisible })),
+
+  kioskEvent: (event, nowSec) => {
+    const current = get();
+    const result = kioskTick(current.kiosk, event, nowSec, {
+      dwellSec: current.launch.dwell,
+      resumeSec: KIOSK_RESUME_DEFAULT_SEC,
+    });
+    // 无转移即无写入（未到期 tick 高频路径零重渲染）
+    if (result.state !== current.kiosk) set({ kiosk: result.state });
+    for (const effect of result.effects) {
+      if (effect === 'hideUi') {
+        set({ uiVisible: false });
+      } else if (effect === 'showUi') {
+        set({ uiVisible: true });
+      } else {
+        // advance：按当前 store 状态计划推进（暂停期间用户改动过
+        // 域/跟随时自动重新对齐）。一步一既有 action：next=域内下一站；
+        // anchor=域全景锚点（setViewLevel，域对齐 + 尺度过渡到位）；
+        // enter=域起点天体（requestFlyTo）。域切换两步分离的踩坑登记
+        // （同 tick 连发会在低层级尺度错误解析高层级目标位置）见
+        // utils/kiosk.ts 文件头。
+        const s = get();
+        const plan = planKioskAdvance(s.launch.tour, s.cycleScope, s.viewLevel, s.followBodyId);
+        if (plan.kind === 'next') {
+          s.cycleScopeBody(1);
+        } else if (plan.kind === 'anchor') {
+          s.setViewLevel(plan.level);
+        } else {
+          s.requestFlyTo(plan.bodyId);
+        }
+      }
+    }
+  },
 
   setLocale: (locale) => {
     set({ locale });
