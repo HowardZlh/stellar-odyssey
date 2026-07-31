@@ -12,6 +12,7 @@ import { CameraController } from '@/components/Camera/CameraController';
 import { getTextureManager } from '@/components/CelestialBody/textureManager';
 import { getSatelliteModelManager } from '@/components/CelestialBody/modelManager';
 import { BodyCycleSwitcher } from '@/components/UI/BodyCycleSwitcher';
+import { ContactBadge } from '@/components/UI/ContactBadge';
 import { ControlPanel } from '@/components/UI/ControlPanel';
 import { HudInfo } from '@/components/UI/HudInfo';
 import { LoadingProgress } from '@/components/UI/LoadingProgress';
@@ -76,6 +77,8 @@ export default function SolarSystemApp(): JSX.Element {
       <LoadingProgress />
       <PerformanceMonitor />
       <HelpHint />
+      {/* 商业合作角标（左下角常驻，事件通知/剖面卡片占位时避让隐藏） */}
+      <ContactBadge />
       <AudioController />
     </div>
   );
