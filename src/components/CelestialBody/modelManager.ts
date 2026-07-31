@@ -9,6 +9,10 @@
  * - 释放：离开 L1 语境（近观门控 releaseNow）时 dispose 场景内全部
  *   geometry/material/texture 并移除缓存（AGENTS.md 内存管理；
  *   模型单个 ≤0.4 MB，因距离退出时保留缓存便于快速切回）
+ * - 源场景不可变契约：缓存的 gltf.scene 是**只读源资源**（本管理器为
+ *   单一所有者）——挂载方不得 reparent / 改变换 / 替换或写入其材质，
+ *   必须经 prepareGltfSatellite 克隆独立实例后使用；实例私有材质由
+ *   挂载方释放，共享 geometry/texture 由本管理器 release() 统一释放
  */
 
 import * as THREE from 'three';

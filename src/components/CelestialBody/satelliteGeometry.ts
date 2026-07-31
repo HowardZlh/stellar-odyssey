@@ -15,12 +15,16 @@
  * 材质：帆板（深蓝金属光泽）、舱体（白色隔热层）、桁架（银灰金属）、
  * 镀金隔热箔（哈勃/TDRS），无自发光（真实航天器不发光，P7 §3.1）。
  *
- * glTF 后处理：
+ * glTF 后处理（实例化所有权模型）：
+ * - modelManager 缓存的源场景**只读**：每次挂载克隆独立实例（geometry/
+ *   texture 按引用共享、GPU 零增量；材质逐 mesh 克隆为实例私有），
+ *   归一化/着色/运行时污染（淡入 opacity、地影 color×dim）只作用实例，
+ *   源场景零污染——重复挂载（StrictMode 双调用 / 门控进出复用缓存）幂等
  * - 归一化：包围盒最长维对齐 X 轴并缩放至 SATELLITE_MODEL_SPAN、居中
  *   （差异登记：glb 模型语义轴向未知，按"最长维 = X"近似对齐）
  * - ISS (B) 源模型全部材质为统一灰色（无贴图），按网格形态启发式着色
  *   （扁平大面 → 帆板深蓝 / 细长 → 桁架银灰 / 其余 → 舱体白色）——
- *   基于真实 ISS 外观的艺术化增强，登记
+ *   基于真实 ISS 外观的艺术化增强，登记；被替换的实例材质就地 dispose
  *
  * 帆板对日跟踪标记：userData.sunTrackAxis = 'x' | 'z'（绕模型 X / Z 轴旋转），
  * 由 SatelliteModel 每帧按太阳方向驱动。
@@ -276,9 +280,19 @@ export function collectPanelGroups(root: THREE.Object3D): THREE.Object3D[] {
   return groups;
 }
 
+/** 释放实例材质（不碰共享 geometry/texture，Material.dispose 不释放纹理） */
+function disposeInstanceMaterial(material: THREE.Material | THREE.Material[]): void {
+  if (Array.isArray(material)) {
+    material.forEach((m) => m.dispose());
+  } else {
+    material.dispose();
+  }
+}
+
 /**
  * ISS (B) glb 启发式着色（源模型全部材质为统一灰色，登记于文件头）：
- * 按网格包围盒形态分类——扁平大面 → 帆板 / 细长 → 桁架 / 其余 → 舱体
+ * 按网格包围盒形态分类——扁平大面 → 帆板 / 细长 → 桁架 / 其余 → 舱体。
+ * 只作用于克隆实例；被替换下来的实例私有材质就地 dispose（防泄漏）。
  */
 function colorizeIssMeshes(root: THREE.Object3D): void {
   const size = new THREE.Vector3();
@@ -290,6 +304,7 @@ function colorizeIssMeshes(root: THREE.Object3D): void {
     const dims = [size.x, size.y, size.z].sort((a, b) => a - b);
     const [min, mid, max] = dims;
     if (max <= 0) return;
+    const replaced = mesh.material as THREE.Material | THREE.Material[];
     if (min / max < 0.06 && mid / max > 0.3) {
       // 扁平大面：太阳能帆板
       mesh.material = panelMaterial();
@@ -300,16 +315,36 @@ function colorizeIssMeshes(root: THREE.Object3D): void {
       // 舱体
       mesh.material = hullMaterial();
     }
+    if (replaced) disposeInstanceMaterial(replaced);
   });
 }
 
 /**
- * glTF 卫星场景后处理：归一化尺寸/轴向 + 居中，返回可直接挂载的容器组。
+ * glTF 卫星场景后处理（实例化语义，登记于文件头）：克隆源场景为独立实例，
+ * 归一化尺寸/轴向 + 居中，返回可直接挂载的容器组。
  *
+ * - 源场景只读（modelManager 单一所有者）：不 reparent、不改变换、不换材质
+ * - clone(true) 共享 geometry/texture 引用（GPU 零增量），材质逐 mesh
+ *   克隆为实例私有——运行时 opacity/color 污染不跨挂载泄漏
+ * - 归一化在全新克隆上计算（构造性幂等，重复挂载缩放恒 = SPAN/原始跨度）
  * - 最长维对齐模型 X 轴（差异登记于文件头）并缩放至 SATELLITE_MODEL_SPAN
- * - ISS 应用启发式着色（源模型无颜色差异）
+ * - ISS 应用启发式着色（源模型无颜色差异），仅作用实例
+ *
+ * 释放契约：实例材质由挂载方（SatelliteModel 卸载 effect）dispose；
+ * 共享 geometry/texture 归 modelManager release() 统一释放。
  */
-export function prepareGltfSatellite(scene: THREE.Group, bodyId: string): THREE.Group {
+export function prepareGltfSatellite(source: THREE.Group, bodyId: string): THREE.Group {
+  const scene = source.clone(true);
+  scene.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.material) return;
+    if (Array.isArray(mesh.material)) {
+      mesh.material = mesh.material.map((m) => m.clone());
+    } else {
+      mesh.material = mesh.material.clone();
+    }
+  });
+
   const container = new THREE.Group();
   container.add(scene);
 
