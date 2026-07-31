@@ -26,6 +26,7 @@ import * as THREE from 'three';
 import type { GalaxyCatalogData } from '@/utils/bakedData';
 import { buildCatalogLodAttributes } from '@/utils/galaxyCatalog';
 import { hubbleScaleFactor, universeFadeWeight } from '@/utils/universe';
+import { UNIVERSE_RENDER_ORDER } from '@/utils/universeRenderOrder';
 import { useSimulationStore } from '@/store';
 
 const CATALOG_VERTEX = /* glsl */ `
@@ -88,6 +89,9 @@ function buildPoints(attrs: {
   });
   const points = new THREE.Points(geometry, material);
   points.frustumCulled = false;
+  // L4 透明层注册表（频闪修复）：哈勃膨胀每帧缩放组，深度键不再决定
+  // 与 normal 混合层（尾迹/轨道线等）的先后——两级 draw call 同值可交换
+  points.renderOrder = UNIVERSE_RENDER_ORDER.galaxyCatalog;
   return { points, material, geometry };
 }
 

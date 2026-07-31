@@ -6,10 +6,18 @@
  *   窗口均值 FPS 由 `slidingWindowFps` 计算（样本不足返回 null，不决策）；
  * - 质量档位状态机（high 64 步/full → mid 48 步/half → low 32 步/half）：
  *   核心判定 `decideTier` 为纯函数（滞回边界单测覆盖）——
- *   降档：窗口 FPS < 55 立即降一档（3 秒窗均值本身即防抖）；
- *   升档：窗口 FPS ≥ 58 **连续 5 秒**达标才升一档（滞回防抖，55–58 为
+ *   降档：窗口 FPS < 52 立即降一档（3 秒窗均值本身即防抖；
+ *   **L4 频闪 P0 修复修订**：55→52 拉大迟滞带——帧耗时骑在 55 阈值上
+ *   的场景（近观星系 + 尘埃盘 + 点云 + Bloom）曾致 mid↔low 极限环振荡，
+ *   uSteps/RT 比例反复斜坡经 Bloom 放大为盘面明暗频闪；修订登记于
+ *   IMPROVEMENT_REQUIREMENTS_4 §R4-4）；
+ *   升档：窗口 FPS ≥ 58 **连续 5 秒**达标才升一档（滞回防抖，52–58 为
  *   迟滞带：既不降档也不累计升档；达标起点回溯到窗口起点——验收
  *   "恢复小占比后 5 秒内升档"不被窗口积累期拖长）；
+ *   换档驻留（同修复第二重阻尼）：任何换档后 ≥3s 内不再换档
+ *   （`QUALITY_CHANGE_DWELL_MS`；驻留期达标累计照常推进、届满即结算，
+ *   5s 升档判据 > 3s 驻留故升档时序不受影响；创建时刻视作换档起点——
+ *   挂载后 3s 观察期，防挂载风暴期误降档）；
  *   换档后清空采样窗（跨档样本不混算，重新积累 ≥1.5s 才有下一次决策）；
  * - 档位 → 渲染参数映射：`VOLUME_QUALITY_SPECS`（uQuality 标量 = 步数比例、
  *   步数、RT 渲染比例）；步数按基准步数缩放（`stepsForTier`，基准 64 时
@@ -46,14 +54,20 @@ export const VOLUME_QUALITY_SPECS: Readonly<Record<VolumeQualityTier, VolumeQual
 /** FPS 采样滑动窗口时长（§R4-4：3 秒窗） */
 export const QUALITY_FPS_WINDOW_MS = 3000;
 
-/** 降档阈值：窗口均值 FPS 低于此值降一档（验收：降级后帧率恢复 ≥55） */
-export const QUALITY_DOWNGRADE_FPS = 55;
+/** 降档阈值：窗口均值 FPS 低于此值降一档（R4-4 原值 55；L4 频闪 P0
+ * 修复修订为 52——拉大迟滞带，消除骑 55 阈值场景的 mid↔low 极限环振荡，
+ * 登记于 IMPROVEMENT_REQUIREMENTS_4 §R4-4 修订块） */
+export const QUALITY_DOWNGRADE_FPS = 52;
 
-/** 升档阈值：窗口均值 FPS 达到此值才累计升档时长（与降档阈值间 3 FPS 迟滞带） */
+/** 升档阈值：窗口均值 FPS 达到此值才累计升档时长（与降档阈值间 6 FPS 迟滞带） */
 export const QUALITY_UPGRADE_FPS = 58;
 
 /** 升档需连续达标时长（§R4-4：连续 5 秒） */
 export const QUALITY_UPGRADE_HOLD_MS = 5000;
+
+/** 换档驻留时长（L4 频闪 P0 修复新增）：任何换档后此时长内不再换档
+ * （第二重阻尼；驻留期升档达标累计照常推进、届满即结算） */
+export const QUALITY_CHANGE_DWELL_MS = 3000;
 
 /** 决策所需最小窗口时间跨度（样本不足不决策，防换档/启动初期误判） */
 export const QUALITY_MIN_DECISION_SPAN_MS = 1500;
@@ -126,6 +140,11 @@ export interface TierDecisionInput {
   windowStartMs: number | null;
   /** 当前时刻（ms） */
   nowMs: number;
+  /**
+   * 最近一次换档时刻（L4 频闪修复新增；null/缺省 = 无驻留约束）：
+   * nowMs − lastChangeMs < QUALITY_CHANGE_DWELL_MS 期间不换档。
+   */
+  lastChangeMs?: number | null;
 }
 
 /** 档位判定结果 */
@@ -141,25 +160,33 @@ export interface TierDecision {
 /**
  * 档位状态机核心判定（纯函数）
  *
- * 滞回语义：
+ * 滞回语义（L4 频闪 P0 修复修订：降档 55→52 + 3s 换档驻留，见文件头）：
  * - fps === null（样本不足）：保持现档，升档计时清零（无法证明持续达标）；
- * - fps < 55：降一档（已是 low 则保持），升档计时清零；
+ * - 驻留期（距上次换档 < 3s）：不换档——低于降档阈值仅清升档计时，
+ *   达标累计照常推进（届满 5s 且出驻留即升档）；
+ * - fps < 52：降一档（已是 low 则保持），升档计时清零；
  * - fps ≥ 58 且非 high：开始/继续累计达标时长（起点回溯到窗口起点），
  *   连续 ≥5s 升一档；
- * - 55 ≤ fps < 58（迟滞带）或已是 high：保持现档，升档计时清零。
+ * - 52 ≤ fps < 58（迟滞带）或已是 high：保持现档，升档计时清零。
  */
 export function decideTier(input: TierDecisionInput): TierDecision {
   const { tier, fps, upgradeMetSinceMs, windowStartMs, nowMs } = input;
   if (fps === null) {
     return { tier, upgradeMetSinceMs: null, changed: false };
   }
+  const lastChangeMs = input.lastChangeMs ?? null;
+  const inDwell =
+    lastChangeMs !== null && nowMs - lastChangeMs < QUALITY_CHANGE_DWELL_MS;
   if (fps < QUALITY_DOWNGRADE_FPS) {
+    if (inDwell) {
+      return { tier, upgradeMetSinceMs: null, changed: false };
+    }
     const next = lowerTier(tier);
     return { tier: next, upgradeMetSinceMs: null, changed: next !== tier };
   }
   if (tier !== 'high' && fps >= QUALITY_UPGRADE_FPS) {
     const since = upgradeMetSinceMs ?? windowStartMs ?? nowMs;
-    if (nowMs - since >= QUALITY_UPGRADE_HOLD_MS) {
+    if (!inDwell && nowMs - since >= QUALITY_UPGRADE_HOLD_MS) {
       return { tier: higherTier(tier), upgradeMetSinceMs: null, changed: true };
     }
     return { tier, upgradeMetSinceMs: since, changed: false };
@@ -217,6 +244,7 @@ export function recordQualityFrame(
     upgradeMetSinceMs: state.upgradeMetSinceMs,
     windowStartMs: samples[0], // 刚 push 的样本必存活（cutoff < nowMs），窗口非空
     nowMs,
+    lastChangeMs: state.lastChangeMs, // 换档驻留（创建时刻视作换档起点）
   });
   state.upgradeMetSinceMs = decision.upgradeMetSinceMs;
   if (decision.changed) {
