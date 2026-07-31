@@ -1,7 +1,11 @@
 /**
- * i18n 基建单测（B2）：字典键一致性 / 拍平与查找 / `?lang=` 解析 /
+ * i18n 基建单测（B2）：字典键一致性 / 拍平与查找 /
  * 启动优先级（?lang > localStorage > zh）/ 持久化与 `<html lang>` 同步
  * 副作用（含存取异常兜底分支）。模块覆盖率目标 100%（附录 A §2）。
+ *
+ * B4 迁移登记：`parseLangParam` 用例已语义等价迁移至
+ * utils/__tests__/launchParams.test.ts（lang 分组）；resolveInitialLocale
+ * 经统一入口 parseLaunchParams 取值，优先级链用例原样保留。
  */
 
 import {
@@ -10,7 +14,6 @@ import {
   en,
   flattenMessages,
   htmlLangFor,
-  parseLangParam,
   persistLocale,
   readStoredLocale,
   resolveInitialLocale,
@@ -68,22 +71,6 @@ describe('t 查找', () => {
     type Key = Parameters<typeof t>[1];
     // 编译期 MessageKey 不可能缺键，此处强转覆盖运行时兜底分支
     expect(t('en', 'contactBadge.missing' as Key)).toBe('contactBadge.missing');
-  });
-});
-
-describe('parseLangParam（B2 独立轻量解析，只读 lang 参数）', () => {
-  it.each([
-    ['?lang=en', 'en'],
-    ['?lang=zh', 'zh'],
-    ['?lang=EN', 'en'],
-    ['?foo=1&lang=en&bar=2', 'en'],
-    ['lang=en', 'en'],
-  ])('%s → %s', (search, expected) => {
-    expect(parseLangParam(search)).toBe(expected);
-  });
-
-  it.each([['?lang=fr'], ['?lang='], ['?foo=1'], ['']])('%s → null', (search) => {
-    expect(parseLangParam(search)).toBeNull();
   });
 });
 

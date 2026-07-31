@@ -36,7 +36,7 @@ export function useLocale(): Locale {
  * 启动 locale 初始化（应用根组件挂载时一次）：
  * 优先级 `?lang=` > localStorage > 默认 zh（`resolveInitialLocale` 纯函数）。
  *
- * - `lang` 为 B2 独立轻量解析（只读该参数），B4 launchParams 统一迁移收口（登记）；
+ * - `lang` 经 B4 统一解析入口 `utils/launchParams.ts` 取值（迁移收口登记）；
  * - 解析结果与当前 locale 相同（默认 zh 启动）时不调用 setLocale——
  *   默认启动零副作用（不写 localStorage、`<html lang>` 保持 SSR 初始 zh-CN，
  *   与现状逐像素等价）。登记边界：`?lang=zh` 仅本次会话生效，不覆写既有

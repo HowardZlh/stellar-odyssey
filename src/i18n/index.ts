@@ -13,14 +13,16 @@
  *   `MessageKey`，由 zh 字典推导；运行时防御性回退 zh → 键名本身）；
  * - localStorage 键名：`stellar-odyssey:locale`；
  * - 启动优先级：`?lang=` > localStorage > 默认 zh（`resolveInitialLocale`
- *   纯函数）；`lang` 参数本阶段独立轻量解析（`parseLangParam` 只读这一个
- *   参数），B4 启动参数框架 `utils/launchParams.ts` 统一迁移收口；
+ *   纯函数）；`lang` 参数解析已统一迁移至 `utils/launchParams.ts`
+ *   单一入口（B4 收口登记：原 B2 独立轻量解析 `parseLangParam` 删除，
+ *   语义零变更——大小写不敏感、非法值不短路优先级链）；
  * - `<html lang>`：locale 变更时客户端写 `document.documentElement.lang`
  *   （zh → 'zh-CN' 与 SSR 初始值一致，en → 'en'）；SEO metadata 保持
  *   zh-CN 不动（档位 3 边界登记）。
  */
 import type { Locale, ViewLevel } from '@/types';
 import type { CycleScope } from '@/utils/cycleScopes';
+import { parseLaunchParams } from '@/utils/launchParams';
 import { en } from './en';
 import { zh } from './zh';
 
@@ -142,25 +144,16 @@ export const SCOPE_NAME_KEYS: Readonly<Record<CycleScope, MessageKey>> = {
 };
 
 /**
- * 解析 URL 查询串中的 `lang` 参数（纯函数）
- *
- * B2 独立轻量解析（登记）：只读 `lang` 这一个参数，大小写不敏感；
- * 非法值返回 null（不影响后续优先级链）。B4 启动参数框架
- * `utils/launchParams.ts` 交付时统一迁移收口。
- */
-export function parseLangParam(search: string): Locale | null {
-  const value = new URLSearchParams(search).get('lang')?.toLowerCase() ?? null;
-  return value === 'en' || value === 'zh' ? value : null;
-}
-
-/**
  * 启动 locale 解析（纯函数）：优先级 `?lang=` > localStorage 存值 > 默认 zh
+ *
+ * `lang` 参数经 B4 统一解析入口 `parseLaunchParams` 取值（B2 独立
+ * `parseLangParam` 已迁移删除，语义零变更登记）。
  *
  * @param search `window.location.search`（含 `?` 或空串均可）
  * @param stored localStorage 读出的原始值（可能为 null/非法值）
  */
 export function resolveInitialLocale(search: string, stored: string | null): Locale {
-  const fromParam = parseLangParam(search);
+  const fromParam = parseLaunchParams(search).lang;
   if (fromParam !== null) return fromParam;
   return stored === 'en' || stored === 'zh' ? stored : DEFAULT_LOCALE;
 }
