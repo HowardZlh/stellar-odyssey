@@ -85,22 +85,30 @@ export function SatelliteModel({
     return unsubscribe;
   }, [url]);
 
-  // 模型对象：glTF 就绪 → 归一化接入；否则程序化几何组合
+  // 模型对象：glTF 就绪 → 克隆独立实例（源场景只读，归 modelManager）；
+  // 否则程序化几何组合
   const model = useMemo<THREE.Group>(() => {
     if (gltfScene) return prepareGltfSatellite(gltfScene, data.id);
     return buildProceduralSatellite(data.id);
   }, [gltfScene, data.id]);
 
-  // 程序化模型自建材质/几何需释放；glTF 资源由 modelManager 统一持有
+  // 释放契约（谁创建谁释放）：
+  // - 程序化分支：自建材质/几何全部 dispose
+  // - glTF 分支：只 dispose 实例私有材质（prepareGltfSatellite 逐 mesh 克隆），
+  //   共享 geometry/texture 归 modelManager release() 统一释放，勿碰
   useEffect(() => {
-    if (gltfScene) return undefined;
     const owned = model;
+    const ownsGeometry = !gltfScene;
     return () => {
       owned.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
-        if (mesh.isMesh) {
-          mesh.geometry.dispose();
-          (mesh.material as THREE.Material).dispose();
+        if (!mesh.isMesh) return;
+        if (ownsGeometry) mesh.geometry.dispose();
+        const material = mesh.material as THREE.Material | THREE.Material[];
+        if (Array.isArray(material)) {
+          material.forEach((m) => m.dispose());
+        } else if (material) {
+          material.dispose();
         }
       });
     };
