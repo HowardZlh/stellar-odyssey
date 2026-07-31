@@ -15,8 +15,8 @@
 
 [![live](https://img.shields.io/badge/live-stellar.guushu.com-4d9fff)](https://stellar.guushu.com) ![tech](https://img.shields.io/badge/Next.js-14-black) ![tech](https://img.shields.io/badge/React-18-61dafb) ![tech](https://img.shields.io/badge/Three.js-R3F-049ef4) ![tech](https://img.shields.io/badge/TypeScript-strict-3178c6) ![tests](https://img.shields.io/badge/tests-2951%20passed-brightgreen) ![coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen)
 
-> The in-app UI is currently in Chinese (an interface language toggle is under active development);
-> the app itself is fully playable without reading any text — scroll, click, and explore.
+> The in-app UI is bilingual: use the **zh/EN toggle** at the top of the control panel (or launch with `?lang=en`).
+> Science notes and data values remain in Chinese for now.
 
 ---
 
