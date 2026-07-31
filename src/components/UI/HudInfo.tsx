@@ -20,6 +20,7 @@ import {
   FLARE_ENERGY_NOTE_EN,
   FLARE_ENERGY_NOTE_ZH,
   SUN_STRUCTURE_DATA_SOURCE,
+  SUN_STRUCTURE_DATA_SOURCE_EN,
   getSunLayerById,
 } from '@/data/sunStructure';
 import { useSimulationStore } from '@/store';
@@ -57,8 +58,8 @@ const REFERENCE_FRAME_KEYS: Record<ViewLevel, MessageKey> = {
  * i18n 全站覆盖：科学注记常量（SN 频率/耀斑能量/地磁暴/合并结局与来源）
  * 经 `*_EN` 常量族 + pickLocalized 按 locale 取用；合并阶段名经
  * mergerNotice(locale)；信息面板值行经 getBodyInfoById(id, locale)
- * 双目录；黑子/日珥卡片与剖面分层经数据层 `*En` 字段。
- * 仅 dataSource 署名保持原文（豁免登记沿用）。
+ * 双目录；黑子/日珥卡片与剖面分层经数据层 `*En` 字段；dataSource 署名
+ * 同随 locale（含中文的署名补 `dataSourceEn`/`*_SOURCE_EN`，纯英文原样）。
  */
 export function HudInfo(): JSX.Element {
   const tr = useT();
@@ -558,9 +559,15 @@ export function HudInfo(): JSX.Element {
                 <p className="mt-2 leading-5 text-gray-300">
                   {pickLocalized(locale, layer.descriptionZh, layer.descriptionEn)}
                 </p>
-                {/* B3 豁免：dataSource 科学署名留中文 */}
+                {/* i18n：结构数据来源按 locale 取用 */}
                 <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-gray-500">
-                  {trf('hud.dataSource', { value: SUN_STRUCTURE_DATA_SOURCE })}
+                  {trf('hud.dataSource', {
+                    value: pickLocalized(
+                      locale,
+                      SUN_STRUCTURE_DATA_SOURCE,
+                      SUN_STRUCTURE_DATA_SOURCE_EN,
+                    ),
+                  })}
                 </p>
               </>
             );
@@ -691,7 +698,7 @@ export function HudInfo(): JSX.Element {
               </span>
             )}
           </div>
-          {/* B3 豁免：dataSource 科学署名值留中文 */}
+          {/* i18n：dataSource 随 en 目录本地化（含中文的署名已补英文版） */}
           <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-gray-500">
             {trf('hud.dataSource', { value: selected.dataSource })}
           </p>

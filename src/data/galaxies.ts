@@ -35,6 +35,8 @@ export const MILKY_WAY = {
     'Sagittarius A* — the supermassive black hole at the Galactic Center, ~4.3 million solar masses',
   dataSource:
     'NASA/JPL-Caltech 银河系结构图 / Gaia DR3；黑洞质量来源：GRAVITY Collaboration (2019)',
+  dataSourceEn:
+    'NASA/JPL-Caltech Milky Way structure map / Gaia DR3; black-hole mass from GRAVITY Collaboration (2019)',
 } as const;
 
 /**

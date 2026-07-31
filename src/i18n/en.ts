@@ -93,6 +93,14 @@ export const en: I18nDict = {
     mergerActive: 'Merger preview in progress…',
     mergerTrigger: 'Preview the Milky Way–Andromeda collision',
     mergerRestore: 'Restore pre-preview time',
+    catalogNote:
+      '{source}; registered distortions: {distortions}. Falls back to the procedural cosmic-web sketch when disabled or when data is unavailable',
+    expandNote:
+      'The whole galaxy morphs into an oblate spheroid with the gain (disk particles / supernovae rise with the disk, special-object heights spread out by the gain; a visual exaggeration to aid observation — indicator lines mark the unamplified latitude-derived heights)',
+    realScaleNote:
+      'At real scale, planets and dwarf planets are tiny (dwarf planets being invisible is a scientific fact); fly to or follow one for a close-up view',
+    cutawayNote:
+      'In the cutaway, the core / radiative zone / convective zone can be clicked for notes; external activity effects are temporarily faded out',
   },
   hud: {
     simTime: 'Sim time: {value}',

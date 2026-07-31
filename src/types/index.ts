@@ -115,6 +115,8 @@ export interface PlanetData {
   massKg?: number;
   /** 数据来源说明 */
   dataSource: string;
+  /** 数据来源（英文；仅 dataSource 含中文时提供，缺失时英文态回退原文） */
+  dataSourceEn?: string;
   /** 行星环（土星等） */
   ring?: PlanetRingConfig;
   /** 表面视觉特征 */
@@ -177,6 +179,8 @@ export interface MoonData {
   /** 备注（英文；缺失时英文态回退中文） */
   noteEn?: string;
   dataSource: string;
+  /** 数据来源（英文；仅 dataSource 含中文时提供，缺失时英文态回退原文） */
+  dataSourceEn?: string;
 }
 
 /** 彗星数据（需求 3.1.1 小天体） */
@@ -195,6 +199,8 @@ export interface CometData {
   /** 质量（kg，信息面板质量字段，需求 3.5.2） */
   massKg?: number;
   dataSource: string;
+  /** 数据来源（英文；仅 dataSource 含中文时提供，缺失时英文态回退原文） */
+  dataSourceEn?: string;
 }
 
 /** 粒子带配置（小行星带 / 柯伊伯带，需求 3.1.1） */
@@ -357,6 +363,8 @@ export interface SpecialBodyData {
   /** 动态效果科学解释（英文；缺失时英文态回退中文） */
   dynamicsEn?: string;
   dataSource: string;
+  /** 数据来源（英文；仅 dataSource 含中文时提供，缺失时英文态回退原文） */
+  dataSourceEn?: string;
 }
 
 /** 耀斑级别（NOAA GOES 软 X 射线通量分级，S2 §4.3-2） */

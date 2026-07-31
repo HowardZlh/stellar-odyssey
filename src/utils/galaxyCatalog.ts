@@ -289,8 +289,20 @@ export function buildCatalogLodAttributes(data: GalaxyCatalogData): CatalogLodAt
 export const GALAXY_CATALOG_SOURCE_ZH =
   '2MASS 红移巡天（2MRS，Huchra et al. 2012）约 4.3 万个真实星系的三维位置';
 
+/** 真实巡天背景来源（英文，i18n 全站覆盖） */
+export const GALAXY_CATALOG_SOURCE_EN =
+  'Three-dimensional positions of ~43,000 real galaxies from the 2MASS Redshift Survey ' +
+  '(2MRS, Huchra et al. 2012)';
+
 /** 三项失真登记（附录 A §3：不得默称"完全真实"） */
 export const GALAXY_CATALOG_DISTORTIONS_ZH =
   '红移距离为哈勃流近似（本动速度致星系团沿视线拉长的"指状效应"）；' +
   '近距（cz ≲ 1,000 km/s）距离误差可达数十%；' +
   '银道面附近空带为尘埃遮挡的观测限制（Zone of Avoidance），非真实空洞';
+
+/** 三项失真登记（英文，i18n 全站覆盖） */
+export const GALAXY_CATALOG_DISTORTIONS_EN =
+  'redshift distances use the Hubble-flow approximation (peculiar velocities stretch clusters ' +
+  'along the line of sight — the "Fingers of God" effect); nearby distances (cz ≲ 1,000 km/s) ' +
+  'can be off by tens of percent; the gap near the Galactic plane is a dust-obscuration ' +
+  'observational limit (Zone of Avoidance), not a real void';
