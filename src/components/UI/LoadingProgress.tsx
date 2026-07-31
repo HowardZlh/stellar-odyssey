@@ -4,6 +4,7 @@
 import type { JSX } from 'react';
 import { useEffect, useState } from 'react';
 import type { LoadProgress } from '@/utils/loadProgress';
+import { useT } from '@/hooks/useI18n';
 import { getTextureManager } from '@/components/CelestialBody/textureManager';
 
 /** 完成后进度条保留展示时长（毫秒），随后自动消失 */
@@ -16,6 +17,7 @@ const HIDE_DELAY_MS = 800;
  * 到程序化纹理，不阻塞进度）。
  */
 export function LoadingProgress(): JSX.Element | null {
+  const tr = useT();
   const [progress, setProgress] = useState<LoadProgress>(() => getTextureManager().getProgress());
   const [visible, setVisible] = useState(false);
 
@@ -47,7 +49,7 @@ export function LoadingProgress(): JSX.Element | null {
   return (
     <div className="pointer-events-none absolute left-1/2 top-16 w-56 -translate-x-1/2 rounded-lg bg-space-panel px-4 py-2 backdrop-blur">
       <div className="mb-1 flex items-center justify-between text-[10px] tracking-widest text-space-accent">
-        <span>加载纹理资源</span>
+        <span>{tr('loading.textures')}</span>
         <span>{percent}%</span>
       </div>
       <div className="h-1 w-full overflow-hidden rounded bg-white/10">
