@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import type {
   CmeEvent,
   CmeNoticeInfo,
+  LaunchParams,
   Locale,
   SolarFlareClass,
   SolarFlareEvent,
@@ -18,6 +19,7 @@ import type {
   ViewLevel,
 } from '@/types';
 import { persistLocale, syncHtmlLang } from '@/i18n';
+import { DEFAULT_LAUNCH_PARAMS } from '@/utils/launchParams';
 import { DEFAULT_ANCHOR_BODY_ID, isCycleBody, planetSystemIdForBody } from '@/utils/bodyCycle';
 import {
   GALAXY_CYCLE_SEQUENCE,
@@ -233,6 +235,13 @@ export interface SimulationState {
    * 勿改默认；启动优先级 `?lang=` > localStorage > zh（useLocaleInit）
    */
   locale: Locale;
+  /**
+   * 启动 URL 参数（B4，字段命名登记 `launch`）：挂载后由
+   * useLaunchInit 一次性解析写入（utils/launchParams.ts）；
+   * `mode`/`tour`/`dwell` 本阶段仅存储（B5 kiosk 消费，未交付时
+   * `mode=kiosk` 无行为，登记）；`logo` 由 LaunchLogo 组件消费。
+   */
+  launch: LaunchParams;
 
   // actions
   tick: (realDeltaSeconds: number) => void;
@@ -245,6 +254,8 @@ export interface SimulationState {
    * 同步（副作用仅客户端触达；SSR/SSG 阶段不会调用本 action）
    */
   setLocale: (locale: Locale) => void;
+  /** 写入启动 URL 参数解析结果（B4：挂载后一次性调用） */
+  setLaunchParams: (params: LaunchParams) => void;
   /** 相机缩放驱动的连续层级同步（不触发锚点过渡动画） */
   syncZoomLevel: (continuousLevel: number) => void;
   /**
@@ -585,6 +596,9 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   eventScopeSeenTransitionId: 0,
   eventScopeSeenFlyToId: 0,
   locale: 'zh',
+  launch: DEFAULT_LAUNCH_PARAMS,
+
+  setLaunchParams: (params) => set({ launch: params }),
 
   setLocale: (locale) => {
     set({ locale });
