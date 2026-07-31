@@ -125,6 +125,7 @@ export const CERES: PlanetData = {
   orbitalPeriodYears: 4.6,
   massKg: 9.38e20,
   dataSource: `${JPL_SBDB_SOURCE} / NASA Dawn 任务（2015 年环绕探测）`,
+  dataSourceEn: `${JPL_SBDB_SOURCE} / NASA Dawn mission (orbited in 2015)`,
 };
 
 /**

@@ -3,7 +3,7 @@
 
 import type { JSX } from 'react';
 import { VIEW_LEVELS } from '@/types';
-import { VIEW_LEVEL_NAME_KEYS } from '@/i18n';
+import { VIEW_LEVEL_NAME_KEYS, pickLocalized } from '@/i18n';
 import { useT, useTf } from '@/hooks/useI18n';
 import { kioskNowSec } from '@/hooks/useKiosk';
 import { useSimulationStore } from '@/store';
@@ -15,10 +15,12 @@ import {
   GALAXY_EXPAND_GAIN_STEP,
 } from '@/utils/galacticLatitude';
 import {
+  GALAXY_CATALOG_DISTORTIONS_EN,
   GALAXY_CATALOG_DISTORTIONS_ZH,
+  GALAXY_CATALOG_SOURCE_EN,
   GALAXY_CATALOG_SOURCE_ZH,
 } from '@/utils/galaxyCatalog';
-import { FERMI_BUBBLES_SOURCE_ZH } from '@/utils/fermiBubbles';
+import { FERMI_BUBBLES_SOURCE_EN, FERMI_BUBBLES_SOURCE_ZH } from '@/utils/fermiBubbles';
 import { SN_DEFAULT_DURATION_SEC } from '@/utils/supernova';
 import { rollSupernovaParams } from '@/components/Scene/Supernova';
 import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunActivity';
@@ -32,10 +34,11 @@ import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunAc
  * 置灰方案）；判定源 = viewLevel（跟随期间层级锁定选项不闪变）。
  * 仅整理 UI 显示——域外已开启的开关状态与场景效果全部保留。
  *
- * B3 i18n：壳层文案经字典查找（controlPanel.* 键组）；豁免留中文（登记）——
+ * B3 i18n：壳层文案经字典查找（controlPanel.* 键组）。i18n 全站覆盖：
  * 显示开关下方来源/科学说明段（2MRS 来源与失真、费米气泡来源、垂直展开
- * 说明、真实比例说明、剖面说明，方案 K3 边界）。顶部新增 zh/EN 语言
- * 切换钮（B3-D，§0.5#5 位置微调登记：标题行右侧）。
+ * 说明、真实比例说明、剖面说明）豁免解除——经字典键（catalogNote/
+ * expandNote/realScaleNote/cutawayNote）与 `*_EN` 来源常量按 locale 取用。
+ * 顶部 zh/EN 语言切换钮（B3-D，§0.5#5 位置微调登记：标题行右侧）。
  */
 export function ControlPanel(): JSX.Element {
   const tr = useT();
@@ -325,10 +328,20 @@ export function ControlPanel(): JSX.Element {
               />
               {tr('controlPanel.galaxyCatalog')}
             </label>
-            {/* B3 豁免（方案 K3）：显示开关下方来源说明段留中文 */}
+            {/* i18n：来源说明段按 locale 取用（字典键 + *_EN 常量） */}
             <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
-              {GALAXY_CATALOG_SOURCE_ZH}；失真登记：{GALAXY_CATALOG_DISTORTIONS_ZH}。
-              关闭或数据缺失时回落程序化宇宙网示意
+              {trf('controlPanel.catalogNote', {
+                source: pickLocalized(
+                  locale,
+                  GALAXY_CATALOG_SOURCE_ZH,
+                  GALAXY_CATALOG_SOURCE_EN,
+                ),
+                distortions: pickLocalized(
+                  locale,
+                  GALAXY_CATALOG_DISTORTIONS_ZH,
+                  GALAXY_CATALOG_DISTORTIONS_EN,
+                ),
+              })}
             </p>
           </>
         )}
@@ -342,9 +355,9 @@ export function ControlPanel(): JSX.Element {
               />
               {tr('controlPanel.fermiBubbles')}
             </label>
-            {/* B3 豁免（方案 K3）：来源说明段留中文 */}
+            {/* i18n：来源说明段按 locale 取用 */}
             <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
-              {FERMI_BUBBLES_SOURCE_ZH}
+              {pickLocalized(locale, FERMI_BUBBLES_SOURCE_ZH, FERMI_BUBBLES_SOURCE_EN)}
             </p>
           </>
         )}
@@ -373,11 +386,9 @@ export function ControlPanel(): JSX.Element {
                     aria-label={tr('controlPanel.expandGainAria')}
                   />
                 </label>
-                {/* B3 豁免（方案 K3）：开关下方科学说明段留中文 */}
+                {/* i18n：开关下方科学说明段按 locale 取用 */}
                 <p className="text-[10px] leading-4 text-gray-500">
-                  银河系整体随增益 morph 为扁旋转椭球体（银盘粒子/超新星随盘
-                  抬升、特殊天体垂直高度按增益展开；观察辅助的视觉夸大，
-                  指示线标注为未放大的银纬推算高度）
+                  {tr('controlPanel.expandNote')}
                 </p>
               </div>
             )}
@@ -392,10 +403,9 @@ export function ControlPanel(): JSX.Element {
           {tr('controlPanel.realScale')}
         </label>
         {realScaleMode && (
-          /* B3 豁免（方案 K3）：开关下方科学说明段留中文 */
+          /* i18n：开关下方科学说明段按 locale 取用 */
           <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
-            真实比例下行星/矮行星极小（矮行星过小不可见属科学事实），
-            可飞往/跟随后近距离观察
+            {tr('controlPanel.realScaleNote')}
           </p>
         )}
         {visible('sunCutaway') && (
@@ -409,9 +419,9 @@ export function ControlPanel(): JSX.Element {
               {tr('controlPanel.sunCutaway')}
             </label>
             {sunCutawayMode && (
-              /* B3 豁免（方案 K3）：开关下方科学说明段留中文 */
+              /* i18n：开关下方科学说明段按 locale 取用 */
               <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
-                剖面下核心/辐射区/对流区可点选查看科普；外部活动特效已暂时淡出
+                {tr('controlPanel.cutawayNote')}
               </p>
             )}
           </>

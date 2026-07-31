@@ -1891,3 +1891,7 @@ export const GALAXY_STRUCTURE_NOTE_BY_MORPHOLOGY_EN: Readonly<
  * 来源；R5-1 追加影像来源署名——附录 A §2 应用内署名呈现位置登记） */
 export const GALAXY_STRUCTURE_SOURCE_ZH =
   '结构分类：Hubble 形态序列（NED）；形态参数（倾角/臂数/尘埃带/HII 区）：RC3（de Vaucouleurs et al. 1991）、S4G（Sheth et al. 2010）近似档；近观粒子层为按形态类型的示意重构（椭圆星系按 Sérsic 1963 亮度分布近似），已登记；M31/M33/LMC/SMC 近观分布与远景贴图源自 DSS2 彩色合成影像（STScI Digitized Sky Survey / AAO / ROE / Caltech，经 CDS hips2fits 烘焙为权重图，M31 已做倾角反投影，盘面分布真实、垂直厚度参数化，登记）';
+
+/** 结构说明数据来源（英文，i18n 全站覆盖；内容与 ZH 版一一对应） */
+export const GALAXY_STRUCTURE_SOURCE_EN =
+  'Structural classification: Hubble morphological sequence (NED); morphology parameters (inclination / arm count / dust lanes / HII regions): RC3 (de Vaucouleurs et al. 1991) and S4G (Sheth et al. 2010) approximate tiers; close-view particle layers are schematic reconstructions by morphological type (ellipticals approximate the Sérsic 1963 brightness profile), registered; M31/M33/LMC/SMC close-view distributions and far-view textures derive from DSS2 color composites (STScI Digitized Sky Survey / AAO / ROE / Caltech, baked into weight maps via CDS hips2fits; M31 deprojected by inclination — in-plane distribution real, vertical thickness parameterized, registered)';

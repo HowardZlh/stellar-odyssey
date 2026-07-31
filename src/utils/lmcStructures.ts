@@ -227,3 +227,7 @@ export const LMC_LANDMARK_NOTE_EN =
 /** LMC 标志结构数据来源（catalog dataSource 追加段） */
 export const LMC_LANDMARK_SOURCE_ZH =
   '30 Doradus 位置：SIMBAD（NGC 2070）经 gnomonic 切平面换算至影像盘面（方法登记 utils/lmcStructures）；发射区为球壳+fBm 程序化体积近似（NASA/ESA Hubble 公版影像形态参考）；棒椭圆为密度图流量加权二阶矩拟合档、老年星族偏黄分层为示意色调（van der Marel 2001 图景近似登记）';
+
+/** LMC 标志结构数据来源（英文，i18n 全站覆盖；内容与 ZH 版一一对应） */
+export const LMC_LANDMARK_SOURCE_EN =
+  '30 Doradus position: SIMBAD (NGC 2070) converted to the image disk plane via a gnomonic tangent plane (method registered in utils/lmcStructures); the emission region is a spherical-shell + fBm procedural volume approximation (morphology referenced to public NASA/ESA Hubble imagery); the bar ellipse is a flux-weighted second-moment fit to the density map, with the yellowish old-population tint as a schematic hue (approximating the van der Marel 2001 picture, registered)';
