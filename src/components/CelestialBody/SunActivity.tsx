@@ -938,9 +938,15 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
     useSimulationStore.getState().setSelectedSolarFeature({
       kind: 'sunspot',
       titleZh: '太阳黑子群',
+      titleEn: 'Sunspot group',
       descZh:
         '强磁场抑制对流形成的低温暗区（本影 ~3,500–4,500 °C，对比光球 ~5,500 °C）。' +
         '成对出现（前导/后随，磁极相反——Hale 极性定律），随较差自转移动。',
+      descEn:
+        'Cooler dark regions where strong magnetic fields suppress convection ' +
+        '(umbra ~3,500–4,500 °C vs. the ~5,500 °C photosphere). They appear in pairs ' +
+        '(leading/trailing with opposite polarity — Hale\u2019s polarity law) and drift ' +
+        'with the Sun\u2019s differential rotation.',
       earthCount,
     });
   };
@@ -950,9 +956,15 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
     useSimulationStore.getState().setSelectedSolarFeature({
       kind: 'prominence',
       titleZh: '日珥',
+      titleEn: 'Prominence',
       descZh:
         '色球物质沿磁力线悬浮于高温日冕中的拱状结构（氢α 红色调），寿命数天至数月；' +
         '在日面上投影为暗条。爆发日珥可作为日冕物质抛射（CME）的前导。',
+      descEn:
+        'Arch-shaped structures of chromospheric material suspended along magnetic ' +
+        'field lines in the hot corona (Hα red hue), lasting days to months; seen ' +
+        'against the disk they appear as dark filaments. Eruptive prominences can ' +
+        'precede coronal mass ejections (CMEs).',
       earthCount: null,
     });
   };

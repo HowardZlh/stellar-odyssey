@@ -891,26 +891,40 @@ export interface ActivityInfoLine {
 
 /**
  * 太阳信息面板"当前活动事件"行（§4.5）
+ *
+ * i18n：label 保持中文键（UI 层经 catalogText 直映射），value 按
+ * locale 生成（默认 zh——既有测试断言零改动）。
  */
 export function sunActivityStatusLines(
   flare: { class: SolarFlareClass; magnitude: number } | null,
   cme: { speedKmS: number; earthDirected: boolean } | null,
+  locale: 'zh' | 'en' = 'zh',
 ): ActivityInfoLine[] {
+  const en = locale === 'en';
   const lines: ActivityInfoLine[] = [];
   if (flare) {
     lines.push({
       label: '当前耀斑',
-      value: `${flare.class}${flare.magnitude.toFixed(1)} 级（磁重联爆发进行中）`,
+      value: en
+        ? `${flare.class}${flare.magnitude.toFixed(1)} (magnetic reconnection in progress)`
+        : `${flare.class}${flare.magnitude.toFixed(1)} 级（磁重联爆发进行中）`,
     });
   }
   if (cme) {
     lines.push({
       label: '当前 CME',
-      value: `${Math.round(cme.speedKmS)} km/s${cme.earthDirected ? '，朝向地球（可能引发地磁暴）' : ''}`,
+      value: en
+        ? `${Math.round(cme.speedKmS)} km/s${cme.earthDirected ? ', Earth-directed (may trigger a geomagnetic storm)' : ''}`
+        : `${Math.round(cme.speedKmS)} km/s${cme.earthDirected ? '，朝向地球（可能引发地磁暴）' : ''}`,
     });
   }
   if (lines.length === 0) {
-    lines.push({ label: '当前活动', value: '平静（可在控制面板手动触发演示）' });
+    lines.push({
+      label: '当前活动',
+      value: en
+        ? 'Quiet (demos can be triggered from the control panel)'
+        : '平静（可在控制面板手动触发演示）',
+    });
   }
   return lines;
 }

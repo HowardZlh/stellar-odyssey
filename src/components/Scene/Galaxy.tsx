@@ -5,6 +5,7 @@ import type { JSX } from 'react';
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { ClampedHtmlLabel } from "@/components/Scene/ClampedHtmlLabel";
+import { LabelText } from "@/components/Scene/LocalizedLabelText";
 import * as THREE from "three";
 import { LOCAL_GROUP_GALAXIES, MILKY_WAY } from "@/data/galaxies";
 import { isGalaxyAnchoredFocusId } from "@/data/specialBodies";
@@ -57,7 +58,7 @@ import { setObjectTreeRaycastEnabled } from "@/utils/raycastGate";
 import { UNIVERSE_RENDER_ORDER } from "@/utils/universeRenderOrder";
 import {
   ORBIT_GRADATION_COUNT,
-  gradationProgressLabel,
+  gradationPercentText,
   isMajorGradation,
   markerBreathScale,
   markerPulse01,
@@ -515,7 +516,7 @@ export function Galaxy(): JSX.Element {
     const rUnits = SUN_GALACTIC_RADIUS_LY * SCENE_UNITS_PER_LY;
     const minor: number[] = [];
     const major: number[] = [];
-    const labels: { key: number; label: string; pos: [number, number, number] }[] = [];
+    const labels: { key: number; percent: string; pos: [number, number, number] }[] = [];
     for (let i = 0; i < ORBIT_GRADATION_COUNT; i += 1) {
       const a = orbitGradationAngle(i);
       // 与 sunGalacticPositionLy 一致：x=R·cosθ，z=−R·sinθ，y=0（平均轨道环）
@@ -523,7 +524,8 @@ export function Galaxy(): JSX.Element {
       const z = -rUnits * Math.sin(a);
       if (isMajorGradation(i)) {
         major.push(x, 0, z);
-        labels.push({ key: i, label: gradationProgressLabel(i), pos: [x, 46, z] });
+        // i18n：仅存百分比文本，"银河年"单位词由字典键渲染（LabelText）
+        labels.push({ key: i, percent: gradationPercentText(i), pos: [x, 46, z] });
       } else {
         minor.push(x, 0, z);
       }
@@ -1013,7 +1015,7 @@ export function Galaxy(): JSX.Element {
             style={{ pointerEvents: "none" }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-[10px] text-amber-200/80">
-              {item.label}
+              <LabelText k="sceneLabel.galacticYearPercent" params={{ percent: item.percent }} />
             </span>
           </ClampedHtmlLabel>
         ))}
@@ -1087,7 +1089,7 @@ export function Galaxy(): JSX.Element {
             style={{ pointerEvents: "none" }}
           >
             <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-emerald-300">
-              你在这里（太阳系）
+              <LabelText k="sceneLabel.youAreHere" />
             </span>
           </ClampedHtmlLabel>
         )}

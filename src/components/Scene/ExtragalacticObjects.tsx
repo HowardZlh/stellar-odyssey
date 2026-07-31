@@ -5,6 +5,7 @@ import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
+import { BodyNameText, LabelText } from '@/components/Scene/LocalizedLabelText';
 import * as THREE from 'three';
 import { getGalaxyById } from '@/data/galaxies';
 import { getSpecialBodyById } from '@/data/specialBodies';
@@ -325,7 +326,8 @@ export function Quasar(): JSX.Element | null {
         // R3-4：近距反向缩放钳制 + 焦点隐藏（治理缺口补齐）
         <ClampedHtmlLabel position={[0, 700, 0]} distanceFactor={12000} style={{ pointerEvents: 'none' }}>
           <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-sky-200">
-            {body.nameZh}（约 24 亿光年）
+            <BodyNameText body={body} />
+            <LabelText k="sceneLabel.quasarSuffix" />
           </span>
         </ClampedHtmlLabel>
       )}
@@ -537,7 +539,8 @@ export function AntennaeGalaxies(): JSX.Element | null {
       {showLabels && inRange && !focused && (
         <ClampedHtmlLabel position={[0, 900, 0]} distanceFactor={12000} style={{ pointerEvents: 'none' }}>
           <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-orange-200">
-            {body.nameZh}（星系碰撞现场，约 4500 万光年）
+            <BodyNameText body={body} />
+            <LabelText k="sceneLabel.antennaeSuffix" />
           </span>
         </ClampedHtmlLabel>
       )}
@@ -710,7 +713,7 @@ export function LensingArcs(): JSX.Element | null {
       {showLabels && inRange && !focused && (
         <ClampedHtmlLabel position={[0, 1550, 0]} distanceFactor={12000} style={{ pointerEvents: 'none' }}>
           <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-sky-200">
-            星系团引力透镜弧（示意，原型 Abell 370）
+            <LabelText k="sceneLabel.lensingArcs" />
           </span>
         </ClampedHtmlLabel>
       )}
@@ -843,7 +846,8 @@ export function GammaRayBurst(): JSX.Element | null {
       {showLabels && inRange && !focused && (
         <ClampedHtmlLabel position={[0, 800, 0]} distanceFactor={12000} style={{ pointerEvents: 'none' }}>
           <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-violet-200">
-            {body.nameZh}（演示重放，约 20 亿光年）
+            <BodyNameText body={body} />
+            <LabelText k="sceneLabel.grbSuffix" />
           </span>
         </ClampedHtmlLabel>
       )}

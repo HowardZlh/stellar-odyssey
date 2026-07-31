@@ -79,11 +79,25 @@ export const MERGER_FATE_NOTE_ZH =
   '（也可能一度被抛向 M31 一侧）；恒星之间相距极远，恒星间直接碰撞的概率' +
   '微乎其微，行星轨道基本不受影响。';
 
+/** 太阳系命运科普（英文，i18n 全站覆盖） */
+export const MERGER_FATE_NOTE_EN =
+  'Fate of the Solar System: during the merger it will most likely be tidally ' +
+  'flung onto a wider orbit in the outskirts of Milkomeda (and may briefly be ' +
+  'thrown toward the M31 side); stars are so far apart that direct stellar ' +
+  'collisions are vanishingly unlikely, and planetary orbits are barely affected.';
+
 /** 参考来源标注（科学性登记，附录 A §4） */
 export const MERGER_SOURCE_NOTE_ZH =
   '来源：van der Marel et al. 2012 (ApJ) / NASA GSFC 并合模拟；' +
   '回摆周期与并合时长经时间压缩（真实约 20–30 亿年 → 4 亿模拟年），' +
   '振荡简化为约 2 次减幅往返，星暴亮度为艺术化示意。';
+
+/** 参考来源标注（英文，i18n 全站覆盖） */
+export const MERGER_SOURCE_NOTE_EN =
+  'Source: van der Marel et al. 2012 (ApJ) / NASA GSFC merger simulations; ' +
+  'oscillation period and merger duration are time-compressed (a real ~2–3 Gyr ' +
+  'to 400 simulated Myr), the oscillation is simplified to about two damped ' +
+  'passes, and starburst brightness is an artistic cue.';
 
 /**
  * T0 后经过的模拟时间 τ（百万年；T0 前为负）
@@ -206,12 +220,30 @@ const STAGE_LABEL_ZH: Record<MergerStage, string> = {
   merged: '并合完成：椭圆星系 Milkomeda（银河仙女星系）',
 };
 
+/** 各阶段 HUD 标签（英文，i18n 全站覆盖；与 ZH 键集合一致） */
+const STAGE_LABEL_EN: Record<MergerStage, string> = {
+  approaching: 'Approaching each other',
+  'first-passage': 'First passage — the disks sweep past each other, M31 decelerates and recedes',
+  oscillation: 'Oscillation — damped passes under dynamical friction',
+  coalescing: 'Cores coalescing — spiral arms dissolve, transitioning to a spheroid',
+  merged: 'Merger complete: elliptical galaxy Milkomeda',
+};
+
 /**
  * 阶段 HUD 标签文案（合并前返回 null——接近段由倒计时文案负责）
  */
 export function mergerStageLabelZh(simDays: number): string | null {
   const stage = mergerStage(simDays);
   return stage === 'approaching' ? null : STAGE_LABEL_ZH[stage];
+}
+
+/**
+ * 阶段 HUD 标签文案（locale 感知，i18n 全站覆盖；语义同 mergerStageLabelZh）
+ */
+export function mergerStageLabel(locale: 'zh' | 'en', simDays: number): string | null {
+  const stage = mergerStage(simDays);
+  if (stage === 'approaching') return null;
+  return locale === 'en' ? STAGE_LABEL_EN[stage] : STAGE_LABEL_ZH[stage];
 }
 
 /**
@@ -223,4 +255,19 @@ export function mergerNoticeZh(
   const stage = mergerStage(simDays);
   if (stage === 'approaching') return null;
   return { stageZh: STAGE_LABEL_ZH[stage], tauMyr: mergerTauMyr(simDays) };
+}
+
+/**
+ * L4 合并演化科普卡片内容（locale 感知；stageText 按 locale 取用）
+ */
+export function mergerNotice(
+  locale: 'zh' | 'en',
+  simDays: number,
+): { stageText: string; tauMyr: number } | null {
+  const stage = mergerStage(simDays);
+  if (stage === 'approaching') return null;
+  return {
+    stageText: locale === 'en' ? STAGE_LABEL_EN[stage] : STAGE_LABEL_ZH[stage],
+    tauMyr: mergerTauMyr(simDays),
+  };
 }

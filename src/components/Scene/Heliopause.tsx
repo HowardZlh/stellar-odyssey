@@ -5,6 +5,7 @@ import type { JSX } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
+import { BodyNameText, LabelText } from '@/components/Scene/LocalizedLabelText';
 import * as THREE from 'three';
 import { useSimulationStore } from '@/store';
 import {
@@ -148,7 +149,10 @@ function HeliopauseNearStructure({
             style={{ pointerEvents: 'none' }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-amber-300/85">
-              终端激波（示意，约 {TERMINATION_SHOCK_REAL_DISTANCE_AU} AU）
+              <LabelText
+                k="sceneLabel.terminationShock"
+                params={{ au: TERMINATION_SHOCK_REAL_DISTANCE_AU }}
+              />
             </span>
           </ClampedHtmlLabel>
           <ClampedHtmlLabel
@@ -157,7 +161,7 @@ function HeliopauseNearStructure({
             style={{ pointerEvents: 'none' }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-orange-200/80">
-              日鞘（渐变区）
+              <LabelText k="sceneLabel.heliosheath" />
             </span>
           </ClampedHtmlLabel>
         </>
@@ -191,7 +195,8 @@ function HeliopauseNearStructure({
           {showLabels && focusedMarkerId !== m.id && (
             <ClampedHtmlLabel position={[0, 22, 0]} distanceFactor={480} style={{ pointerEvents: 'none' }}>
               <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-amber-200/90">
-                {m.nameZh}（{m.crossedYear} 穿越）
+                <BodyNameText body={m} />
+                <LabelText k="sceneLabel.voyagerCrossedSuffix" params={{ year: m.crossedYear }} />
               </span>
             </ClampedHtmlLabel>
           )}
@@ -311,7 +316,7 @@ export function Heliopause(): JSX.Element {
           style={{ pointerEvents: 'none' }}
         >
           <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-sky-300/80">
-            日球层顶（示意，实际约 120 AU）
+            <LabelText k="sceneLabel.heliopause" />
           </span>
         </ClampedHtmlLabel>
       )}
