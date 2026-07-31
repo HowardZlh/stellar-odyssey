@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import type {
   CmeEvent,
   CmeNoticeInfo,
+  Locale,
   SolarFlareClass,
   SolarFlareEvent,
   SolarFlareNoticeInfo,
@@ -16,6 +17,7 @@ import type {
   Vec3,
   ViewLevel,
 } from '@/types';
+import { persistLocale, syncHtmlLang } from '@/i18n';
 import { DEFAULT_ANCHOR_BODY_ID, isCycleBody, planetSystemIdForBody } from '@/utils/bodyCycle';
 import {
   GALAXY_CYCLE_SEQUENCE,
@@ -226,6 +228,11 @@ export interface SimulationState {
   eventScopeSeenTransitionId: number;
   /** R3-3：离域计时已消费的飞往请求代次（变更帧写入运镜豁免） */
   eventScopeSeenFlyToId: number;
+  /**
+   * 界面语言（B2 i18n 基建）：默认 zh——既有中文测试断言零改动的前提，
+   * 勿改默认；启动优先级 `?lang=` > localStorage > zh（useLocaleInit）
+   */
+  locale: Locale;
 
   // actions
   tick: (realDeltaSeconds: number) => void;
@@ -233,6 +240,11 @@ export interface SimulationState {
   togglePaused: () => void;
   setSpeedMultiplier: (multiplier: number) => void;
   setViewLevel: (level: ViewLevel) => void;
+  /**
+   * 设置界面语言（B2）：更新状态 + localStorage 持久化 + `<html lang>`
+   * 同步（副作用仅客户端触达；SSR/SSG 阶段不会调用本 action）
+   */
+  setLocale: (locale: Locale) => void;
   /** 相机缩放驱动的连续层级同步（不触发锚点过渡动画） */
   syncZoomLevel: (continuousLevel: number) => void;
   /**
@@ -572,6 +584,15 @@ export const useSimulationStore = create<SimulationState>((set) => ({
   mergerOutOfScopeSec: 0,
   eventScopeSeenTransitionId: 0,
   eventScopeSeenFlyToId: 0,
+  locale: 'zh',
+
+  setLocale: (locale) => {
+    set({ locale });
+    // 副作用收口：持久化 + <html lang> 同步（两函数自带异常兜底，
+    // 存取失败不影响本次会话切换）
+    persistLocale(locale);
+    syncHtmlLang(locale);
+  },
 
   tick: (realDeltaSeconds) =>
     set((state) => {
