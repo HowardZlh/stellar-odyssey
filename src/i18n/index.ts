@@ -127,6 +127,20 @@ export function displayBodyName(
   return body.nameZh;
 }
 
+/**
+ * 双语字段选择收口函数（i18n 全站覆盖）：en 态取英文字段（`*En`），
+ * 缺失（undefined/空串）回退中文——数据层英文字段允许渐进补齐，
+ * 未收录条目英文态混排为已知可接受（豁免登记沿用 B3 口径）。
+ */
+export function pickLocalized(
+  locale: Locale,
+  zhText: string,
+  enText?: string,
+): string {
+  if (locale === 'en' && enText !== undefined && enText !== '') return enText;
+  return zhText;
+}
+
 /** 视角层级 → 视角名键（ControlPanel 锚点按钮 + HUD 标题共用） */
 export const VIEW_LEVEL_NAME_KEYS: Readonly<Record<ViewLevel, MessageKey>> = {
   L1: 'viewLevel.L1',

@@ -405,6 +405,25 @@ export const M87_EXTRA_INFO_LINES_ZH: readonly BodyInfoLine[] = [
   },
 ];
 
+/** M87 卡片增补行（英文 value；label 与 ZH 版一致，由 UI 层映射） */
+export const M87_EXTRA_INFO_LINES_EN: readonly BodyInfoLine[] = [
+  {
+    label: 'M87*',
+    value:
+      'The central supermassive black hole, about 6.5 billion solar masses (EHT 2019, the first image of a black hole); following M87 in close to the core reveals the gravitationally lensed photon ring (dimmer-disk, larger-ring parameter preset; scale compression registered)',
+  },
+  {
+    label: '球状星团',
+    value:
+      'About 12,000 (order of Tamura et al. 2006), roughly 80 times the Milky Way\u2019s count; the close-up view renders 2,000 sharp points (budget reduction registered), distributed within a Sérsic outer envelope in reddish-yellow old-population colors',
+  },
+  {
+    label: '室女座团',
+    value:
+      'The center of a galaxy cluster with about 2,000 member galaxies; the close-up view is dotted with about 100 bright 2MRS-catalog members (not selectable, registered) and the diffuse glow of hot ICM gas (an artistic visible-light rendering of the X-ray band)',
+  },
+];
+
 /** M87 环境数据来源登记（catalog dataSource 拼接） */
 export const M87_ENVIRONMENT_SOURCE_ZH =
   'M87* 参数 EHT Collaboration (2019)；喷流节点 HST（Biretta et al. 1999，外移为视觉化示意）；球状星团 Tamura et al. (2006) 计数（呈现 2,000 缩减登记）；室女座成员 2MRS（Huchra et al. 2012）子集（相对位置线性压缩登记）；ICM 辉光为 X 射线热气体艺术化';

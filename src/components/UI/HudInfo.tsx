@@ -9,12 +9,15 @@ import {
   VIEW_LEVEL_NAME_KEYS,
   displayBodyName,
   localizeCatalogText,
+  pickLocalized,
   tf,
 } from '@/i18n';
 import { useLocale, useT, useTf } from '@/hooks/useI18n';
 import { getBodyInfoById } from '@/data/catalog';
 import {
+  CME_GEOMAGNETIC_NOTE_EN,
   CME_GEOMAGNETIC_NOTE_ZH,
+  FLARE_ENERGY_NOTE_EN,
   FLARE_ENERGY_NOTE_ZH,
   SUN_STRUCTURE_DATA_SOURCE,
   getSunLayerById,
@@ -23,15 +26,17 @@ import { useSimulationStore } from '@/store';
 import { scopeCyclePositionLabel } from '@/utils/cycleScopes';
 import { eventNoticeVisibleInScope } from '@/utils/eventScopes';
 import {
+  MERGER_FATE_NOTE_EN,
   MERGER_FATE_NOTE_ZH,
+  MERGER_SOURCE_NOTE_EN,
   MERGER_SOURCE_NOTE_ZH,
-  mergerNoticeZh,
+  mergerNotice,
 } from '@/utils/galaxyMerger';
 import { galacticYearProgress, sunGalacticPositionLy } from '@/utils/galaxy';
 import { formatSceneScaleLabel } from '@/utils/scale';
 import { sunActivityStatusLines } from '@/utils/solarActivity';
 import { solarCycleState, solarCycleStatusLine } from '@/utils/solarCycle';
-import { SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
+import { SN_REAL_FREQUENCY_NOTE_EN, SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
 import { formatSimDate } from '@/utils/time';
 
 /** 各层级运动参考系说明键（需求 3.1.3 参考系定义；B3 文案入字典） */
@@ -47,10 +52,13 @@ const REFERENCE_FRAME_KEYS: Record<ViewLevel, MessageKey> = {
  * 银河年进度（L3）、速率钳制提示、选中天体信息（统一目录）
  *
  * B3 i18n：壳层框架文案与事件通知（耀斑/CME/CME 抵达/超新星）经字典
- * 查找（hud.* 键组）；豁免留中文（方案 K3 登记）——`*_ZH` 科学注记
- * 常量（SN 频率/耀斑能量/地磁暴/合并结局与来源）、合并阶段名
- * （mergerNoticeZh.stageZh）、信息面板值行/描述行、dataSource 署名、
- * 黑子/日珥科普卡片正文（titleZh/descZh 数据驱动）、太阳活动状态行值。
+ * 查找（hud.* 键组）。
+ *
+ * i18n 全站覆盖：科学注记常量（SN 频率/耀斑能量/地磁暴/合并结局与来源）
+ * 经 `*_EN` 常量族 + pickLocalized 按 locale 取用；合并阶段名经
+ * mergerNotice(locale)；信息面板值行经 getBodyInfoById(id, locale)
+ * 双目录；黑子/日珥卡片与剖面分层经数据层 `*En` 字段。
+ * 仅 dataSource 署名保持原文（豁免登记沿用）。
  */
 export function HudInfo(): JSX.Element {
   const tr = useT();
@@ -117,20 +125,22 @@ export function HudInfo(): JSX.Element {
   const [cycleLine, setCycleLine] = useState<{ label: string; value: string } | null>(null);
   // R2-11：银河系—仙女座合并演化科普卡片（L4 且模拟时间越过合并时刻时显示；
   // 时间回退（恢复预览前时间）后卡片随之消失——纯模拟时间驱动）
-  const [mergerCard, setMergerCard] = useState<{ stageZh: string; tauMyr: number } | null>(
+  const [mergerCard, setMergerCard] = useState<{ stageText: string; tauMyr: number } | null>(
     null,
   );
   const [mergerCardDismissed, setMergerCardDismissed] = useState(false);
   useEffect(() => {
     const update = (): void => {
       const state = useSimulationStore.getState();
-      setSimDateText(formatSimDate(state.simDays));
+      setSimDateText(formatSimDate(state.simDays, locale));
       // R2-11 合并演化卡片（仅宇宙视角；合并前为 null）
-      const notice = state.viewLevel === 'L4' ? mergerNoticeZh(state.simDays) : null;
+      const notice = state.viewLevel === 'L4' ? mergerNotice(locale, state.simDays) : null;
       setMergerCard(notice);
       if (notice === null) setMergerCardDismissed(false);
       // 尺度标尺：相机距离按当前层级的尺度映射解释（AU / 光年 / Mpc）
-      setScaleText(formatSceneScaleLabel(state.cameraDistanceUnits, state.continuousLevel));
+      setScaleText(
+        formatSceneScaleLabel(state.cameraDistanceUnits, state.continuousLevel, locale),
+      );
       // 银河年进度 + 太阳当前银盘面高度（L3 显示，P6 §3.1.2 垂直振荡指示）
       if (state.viewLevel === 'L3') {
         const progress = galacticYearProgress(state.simDays);
@@ -149,7 +159,7 @@ export function HudInfo(): JSX.Element {
         setGalacticText('');
       }
       // 太阳活动周期状态行（第 N 周期 · 相位名 · 黑子相对数示意）
-      setCycleLine(solarCycleStatusLine(solarCycleState(state.simDays)));
+      setCycleLine(solarCycleStatusLine(solarCycleState(state.simDays), locale));
     };
     update();
     const id = setInterval(update, 250);
@@ -169,7 +179,8 @@ export function HudInfo(): JSX.Element {
     return () => clearTimeout(id);
   }, [galacticFrameTipVisible, dismissGalacticFrameTip]);
 
-  const selected = selectedBodyId ? getBodyInfoById(selectedBodyId) : undefined;
+  // i18n：信息面板值行按 locale 取目录（zh/en 各一份懒加载缓存）
+  const selected = selectedBodyId ? getBodyInfoById(selectedBodyId, locale) : undefined;
 
   return (
     <>
@@ -276,17 +287,20 @@ export function HudInfo(): JSX.Element {
                 ✕
               </button>
             </div>
-            {/* B3 豁免：合并阶段名 stageZh（utils/galaxyMerger 科学文案）留中文 */}
+            {/* i18n：合并阶段名与科学注记按 locale 取用（*_EN 常量族） */}
             <p className="mt-1 text-gray-200">
-              {mergerCard.stageZh}
+              {mergerCard.stageText}
               {trf('hud.mergerTau', {
                 yi: (mergerCard.tauMyr / 100).toFixed(1),
                 myr: Math.round(mergerCard.tauMyr),
               })}
             </p>
-            {/* B3 豁免：*_ZH 科学注记常量留中文 */}
-            <p className="mt-1 leading-4 text-gray-300">{MERGER_FATE_NOTE_ZH}</p>
-            <p className="mt-1 text-[10px] text-gray-500">{MERGER_SOURCE_NOTE_ZH}</p>
+            <p className="mt-1 leading-4 text-gray-300">
+              {pickLocalized(locale, MERGER_FATE_NOTE_ZH, MERGER_FATE_NOTE_EN)}
+            </p>
+            <p className="mt-1 text-[10px] text-gray-500">
+              {pickLocalized(locale, MERGER_SOURCE_NOTE_ZH, MERGER_SOURCE_NOTE_EN)}
+            </p>
           </div>
         )}
 
@@ -309,8 +323,10 @@ export function HudInfo(): JSX.Element {
             <p className="mt-1 text-gray-300">
               {trf('hud.snBody', { mass: activeSupernova.progenitorMassSun.toFixed(0) })}
             </p>
-            {/* B3 豁免：*_ZH 科学注记常量留中文 */}
-            <p className="mt-1 text-[10px] text-gray-500">{SN_REAL_FREQUENCY_NOTE_ZH}</p>
+            {/* i18n：科学注记按 locale 取用 */}
+            <p className="mt-1 text-[10px] text-gray-500">
+              {pickLocalized(locale, SN_REAL_FREQUENCY_NOTE_ZH, SN_REAL_FREQUENCY_NOTE_EN)}
+            </p>
             <div className="mt-2 flex gap-2">
               <button
                 type="button"
@@ -362,8 +378,10 @@ export function HudInfo(): JSX.Element {
               {tr('hud.flareBody')}
               {solarFlareNoticeInfo.cmeLinked && tr('hud.flareCmeLinked')}
             </p>
-            {/* B3 豁免：*_ZH 科学注记常量留中文 */}
-            <p className="mt-1 text-[10px] text-gray-500">{FLARE_ENERGY_NOTE_ZH}</p>
+            {/* i18n：科学注记按 locale 取用 */}
+            <p className="mt-1 text-[10px] text-gray-500">
+              {pickLocalized(locale, FLARE_ENERGY_NOTE_ZH, FLARE_ENERGY_NOTE_EN)}
+            </p>
             <div className="mt-2 flex gap-2">
               <button
                 type="button"
@@ -410,9 +428,11 @@ export function HudInfo(): JSX.Element {
               {tr('hud.cmeBody')}
               {cmeNoticeInfo.earthDirected && tr('hud.cmeEarthDirected')}
             </p>
-            {/* B3 豁免：*_ZH 科学注记常量留中文 */}
+            {/* i18n：科学注记按 locale 取用 */}
             {cmeNoticeInfo.earthDirected && (
-              <p className="mt-1 text-[10px] text-amber-300/90">⚠ {CME_GEOMAGNETIC_NOTE_ZH}</p>
+              <p className="mt-1 text-[10px] text-amber-300/90">
+                ⚠ {pickLocalized(locale, CME_GEOMAGNETIC_NOTE_ZH, CME_GEOMAGNETIC_NOTE_EN)}
+              </p>
             )}
             <div className="mt-2 flex gap-2">
               <button
@@ -469,10 +489,10 @@ export function HudInfo(): JSX.Element {
       {/* S3 §4.5：黑子群/日珥点选科普卡片（含"可容纳 N 个地球"动态换算） */}
       {selectedSolarFeature && (
         <div className="absolute bottom-4 left-1/2 w-80 -translate-x-1/2 rounded-lg border border-orange-300/30 bg-space-panel p-4 text-xs backdrop-blur">
-          {/* B3 豁免：titleZh/descZh 为数据驱动科普正文，留中文 */}
+          {/* i18n：titleEn/descEn 数据驱动，按 locale 取用（缺失回退中文） */}
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-orange-300">
-              {selectedSolarFeature.titleZh}
+              {pickLocalized(locale, selectedSolarFeature.titleZh, selectedSolarFeature.titleEn)}
             </h3>
             <button
               type="button"
@@ -483,7 +503,9 @@ export function HudInfo(): JSX.Element {
               ✕
             </button>
           </div>
-          <p className="leading-5 text-gray-300">{selectedSolarFeature.descZh}</p>
+          <p className="leading-5 text-gray-300">
+            {pickLocalized(locale, selectedSolarFeature.descZh, selectedSolarFeature.descEn)}
+          </p>
           {selectedSolarFeature.earthCount !== null && (
             <p className="mt-2 rounded bg-orange-400/10 px-2 py-1 text-orange-200">
               🌍 {tr('hud.sunspotEarthsPre')}{' '}
@@ -518,18 +540,24 @@ export function HudInfo(): JSX.Element {
                     ✕
                   </button>
                 </div>
-                {/* B3 豁免：rangeZh/temperatureZh/descriptionZh 值行留中文 */}
+                {/* i18n：分层范围/温度/说明按 locale 取用（缺失回退中文） */}
                 <dl className="space-y-1 text-gray-300">
                   <div className="flex justify-between gap-2">
                     <dt className="shrink-0">{tr('hud.layerRange')}</dt>
-                    <dd className="text-right">{layer.rangeZh}</dd>
+                    <dd className="text-right">
+                      {pickLocalized(locale, layer.rangeZh, layer.rangeEn)}
+                    </dd>
                   </div>
                   <div className="flex justify-between gap-2">
                     <dt className="shrink-0">{tr('hud.layerTemp')}</dt>
-                    <dd className="text-right">{layer.temperatureZh}</dd>
+                    <dd className="text-right">
+                      {pickLocalized(locale, layer.temperatureZh, layer.temperatureEn)}
+                    </dd>
                   </div>
                 </dl>
-                <p className="mt-2 leading-5 text-gray-300">{layer.descriptionZh}</p>
+                <p className="mt-2 leading-5 text-gray-300">
+                  {pickLocalized(locale, layer.descriptionZh, layer.descriptionEn)}
+                </p>
                 {/* B3 豁免：dataSource 科学署名留中文 */}
                 <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-gray-500">
                   {trf('hud.dataSource', { value: SUN_STRUCTURE_DATA_SOURCE })}
@@ -586,6 +614,7 @@ export function HudInfo(): JSX.Element {
                 activeCme
                   ? { speedKmS: activeCme.speedKmS, earthDirected: activeCme.earthDirected }
                   : null,
+                locale,
               ).map((line) => (
                 <div key={line.label} className="flex justify-between gap-2">
                   <dt className="shrink-0 text-orange-300/90">

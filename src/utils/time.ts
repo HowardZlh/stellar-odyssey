@@ -164,12 +164,15 @@ export function simDaysToDate(simDays: number): Date {
  * 模拟时间格式化为 UI 显示文案
  *
  * 超出 Date 安全范围（约 ±27万年）时退化为"J2000 + N 年"。
+ *
+ * i18n：超远期单位词"百万年/Myr"按 locale 输出（默认 zh——既有测试
+ * 断言零改动）；日期格式本身语言无关。
  */
-export function formatSimDate(simDays: number): string {
+export function formatSimDate(simDays: number, locale: 'zh' | 'en' = 'zh'): string {
   const years = simDays / 365.25;
   if (Math.abs(years) > 250000) {
     const millionYears = years / 1e6;
-    return `J2000 ${millionYears >= 0 ? '+' : '−'} ${Math.abs(millionYears).toFixed(2)} 百万年`;
+    return `J2000 ${millionYears >= 0 ? '+' : '−'} ${Math.abs(millionYears).toFixed(2)} ${locale === 'en' ? 'Myr' : '百万年'}`;
   }
   const date = simDaysToDate(simDays);
   const y = date.getUTCFullYear();

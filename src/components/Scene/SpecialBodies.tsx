@@ -5,6 +5,7 @@ import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { ClampedHtmlLabel } from "@/components/Scene/ClampedHtmlLabel";
+import { BodyNameText, LabelText } from "@/components/Scene/LocalizedLabelText";
 import * as THREE from "three";
 import type { SpecialBodyData, Vec3 } from "@/types";
 import {
@@ -660,7 +661,7 @@ function BodyLabel({
       style={{ pointerEvents: "none" }}
     >
       <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-sky-200/90">
-        {body.nameZh}
+        <BodyNameText body={body} />
       </span>
     </ClampedHtmlLabel>
   );
@@ -1739,7 +1740,7 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
             style={{ pointerEvents: "none" }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-sky-100/90">
-              天狼星A · 主序星
+              <LabelText k="sceneLabel.siriusA" />
             </span>
           </ClampedHtmlLabel>
         )}
@@ -1788,7 +1789,7 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
             style={{ pointerEvents: "none" }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-blue-200/90">
-              天狼星B · 白矮星
+              <LabelText k="sceneLabel.siriusB" />
             </span>
           </ClampedHtmlLabel>
         )}

@@ -220,6 +220,10 @@ export function lmcBarWeight01(xLy: number, zLy: number): number {
 export const LMC_LANDMARK_NOTE_ZH =
   '30 Doradus（蜘蛛星云/NGC 2070，本星系群最亮恒星形成区——Hα 粉红发射区 + 中心 R136 超星团蓝白亮核，近观按真实相对位置呈现、尺度放大 5× 可辨已登记）+ 中央棒（老年星族偏黄 vs 盘面蓝白年轻星族的色彩分层）';
 
+/** LMC 卡片"标志结构"行（英文） */
+export const LMC_LANDMARK_NOTE_EN =
+  '30 Doradus (Tarantula Nebula / NGC 2070, the brightest star-forming region in the Local Group — a pink H\u03B1 emission region with the blue-white bright core of the central R136 super star cluster; rendered at its true relative position in the close-up view, scaled up 5\u00D7 for visibility, registered) + the central bar (color stratification of the yellowish old stellar population vs. the blue-white young population of the disk)';
+
 /** LMC 标志结构数据来源（catalog dataSource 追加段） */
 export const LMC_LANDMARK_SOURCE_ZH =
   '30 Doradus 位置：SIMBAD（NGC 2070）经 gnomonic 切平面换算至影像盘面（方法登记 utils/lmcStructures）；发射区为球壳+fBm 程序化体积近似（NASA/ESA Hubble 公版影像形态参考）；棒椭圆为密度图流量加权二阶矩拟合档、老年星族偏黄分层为示意色调（van der Marel 2001 图景近似登记）';

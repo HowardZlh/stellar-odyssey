@@ -53,6 +53,7 @@ export const MOONS: readonly MoonData[] = [
     massKg: 7.342e22,
     tidallyLocked: true,
     noteZh: '潮汐锁定，始终以同一面朝向地球；表面布满撞击环形山',
+    noteEn: 'Tidally locked, always showing the same face to Earth; its surface is covered with impact craters',
     dataSource: NASA_SATELLITE_SOURCE,
   },
   {
@@ -79,6 +80,8 @@ export const MOONS: readonly MoonData[] = [
     massKg: 4.5e5,
     spanMeters: 109,
     noteZh: '轨道高度约 400 km，绕地球一圈约 92 分钟；主桁架长 109 m，装有 8 组太阳能帆板',
+    noteEn:
+      'Orbital altitude about 400 km, circling Earth once every ~92 minutes; the main truss is 109 m long and carries 8 solar array wings',
     dataSource: 'NASA Spot the Station（轨道高度约 400 km，倾角 51.6°）',
   },
   {
@@ -106,6 +109,8 @@ export const MOONS: readonly MoonData[] = [
     spanMeters: 55,
     noteZh:
       '中国载人空间站，2022 年三舱构型建成：天和核心舱 + 问天/梦天实验舱组成 T 字构型，配柔性太阳翼',
+    noteEn:
+      "China's crewed space station, completed in its three-module form in 2022: the Tianhe core module plus the Wentian and Mengtian lab modules form a T-shaped configuration, equipped with flexible solar wings",
     dataSource: '中国载人航天工程办公室（CMSA）公开数据 / CelesTrak TLE（高度约 390 km，倾角 41.5°）',
   },
   {
@@ -132,6 +137,8 @@ export const MOONS: readonly MoonData[] = [
     massKg: 1.11e4,
     spanMeters: 13.2,
     noteZh: '轨道高度约 540 km，1990 年发射的光学空间望远镜；镜筒长 13.2 m，主镜口径 2.4 m',
+    noteEn:
+      'Optical space telescope launched in 1990, orbiting at about 540 km altitude; the tube is 13.2 m long with a 2.4 m primary mirror',
     dataSource: 'STScI / NASA Hubble 公开轨道数据（高度约 540 km，倾角 28.5°）',
   },
   {
@@ -160,6 +167,8 @@ export const MOONS: readonly MoonData[] = [
     spanMeters: 21,
     noteZh:
       '轨道周期与地球自转周期相同（恒星日），相对地面静止；以 NASA TDRS（跟踪与数据中继卫星，帆板翼展约 21 m、抛物面天线）为原型的静止轨道通信卫星示意',
+    noteEn:
+      'Orbital period equal to Earth\'s rotation period (one sidereal day), so it appears stationary relative to the ground; a schematic geostationary communications satellite modeled on NASA TDRS (Tracking and Data Relay Satellite, solar-array span about 21 m, parabolic antennas)',
     dataSource: 'ITU / NASA TDRS 静止轨道定义（半径 42,164 km，周期 23.934 小时）',
   },
   // ---- 火星卫星（可选需求 3.1.1） ----
@@ -186,6 +195,8 @@ export const MOONS: readonly MoonData[] = [
     tidallyLocked: true,
     massKg: 1.06e16,
     noteZh: '公转周期（7.65 小时）比火星自转还快；轨道正缓慢衰减，预计数千万年后解体或撞击火星',
+    noteEn:
+      'Its orbital period (7.65 hours) is shorter than a Martian day; the orbit is slowly decaying, and it is expected to break apart or crash into Mars within tens of millions of years',
     dataSource: NASA_SATELLITE_SOURCE,
   },
   {
@@ -210,6 +221,7 @@ export const MOONS: readonly MoonData[] = [
     tidallyLocked: true,
     massKg: 1.51e15,
     noteZh: '太阳系最小的卫星之一，表面覆盖细粉尘（风化层）',
+    noteEn: 'One of the smallest moons in the Solar System, its surface blanketed in fine dust (regolith)',
     dataSource: NASA_SATELLITE_SOURCE,
   },
   // ---- 土星卫星补充（可选需求 3.1.1：土卫一、土卫五） ----
@@ -235,6 +247,8 @@ export const MOONS: readonly MoonData[] = [
     tidallyLocked: true,
     massKg: 3.75e19,
     noteZh: '巨大的赫歇尔撞击坑使其形似"死星"；与卡西尼缝内粒子构成 2:1 共振（清空缝隙）',
+    noteEn:
+      'The huge Herschel crater gives it a "Death Star" appearance; it holds a 2:1 resonance with particles in the Cassini Division, clearing the gap',
     dataSource: NASA_SATELLITE_SOURCE,
   },
   {
@@ -259,6 +273,7 @@ export const MOONS: readonly MoonData[] = [
     tidallyLocked: true,
     massKg: 2.31e21,
     noteZh: '土星第二大卫星，冰质表面布满撞击坑',
+    noteEn: "Saturn's second-largest moon, with a heavily cratered icy surface",
     dataSource: NASA_SATELLITE_SOURCE,
   },
   // ---- 海王星卫星（可选需求 3.1.1：海卫一逆行轨道） ----
@@ -286,6 +301,8 @@ export const MOONS: readonly MoonData[] = [
     tidallyLocked: true,
     massKg: 2.14e22,
     noteZh: '太阳系唯一逆行公转的大型卫星（倾角 156.9°），可能是被俘获的柯伊伯带天体；表面有氮冰间歇泉',
+    noteEn:
+      'The only large moon in the Solar System with a retrograde orbit (inclination 156.9°), likely a captured Kuiper Belt object; its surface features nitrogen ice geysers',
     dataSource: NASA_SATELLITE_SOURCE,
   },
   // ---- 冥王星卫星（P5 §3.4 可选项：冥卫一卡戎） ----
@@ -314,6 +331,8 @@ export const MOONS: readonly MoonData[] = [
     tidallyLocked: true,
     noteZh:
       '冥王星-卡戎双矮行星系统：双向潮汐锁定（冥王星也始终以同一面朝向卡戎），共同质心位于冥王星体外',
+    noteEn:
+      'The Pluto–Charon binary dwarf-planet system: mutually tidally locked (Pluto also always shows the same face to Charon), with the barycenter lying outside Pluto',
     dataSource: 'NASA New Horizons / NASA Planetary Satellite Fact Sheet（半径 606 km，公转 6.39 天）',
   },
   // ---- 伽利略四卫星（木星）：io:europa:ganymede 轨道共振 1:2:4 ----
@@ -339,6 +358,8 @@ export const MOONS: readonly MoonData[] = [
     massKg: 8.932e22,
     tidallyLocked: true,
     noteZh: '太阳系火山活动最剧烈的天体；与木卫二、木卫三构成 1:2:4 轨道共振',
+    noteEn:
+      'The most volcanically active body in the Solar System; forms a 1:2:4 orbital resonance with Europa and Ganymede',
     dataSource: NASA_SATELLITE_SOURCE,
   },
   {
@@ -363,6 +384,8 @@ export const MOONS: readonly MoonData[] = [
     massKg: 4.8e22,
     tidallyLocked: true,
     noteZh: '冰壳下有全球性液态水海洋；与木卫一、木卫三构成 1:2:4 轨道共振',
+    noteEn:
+      'Harbors a global liquid-water ocean beneath its icy shell; forms a 1:2:4 orbital resonance with Io and Ganymede',
     dataSource: NASA_SATELLITE_SOURCE,
   },
   {
@@ -387,6 +410,8 @@ export const MOONS: readonly MoonData[] = [
     massKg: 1.482e23,
     tidallyLocked: true,
     noteZh: '太阳系最大卫星；与木卫一、木卫二构成 1:2:4 轨道共振',
+    noteEn:
+      'The largest moon in the Solar System; forms a 1:2:4 orbital resonance with Io and Europa',
     dataSource: NASA_SATELLITE_SOURCE,
   },
   {
@@ -411,6 +436,8 @@ export const MOONS: readonly MoonData[] = [
     massKg: 1.076e23,
     tidallyLocked: true,
     noteZh: '表面撞击坑密度极高，是太阳系最古老的地表之一（未参与 1:2:4 共振）',
+    noteEn:
+      'Extremely high crater density makes it one of the oldest surfaces in the Solar System (not part of the 1:2:4 resonance)',
     dataSource: NASA_SATELLITE_SOURCE,
   },
   // ---- 土星卫星 ----
@@ -436,6 +463,8 @@ export const MOONS: readonly MoonData[] = [
     massKg: 1.345e23,
     tidallyLocked: true,
     noteZh: '拥有橙色浓厚氮基大气，是太阳系唯一有浓密大气的卫星',
+    noteEn:
+      'Wrapped in a thick orange nitrogen-based atmosphere, the only moon in the Solar System with a dense atmosphere',
     dataSource: NASA_SATELLITE_SOURCE,
   },
   {
@@ -460,6 +489,8 @@ export const MOONS: readonly MoonData[] = [
     massKg: 1.08e20,
     tidallyLocked: true,
     noteZh: '高反照率冰面（太阳系反照率最高的天体之一），南极有冰羽喷泉',
+    noteEn:
+      'Highly reflective icy surface (one of the highest-albedo bodies in the Solar System), with ice plumes erupting from its south pole',
     dataSource: NASA_SATELLITE_SOURCE,
   },
 ] as const;

@@ -174,6 +174,8 @@ export interface MoonData {
   spanMeters?: number;
   /** 备注（共振关系、大气特征等） */
   noteZh?: string;
+  /** 备注（英文；缺失时英文态回退中文） */
+  noteEn?: string;
   dataSource: string;
 }
 
@@ -243,6 +245,8 @@ export interface GalaxyData {
   /** 所属结构（本星系群 / 室女座星系团等） */
   groupZh: string;
   descriptionZh: string;
+  /** 描述（英文；缺失时英文态回退中文） */
+  descriptionEn?: string;
   dataSource: string;
 }
 
@@ -317,6 +321,8 @@ export type SpecialBodyPositionMode =
 export interface SpecialBodyFact {
   label: string;
   value: string;
+  /** 英文值（i18n 全站覆盖；缺失时英文态回退中文值） */
+  valueEn?: string;
 }
 
 /** 特殊天体数据（静态形态 + 动态效果定义，基于真实原型，需求 3.1.5） */
@@ -348,6 +354,8 @@ export interface SpecialBodyData {
   factsZh: SpecialBodyFact[];
   /** 动态效果的科学解释（需求 3.1.5 通用要求） */
   dynamicsZh: string;
+  /** 动态效果科学解释（英文；缺失时英文态回退中文） */
+  dynamicsEn?: string;
   dataSource: string;
 }
 

@@ -1871,6 +1871,22 @@ export const GALAXY_STRUCTURE_NOTE_BY_MORPHOLOGY_ZH: Readonly<
   irregular: '无对称核球与盘结构：恒星与气体呈团块状分布（活跃恒星形成区），受邻近星系潮汐扰动塑形',
 };
 
+/**
+ * 星系结构说明（英文，信息面板"结构"行）。
+ */
+export const GALAXY_STRUCTURE_NOTE_BY_MORPHOLOGY_EN: Readonly<
+  Record<GalaxyMorphology, string>
+> = {
+  spiral:
+    'Bulge (concentration of old stars) + stellar disk with spiral arms (strung with blue-white young star clusters / dotted with pink ionized-hydrogen HII regions) + dark dust-lane streaks along the inner edges of the arms + a sparse stellar halo enveloping the whole',
+  'barred-spiral':
+    'Bulge with a central bar + stellar disk with spiral arms (extending from the ends of the bar, dotted with young star clusters / ionized-hydrogen regions) + dark dust-lane streaks along the arms + a sparse stellar halo enveloping the whole',
+  elliptical:
+    'No disk/spiral-arm structure: stars gather in an ellipsoidal shape, with brightness falling off outward from the center following a Sérsic profile, surrounded by an extended stellar halo (no dust lanes / HII regions)',
+  irregular:
+    'No symmetric bulge or disk structure: stars and gas are distributed in clumps (active star-forming regions), shaped by tidal disturbances from neighboring galaxies',
+};
+
 /** 结构说明数据来源（catalog 拼接展示；R4-10 追加 RC3/S4G 形态参数
  * 来源；R5-1 追加影像来源署名——附录 A §2 应用内署名呈现位置登记） */
 export const GALAXY_STRUCTURE_SOURCE_ZH =

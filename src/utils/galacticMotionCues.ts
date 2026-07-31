@@ -139,15 +139,27 @@ export function isMajorGradation(
 }
 
 /**
- * 刻度进度标签（"银河年 25%" 样式，主刻度 Html 标注用）
+ * 刻度进度百分比文本（"25" / "4.2" 样式；i18n：单位词由字典
+ * `sceneLabel.galacticYearPercent` 持有，渲染侧按 locale 插值）
  */
-export function gradationProgressLabel(
+export function gradationPercentText(
   index: number,
   count = ORBIT_GRADATION_COUNT,
 ): string {
   const angle = orbitGradationAngle(index, count); // 复用参数校验
   const percent = (angle / (Math.PI * 2)) * 100;
-  return `银河年 ${percent % 1 === 0 ? percent.toFixed(0) : percent.toFixed(1)}%`;
+  return percent % 1 === 0 ? percent.toFixed(0) : percent.toFixed(1);
+}
+
+/**
+ * 刻度进度标签（"银河年 25%" 样式，主刻度 Html 标注用；
+ * 中文态纯逻辑/测试沿用，渲染侧改经 gradationPercentText + 字典键）
+ */
+export function gradationProgressLabel(
+  index: number,
+  count = ORBIT_GRADATION_COUNT,
+): string {
+  return `银河年 ${gradationPercentText(index, count)}%`;
 }
 
 // ---------------------------------------------------------------------------

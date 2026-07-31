@@ -204,8 +204,12 @@ export interface SimulationState {
     kind: 'sunspot' | 'prominence';
     /** 中文标题 */
     titleZh: string;
+    /** 英文标题（i18n；缺失时英文态回退中文） */
+    titleEn?: string;
     /** 科普正文 */
     descZh: string;
+    /** 科普正文（英文；缺失时英文态回退中文） */
+    descEn?: string;
     /** "可容纳 N 个地球"（仅黑子，四舍五入整数；日珥为 null） */
     earthCount: number | null;
   } | null;
