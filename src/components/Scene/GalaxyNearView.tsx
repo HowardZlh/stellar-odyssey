@@ -35,10 +35,12 @@ import {
   type GalaxyNearViewParticles,
 } from '@/utils/galaxyNearView';
 import { galaxyPlaneSizeUnits } from '@/utils/universe';
+import { UNIVERSE_RENDER_ORDER } from '@/utils/universeRenderOrder';
 import { LmcTarantulaOverlay } from '@/components/Scene/LmcTarantula';
 
-/** 尘埃暗纹层 renderOrder（晚于默认 0 的加性星光层与远观贴图平面） */
-export const DUST_LAYER_RENDER_ORDER = 2;
+/** 尘埃暗纹层 renderOrder（晚于加性星光层与远观贴图平面——"吸光"语义
+ * 保持；取值迁入 L4 透明层注册表 utils/universeRenderOrder，频闪修复） */
+export const DUST_LAYER_RENDER_ORDER = UNIVERSE_RENDER_ORDER.nearViewDust;
 
 /** 软圆点 shader 参数（层间差异经 uniform 注入，shader 源共享；
  * R5-4 起导出供 M87 环境层复用——"复用既有点云样式"，禁止两套 shader） */
@@ -270,9 +272,12 @@ export function GalaxyNearViewLayer({
 
   return (
     <group rotation={orientation}>
+      {/* L4 透明层注册表（频闪修复）：加性星光两层显式同值——与目录
+          点云/尾迹等层顺序脱钩深度键，两层间加性可交换 */}
       <points
         geometry={layers.baseGeometry}
         material={layers.baseMaterial}
+        renderOrder={UNIVERSE_RENDER_ORDER.nearViewParticles}
         frustumCulled={false}
         raycast={() => null}
       />
@@ -280,6 +285,7 @@ export function GalaxyNearViewLayer({
         <points
           geometry={layers.emissiveGeometry}
           material={layers.emissiveMaterial}
+          renderOrder={UNIVERSE_RENDER_ORDER.nearViewParticles}
           frustumCulled={false}
           raycast={() => null}
         />

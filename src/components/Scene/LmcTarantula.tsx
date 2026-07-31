@@ -34,8 +34,8 @@ import {
 import {
   createVolumeMaterial,
   disposeVolumeMaterial,
-  VOLUME_RENDER_ORDER,
 } from '@/components/Scene/volumetric/VolumeMaterial';
+import { UNIVERSE_RENDER_ORDER } from '@/utils/universeRenderOrder';
 import { createGlowSpriteCanvas } from '@/components/CelestialBody/proceduralTextures';
 import {
   TARANTULA_CLOUD_OPTIONS,
@@ -156,10 +156,13 @@ export function LmcTarantulaOverlay({
 
   return (
     <group position={position}>
-      {/* Hα 粉红体积发射区（48³ 直绘 raymarch） */}
+      {/* Hα 粉红体积发射区（48³ 直绘 raymarch）。
+          L4 透明层注册表（频闪修复）：原与 LMC 尘埃盘合成并列
+          renderOrder=10 同值深度歧义，错开为直绘发射体积档（早于
+          合成 → 发射区被 LMC 尘埃按透射率压暗，物理一致） */}
       <mesh
         ref={meshRef}
-        renderOrder={VOLUME_RENDER_ORDER}
+        renderOrder={UNIVERSE_RENDER_ORDER.emissiveVolumes}
         material={material}
         raycast={NOOP_RAYCAST}
         visible={false}

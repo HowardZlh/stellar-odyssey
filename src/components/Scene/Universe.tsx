@@ -53,6 +53,7 @@ import {
   resetGalaxyNearViewHolders,
 } from '@/utils/galaxyNearView';
 import { isDustVolumeGalaxy } from '@/utils/galaxyDustVolume';
+import { UNIVERSE_RENDER_ORDER } from '@/utils/universeRenderOrder';
 import { useDetailLayer } from '@/hooks/useDetailLayer';
 import { useGalaxyCatalog } from '@/hooks/useGalaxyCatalog';
 import { useGalaxyImageMaps } from '@/hooks/useGalaxyImageMaps';
@@ -384,12 +385,16 @@ export function Universe(): JSX.Element {
       opacity: 0,
       dashSize: 260,
       gapSize: 180,
+      depthWrite: false, // 透明线不写深度（频闪修复配套：免交叉裁剪）
     });
     return { approachGeometry: geo, approachMaterial: mat };
   }, []);
   const approachLine = useMemo(() => {
     const line = new THREE.Line(approachGeometry, approachMaterial);
     line.frustumCulled = false;
+    // L4 透明层注册表（频闪修复）：引导线层——normal 混合线与加性层
+    // 的先后不再随深度键交叉翻转（各线注释下同）
+    line.renderOrder = UNIVERSE_RENDER_ORDER.guideLines;
     return line;
   }, [approachGeometry, approachMaterial]);
 
@@ -414,6 +419,7 @@ export function Universe(): JSX.Element {
       color: '#6a5a9a',
       transparent: true,
       opacity: 0,
+      depthWrite: false, // 透明线不写深度（频闪修复配套）
     });
     return { boundaryGeometry: geo, boundaryMaterial: mat };
   }, [laniakeaRadius]);
@@ -422,10 +428,11 @@ export function Universe(): JSX.Element {
     const p = supergalacticPlanePointScene(laniakeaRadius * 0.72, 0);
     return [p.x, p.y + 800, p.z];
   }, [laniakeaRadius]);
-  const boundaryLine = useMemo(
-    () => new THREE.Line(boundaryGeometry, boundaryMaterial),
-    [boundaryGeometry, boundaryMaterial],
-  );
+  const boundaryLine = useMemo(() => {
+    const line = new THREE.Line(boundaryGeometry, boundaryMaterial);
+    line.renderOrder = UNIVERSE_RENDER_ORDER.guideLines; // 引导线层（注册表）
+    return line;
+  }, [boundaryGeometry, boundaryMaterial]);
 
   // ---------- 可观测宇宙边界示意（可选需求 3.1.3） ----------
   const observableRadius = cosmicDistanceToSceneUnits(OBSERVABLE_UNIVERSE_RADIUS_LY);
@@ -444,12 +451,14 @@ export function Universe(): JSX.Element {
       color: '#8a4a5a',
       transparent: true,
       opacity: 0,
+      depthWrite: false, // 透明线不写深度（频闪修复配套）
     });
     return { observableGeometry: geo, observableMaterial: mat };
   }, [observableRadius]);
   const observableLine = useMemo(() => {
     const line = new THREE.Line(observableGeometry, observableMaterial);
     line.frustumCulled = false;
+    line.renderOrder = UNIVERSE_RENDER_ORDER.guideLines; // 引导线层（注册表）
     return line;
   }, [observableGeometry, observableMaterial]);
 
@@ -482,9 +491,11 @@ export function Universe(): JSX.Element {
         color: '#8fb0d8',
         transparent: true,
         opacity: 0,
+        depthWrite: false, // 透明线不写深度（频闪修复配套）
       });
       const line = new THREE.Line(geometry, material);
       line.frustumCulled = false;
+      line.renderOrder = UNIVERSE_RENDER_ORDER.guideLines; // 引导线层（注册表）
       return { id, geometry, material, line };
     });
   }, []);
@@ -511,6 +522,9 @@ export function Universe(): JSX.Element {
   const sgrStreamPoints = useMemo(() => {
     const pts = new THREE.Points(sgrStreamGeometry, sgrStreamMaterial);
     pts.frustumCulled = false;
+    // L4 透明层注册表（频闪修复）：加性流层——顶点逐帧重采样的星流
+    // 与 normal 线层/近观层先后固定，不随深度键交叉翻转（下同）
+    pts.renderOrder = UNIVERSE_RENDER_ORDER.additiveFlows;
     return pts;
   }, [sgrStreamGeometry, sgrStreamMaterial]);
 
@@ -536,6 +550,7 @@ export function Universe(): JSX.Element {
   const flowPoints = useMemo(() => {
     const pts = new THREE.Points(flowGeometry, flowMaterial);
     pts.frustumCulled = false;
+    pts.renderOrder = UNIVERSE_RENDER_ORDER.additiveFlows; // 加性流层（注册表）
     return pts;
   }, [flowGeometry, flowMaterial]);
 
@@ -561,6 +576,7 @@ export function Universe(): JSX.Element {
   const streamPoints = useMemo(() => {
     const pts = new THREE.Points(streamGeometry, streamMaterial);
     pts.frustumCulled = false;
+    pts.renderOrder = UNIVERSE_RENDER_ORDER.additiveFlows; // 加性流层（注册表）
     return pts;
   }, [streamGeometry, streamMaterial]);
 
@@ -791,7 +807,11 @@ export function Universe(): JSX.Element {
       <primitive object={flowPoints} />
 
       {/* 银河系—仙女座合并辉光（可选需求：碰撞合并示意，接近后期显现） */}
-      <sprite ref={mergeGlowRef} visible={false}>
+      <sprite
+        ref={mergeGlowRef}
+        visible={false}
+        renderOrder={UNIVERSE_RENDER_ORDER.additiveFlows} /* 加性流层（注册表） */
+      >
         <spriteMaterial
           map={mergeGlowTexture}
           transparent
@@ -855,8 +875,14 @@ export function Universe(): JSX.Element {
 
       {/* 宇宙网：星系团（节点）—纤维—空洞（确定性分布）；
           整体缩放表达哈勃膨胀（可选需求），远端星系颜色偏红（红移示意）；
-          R5-3：真实目录激活时降为氛围底层（opacity 0.2，useFrame 内切换） */}
-      <points ref={webRef} geometry={webGeometry} material={webMaterial} />
+          R5-3：真实目录激活时降为氛围底层（opacity 0.2，useFrame 内切换）；
+          L4 透明层注册表（频闪修复）：哈勃膨胀每帧缩放，层序显式固定 */}
+      <points
+        ref={webRef}
+        geometry={webGeometry}
+        material={webMaterial}
+        renderOrder={UNIVERSE_RENDER_ORDER.cosmicWeb}
+      />
 
       {/* 真实巡天背景（R5-3）：2MRS ~43,500 星系两级点云（室女座团聚集/
           银道空带/纤维走向为真实数据）；加载失败或开关关闭时不挂载——

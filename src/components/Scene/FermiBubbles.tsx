@@ -40,8 +40,8 @@ import { advanceFrameTransition } from '@/utils/galacticFrame';
 import {
   createVolumeMaterial,
   disposeVolumeMaterial,
-  VOLUME_RENDER_ORDER,
 } from '@/components/Scene/volumetric/VolumeMaterial';
+import { UNIVERSE_RENDER_ORDER } from '@/utils/universeRenderOrder';
 import { SCENE_UNITS_PER_LY } from '@/utils/scale';
 
 /** 体积对象不参与射线检测 */
@@ -124,7 +124,10 @@ export function FermiBubbles({ getOpacity }: FermiBubblesProps): JSX.Element {
     <mesh
       ref={meshRef}
       scale={boxScale}
-      renderOrder={VOLUME_RENDER_ORDER}
+      // L4 透明层注册表（频闪修复）：原与体积合成并列 renderOrder=10
+      // 存在同值深度歧义，错开为直绘发射体积档（早于尘埃盘合成 →
+      // 被跟随星系尘埃按透射率压暗，与消光方案 a 物理一致）
+      renderOrder={UNIVERSE_RENDER_ORDER.emissiveVolumes}
       material={material}
       raycast={NOOP_RAYCAST}
       visible={false}

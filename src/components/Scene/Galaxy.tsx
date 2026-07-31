@@ -54,6 +54,7 @@ import {
   mwM31SignedSeparationLy,
 } from "@/utils/galaxyMerger";
 import { setObjectTreeRaycastEnabled } from "@/utils/raycastGate";
+import { UNIVERSE_RENDER_ORDER } from "@/utils/universeRenderOrder";
 import {
   ORBIT_GRADATION_COUNT,
   gradationProgressLabel,
@@ -462,9 +463,15 @@ export function Galaxy(): JSX.Element {
       vertexColors: true,
       transparent: true,
       opacity: 0.9,
+      // 透明线不写深度（频闪修复配套）：显式 renderOrder 后绘制次序
+      // 固定，写深度会按次序裁剪其后的透明层，关闭消除交叉裁剪
+      depthWrite: false,
     });
     const line = new THREE.Line(geo, mat);
     line.frustumCulled = false;
+    // L4 透明层注册表（频闪修复）：尾迹顶点逐帧增长致深度键漂移，曾与
+    // 目录点云/静态线环反复交叉、draw 顺序翻转——运动线独立档固定先后
+    line.renderOrder = UNIVERSE_RENDER_ORDER.motionLines;
     return { trailGeometry: geo, trailMaterial: mat, trailLine: line };
   }, []);
 
@@ -484,9 +491,11 @@ export function Galaxy(): JSX.Element {
         opacity: PREDICTION_OPACITY,
         dashSize: 18,
         gapSize: 12,
+        depthWrite: false, // 透明线不写深度（频闪修复配套，同尾迹线）
       });
       const line = new THREE.Line(geo, mat);
       line.frustumCulled = false;
+      line.renderOrder = UNIVERSE_RENDER_ORDER.motionLines; // 运动线层（注册表）
       return {
         predictionGeometry: geo,
         predictionMaterial: mat,
@@ -542,6 +551,9 @@ export function Galaxy(): JSX.Element {
       });
       const pts = new THREE.Points(geo, mat);
       pts.frustumCulled = false;
+      // L4 透明层注册表（频闪修复）：加性流层——与 normal 引导线层
+      // （尾迹/预测线共享轨道区域）先后固定，不再随深度键交叉翻转
+      pts.renderOrder = UNIVERSE_RENDER_ORDER.additiveFlows;
       return { geo, mat, pts };
     };
     return {
@@ -565,9 +577,11 @@ export function Galaxy(): JSX.Element {
       color: "#7fffd4",
       transparent: true,
       opacity: 0.5,
+      depthWrite: false, // 透明线不写深度（频闪修复配套，同尾迹线）
     });
     const line = new THREE.Line(geo, mat);
     line.frustumCulled = false;
+    line.renderOrder = UNIVERSE_RENDER_ORDER.motionLines; // 运动线层（注册表）
     return { heightGeometry: geo, heightMaterial: mat, heightLine: line };
   }, []);
 
@@ -925,11 +939,12 @@ export function Galaxy(): JSX.Element {
       <points geometry={clusterGeometry} material={clusterMaterial} />
 
       {/* R2-9 尘埃带侧视剪影：盘中平面扁椭球暗带（厚约 1,200 ly，
-          renderOrder=2 在加性粒子之后普通混合 → 真实"吸光"变暗；
+          renderOrder 在加性粒子之后普通混合 → 真实"吸光"变暗；取值迁入
+          L4 透明层注册表（原魔数 2，"晚于全部加性宇宙层"语义保持）；
           侧视渐入、正视透明，强度由 useFrame 按 dustLaneStrength 驱动） */}
       <mesh
         ref={dustLaneRef}
-        renderOrder={2}
+        renderOrder={UNIVERSE_RENDER_ORDER.galaxyDustLane}
         scale={[diskRadiusUnits * 0.96, diskRadiusUnits * 0.012, diskRadiusUnits * 0.96]}
         visible={false}
       >

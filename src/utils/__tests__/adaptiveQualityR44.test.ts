@@ -2,14 +2,20 @@
  * R4-4 帧率自适应质量档位单测（IMPROVEMENT_REQUIREMENTS_4 §R4-4）
  *
  * 覆盖：档位映射常量、升降档序、步数缩放、滑动窗 FPS（样本不足）、
- * 状态机核心判定（滞回边界：降档 55 / 升档 58 / 5s 连续达标 / 迟滞带）、
+ * 状态机核心判定（滞回边界：降档 52 / 升档 58 / 5s 连续达标 / 迟滞带）、
  * 逐帧推进（换档清窗、时间回退、窗口逐出）、平滑插值（≤0.5s 收敛）、
  * 强制档位滑杆映射、HUD 文案。
+ *
+ * ⚠ 判据修订（L4 频闪 P0 修复，2026-07；登记于 IMPROVEMENT_REQUIREMENTS_4
+ * §R4-4 修订块）：降档阈值 55→52（拉大迟滞带）+ 新增 3s 换档驻留
+ * （QUALITY_CHANGE_DWELL_MS）——消除帧耗时骑 55 阈值场景的 mid↔low 极限环
+ * 振荡；本文件既有锚定值同步迁移，末段新增驻留时序 + 骑阈值不振荡回归例。
  */
 
 import {
   VOLUME_QUALITY_SPECS,
   QUALITY_FPS_WINDOW_MS,
+  QUALITY_CHANGE_DWELL_MS,
   QUALITY_DOWNGRADE_FPS,
   QUALITY_UPGRADE_FPS,
   QUALITY_UPGRADE_HOLD_MS,
@@ -56,12 +62,15 @@ describe('档位映射常量（§R4-4：high 64 步/full → mid 48 步/half →
     expect(VOLUME_QUALITY_SPECS.low).toEqual({ stepScale: 0.5, resolutionScale: 0.5, steps: 32 });
   });
 
-  it('滞回常量：降档 55 / 升档 58（3 FPS 迟滞带）/ 5s 连续达标 / 3s 窗', () => {
-    expect(QUALITY_DOWNGRADE_FPS).toBe(55);
+  it('滞回常量：降档 52 / 升档 58（6 FPS 迟滞带，频闪修复修订）/ 5s 连续达标 / 3s 窗 / 3s 驻留', () => {
+    expect(QUALITY_DOWNGRADE_FPS).toBe(52);
     expect(QUALITY_UPGRADE_FPS).toBe(58);
     expect(QUALITY_UPGRADE_FPS).toBeGreaterThan(QUALITY_DOWNGRADE_FPS);
     expect(QUALITY_UPGRADE_HOLD_MS).toBe(5000);
     expect(QUALITY_FPS_WINDOW_MS).toBe(3000);
+    expect(QUALITY_CHANGE_DWELL_MS).toBe(3000);
+    // 驻留 < 升档达标时长：升档时序不被驻留拖长（文件头修订语义）
+    expect(QUALITY_CHANGE_DWELL_MS).toBeLessThan(QUALITY_UPGRADE_HOLD_MS);
   });
 });
 
@@ -135,8 +144,8 @@ describe('decideTier 状态机核心（滞回边界全覆盖）', () => {
     expect(d).toEqual({ tier: 'mid', upgradeMetSinceMs: null, changed: false });
   });
 
-  it('fps < 55：high→mid、mid→low 降一档；low 保持（changed=false）', () => {
-    expect(decideTier({ tier: 'high', fps: 54.9, ...base })).toEqual({
+  it('fps < 52：high→mid、mid→low 降一档；low 保持（changed=false）', () => {
+    expect(decideTier({ tier: 'high', fps: 51.9, ...base })).toEqual({
       tier: 'mid',
       upgradeMetSinceMs: null,
       changed: true,
@@ -153,13 +162,18 @@ describe('decideTier 状态机核心（滞回边界全覆盖）', () => {
     });
   });
 
-  it('滞回边界：fps 恰为 55 不降档（< 严格比较）', () => {
-    const d = decideTier({ tier: 'high', fps: 55, ...base });
+  it('滞回边界：fps 恰为 52 不降档（< 严格比较）', () => {
+    const d = decideTier({ tier: 'high', fps: 52, ...base });
     expect(d.tier).toBe('high');
     expect(d.changed).toBe(false);
   });
 
-  it('迟滞带 55 ≤ fps < 58：不降档、不累计升档（计时清零）', () => {
+  it('原 55 阈值域（52 ≤ fps < 55）修订后落入迟滞带：不降档（骑 55 阈值场景）', () => {
+    const d = decideTier({ tier: 'mid', fps: 54.5, ...base });
+    expect(d).toEqual({ tier: 'mid', upgradeMetSinceMs: null, changed: false });
+  });
+
+  it('迟滞带 52 ≤ fps < 58：不降档、不累计升档（计时清零）', () => {
     const d = decideTier({ tier: 'low', fps: 56.5, ...base, upgradeMetSinceMs: 8000 });
     expect(d).toEqual({ tier: 'low', upgradeMetSinceMs: null, changed: false });
   });
@@ -236,13 +250,17 @@ describe('recordQualityFrame 逐帧推进（集成时序）', () => {
     expect(s.tier).toBe('high');
   });
 
-  it('持续 30 FPS：窗口积累后降至 mid，继续低帧率再降至 low 并封底', () => {
+  it('持续 30 FPS：驻留期满后降至 mid，再一轮驻留后降至 low 并封底', () => {
     const s = createAdaptiveQuality(0);
+    // 创建时刻视作换档起点（3s 观察期，频闪修复驻留语义）：
+    // 窗口 1.5s 即可决策但驻留期内不降档
     let t = feedFrames(s, 0, 30, 2000);
-    expect(s.tier).toBe('mid'); // 首次决策（≥1.5s 窗）即降档
+    expect(s.tier).toBe('high');
+    t = feedFrames(s, t, 30, 1500); // 越过 3s 驻留即降档
+    expect(s.tier).toBe('mid');
     // 换档清窗（跨档样本不混算）：窗内样本均晚于换档时刻
     expect(s.samplesMs.every((m) => m > s.lastChangeMs)).toBe(true);
-    t = feedFrames(s, t, 30, 2000);
+    t = feedFrames(s, t, 30, 3500); // 第二轮驻留 3s + 决策
     expect(s.tier).toBe('low');
     feedFrames(s, t, 30, 10_000);
     expect(s.tier).toBe('low'); // 封底不再变
@@ -308,7 +326,7 @@ describe('recordQualityFrame 逐帧推进（集成时序）', () => {
 
   it('换档登记 lastChangeMs', () => {
     const s = createAdaptiveQuality(0);
-    feedFrames(s, 0, 30, 3000);
+    feedFrames(s, 0, 30, 3500); // 越过创建驻留期（3s）后首次降档
     expect(s.tier).toBe('mid');
     expect(s.lastChangeMs).toBeGreaterThan(0);
   });
@@ -404,6 +422,128 @@ describe('formatQualityLabel（HUD 档位文案）', () => {
     expect(formatQualityLabel('low', true, null, 32, 0.5)).toBe(
       'low（强制）· 32 步 · RT 50% · 窗口 采样中',
     );
+  });
+});
+
+describe('换档驻留 + 骑阈值不振荡（L4 频闪 P0 修复回归）', () => {
+  it('decideTier 驻留期内 fps < 52 不降档，届满后降档', () => {
+    const inDwell = decideTier({
+      tier: 'mid',
+      fps: 40,
+      upgradeMetSinceMs: 3000,
+      windowStartMs: 8000,
+      nowMs: 10_000,
+      lastChangeMs: 8000, // 距上次换档 2s < 3s 驻留
+    });
+    expect(inDwell).toEqual({ tier: 'mid', upgradeMetSinceMs: null, changed: false });
+    const after = decideTier({
+      tier: 'mid',
+      fps: 40,
+      upgradeMetSinceMs: null,
+      windowStartMs: 8000,
+      nowMs: 11_000, // 恰满 3s 驻留（≥ 边界即出驻留）
+      lastChangeMs: 8000,
+    });
+    expect(after).toEqual({ tier: 'low', upgradeMetSinceMs: null, changed: true });
+  });
+
+  it('decideTier 驻留期内升档达标累计照常推进、届满即结算升档', () => {
+    // 距上次换档 2.5s（驻留中），达标已累计 6s（> 5s 判据）：不升、保留累计
+    const held = decideTier({
+      tier: 'mid',
+      fps: 60,
+      upgradeMetSinceMs: 4000,
+      windowStartMs: 8000,
+      nowMs: 10_000,
+      lastChangeMs: 7500,
+    });
+    expect(held).toEqual({ tier: 'mid', upgradeMetSinceMs: 4000, changed: false });
+    // 驻留届满：累计已满即刻升档
+    const settled = decideTier({
+      tier: 'mid',
+      fps: 60,
+      upgradeMetSinceMs: 4000,
+      windowStartMs: 8000,
+      nowMs: 10_600,
+      lastChangeMs: 7500,
+    });
+    expect(settled).toEqual({ tier: 'high', upgradeMetSinceMs: null, changed: true });
+  });
+
+  it('decideTier 未传 lastChangeMs（旧调用签名）：无驻留约束零回退', () => {
+    const d = decideTier({
+      tier: 'high',
+      fps: 40,
+      upgradeMetSinceMs: null,
+      windowStartMs: 0,
+      nowMs: 100, // 若按创建驻留会被拦；缺省 = 无约束
+    });
+    expect(d).toEqual({ tier: 'mid', upgradeMetSinceMs: null, changed: true });
+  });
+
+  it('骑阈值回归（根因场景）：mid 档 FPS 在 54–56 间摆动 60s 恒不换档', () => {
+    // 修复前：<55 即降 low、恢复 ≥58 5s 后升回 mid → 极限环振荡；
+    // 修订后 54–56 全程落在 52–58 迟滞带 → 稳定 mid
+    const s = createAdaptiveQuality(0, 'mid');
+    let t = 0;
+    let phase = 0;
+    while (t < 60_000) {
+      // 0.5s 一段在 54/56 间交替（帧耗时骑阈值的锯齿近似）
+      const fps = phase % 2 === 0 ? 54 : 56;
+      t = feedFrames(s, t, fps, 500);
+      phase += 1;
+      expect(s.tier).toBe('mid');
+    }
+    expect(s.lastChangeMs).toBe(0); // 全程零换档
+  });
+
+  it('骑降档线回归：FPS 在 51/60 间交替（窗口均值落带内）不振荡', () => {
+    // 3s 窗均值 ≈ (51+60)/2 ≈ 55.4 ∈ [52, 58) 迟滞带 → 不降不升
+    const s = createAdaptiveQuality(0, 'mid');
+    let t = 0;
+    for (let i = 0; i < 40; i += 1) {
+      t = feedFrames(s, t, i % 2 === 0 ? 51 : 60, 500);
+    }
+    expect(s.tier).toBe('mid');
+    expect(s.lastChangeMs).toBe(0);
+  });
+
+  it('recordQualityFrame 集成：深跌后两次降档间隔 ≥ 3s 驻留', () => {
+    const s = createAdaptiveQuality(0);
+    const stepMs = 1000 / 20; // 持续 20 FPS 深跌
+    const changes: number[] = [];
+    let prevTier = s.tier;
+    let t = 0;
+    while (t < 12_000) {
+      t += stepMs;
+      recordQualityFrame(s, t);
+      if (s.tier !== prevTier) {
+        changes.push(t);
+        prevTier = s.tier;
+      }
+    }
+    expect(s.tier).toBe('low');
+    expect(changes).toHaveLength(2); // high→mid→low 各一次
+    expect(changes[0]).toBeGreaterThanOrEqual(QUALITY_CHANGE_DWELL_MS); // 创建观察期
+    expect(changes[1] - changes[0]).toBeGreaterThanOrEqual(QUALITY_CHANGE_DWELL_MS);
+  });
+
+  it('升档时序零回退：驻留（3s）< 升档判据（5s），恢复后仍 ~5s 升档', () => {
+    const s = createAdaptiveQuality(0, 'low');
+    const stepMs = 1000 / 60;
+    let t = 0;
+    let upgradeAt: number | null = null;
+    while (t < 8000) {
+      t += stepMs;
+      recordQualityFrame(s, t);
+      if (s.tier !== 'low') {
+        upgradeAt = t;
+        break;
+      }
+    }
+    expect(s.tier).toBe('mid');
+    expect(upgradeAt as number).toBeGreaterThanOrEqual(QUALITY_UPGRADE_HOLD_MS);
+    expect(upgradeAt as number).toBeLessThanOrEqual(QUALITY_UPGRADE_HOLD_MS + 200);
   });
 });
 
