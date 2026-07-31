@@ -17,6 +17,7 @@ const config = {
     'src/utils/**/*.ts',
     'src/store/**/*.ts',
     'src/data/**/*.ts',
+    'src/i18n/**/*.ts',
     '!src/**/*.d.ts',
   ],
   coverageThreshold: {
