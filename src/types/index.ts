@@ -7,6 +7,12 @@ export type ViewLevel = 'L1' | 'L2' | 'L3' | 'L4';
 
 export const VIEW_LEVELS: readonly ViewLevel[] = ['L1', 'L2', 'L3', 'L4'] as const;
 
+/**
+ * 界面语言（B2 i18n 基建）：默认 zh——既有中文测试断言零改动的前提，
+ * 任何阶段不得变更默认语言；en 经 `?lang=en` / localStorage / setLocale 激活
+ */
+export type Locale = 'zh' | 'en';
+
 /** 三维向量（与 three.js 解耦，便于纯函数测试） */
 export interface Vec3 {
   x: number;

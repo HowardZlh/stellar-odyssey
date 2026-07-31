@@ -2,6 +2,7 @@
 
 import type { JSX } from 'react';
 import { useEffect, useRef, useState } from 'react';
+import { useT } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
 
 /** 商业合作联系邮箱（README「商业合作」小节同源） */
@@ -24,10 +25,14 @@ export const CONTACT_GITHUB_ISSUES_URL =
  * - 样式口径与 ControlPanel 一致（bg-space-panel 深色半透明 + backdrop-blur）；
  * - 待 B4 接入：kiosk 模式 store `uiVisible` 字段尚不存在，B4 交付时接入
  *   （uiVisible=false 时角标同隐藏）。
+ *
+ * i18n（B2 打样件）：全部文案经字典查找（`contactBadge.*` 键组），
+ * 作为客户端 locale 机制的验证件；六大 UI 组件批量迁移属 B3。
  */
 export function ContactBadge(): JSX.Element | null {
   const [expanded, setExpanded] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const tr = useT();
 
   // 避让判定：事件通知可见标志 + 左下角剖面分层卡片（实际占位者）
   const avoided = useSimulationStore(
@@ -64,13 +69,13 @@ export function ContactBadge(): JSX.Element | null {
       {expanded && (
         <div
           role="dialog"
-          aria-label="商业合作联系方式"
+          aria-label={tr('contactBadge.dialogAriaLabel')}
           className="mb-2 w-64 rounded-lg border border-space-accent/30 bg-space-panel p-4 backdrop-blur"
         >
-          <h3 className="text-sm font-semibold text-space-accent">商业合作</h3>
-          <p className="mt-1 leading-5 text-gray-300">
-            欢迎教育机构、科技馆与展陈集成商联系：展馆大屏部署、定制开发、课程内容。
-          </p>
+          <h3 className="text-sm font-semibold text-space-accent">
+            {tr('contactBadge.title')}
+          </h3>
+          <p className="mt-1 leading-5 text-gray-300">{tr('contactBadge.description')}</p>
           <div className="mt-2 space-y-1">
             <a
               href={`mailto:${CONTACT_EMAIL}`}
@@ -84,7 +89,7 @@ export function ContactBadge(): JSX.Element | null {
               rel="noreferrer"
               className="block text-space-accent hover:underline"
             >
-              💬 GitHub Issues
+              💬 {tr('contactBadge.githubIssues')}
             </a>
           </div>
         </div>
@@ -95,7 +100,7 @@ export function ContactBadge(): JSX.Element | null {
         onClick={() => setExpanded((v) => !v)}
         className="rounded-lg border border-white/10 bg-space-panel px-3 py-2 text-gray-300 backdrop-blur transition-colors hover:text-white"
       >
-        💼 商业合作
+        💼 {tr('contactBadge.badgeLabel')}
       </button>
     </div>
   );

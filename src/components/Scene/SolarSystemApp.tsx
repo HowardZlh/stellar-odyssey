@@ -5,6 +5,7 @@ import type { JSX } from 'react';
 import { useEffect } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { CAMERA_VIEWS } from '@/data/cameraViews';
+import { useLocaleInit } from '@/hooks/useI18n';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { AudioController } from '@/components/Audio/AudioController';
 import { SpatialAudio } from '@/components/Audio/SpatialAudio';
@@ -30,6 +31,8 @@ import { Universe } from '@/components/Scene/Universe';
  */
 export default function SolarSystemApp(): JSX.Element {
   useKeyboardShortcuts();
+  // B2 i18n：启动 locale 初始化（?lang= > localStorage > 默认 zh）
+  useLocaleInit();
 
   // 应用卸载时释放全部位图纹理与 glTF 模型（AGENTS.md 内存管理）
   useEffect(() => {

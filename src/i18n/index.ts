@@ -1,0 +1,134 @@
+/**
+ * i18n 基建（B2，方案 K2：客户端切换）
+ *
+ * 架构红线（登记）：Next.js 内置 i18n 路由与 `output: 'export'` 静态导出
+ * 不兼容（next.config.mjs）——只做客户端 locale 切换（Zustand 状态 +
+ * 字典查找），不做 `/en/` 路由与英文 SEO（档位 3 边界）。
+ *
+ * 核心降本设计（不得变更）：zh 为默认 locale——既有约 4,800 行中文测试
+ * 断言零改动，测试永远跑 zh 默认态。
+ *
+ * 登记项：
+ * - 查找函数签名：`t(locale, key)`（key 为编译期点分路径联合类型
+ *   `MessageKey`，由 zh 字典推导；运行时防御性回退 zh → 键名本身）；
+ * - localStorage 键名：`stellar-odyssey:locale`；
+ * - 启动优先级：`?lang=` > localStorage > 默认 zh（`resolveInitialLocale`
+ *   纯函数）；`lang` 参数本阶段独立轻量解析（`parseLangParam` 只读这一个
+ *   参数），B4 启动参数框架 `utils/launchParams.ts` 统一迁移收口；
+ * - `<html lang>`：locale 变更时客户端写 `document.documentElement.lang`
+ *   （zh → 'zh-CN' 与 SSR 初始值一致，en → 'en'）；SEO metadata 保持
+ *   zh-CN 不动（档位 3 边界登记）。
+ */
+import type { Locale } from '@/types';
+import { en } from './en';
+import { zh } from './zh';
+
+export type { I18nDict } from './zh';
+export { en } from './en';
+export { zh } from './zh';
+
+/** locale 持久化 localStorage 键名（登记） */
+export const LOCALE_STORAGE_KEY = 'stellar-odyssey:locale';
+
+/** 默认 locale（勿改：既有中文测试断言零改动的前提） */
+export const DEFAULT_LOCALE: Locale = 'zh';
+
+/** 嵌套字典点分路径联合类型（编译期由字典结构推导） */
+type DotKeys<T> = {
+  [K in keyof T & string]: T[K] extends string ? K : `${K}.${DotKeys<T[K]>}`;
+}[keyof T & string];
+
+/** 全部合法消息键（以 zh 字典为单一事实来源） */
+export type MessageKey = DotKeys<typeof zh>;
+
+/**
+ * 嵌套字典拍平为「点分键 → 文案」查找表（纯函数；模块加载时对 zh/en
+ * 各预计算一次，运行时查找 O(1) 零分配——附录 A 渲染纪律）
+ */
+export function flattenMessages(
+  dict: Record<string, unknown>,
+  prefix = '',
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(dict)) {
+    const path = prefix === '' ? key : `${prefix}.${key}`;
+    if (typeof value === 'string') {
+      out[path] = value;
+    } else {
+      Object.assign(out, flattenMessages(value as Record<string, unknown>, path));
+    }
+  }
+  return out;
+}
+
+/** 预计算查找表（zh/en 各一份） */
+const MESSAGES: Readonly<Record<Locale, Record<string, string>>> = {
+  zh: flattenMessages(zh),
+  en: flattenMessages(en),
+};
+
+/**
+ * 字典查找纯函数（签名登记：`t(locale, key)`）
+ *
+ * key 为编译期校验的点分路径（`MessageKey`），正常路径必命中；
+ * 运行时仍做防御性回退：目标 locale 缺键 → zh → 键名本身。
+ */
+export function t(locale: Locale, key: MessageKey): string {
+  return MESSAGES[locale][key] ?? MESSAGES.zh[key] ?? key;
+}
+
+/**
+ * 解析 URL 查询串中的 `lang` 参数（纯函数）
+ *
+ * B2 独立轻量解析（登记）：只读 `lang` 这一个参数，大小写不敏感；
+ * 非法值返回 null（不影响后续优先级链）。B4 启动参数框架
+ * `utils/launchParams.ts` 交付时统一迁移收口。
+ */
+export function parseLangParam(search: string): Locale | null {
+  const value = new URLSearchParams(search).get('lang')?.toLowerCase() ?? null;
+  return value === 'en' || value === 'zh' ? value : null;
+}
+
+/**
+ * 启动 locale 解析（纯函数）：优先级 `?lang=` > localStorage 存值 > 默认 zh
+ *
+ * @param search `window.location.search`（含 `?` 或空串均可）
+ * @param stored localStorage 读出的原始值（可能为 null/非法值）
+ */
+export function resolveInitialLocale(search: string, stored: string | null): Locale {
+  const fromParam = parseLangParam(search);
+  if (fromParam !== null) return fromParam;
+  return stored === 'en' || stored === 'zh' ? stored : DEFAULT_LOCALE;
+}
+
+/** locale → `<html lang>` 值（zh 取 'zh-CN' 与 SSR 初始值/SEO metadata 一致） */
+export function htmlLangFor(locale: Locale): string {
+  return locale === 'en' ? 'en' : 'zh-CN';
+}
+
+/** 读取持久化 locale 原始值（隐私模式等存取异常时静默返回 null） */
+export function readStoredLocale(): string | null {
+  try {
+    return window.localStorage.getItem(LOCALE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** 持久化 locale（存取异常时静默忽略——持久化失败不影响本次会话切换） */
+export function persistLocale(locale: Locale): void {
+  try {
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+  } catch {
+    // 隐私模式/配额异常：忽略（会话内切换仍生效）
+  }
+}
+
+/** `<html lang>` 客户端同步（无 DOM 环境静默忽略） */
+export function syncHtmlLang(locale: Locale): void {
+  try {
+    document.documentElement.lang = htmlLangFor(locale);
+  } catch {
+    // SSR/无 DOM 环境：忽略（客户端挂载后由 setLocale/初始化同步）
+  }
+}
