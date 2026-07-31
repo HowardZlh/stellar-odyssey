@@ -5,7 +5,7 @@
  * `window.location.search` 传入（静态导出兼容；**勿用 `useSearchParams`**——
  * 避免 Suspense 边界要求，登记）。消费侧见 hooks/useLaunchParams.ts。
  *
- * 解析口径（BUSINESS_REQUIREMENTS §4.1-A）：
+ * 解析口径：
  * - 全部参数非法值**静默回退默认**（不抛错，控制台零错误）；
  * - `mode`/`tour`/`lang` 大小写不敏感（与 B2 `parseLangParam` 口径一致）；
  * - `lang` 统一迁移收口（B2 独立轻量解析 `parseLangParam` 已删除，
