@@ -45,12 +45,14 @@ import {
   VOLUME_STEPS_MAX,
   VOLUME_STEPS_MIN,
 } from '@/utils/volume';
+import { UNIVERSE_RENDER_ORDER } from '@/utils/universeRenderOrder';
 
 /**
  * 体积层 renderOrder（挂载方对 mesh 设置）：晚于常规透明对象绘制，
- * 保证发射-吸收合成覆盖在既有半透明层之上。
+ * 保证发射-吸收合成覆盖在既有半透明层之上。取值自 L4 透明层注册表
+ * （utils/universeRenderOrder 单一事实来源，值 10 不变——零回退）。
  */
-export const VOLUME_RENDER_ORDER = 10;
+export const VOLUME_RENDER_ORDER = UNIVERSE_RENDER_ORDER.volumeComposite;
 
 /** 输出亮度硬钳上限（防 Bloom 溢出，验收 §R4-3.2） */
 export const VOLUME_MAX_OUTPUT_LUMINANCE = 12.0;
