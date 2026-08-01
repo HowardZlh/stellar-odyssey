@@ -186,6 +186,8 @@ export const zh = {
     bodyTitle: '{nameZh}（{nameEn}）',
     dataSource: '数据来源：{value}',
     infoCloseAria: '关闭信息面板',
+    infoCollapseAria: '收起信息面板内容',
+    infoExpandAria: '展开信息面板内容',
     cutawayOn: '关闭内部结构剖面',
     cutawayOff: '查看内部结构（1/4 剖面）',
     flyShort: '飞往（F）',
