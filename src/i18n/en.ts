@@ -157,6 +157,8 @@ export const en: I18nDict = {
     bodyTitle: '{nameEn}',
     dataSource: 'Data source: {value}',
     infoCloseAria: 'Close info panel',
+    infoCollapseAria: 'Collapse info panel content',
+    infoExpandAria: 'Expand info panel content',
     cutawayOn: 'Close interior cutaway',
     cutawayOff: 'View interior structure (quarter cutaway)',
     flyShort: 'Fly to (F)',

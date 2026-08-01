@@ -130,6 +130,9 @@ export function HudInfo(): JSX.Element {
     null,
   );
   const [mergerCardDismissed, setMergerCardDismissed] = useState(false);
+  // 信息面板收起态：收起后仅保留标题栏与底部操作按钮区；
+  // 状态跨天体切换保持（组件常驻，选中变化不重置）
+  const [infoCollapsed, setInfoCollapsed] = useState(false);
   useEffect(() => {
     const update = (): void => {
       const state = useSimulationStore.getState();
@@ -576,75 +579,101 @@ export function HudInfo(): JSX.Element {
       )}
 
       {selected && (
-        <div className="absolute bottom-4 right-4 w-72 rounded-lg bg-space-panel p-4 text-xs backdrop-blur">
+        <div className="absolute bottom-4 right-4 flex max-h-[70vh] w-72 flex-col rounded-lg bg-space-panel p-4 text-xs backdrop-blur">
           <div className="mb-2 flex items-center justify-between">
             {/* 标题：zh 中英并列、en 仅英文（hud.bodyTitle + displayBodyName 口径） */}
             <h3 className="text-sm font-semibold text-space-accent">
               {trf('hud.bodyTitle', { nameZh: selected.nameZh, nameEn: selected.name })}
             </h3>
-            <button
-              type="button"
-              onClick={() => selectBody(null)}
-              className="text-gray-400 hover:text-white"
-              aria-label={tr('hud.infoCloseAria')}
-            >
-              ✕
-            </button>
+            <span className="flex shrink-0 items-center gap-2">
+              {/* 收起/展开：仅折叠中间信息列表，标题栏与操作按钮区常驻 */}
+              <button
+                type="button"
+                onClick={() => setInfoCollapsed(!infoCollapsed)}
+                className="text-gray-400 hover:text-white"
+                aria-expanded={!infoCollapsed}
+                aria-label={tr(infoCollapsed ? 'hud.infoExpandAria' : 'hud.infoCollapseAria')}
+              >
+                {infoCollapsed ? '▸' : '▾'}
+              </button>
+              <button
+                type="button"
+                onClick={() => selectBody(null)}
+                className="text-gray-400 hover:text-white"
+                aria-label={tr('hud.infoCloseAria')}
+              >
+                ✕
+              </button>
+            </span>
           </div>
-          {/* 类型行/标签列经 catalogText 直映射；值行留中文（B3 豁免登记） */}
-          <p className="mb-2 text-[11px] text-gray-400">
-            {localizeCatalogText(locale, selected.typeZh)}
-          </p>
-          <dl className="space-y-1 text-gray-300">
-            {selected.lines.map((line, index) => (
-              // key 含序号：不同来源行可能同 label（防 React 同 key 复用串卡）
-              <div key={`${index}-${line.label}`} className="flex justify-between gap-2">
-                <dt className="shrink-0">{localizeCatalogText(locale, line.label)}</dt>
-                <dd className="text-right">{line.value}</dd>
-              </div>
-            ))}
-            {/* S3 §4.4：太阳活动周期状态行（第 N 周期 · 相位名 · 黑子相对数） */}
-            {selected.id === 'sun' && cycleLine && (
-              <div key={cycleLine.label} className="flex justify-between gap-2">
-                <dt className="shrink-0 text-amber-300/90">
-                  {localizeCatalogText(locale, cycleLine.label)}
-                </dt>
-                <dd className="text-right text-amber-200/90">{cycleLine.value}</dd>
-              </div>
-            )}
-            {/* S2 §4.5：太阳当前活动事件行（耀斑级别/CME 速度/平静） */}
-            {selected.id === 'sun' &&
-              sunActivityStatusLines(
-                activeSolarFlare
-                  ? { class: activeSolarFlare.flareClass, magnitude: activeSolarFlare.magnitude }
-                  : null,
-                activeCme
-                  ? { speedKmS: activeCme.speedKmS, earthDirected: activeCme.earthDirected }
-                  : null,
-                locale,
-              ).map((line) => (
-                <div key={line.label} className="flex justify-between gap-2">
-                  <dt className="shrink-0 text-orange-300/90">
-                    {localizeCatalogText(locale, line.label)}
-                  </dt>
-                  <dd className="text-right text-orange-200/90">{line.value}</dd>
-                </div>
-              ))}
-          </dl>
-          {/* S2 §4.1：剖面模式入口（信息面板侧） */}
-          {selected.id === 'sun' && (
-            <button
-              type="button"
-              onClick={() => setSunCutawayMode(!sunCutawayMode)}
-              className={`mt-2 w-full rounded px-2 py-1 text-[11px] ${
-                sunCutawayMode
-                  ? 'bg-orange-400/90 text-black hover:bg-orange-300'
-                  : 'bg-white/10 hover:bg-white/20'
+          {/* 中间信息区：grid-rows 过渡实现平滑收起；展开时超高（>70vh
+              扣除固定区）出现细窄滚动条（hud-scroll，globals.css） */}
+          <div
+            className={`grid min-h-0 transition-[grid-template-rows] duration-300 ${
+              infoCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'
+            }`}
+          >
+            <div
+              className={`hud-scroll min-h-0 ${
+                infoCollapsed ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain pr-1'
               }`}
             >
-              🔬 {sunCutawayMode ? tr('hud.cutawayOn') : tr('hud.cutawayOff')}
-            </button>
-          )}
+              {/* 类型行/标签列经 catalogText 直映射；值行留中文（B3 豁免登记） */}
+              <p className="mb-2 text-[11px] text-gray-400">
+                {localizeCatalogText(locale, selected.typeZh)}
+              </p>
+              <dl className="space-y-1 text-gray-300">
+                {selected.lines.map((line, index) => (
+                  // key 含序号：不同来源行可能同 label（防 React 同 key 复用串卡）
+                  <div key={`${index}-${line.label}`} className="flex justify-between gap-2">
+                    <dt className="shrink-0">{localizeCatalogText(locale, line.label)}</dt>
+                    <dd className="text-right">{line.value}</dd>
+                  </div>
+                ))}
+                {/* S3 §4.4：太阳活动周期状态行（第 N 周期 · 相位名 · 黑子相对数） */}
+                {selected.id === 'sun' && cycleLine && (
+                  <div key={cycleLine.label} className="flex justify-between gap-2">
+                    <dt className="shrink-0 text-amber-300/90">
+                      {localizeCatalogText(locale, cycleLine.label)}
+                    </dt>
+                    <dd className="text-right text-amber-200/90">{cycleLine.value}</dd>
+                  </div>
+                )}
+                {/* S2 §4.5：太阳当前活动事件行（耀斑级别/CME 速度/平静） */}
+                {selected.id === 'sun' &&
+                  sunActivityStatusLines(
+                    activeSolarFlare
+                      ? { class: activeSolarFlare.flareClass, magnitude: activeSolarFlare.magnitude }
+                      : null,
+                    activeCme
+                      ? { speedKmS: activeCme.speedKmS, earthDirected: activeCme.earthDirected }
+                      : null,
+                    locale,
+                  ).map((line) => (
+                    <div key={line.label} className="flex justify-between gap-2">
+                      <dt className="shrink-0 text-orange-300/90">
+                        {localizeCatalogText(locale, line.label)}
+                      </dt>
+                      <dd className="text-right text-orange-200/90">{line.value}</dd>
+                    </div>
+                  ))}
+              </dl>
+              {/* S2 §4.1：剖面模式入口（信息面板侧） */}
+              {selected.id === 'sun' && (
+                <button
+                  type="button"
+                  onClick={() => setSunCutawayMode(!sunCutawayMode)}
+                  className={`mt-2 w-full rounded px-2 py-1 text-[11px] ${
+                    sunCutawayMode
+                      ? 'bg-orange-400/90 text-black hover:bg-orange-300'
+                      : 'bg-white/10 hover:bg-white/20'
+                  }`}
+                >
+                  🔬 {sunCutawayMode ? tr('hud.cutawayOn') : tr('hud.cutawayOff')}
+                </button>
+              )}
+            </div>
+          </div>
           {/* 飞往 / 跟随（需求 3.2.3：点选后可飞往，可锁定任意天体跟随） */}
           <div className="mt-2 flex gap-2 border-t border-white/10 pt-2">
             <button
@@ -698,10 +727,13 @@ export function HudInfo(): JSX.Element {
               </span>
             )}
           </div>
-          {/* i18n：dataSource 随 en 目录本地化（含中文的署名已补英文版） */}
-          <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-gray-500">
-            {trf('hud.dataSource', { value: selected.dataSource })}
-          </p>
+          {/* i18n：dataSource 随 en 目录本地化（含中文的署名已补英文版）；
+              收起态随信息列表一并隐藏，仅保留标题栏与操作按钮区 */}
+          {!infoCollapsed && (
+            <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-gray-500">
+              {trf('hud.dataSource', { value: selected.dataSource })}
+            </p>
+          )}
         </div>
       )}
     </>
