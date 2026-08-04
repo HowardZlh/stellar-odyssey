@@ -30,6 +30,8 @@ export const zh = {
       '欢迎教育机构、科技馆与展陈集成商联系：展馆大屏部署、定制开发、课程内容。',
     /** GitHub Issues 链接文字 */
     githubIssues: 'GitHub Issues',
+    /** 爱发电赞助链接文字（emoji 由组件层持有） */
+    sponsor: '爱发电赞助支持',
   },
   helpHint: {
     /**

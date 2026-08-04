@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- 新增爱发电赞助入口：README 中/英两版新增「赞助支持 / Sponsor」小节（零回报承诺口径：全部功能与源代码对所有人平等开放，赞助用于持续开发与域名维护）；站内左下角「商业合作」角标展开卡片新增爱发电赞助链接行（`SPONSOR_AFDIAN_URL` 常量与 README/FUNDING.yml 同源，i18n 双语文案 `contactBadge.sponsor`）；新增 `.github/FUNDING.yml`（custom 链接指向爱发电，仓库页显示 Sponsor 按钮；GitHub Sponsors 收款不支持中国大陆/Stripe Connect 限制，登记为 custom 方案）；README 中/英两版「开源协议/License」节补商标声明一句（项目名称与标识不在开源许可授权范围内）
+
 ### 发布流程
 
 - 修复发布链路越权风险（写权限协作者可在未合入 main 的分支 commit 上打 `v*` tag 直接触发生产部署，绕过 PR 审查与分支保护）：deploy.yml 新增 `verify-ref` 血统校验 job（`git merge-base --is-ancestor` 校验部署引用指向的 commit 必须已合入 main，否则整条部署链失败）；同时新增仓库 Tag Ruleset `protect-release-tags`（`v*` tag 的创建/更新/删除仅限 admin，服务端强制，与 workflow 校验形成双重闭环）

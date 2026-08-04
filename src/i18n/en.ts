@@ -16,6 +16,7 @@ export const en: I18nDict = {
     description:
       'Educational institutions, science museums, and exhibition integrators are welcome to reach out: large-screen exhibit deployment, custom development, and course content.',
     githubIssues: 'GitHub Issues',
+    sponsor: 'Sponsor on Afdian',
   },
   helpHint: {
     controls:

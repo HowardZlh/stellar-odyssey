@@ -20,7 +20,7 @@
 > toggle** at the top of the control panel at any time — the interface, 3D body labels, and science
 > notes all switch instantly.
 
-**Contents**: [Demos](#-demos) · [Highlights](#-highlights) · [Quick Start](#-quick-start) · [Docs](#-documentation) · [Tech Stack](#-tech-stack) · [Scientific Integrity](#-scientific-integrity) · [Contributing](#-contributing) · [Commercial](#-commercial-partnership) · [License](#️-license)
+**Contents**: [Demos](#-demos) · [Highlights](#-highlights) · [Quick Start](#-quick-start) · [Docs](#-documentation) · [Tech Stack](#-tech-stack) · [Scientific Integrity](#-scientific-integrity) · [Contributing](#-contributing) · [Sponsor](#-sponsor) · [Commercial](#-commercial-partnership) · [License](#️-license)
 
 ---
 
@@ -169,6 +169,14 @@ Full per-asset details, licenses, and registration notes: [docs/attribution.md](
 
 Issues and PRs are welcome! Please read the [contributing guide](CONTRIBUTING.md) first — code contributions require signing the [CLA](CLA.md) (license-grant type; you keep the copyright of your contribution) to sustain the project's AGPL-3.0 + commercial dual-licensing model.
 
+## 💖 Sponsor
+
+If this universe ever made you pause your scroll wheel for a moment longer, consider supporting the project:
+
+- ⚡ Afdian: [afdian.com/a/stellar-odyssey](https://afdian.com/a/stellar-odyssey)
+
+Sponsorship comes with no reward promises — every feature and every line of source code stays equally open to everyone. Your support funds continued development and domain upkeep, keeping the project **free, ad-free, and open source**.
+
 ## 💼 Commercial Partnership
 
 Educational institutions, science museums, and exhibition integrators are welcome to reach out. Example directions: large-screen exhibit deployment, custom development, and course content.
@@ -185,3 +193,4 @@ The code is open source under [GNU AGPL-3.0](LICENSE):
 - **Personal learning, education, and research**: free to use, modify, and distribute (under AGPL terms)
 - **Closed-source commercial integration** (e.g., museum exhibits or commercial products that do not wish to open-source derivative code under AGPL): please contact the author for commercial licensing — email [stevenzearo@163.com](mailto:stevenzearo@163.com) or leave a message via [GitHub Issues](https://github.com/HowardZlh/stellar-odyssey/issues)
 - Textures, 3D models, and other assets are licensed per the Attribution section above and are not covered by the code license
+- **Trademark notice**: the names "星海奥德赛" and "Stellar Odyssey" and the project identity are not covered by the open-source license — forks and derivative projects should use their own names

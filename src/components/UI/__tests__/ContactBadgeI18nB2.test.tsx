@@ -28,8 +28,10 @@ describe('ContactBadge 双语打样（B2）', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Commercial Partnership')).toBeInTheDocument();
     expect(screen.getByText(/exhibition integrators are welcome/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Sponsor on Afdian/ })).toBeInTheDocument();
     // 中文文案不残留
     expect(screen.queryByText(/商业合作/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/爱发电赞助支持/)).not.toBeInTheDocument();
   });
 
   it('挂载后切换 locale 即时生效（en → zh 恢复中文）', () => {
