@@ -6,13 +6,15 @@
 > 一个基于 React + Three.js 的多层级天体运动 3D 可视化系统：真实开普勒轨道驱动的太阳系、
 > 体积渲染的发射星云与引力透镜黑洞、公版天文影像驱动的星系近观、43,000+ 真实星系构成的
 > 宇宙大尺度背景——四个层级由滚轮连续缩放无缝贯通，配以随尺度渐变的空间音效，
-> 是一场科学数据驱动的沉浸式宇宙遨游。
+> 是一场科学数据驱动的沉浸式宇宙遨游。界面与科普说明**中英双语**即时切换。
 
 <p align="center">
   <a href="https://stellar.guushu.com"><strong>🚀 立即在线体验 → stellar.guushu.com</strong></a>
 </p>
 
-[![live](https://img.shields.io/badge/在线体验-stellar.guushu.com-4d9fff)](https://stellar.guushu.com) ![tech](https://img.shields.io/badge/Next.js-14-black) ![tech](https://img.shields.io/badge/React-18-61dafb) ![tech](https://img.shields.io/badge/Three.js-R3F-049ef4) ![tech](https://img.shields.io/badge/TypeScript-strict-3178c6) ![tests](https://img.shields.io/badge/tests-2951%20passed-brightgreen) ![coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen)
+[![live](https://img.shields.io/badge/在线体验-stellar.guushu.com-4d9fff)](https://stellar.guushu.com) [![CI](https://github.com/HowardZlh/stellar-odyssey/actions/workflows/pr-gate.yml/badge.svg)](https://github.com/HowardZlh/stellar-odyssey/actions/workflows/pr-gate.yml) ![tech](https://img.shields.io/badge/Next.js-16-black) ![tech](https://img.shields.io/badge/React-19-61dafb) ![tech](https://img.shields.io/badge/Three.js-R3F-049ef4) ![tech](https://img.shields.io/badge/TypeScript-strict-3178c6) ![coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0-blue)
+
+**目录**：[效果演示](#-效果演示) · [亮点特性](#-亮点特性) · [快速开始](#-快速开始) · [文档与教程](#-文档与教程) · [技术栈](#-技术栈) · [科学性承诺](#-科学性承诺) · [参与贡献](#-参与贡献) · [商业合作](#-商业合作) · [开源协议](#️-开源协议)
 
 ---
 
@@ -29,6 +31,10 @@
 **银河系—仙女座碰撞合并快进预览**：十几秒穿越 45 亿年，见证两大星系首次穿越、潮汐扭曲直至合并——
 
 ![银河系—仙女座碰撞合并预览](docs/media/galaxy-merger.gif)
+
+| 人马座 A* 引力透镜光子环 | 体积渲染的猎户座星云 | 仙女座星系近观（DSS2 影像驱动） |
+|---|---|---|
+| ![人马座 A* 光子环](docs/media/shot-sgr-a-photon-ring.jpg) | ![猎户座星云体积渲染](docs/media/shot-orion-nebula-volume.jpg) | ![M31 近观粒子云](docs/media/shot-m31-close-up.jpg) |
 
 > 以上只是三条主线。**推近人马座 A\* 看引力透镜光子环、钻进体积渲染的猎户座星云、
 > 飞抵由真实巡天影像驱动的仙女座星系、在 43,000+ 真实星系点云中环视宇宙网**——
@@ -75,9 +81,15 @@
 - **银河系—仙女座碰撞合并快进预览**：12 秒穿越 45 亿年，完整呈现首次穿越 → 潮汐扭曲 → 星暴 → 终态椭圆星系 Milkomeda
 - 哈勃膨胀示意、麦哲伦星流、人马座潮汐流、可观测宇宙边界
 
+### 🖥 展馆模式与深链启动
+- **展馆模式**：控制面板一键启动或 `?mode=kiosk` 链接直入——全屏自动巡游逐站运镜，观众任意触碰即暂停并显示界面，片刻无操作自动恢复巡游；`tour=all` 四域由内向外轮转（行星系统 → 太阳系 → 银河系 → 宇宙），每站停留时长可调
+- **深链直达**：`?body=jupiter` 分享链接开屏即飞往任意天体；`?lang=en` 英文界面启动；`?logo=` 注入合作方标识（仅 https，展馆冠名场景 UI 隐藏时仍保留）——参数可自由组合，详见 [docs/launch-params.md](docs/launch-params.md)
+- `H` 键一键隐藏全部界面，纯净画面用于截图、录屏与投屏
+
 ### 🎧 沉浸式体验
 - **Web Audio 程序化合成空间音效**：四层级音景随缩放等功率交叉混合，太阳轰鸣与黑洞嗡鸣 3D 定位（真空无声，音效为艺术化设计并已登记）
 - 任意天体**点选 → 飞往 → 跟随**（2.5 秒平滑运镜），`[` / `]` 按视角域巡游序列逐个打卡（L1 行星系统 / L2 十五天体 / L3 十四站深空 / L4 八站星系）
+- **中英双语**：界面、3D 天体标签与科普说明随控制面板 zh/EN 开关即时切换（或 `?lang=en` 启动）
 - **真实比例模式**（`R`）：如实呈现"真实比例下行星几乎不可见"的尺度事实
 - 控制面板选项按视角作用域智能显隐，Bloom 泛光后处理，60 FPS 满帧目标
 
@@ -96,9 +108,6 @@ npm install
 # 启动开发服务器（http://localhost:3000）
 npm run dev
 
-# 需要同时开第二个实例时（http://localhost:3100，独立构建目录，与上面互不干扰）
-npm run dev:3100
-
 # 生产构建与启动
 npm run build
 npm run start
@@ -107,6 +116,7 @@ npm run start
 打开浏览器后：**滚轮缩放**体验连续遨游，按 `1`–`4` 切换四大视角，**点击任意天体**查看信息并飞往观察。完整操作见 [docs/getting-started.md](docs/getting-started.md)。
 
 > 建议使用支持 WebGL 2 的现代浏览器（Chrome / Edge / Firefox / Safari）。
+> 本项目面向**桌面浏览器与大屏展陈**设计与测试；触屏设备上可单指旋转、双指捏合缩放、点按选取天体进行基本浏览，但界面布局与性能未针对手机/平板优化。
 
 ## 📖 文档与教程
 
@@ -115,21 +125,28 @@ npm run start
 | [docs/getting-started.md](docs/getting-started.md) | 快速上手：安装运行、第一次遨游的推荐路线 |
 | [docs/view-guide.md](docs/view-guide.md) | 四视角导览：每个层级能看什么、怎么玩 |
 | [docs/controls.md](docs/controls.md) | 交互与快捷键完整参考、控制面板选项说明 |
+| [docs/launch-params.md](docs/launch-params.md) | 启动 URL 参数：深链直达、展馆模式部署、logo/语言注入 |
 | [docs/events-guide.md](docs/events-guide.md) | 动态事件演示：耀斑 / CME / 超新星 / 星系合并预览 |
 | [docs/science-notes.md](docs/science-notes.md) | 科学性说明：真实数据来源与艺术化处理登记 |
+| [docs/how-it-works.md](docs/how-it-works.md) | 技术揭秘：跨 10+ 量级尺度渲染、体积渲染、引力透镜、离线烘焙管线 |
+| [docs/attribution.md](docs/attribution.md) | 素材许可与数据来源完整登记 |
 | [docs/development.md](docs/development.md) | 开发指南：架构、测试、代码规范 |
+
+> English versions of all guides are available under [docs/en/](docs/en/).
 
 ## 🛠 技术栈
 
 | 领域 | 技术 |
 |---|---|
-| 框架 | Next.js 14 · React 18 · TypeScript（strict） |
+| 框架 | Next.js 16 · React 19 · TypeScript（strict） |
 | 3D 渲染 | Three.js · React Three Fiber · 自定义 GLSL shader（对数深度缓冲跨尺度渲染 · raymarch 体积渲染 · 引力透镜 · 半分辨率 RT + 帧率自适应质量档） |
 | 数据管线 | 离线烘焙脚本（`npm run bake:data`，零新依赖）：Gaia DR3 / SIMBAD / 2MRS / DSS2 影像 → `public/data/` 静态产物（约 2.5 MB，运行时零外部请求） |
 | 状态管理 | Zustand |
-| 音频 | Web Audio API（程序化合成 + PannerNode 3D 定位） |
+| 音频 | Web Audio API（程序化合成 + PannerNode 3D 定位，无音频资源文件） |
 | UI | Tailwind CSS |
-| 测试 | Jest + React Testing Library（2951 用例 / 154 套件，覆盖率 gate ≥90%） |
+| 测试 | Jest + React Testing Library（3,000+ 用例，覆盖率 gate ≥90%，CI 强制） |
+
+实现细节的通俗版解读见 [docs/how-it-works.md](docs/how-it-works.md)。
 
 ## 📂 项目结构
 
@@ -146,6 +163,7 @@ src/
 ├── data/               # 天体数据（NASA JPL/SIMBAD 等来源逐项登记）
 ├── hooks/              # 自定义 Hooks（快捷键/相机/音效/细节层/烘焙数据加载）
 ├── utils/              # 纯函数逻辑（物理计算/尺度管理/事件域……单测覆盖）
+├── i18n/               # 中英双语字典与语言解析
 ├── types/              # TypeScript 类型定义
 └── store/              # Zustand 全局状态
 scripts/bake-data/      # 离线数据烘焙（Gaia/SIMBAD/2MRS/DSS2 → public/data/）
@@ -171,64 +189,13 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 
 ## 素材许可（Attribution）
 
-- 天文星表与巡天数据（`public/data/` 烘焙产物，来源/许可/检索语句登记于各产物 meta 与 `scripts/bake-data/`）：
-  - 昴星团成员星：ESA **Gaia DR3**（Gaia TAP，视差 + 自行共动选星 600 颗，ADQL 查询语句随快照登记）；
-  - 宇宙大尺度背景：**2MASS 红移巡天 2MRS**（Huchra et al. 2012, ApJS 199, 26，VizieR J/ApJS/199/26，43,488 星系）；
-  - 星系近观影像图组（M31/M33/LMC/SMC 密度/颜色/尘埃图与远景贴图）：**DSS2 彩色巡天**
-    （STScI Digitized Sky Survey / AAO / ROE / Caltech，经 CDS **hips2fits** 服务切取烘焙；
-    源图不入库，产物为派生权重图）；
-  - 恒星物理参数/特殊天体位置：**SIMBAD** 及逐天体文献（Joyce 2020、Kervella 2003、EHT 2019、
-    Su et al. 2010、Levine et al. 2006、Piran 2004 等——应用内信息面板"数据来源"行逐项呈现）；
-  - M13 King profile：Harris 星团目录（1996，2010 版）。
-- `public/textures/` 下的行星/月球/太阳表面纹理（2K 底图与 `4k_*` 近观细节层）与土星环纹理来自
-  [Solar System Scope Textures](https://www.solarsystemscope.com/textures/)，
-  许可协议 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)（基于 NASA 观测数据制作）。
-  4K 细节层由 SSS 8K 源图本地降采样至 4096×2048（P4）；官方对天王星、海王星、土星环仅提供 2K 源图，
-  相应贴图维持 2K。`4k_sun.jpg`（S1 太阳近观层）：SSS 官方"8K"下载实为 4096×2048（与木星/土星情况
-  一致，已核实），直接采用。纹理清单与代码内登记见 `src/data/textures.ts`；加载失败时自动降级为程序化纹理
-  （`src/components/CelestialBody/proceduralTextures.ts`）。
-- 法线贴图（P4 近观立体细节，本仓库由公开高程数据转换生成）：
-  - `4k_earth_normal.jpg`：NASA Earth Observatory
-    [GEBCO 全球地形图](https://visibleearth.nasa.gov/images/73934/topography)（公有领域）转换；
-  - `4k_moon_normal.jpg`：NASA SVS [CGI Moon Kit](https://svs.gsfc.nasa.gov/4720)
-    LOLA LDEM 高程数据（公有领域）转换；
-  - `4k_mars_normal.jpg`：降级路径——无可获取的轻量 MOLA DEM（USGS 全分辨率 11 GB），
-    由火星 4K 色彩贴图亮度推导生成（登记于 REQUIREMENTS.md §4.7）。
-- 彗核形状参数（哈雷 15×8 km 花生形）依据 ESA Giotto 任务观测数据（`src/utils/cometNucleus.ts` 登记）。
-- 矮行星真实贴图（P5，公有领域，本地降采样至 2K 底图 2048×1024 + 4K 近观层 4096×2048）：
-  - `2k_pluto.jpg` / `4k_pluto.jpg`：NASA New Horizons LORRI/MVIC
-    [全球拼接彩色地图](https://www.nasa.gov/image-feature/pluto-global-color-map)
-    （NASA / Johns Hopkins University APL / Southwest Research Institute，公有领域）；
-    南纬约 30° 以南为黑色未测绘区（飞掠时处于极夜，科学事实）；
-  - `2k_ceres.jpg` / `4k_ceres.jpg`：NASA Dawn FC 全球拼接图（USGS Astrogeology
-    Ceres_Dawn_FC_DLR_global_20ppd_Oct2015，https://planetarymaps.usgs.gov/mosaic/ 托管，
-    NASA / JPL-Caltech / UCLA / MPS / DLR / IDA，公有领域）；
-  - `4k_pluto_normal.jpg`：USGS Astrogeology
-    Pluto_NewHorizons_Global_DEM_300m_Jul2017（公有领域，620 MB 源数据本地转换）；
-    未测绘半球置平（与彩色贴图黑色未测绘区一致），测绘区边缘噪声经模糊 +
-    梯度钳制抑制（残余粗糙感属源 DEM 立体像对不确定度）；
-  - `4k_ceres_normal.jpg`：USGS Astrogeology
-    Ceres_Dawn_FC_HAMO_DTM_DLR_Global_60ppd_Oct2016（公有领域，467 MB 源数据本地转换）；
-  - 阋神星/鸟神星/妊神星无探测器实拍表面图，使用基于观测特征（反照率/颜色/光谱）的
-    程序化增强纹理，艺术化推测部分登记于 `proceduralTextures.ts` 文件头。
-- 人造卫星 glTF 精细模型（P7，`public/models/`，清单与登记见 `src/data/models.ts`）：
-  - `iss.glb`：NASA 3D Resources
-    ["International Space Station (ISS) (B)"](https://github.com/nasa/NASA-3D-Resources)
-    （公有领域），本地经 gltf-transform 优化（weld/simplify + meshopt 压缩，190 KB / 3.2 万三角形）；
-    源模型材质为统一灰色，运行时按网格形态启发式着色（帆板深蓝/桁架银灰/舱体白色，
-    基于真实 ISS 外观的艺术化增强，登记于 `satelliteGeometry.ts` 文件头）；
-  - `hubble.glb`：NASA 3D Resources "Hubble Space Telescope (A)"（公有领域），
-    同上优化（168 KB / 5 千三角形）；
-  - `geo-satellite.glb`：NASA 3D Resources "Tracking and Data Relay Satellites (TDRS) (B)"
-    （公有领域，以 TDRS 为原型的静止轨道通信卫星示意），同上优化（305 KB / 1.6 万三角形）；
-  - 天宫空间站：无 NASA 公版模型且未找到开放许可（CC0/CC BY）社区模型，
-    按需求降级为程序化几何组合（T 字三舱构型 + 柔性太阳翼，
-    `src/components/CelestialBody/satelliteGeometry.ts`）；
-  - 全部模型仅近观懒加载（首屏无模型网络请求），加载失败静默降级为程序化几何组合。
+所有纹理、3D 模型与天文数据均来自公有领域或开放许可来源：NASA（JPL / New Horizons / Dawn / 3D Resources / SVS）、USGS Astrogeology、ESA Gaia DR3、2MASS 红移巡天、DSS2 彩色巡天、SIMBAD，以及 [Solar System Scope Textures](https://www.solarsystemscope.com/textures/)（CC BY 4.0）。星表与影像经离线烘焙为派生产物随仓库提交，来源/许可/检索语句登记于各产物 meta 与 `scripts/bake-data/`。
+
+**逐项素材来源、许可与登记说明见 [docs/attribution.md](docs/attribution.md)。**
 
 ## 📄 需求与变更记录
 
-- 需求文档：[REQUIREMENTS.md](REQUIREMENTS.md)（含逐项实现状态与差异登记）
+- 需求文档：[docs/internal/REQUIREMENTS.md](docs/internal/REQUIREMENTS.md)（含逐项实现状态与差异登记）
 - 变更记录：[CHANGELOG.md](CHANGELOG.md)（Keep a Changelog 格式）
 
 ## 🤝 参与贡献
@@ -239,6 +206,8 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 
 欢迎教育机构、科技馆与展陈集成商联系合作。合作方向示例：展馆大屏部署、定制开发、课程内容。
 
+**展馆部署开箱即用**：全屏自动巡游 + 空闲自动恢复 + 合作方 logo 注入 + 中英双语，一条 URL 即可完成配置——见 [docs/launch-params.md](docs/launch-params.md)。
+
 - 📮 邮箱：[stevenzearo@163.com](mailto:stevenzearo@163.com)
 - 💬 GitHub Issues：[HowardZlh/stellar-odyssey/issues](https://github.com/HowardZlh/stellar-odyssey/issues)
 
@@ -248,4 +217,4 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 
 - **个人学习、教育教学、科研用途**：自由使用、修改与分发（遵循 AGPL 条款）
 - **商业闭源集成**（如展馆展项、商业产品嵌入等不愿以 AGPL 开源衍生代码的场景）：请联系作者获取商业授权——邮箱 [stevenzearo@163.com](mailto:stevenzearo@163.com)，或通过 [GitHub Issues](https://github.com/HowardZlh/stellar-odyssey/issues) 留言
-- 纹理、3D 模型等素材的许可归属见上方「素材许可（Attribution）」一节，不适用代码协议
+- 纹理、3D 模型等素材的许可归属见 [docs/attribution.md](docs/attribution.md)，不适用代码协议
