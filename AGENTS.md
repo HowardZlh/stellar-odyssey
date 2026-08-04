@@ -65,12 +65,15 @@
 - **对外文案口径**：商业相关表述一律使用中性口径（"欢迎联系合作"），不写价格、不写内部策略；商标声明（名称与标识不在开源许可范围内）保留在两版 README 的协议节
 - **赞助文案红线**：赞助入口保持"零回报承诺"口径，不得添加任何回报/更新义务类表述
 
-## 内部商业文档（不入库）
+## 内部文档（不入库）
 
-- `*_PROMPT.md` 与 `BUSINESS_*.md` 已在 .gitignore 中，**不随仓库公开、不需要分支流程**：
+- `docs/internal/` **整目录**已在 .gitignore 中（另有 `*_PROMPT.md`、`BUSINESS_*.md` 通配规则兜底），**不随仓库公开、不需要分支流程**：
+  - `docs/internal/REQUIREMENTS*.md` / `IMPROVEMENT_REQUIREMENTS*.md`：需求文档系列（仅本地保留，实现后照常回写状态）
+  - `docs/internal/*_PROMPT.md`：各迭代 Agent 实现提示词
   - `docs/internal/BUSINESS_ROADMAP_B2B.md`：商业化路线（个人开发者版），完成商业相关任务后更新其勾选状态与实现差异登记
   - `docs/internal/BUSINESS_LEADS.md`：询单/赞助/约稿登记表
 - 内部策略、报价、线索信息**严禁**写入任何会入库的文件（代码注释、CHANGELOG、docs/ 公开文档）
+- 公开文档（README、docs/）**不得链接** `docs/internal/` 下的文件（仓库中不存在，会成死链）
 
 ## 代码规范
 
@@ -237,7 +240,7 @@ src/
 scripts/bake-data/      # 离线数据烘焙（Gaia/SIMBAD/2MRS/DSS2 → public/data/）
 public/data/            # 烘焙产物（真实星表/影像图组/巡天目录，随仓库提交）
 docs/                   # 用户教程（中文 + docs/en/ 英文版）
-docs/internal/          # 内部需求文档（REQUIREMENTS 系列入库；BUSINESS_* 不入库）
+docs/internal/          # 内部文档（需求/提示词/商业文档，整目录不入库，仅本地保留）
 ```
 
 ## 常用命令
