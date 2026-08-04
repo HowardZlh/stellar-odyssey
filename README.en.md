@@ -28,15 +28,15 @@
 
 **Continuous four-level zoom journey** — scroll out from an Earth close-up, through the Solar System and the Milky Way, all the way to the edge of the observable universe:
 
-![Four-level zoom journey](docs/media/zoom-journey.gif)
+![Four-level zoom journey](docs/media/zoom-journey.webp)
 
 **Solar activity event chain** — trigger a solar flare, fly in to see granulation and sunspots, then watch a coronal mass ejection (CME) race toward Earth:
 
-![Solar flare and CME demo](docs/media/solar-events.gif)
+![Solar flare and CME demo](docs/media/solar-events.webp)
 
 **Milky Way–Andromeda merger fast-forward preview** — 4.5 billion years in about twelve seconds, from first passage through tidal distortion to the final merger:
 
-![Galaxy merger preview](docs/media/galaxy-merger.gif)
+![Galaxy merger preview](docs/media/galaxy-merger.webp)
 
 | Sgr A* lensed photon ring | Volumetric Orion Nebula | Andromeda close-up (DSS2-driven) |
 |---|---|---|

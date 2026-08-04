@@ -22,15 +22,15 @@
 
 **四层级连续缩放遨游**：滚轮从地球近观一路拉远，穿越太阳系、银河系，直抵可观测宇宙边界——
 
-![四层级连续缩放遨游](docs/media/zoom-journey.gif)
+![四层级连续缩放遨游](docs/media/zoom-journey.webp)
 
 **太阳活动事件链**：触发太阳耀斑 → 飞往近观米粒组织与黑子 → 日冕物质抛射（CME）朝地球扑来——
 
-![太阳耀斑与 CME 事件演示](docs/media/solar-events.gif)
+![太阳耀斑与 CME 事件演示](docs/media/solar-events.webp)
 
 **银河系—仙女座碰撞合并快进预览**：十几秒穿越 45 亿年，见证两大星系首次穿越、潮汐扭曲直至合并——
 
-![银河系—仙女座碰撞合并预览](docs/media/galaxy-merger.gif)
+![银河系—仙女座碰撞合并预览](docs/media/galaxy-merger.webp)
 
 | 人马座 A* 引力透镜光子环 | 体积渲染的猎户座星云 | 仙女座星系近观（DSS2 影像驱动） |
 |---|---|---|
