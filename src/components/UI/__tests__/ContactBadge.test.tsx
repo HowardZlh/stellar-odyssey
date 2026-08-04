@@ -12,6 +12,7 @@ import {
   CONTACT_EMAIL,
   CONTACT_GITHUB_ISSUES_URL,
   ContactBadge,
+  DONATE_PAGE_PATH,
   SPONSOR_AFDIAN_URL,
 } from '../ContactBadge';
 
@@ -43,6 +44,29 @@ describe('ContactBadge 渲染', () => {
     expect(button).toBeInTheDocument();
     expect(button).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('商业合作左侧渲染「投喂燃料」捐赠入口（新标签页打开 /donate）', () => {
+    render(<ContactBadge />);
+    const donate = screen.getByRole('link', { name: '打开捐赠页（新标签页）' });
+    expect(donate).toHaveTextContent('投喂燃料');
+    expect(donate).toHaveAttribute('href', DONATE_PAGE_PATH);
+    expect(donate).toHaveAttribute('target', '_blank');
+    // 捐赠入口位于商业合作按钮左侧（DOM 先序）
+    const badge = screen.getByRole('button', { name: /商业合作/ });
+    expect(
+      donate.compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('事件避让时捐赠入口随角标一并隐藏', () => {
+    render(<ContactBadge />);
+    act(() => {
+      useSimulationStore.setState({ supernovaNoticeVisible: true });
+    });
+    expect(
+      screen.queryByRole('link', { name: '打开捐赠页（新标签页）' }),
+    ).not.toBeInTheDocument();
   });
 
   it('展开后卡片包含邮箱 mailto 链接、GitHub Issues 链接与爱发电赞助链接', () => {

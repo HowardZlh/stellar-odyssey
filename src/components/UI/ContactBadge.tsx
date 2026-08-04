@@ -12,6 +12,8 @@ export const CONTACT_GITHUB_ISSUES_URL =
   'https://github.com/HowardZlh/stellar-odyssey/issues';
 /** 爱发电赞助主页（README 赞助小节与 .github/FUNDING.yml 同源） */
 export const SPONSOR_AFDIAN_URL = 'https://afdian.com/a/stellar-odyssey';
+/** 站内捐赠页路径（左下角「投喂燃料」入口新标签页打开） */
+export const DONATE_PAGE_PATH = '/donate';
 
 /**
  * 商业合作角标（左下角常驻）：点击展开小卡片（邮箱 + GitHub Issues +
@@ -105,14 +107,26 @@ export function ContactBadge(): JSX.Element | null {
           </div>
         </div>
       )}
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((v) => !v)}
-        className="rounded-lg border border-white/10 bg-space-panel px-3 py-2 text-gray-300 backdrop-blur transition-colors hover:text-white"
-      >
-        💼 {tr('contactBadge.badgeLabel')}
-      </button>
+      <div className="flex items-center gap-2">
+        {/* 捐赠入口（商业合作左侧）：新标签页打开站内捐赠页 /donate */}
+        <a
+          href={DONATE_PAGE_PATH}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={tr('contactBadge.donateAria')}
+          className="rounded-lg border border-amber-300/30 bg-space-panel px-3 py-2 text-amber-200/90 backdrop-blur transition-colors hover:text-amber-100"
+        >
+          ☄️ {tr('contactBadge.donateLabel')}
+        </a>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
+          className="rounded-lg border border-white/10 bg-space-panel px-3 py-2 text-gray-300 backdrop-blur transition-colors hover:text-white"
+        >
+          💼 {tr('contactBadge.badgeLabel')}
+        </button>
+      </div>
     </div>
   );
 }
