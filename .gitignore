@@ -30,6 +30,9 @@
 *_PROMPT.md
 BUSINESS_*.md
 
+# 内部文档目录整体不入库（需求/提示词/商业文档均仅本地保留）
+/docs/internal/
+
 # IDE
 /.idea/
 

@@ -174,13 +174,10 @@ dev 钩子 `window.__simStore`（Zustand store）与 `window.__detailLayerDebug`
 3. 用户可见变更必须登记 CHANGELOG（按 新增/修复/改进 归类）
 4. 科学准确性优先；艺术化处理必须登记（见 [science-notes.md](science-notes.md)）
 
-## 需求文档索引
+## 需求与变更记录
 
-内部需求文档归档于 `docs/internal/`：
+需求文档系列为内部文档（`docs/internal/`，不随仓库公开）。对外的历次变更均记录于：
 
 | 文档 | 内容 |
 |---|---|
-| `docs/internal/REQUIREMENTS.md` | 主需求（P0–P7 迭代，逐项实现状态） |
-| `docs/internal/IMPROVEMENT_REQUIREMENTS*.md` | 各批改进迭代与实现差异登记：R1–R3（交互/巡游/事件域）、R4（体积渲染/引力透镜/恒星物理化/烘焙管线）、R5（影像驱动星系/2MRS 巡天/M87 环境/费米气泡） |
-| `docs/internal/IMPROVEMENT_REQUIREMENTS_SOLAR.md` | 太阳专项迭代（S1–S4） |
-| `CHANGELOG.md` | 全部变更记录 |
+| `CHANGELOG.md` | 全部变更记录（Keep a Changelog 格式，含各迭代交付内容） |

@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### 改进
+
+- 内部需求文档（REQUIREMENTS.md + IMPROVEMENT_REQUIREMENTS 系列共 7 篇）移出公开仓库：`docs/internal/` 整目录加入 .gitignore 仅本地保留；README 与 docs/development.md（中英两版）、docs/attribution.md 中指向内部文档的链接同步清理为 CHANGELOG 入口，消除仓库死链
+
 ## [0.1.4] - 2026-08-04
 
 ### 新增
