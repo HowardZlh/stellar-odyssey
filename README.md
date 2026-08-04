@@ -199,9 +199,8 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 
 **逐项素材来源、许可与登记说明见 [docs/attribution.md](docs/attribution.md)。**
 
-## 📄 需求与变更记录
+## 📄 变更记录
 
-- 需求文档：[docs/internal/REQUIREMENTS.md](docs/internal/REQUIREMENTS.md)（含逐项实现状态与差异登记）
 - 变更记录：[CHANGELOG.md](CHANGELOG.md)（Keep a Changelog 格式）
 
 ## 🤝 参与贡献

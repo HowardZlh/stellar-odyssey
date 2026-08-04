@@ -35,7 +35,7 @@ P4 近观立体细节，本仓库由公开高程数据转换生成：
 - `4k_moon_normal.jpg`：NASA SVS [CGI Moon Kit](https://svs.gsfc.nasa.gov/4720)
   LOLA LDEM 高程数据（公有领域）转换；
 - `4k_mars_normal.jpg`：降级路径——无可获取的轻量 MOLA DEM（USGS 全分辨率 11 GB），
-  由火星 4K 色彩贴图亮度推导生成（登记于 docs/internal/REQUIREMENTS.md §4.7）。
+  由火星 4K 色彩贴图亮度推导生成。
 
 ## 彗核形状
 

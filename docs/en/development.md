@@ -199,13 +199,10 @@ holders / GPU memory) are available for scripted assertions.
 3. User-visible changes must be recorded in the CHANGELOG (categorized as Added/Fixed/Improved)
 4. Scientific accuracy first; artistic liberties must be registered (see [science-notes.md](science-notes.md))
 
-## Requirements Document Index
+## Requirements & Change History
 
-Internal requirements documents are archived under `docs/internal/`:
+Requirements documents are internal (`docs/internal/`, not published with the repository). All public-facing changes are recorded in:
 
 | Document | Contents |
 |---|---|
-| `../internal/REQUIREMENTS.md` | Main requirements (P0–P7 iterations, per-item implementation status) |
-| `../internal/IMPROVEMENT_REQUIREMENTS*.md` | Improvement iterations and implementation-delta records per batch: R1–R3 (interaction/tours/event scopes), R4 (volume rendering/gravitational lensing/stellar physicalization/baking pipeline), R5 (imagery-driven galaxies/2MRS survey/M87 environment/Fermi bubbles) |
-| `../internal/IMPROVEMENT_REQUIREMENTS_SOLAR.md` | Sun-focused iterations (S1–S4) |
-| `CHANGELOG.md` | Full change history |
+| `CHANGELOG.md` | Full change history (Keep a Changelog format, covering each iteration's deliverables) |
