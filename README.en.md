@@ -30,13 +30,19 @@
 
 ![Four-level zoom journey](docs/media/zoom-journey.webp)
 
+> 🎬 [Watch the 60fps video (1280px MP4, 7.6 MB)](https://github.com/HowardZlh/stellar-odyssey/releases/download/v0.1.2/zoom-journey-60fps.mp4)
+
 **Solar activity event chain** — trigger a solar flare, fly in to see granulation and sunspots, then watch a coronal mass ejection (CME) race toward Earth:
 
 ![Solar flare and CME demo](docs/media/solar-events.webp)
 
+> 🎬 [Watch the 60fps video (1280px MP4, 9.3 MB)](https://github.com/HowardZlh/stellar-odyssey/releases/download/v0.1.2/solar-events-60fps.mp4)
+
 **Milky Way–Andromeda merger fast-forward preview** — 4.5 billion years in about twelve seconds, from first passage through tidal distortion to the final merger:
 
 ![Galaxy merger preview](docs/media/galaxy-merger.webp)
+
+> 🎬 [Watch the 60fps video (1280px MP4, 10 MB)](https://github.com/HowardZlh/stellar-odyssey/releases/download/v0.1.2/galaxy-merger-60fps.mp4)
 
 | Sgr A* lensed photon ring | Volumetric Orion Nebula | Andromeda close-up (DSS2-driven) |
 |---|---|---|
