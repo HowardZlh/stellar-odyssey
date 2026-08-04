@@ -1,0 +1,28 @@
+name: ✨ 功能建议 / Feature Request
+description: 新天体、新交互、新玩法 / New bodies, interactions, or ideas
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: 想法 / The idea
+      description: 想看到什么？为什么值得做？/ What would you like to see, and why is it worth it?
+    validations:
+      required: true
+  - type: textarea
+    id: reference
+    attributes:
+      label: 参考 / References
+      description: 真实天文原型、类似项目、示意图等 / Real astronomical prototypes, similar projects, sketches
+  - type: dropdown
+    id: scope
+    attributes:
+      label: 相关视角 / Related view level
+      options:
+        - L1 行星视角 / Planet
+        - L2 太阳系视角 / Solar System
+        - L3 银河系视角 / Milky Way
+        - L4 宇宙视角 / Universe
+        - 跨视角 / Cross-level
+        - UI / 交互 / Interaction
+        - 其他 / Other

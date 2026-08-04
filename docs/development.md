@@ -4,14 +4,14 @@
 
 | 领域 | 技术 | 说明 |
 |---|---|---|
-| 框架 | Next.js 14 + React 18 | App Router，`src/app/` 入口 |
+| 框架 | Next.js 16 + React 19 | App Router，`src/app/` 入口 |
 | 语言 | TypeScript（strict） | 禁用 `any`，函数显式返回类型 |
 | 3D | Three.js + React Three Fiber | 对数深度缓冲支撑跨 10+ 量级尺度渲染；raymarch 体积渲染（发射-吸收积分 + 3D 密度纹理 + 蓝噪声抖动 + 半分辨率 RT + 帧率自适应质量档）、黑洞/星系团引力透镜 shader |
 | 数据管线 | `scripts/bake-data/`（Node 原生 TS，零新依赖） | Gaia DR3 / SIMBAD / 2MRS / DSS2 影像 → `public/data/` 静态产物（≈2.5 MB，运行时零外部请求；快照随仓库提交保证幂等离线可复现） |
 | 状态 | Zustand | 单 store（`src/store/index.ts`），每帧渲染数据走注册表模式不经 React |
 | 音频 | Web Audio API | 程序化合成（无音频资源文件），PannerNode 3D 定位 |
 | 样式 | Tailwind CSS | 深空主题（`space-*` 色板） |
-| 测试 | Jest + React Testing Library | 2,951 用例 / 154 套件，覆盖率 gate ≥90% |
+| 测试 | Jest + React Testing Library | 3,000+ 用例，覆盖率 gate ≥90%（jest 配置强制，CI 拦截） |
 
 ## 常用命令
 
@@ -176,9 +176,11 @@ dev 钩子 `window.__simStore`（Zustand store）与 `window.__detailLayerDebug`
 
 ## 需求文档索引
 
+内部需求文档归档于 `docs/internal/`：
+
 | 文档 | 内容 |
 |---|---|
-| `REQUIREMENTS.md` | 主需求（P0–P7 迭代，逐项实现状态） |
-| `IMPROVEMENT_REQUIREMENTS*.md` | 各批改进迭代与实现差异登记：R1–R3（交互/巡游/事件域）、R4（体积渲染/引力透镜/恒星物理化/烘焙管线）、R5（影像驱动星系/2MRS 巡天/M87 环境/费米气泡） |
-| `IMPROVEMENT_REQUIREMENTS_SOLAR.md` | 太阳专项迭代（S1–S4） |
+| `docs/internal/REQUIREMENTS.md` | 主需求（P0–P7 迭代，逐项实现状态） |
+| `docs/internal/IMPROVEMENT_REQUIREMENTS*.md` | 各批改进迭代与实现差异登记：R1–R3（交互/巡游/事件域）、R4（体积渲染/引力透镜/恒星物理化/烘焙管线）、R5（影像驱动星系/2MRS 巡天/M87 环境/费米气泡） |
+| `docs/internal/IMPROVEMENT_REQUIREMENTS_SOLAR.md` | 太阳专项迭代（S1–S4） |
 | `CHANGELOG.md` | 全部变更记录 |

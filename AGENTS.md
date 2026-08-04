@@ -8,12 +8,11 @@
 
 ## 技术栈
 
-- **前端框架**: React 18 + TypeScript
+- **前端框架**: React 19 + TypeScript
 - **3D引擎**: Three.js + React Three Fiber
-- **构建工具**: Next.js 14
+- **构建工具**: Next.js 16
 - **状态管理**: Zustand
-- **动画系统**: React Spring + GSAP
-- **音频引擎**: Web Audio API + Howler.js
+- **音频引擎**: Web Audio API（程序化合成，无音频资源文件）
 - **UI框架**: Tailwind CSS
 - **包管理器**: npm
 
