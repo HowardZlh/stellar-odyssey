@@ -1,0 +1,38 @@
+name: 🐛 Bug 报告 / Bug Report
+description: 渲染异常、交互失灵、性能问题等 / Rendering glitches, broken interactions, performance issues
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 问题描述 / What happened
+      description: 发生了什么？预期是什么？/ What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      placeholder: |
+        1. 打开 https://stellar.guushu.com/?body=…
+        2. 按 3 切到银河系视角
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: url
+    attributes:
+      label: 复现链接 / URL
+      description: 含启动参数的完整 URL（?body= / ?mode=kiosk 等）有助于快速定位 / Full URL incl. launch params if relevant
+  - type: input
+    id: environment
+    attributes:
+      label: 环境 / Environment
+      placeholder: "例如：macOS 15 / Chrome 138 / M2 / 2560×1440"
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: 截图与控制台输出 / Screenshots & console output
+      description: 如有渲染问题请附截图；F12 控制台报错请一并贴出 / Screenshots and DevTools console errors help a lot
