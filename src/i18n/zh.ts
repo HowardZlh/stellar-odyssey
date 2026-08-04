@@ -32,6 +32,24 @@ export const zh = {
     githubIssues: 'GitHub Issues',
     /** 爱发电赞助链接文字（emoji 由组件层持有） */
     sponsor: '爱发电赞助支持',
+    /** 捐赠入口按钮文字（emoji ☄️ 由组件层持有；跳转 /donate 新页面） */
+    donateLabel: '投喂燃料',
+    donateAria: '打开捐赠页（新标签页）',
+  },
+  /** 捐赠页（/donate，零回报承诺口径——不承诺任何回报或更新义务） */
+  donate: {
+    title: '投喂燃料',
+    subtitle: '为星海奥德赛添一把燃料',
+    intro:
+      '如果这片宇宙曾让你停下滚轮多看一会儿，欢迎投喂一份燃料。所有捐赠均为无偿支持，不构成任何回报或更新义务的承诺——项目的全部功能与源代码对所有人平等开放，你的支持将用于持续开发与域名维护，让它保持免费、无广告、开源。',
+    platformsSection: '捐赠通道',
+    platformAvailable: '前往捐赠',
+    platformComingSoon: '预留位 · 即将开通',
+    donorsSection: '燃料补给名单',
+    donorsNote: '按累计捐赠金额降序排列（人工登记，可能存在延迟）',
+    donorsEmpty: '虚位以待——成为第一颗点亮航程的星。',
+    donorAmount: '¥{amount}',
+    backToApp: '返回星图',
   },
   helpHint: {
     /**
@@ -50,6 +68,8 @@ export const zh = {
     kioskNote:
       'H 隐藏/显示界面 · 展馆模式：左上角面板启动（全屏自动巡游，任意操作暂停、片刻无操作自动恢复）或以 ?mode=kiosk 链接启动',
     closeAria: '关闭引导',
+    /** 关闭后底部中央"?"重开按钮（UI 布局优化：引导 5 秒自动关闭后可重开） */
+    reopenAria: '重新打开操作引导',
   },
   /** 四视角锚点名（cameraViews.nameZh 迁移，ControlPanel 按钮 + HUD 标题共用） */
   viewLevel: {
@@ -109,6 +129,9 @@ export const zh = {
     kioskStart: '启动展馆模式（全屏自动巡游）',
     kioskNote: '按当前巡游域自动逐站飞往；任意操作暂停，片刻无操作自动恢复',
     demoSection: '动态事件演示',
+    /** 面板收起/展开把手（UI 布局优化） */
+    collapseAria: '收起控制面板',
+    expandAria: '展开控制面板',
     supernovaActive: '超新星爆发进行中…',
     supernovaTrigger: '触发超新星演示（旋臂内随机）',
     flareActive: '耀斑进行中（{cls}{mag} 级）…',
@@ -134,6 +157,11 @@ export const zh = {
   },
   hud: {
     simTime: '模拟时间：{value}',
+    /** 大时间尺度专业历元副行（主行为"距今约 …"通俗表示，UI 布局优化） */
+    simEpoch: '（天文历元 {value}）',
+    /** 沉浸模式（页面最大化）按钮（emoji 由组件层持有） */
+    immersiveEnter: '最大化（收起面板）',
+    immersiveExit: '退出最大化',
     scale: '当前尺度：{value}',
     frameL1: '参考系：日心系（行星/卫星运动）',
     frameL2: '参考系：日心系（黄道坐标）',

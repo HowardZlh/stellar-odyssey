@@ -8,6 +8,7 @@ import {
   advanceSimTime,
   clampSpeedMultiplier,
   formatSimDate,
+  formatSimDateParts,
   interpolateTimeCompression,
   simDaysToDate,
 } from '@/utils/time';
@@ -101,23 +102,59 @@ describe('interpolateTimeCompression（跨层级平滑插值）', () => {
   });
 });
 
-describe('simDaysToDate / formatSimDate', () => {
+describe('simDaysToDate / formatSimDate(Parts)', () => {
   it('第 0 天为 J2000 历元（2000-01-01 12:00 UTC）', () => {
     expect(simDaysToDate(0).getTime()).toBe(J2000_EPOCH_MS);
     expect(formatSimDate(0)).toBe('2000-01-01 12:00 UTC');
   });
 
-  it('正常范围内输出 UTC 日期', () => {
+  it('正常范围内输出 UTC 日期，历元副行为 null', () => {
     expect(formatSimDate(366)).toBe('2001-01-01 12:00 UTC');
+    expect(formatSimDateParts(366)).toEqual({ primary: '2001-01-01 12:00 UTC', epoch: null });
   });
 
-  it('超出日期安全范围时退化为百万年表示', () => {
-    const text = formatSimDate(1e9 * 365.25);
-    expect(text).toContain('百万年');
-    expect(text).toContain('+');
+  it('大时间尺度中文主行为"距今约 N 万年后"（千分组），副行保留 J2000 历元', () => {
+    const parts = formatSimDateParts(42.73e6 * 365.25);
+    expect(parts.primary).toBe('距今约 4,273 万年后');
+    expect(parts.epoch).toBe('J2000 + 42.73 Myr');
   });
 
-  it('负的超大时间同样退化并带负号', () => {
-    expect(formatSimDate(-1e9 * 365.25)).toContain('−');
+  it('中文 ≥1 亿年切换亿年档（<100 亿保留 1 位小数）', () => {
+    const parts = formatSimDateParts(1e9 * 365.25);
+    expect(parts.primary).toBe('距今约 10.0 亿年后');
+    expect(parts.epoch).toBe('J2000 + 1000.00 Myr');
+  });
+
+  it('中文 ≥100 亿年取整并千分组', () => {
+    expect(formatSimDateParts(2.5e10 * 365.25).primary).toBe('距今约 250 亿年后');
+  });
+
+  it('负的超大时间为"距今约 … 前"，历元副行带负号', () => {
+    const parts = formatSimDateParts(-1e9 * 365.25);
+    expect(parts.primary).toBe('距今约 10.0 亿年前');
+    expect(parts.epoch).toBe('J2000 − 1000.00 Myr');
+  });
+
+  it('英文主行按 years/million/billion 自适应', () => {
+    expect(formatSimDateParts(3e5 * 365.25, 'en').primary).toBe('~300,000 years from now');
+    expect(formatSimDateParts(42.73e6 * 365.25, 'en').primary).toBe(
+      '~42.7 million years from now',
+    );
+    expect(formatSimDateParts(5e8 * 365.25, 'en').primary).toBe('~500 million years from now');
+    expect(formatSimDateParts(2e9 * 365.25, 'en').primary).toBe('~2.00 billion years from now');
+    expect(formatSimDateParts(2e11 * 365.25, 'en').primary).toBe(
+      '~200 billion years from now',
+    );
+  });
+
+  it('英文过去时间为 "~… ago"', () => {
+    expect(formatSimDateParts(-42.73e6 * 365.25, 'en').primary).toBe(
+      '~42.7 million years ago',
+    );
+  });
+
+  it('formatSimDate 单行兼容入口 = 两段式主行', () => {
+    expect(formatSimDate(1e9 * 365.25)).toBe('距今约 10.0 亿年后');
+    expect(formatSimDate(1e9 * 365.25, 'en')).toBe('~1.00 billion years from now');
   });
 });

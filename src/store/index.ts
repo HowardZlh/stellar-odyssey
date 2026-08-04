@@ -263,6 +263,21 @@ export interface SimulationState {
    */
   uiVisible: boolean;
   /**
+   * 左侧控制面板收起态（UI 布局优化）：true 时面板滑出屏幕左侧仅留
+   * 展开把手；独立于 uiVisible（H 键总开关仍整体隐藏）。
+   */
+  controlPanelCollapsed: boolean;
+  /**
+   * 沉浸模式（页面最大化按钮）：开启时收起左侧控制面板并关闭当前
+   * 天体信息面板（点击天体仍可正常打开——selectBody 逻辑不变）；
+   * 关闭时展开控制面板，并在用户未另选天体的情况下恢复进入前选中的
+   * 天体信息面板。浏览器全屏进入/退出属 DOM 层（ImmersiveToggle），
+   * 本状态不触达 Fullscreen API。
+   */
+  immersiveMode: boolean;
+  /** 沉浸模式进入前的选中天体（退出时恢复用；内部字段） */
+  immersiveRestoreBodyId: string | null;
+  /**
    * 展馆模式状态机状态（B5 §5.1-B，utils/kiosk.ts 纯逻辑三态）：
    * 一切转移经 kioskEvent action（事件来源：useKiosk 定时器/全局输入
    * 监听、ControlPanel 启动按钮、KioskBadge 退出、?mode=kiosk 启动）
@@ -286,6 +301,15 @@ export interface SimulationState {
   setUiVisible: (visible: boolean) => void;
   /** 切换 UI 显隐（B5：H 快捷键） */
   toggleUiVisible: () => void;
+  /** 设置左侧控制面板收起态 */
+  setControlPanelCollapsed: (collapsed: boolean) => void;
+  /** 切换左侧控制面板收起态（面板把手按钮） */
+  toggleControlPanelCollapsed: () => void;
+  /**
+   * 设置沉浸模式：开启 = 收起控制面板 + 暂存并清空选中天体；
+   * 关闭 = 展开控制面板 + （用户未另选时）恢复进入前选中天体
+   */
+  setImmersiveMode: (on: boolean) => void;
   /**
    * kiosk 状态机事件入口（B5 §5.1-C）：kioskTick 纯函数转移后消费
    * 副作用指令——hideUi/showUi 写 uiVisible；advance 按 planKioskAdvance
@@ -639,6 +663,9 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   locale: 'zh',
   launch: DEFAULT_LAUNCH_PARAMS,
   uiVisible: true,
+  controlPanelCollapsed: false,
+  immersiveMode: false,
+  immersiveRestoreBodyId: null,
   kiosk: KIOSK_INACTIVE,
 
   setLaunchParams: (params) => set({ launch: params }),
@@ -646,6 +673,31 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   setUiVisible: (visible) => set({ uiVisible: visible }),
 
   toggleUiVisible: () => set((state) => ({ uiVisible: !state.uiVisible })),
+
+  setControlPanelCollapsed: (collapsed) => set({ controlPanelCollapsed: collapsed }),
+
+  toggleControlPanelCollapsed: () =>
+    set((state) => ({ controlPanelCollapsed: !state.controlPanelCollapsed })),
+
+  setImmersiveMode: (on) =>
+    set((state) => {
+      if (on === state.immersiveMode) return {};
+      if (on) {
+        return {
+          immersiveMode: true,
+          controlPanelCollapsed: true,
+          immersiveRestoreBodyId: state.selectedBodyId,
+          selectedBodyId: null,
+        };
+      }
+      return {
+        immersiveMode: false,
+        controlPanelCollapsed: false,
+        // 沉浸期间用户已另选天体时不覆盖（点选功能不变）
+        selectedBodyId: state.selectedBodyId ?? state.immersiveRestoreBodyId,
+        immersiveRestoreBodyId: null,
+      };
+    }),
 
   kioskEvent: (event, nowSec) => {
     const current = get();

@@ -1,0 +1,36 @@
+/**
+ * 捐赠平台注册表（捐赠页 /donate 消费）
+ *
+ * url 为 null 表示预留位（卡片显示"预留位 · 即将开通"）；开通后填入
+ * 链接即上线。爱发电链接复用 ContactBadge 导出的同源常量
+ * （README 赞助小节与 .github/FUNDING.yml 同源，对外入口同源纪律）。
+ * 平台名为专有名词，zh/en 双字段按 locale 取用；emoji 由组件层持有。
+ */
+import { SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
+import type { DonationPlatformId } from '@/utils/donors';
+
+export interface DonationPlatform {
+  id: DonationPlatformId;
+  nameZh: string;
+  nameEn: string;
+  /** 捐赠链接（null = 预留位·即将开通） */
+  url: string | null;
+}
+
+export const DONATION_PLATFORMS: readonly DonationPlatform[] = [
+  { id: 'afdian', nameZh: '爱发电', nameEn: 'Afdian', url: SPONSOR_AFDIAN_URL },
+  { id: 'wechat', nameZh: '微信赞赏码', nameEn: 'WeChat Tip Code', url: null },
+  {
+    id: 'github-sponsors',
+    nameZh: 'GitHub Sponsors',
+    nameEn: 'GitHub Sponsors',
+    url: null,
+  },
+  { id: 'kofi', nameZh: 'Ko-fi', nameEn: 'Ko-fi', url: null },
+  {
+    id: 'buymeacoffee',
+    nameZh: 'Buy Me a Coffee',
+    nameEn: 'Buy Me a Coffee',
+    url: null,
+  },
+];

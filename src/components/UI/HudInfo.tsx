@@ -38,7 +38,9 @@ import { formatSceneScaleLabel } from '@/utils/scale';
 import { sunActivityStatusLines } from '@/utils/solarActivity';
 import { solarCycleState, solarCycleStatusLine } from '@/utils/solarCycle';
 import { SN_REAL_FREQUENCY_NOTE_EN, SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
-import { formatSimDate } from '@/utils/time';
+import type { SimDateParts } from '@/utils/time';
+import { formatSimDateParts } from '@/utils/time';
+import { ImmersiveToggle } from '@/components/UI/ImmersiveToggle';
 
 /** 各层级运动参考系说明键（需求 3.1.3 参考系定义；B3 文案入字典） */
 const REFERENCE_FRAME_KEYS: Record<ViewLevel, MessageKey> = {
@@ -118,8 +120,9 @@ export function HudInfo(): JSX.Element {
   const cycleScope = useSimulationStore((s) => s.cycleScope);
   const cycleScopeBody = useSimulationStore((s) => s.cycleScopeBody);
 
-  // 模拟时间/标尺以低频率刷新（0.25s），避免每帧渲染 React 组件
-  const [simDateText, setSimDateText] = useState('');
+  // 模拟时间/标尺以低频率刷新（0.25s），避免每帧渲染 React 组件。
+  // 两段式（UI 布局优化）：主行通俗表示 + 大时间尺度专业历元副行
+  const [simDate, setSimDate] = useState<SimDateParts>({ primary: '', epoch: null });
   const [scaleText, setScaleText] = useState('');
   const [galacticText, setGalacticText] = useState('');
   // S3 §4.4：太阳活动周期状态行（低频刷新，随快进演变）
@@ -136,7 +139,7 @@ export function HudInfo(): JSX.Element {
   useEffect(() => {
     const update = (): void => {
       const state = useSimulationStore.getState();
-      setSimDateText(formatSimDate(state.simDays, locale));
+      setSimDate(formatSimDateParts(state.simDays, locale));
       // R2-11 合并演化卡片（仅宇宙视角；合并前为 null）
       const notice = state.viewLevel === 'L4' ? mergerNotice(locale, state.simDays) : null;
       setMergerCard(notice);
@@ -189,8 +192,20 @@ export function HudInfo(): JSX.Element {
   return (
     <>
       <div className="absolute right-4 top-4 rounded-lg bg-space-panel px-4 py-3 text-right text-xs backdrop-blur">
-        <p className="text-sm font-medium text-space-accent">{tr(VIEW_LEVEL_NAME_KEYS[viewLevel])}</p>
-        <p className="mt-1 text-gray-300">{trf('hud.simTime', { value: simDateText })}</p>
+        <div className="flex items-center justify-end gap-2">
+          {/* 页面最大化（沉浸模式）按钮：收起/展开左侧面板与天体说明 */}
+          <ImmersiveToggle />
+          <p className="text-sm font-medium text-space-accent">
+            {tr(VIEW_LEVEL_NAME_KEYS[viewLevel])}
+          </p>
+        </div>
+        <p className="mt-1 text-gray-300">{trf('hud.simTime', { value: simDate.primary })}</p>
+        {/* 大时间尺度专业历元副行（正常日期范围为 null 不渲染） */}
+        {simDate.epoch && (
+          <p className="mt-0.5 text-[10px] text-gray-500">
+            {trf('hud.simEpoch', { value: simDate.epoch })}
+          </p>
+        )}
         <p className="mt-1 text-gray-300">{trf('hud.scale', { value: scaleText })}</p>
         <p className="mt-1 text-gray-500">
           {viewLevel === 'L3'
