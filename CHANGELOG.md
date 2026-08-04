@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### 发布流程
+
+- 修复发布链路越权风险（写权限协作者可在未合入 main 的分支 commit 上打 `v*` tag 直接触发生产部署，绕过 PR 审查与分支保护）：deploy.yml 新增 `verify-ref` 血统校验 job（`git merge-base --is-ancestor` 校验部署引用指向的 commit 必须已合入 main，否则整条部署链失败）；同时新增仓库 Tag Ruleset `protect-release-tags`（`v*` tag 的创建/更新/删除仅限 admin，服务端强制，与 workflow 校验形成双重闭环）
+
 ## [0.1.3] - 2026-08-04
 
 ### 新增
