@@ -174,6 +174,7 @@ Issues and PRs are welcome! Please read the [contributing guide](CONTRIBUTING.md
 If this universe ever made you pause your scroll wheel for a moment longer, consider supporting the project:
 
 - ⚡ Afdian: [afdian.com/a/stellar-odyssey](https://afdian.com/a/stellar-odyssey)
+- ☄️ On-site donation page (all channels and the donor roster): [stellar.guushu.com/donate](https://stellar.guushu.com/donate)
 
 Sponsorship comes with no reward promises — every feature and every line of source code stays equally open to everyone. Your support funds continued development and domain upkeep, keeping the project **free, ad-free, and open source**.
 

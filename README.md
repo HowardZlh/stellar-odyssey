@@ -213,6 +213,7 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 如果这个宇宙曾让你停下滚轮多看了一会儿，欢迎通过爱发电支持项目：
 
 - ⚡ 爱发电：[afdian.com/a/stellar-odyssey](https://afdian.com/a/stellar-odyssey)
+- ☄️ 站内捐赠页（汇总全部捐赠通道与捐赠名单）：[stellar.guushu.com/donate](https://stellar.guushu.com/donate)
 
 赞助没有任何回报承诺——项目的全部功能与源代码对所有人平等开放。你的支持将用于持续开发与域名维护，让它保持**免费、无广告、开源**。
 
