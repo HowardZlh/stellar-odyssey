@@ -14,11 +14,13 @@
 - **状态管理**: Zustand
 - **音频引擎**: Web Audio API（程序化合成，无音频资源文件）
 - **UI框架**: Tailwind CSS
+- **国际化**: 自研轻量 i18n（`src/i18n/` zh/en 字典，键集合由 TypeScript 类型强制一致）
+- **数据管线**: 离线烘焙脚本（`npm run bake:data`，Gaia DR3/SIMBAD/2MRS/DSS2 → `public/data/` 静态产物）
 - **包管理器**: npm
 
 ## Git 工作流规则（强制）
 
-1. **禁止直接在 `master` 分支提交代码。** 任何代码改动都不得直接 commit 到 `master`。
+1. **禁止直接在 `main`（或 `master`）分支提交代码。** 任何代码改动都不得直接 commit 到主分支。
 
 2. **处理任何改动前，必须先征求用户确认是否需要新建分支。** 在开始修改文件之前，先询问用户：本次改动是否需要新建分支、以及分支名称。未获确认前不得自行创建分支。
 
@@ -49,6 +51,27 @@
 
 4. **纯内部改动可酌情省略。** 若改动对用户完全不可见（如仅调整注释、测试内部结构），可不记录，但拿不准时优先记录。
 
+## 对外入口与文案同源纪律（强制）
+
+以下对外信息存在多处副本，**修改任意一处必须同步全部同源点**（禁止只改一处）：
+
+| 信息 | 同源点 |
+|---|---|
+| 商业合作邮箱 `stevenzearo@163.com` | README.md「商业合作」与「开源协议」节 · README.en.md 对应节 · `src/components/UI/ContactBadge.tsx` 的 `CONTACT_EMAIL` |
+| 爱发电赞助链接 `https://afdian.com/a/stellar-odyssey` | README.md「赞助支持」节 · README.en.md「Sponsor」节 · `.github/FUNDING.yml` · `ContactBadge.tsx` 的 `SPONSOR_AFDIAN_URL` |
+| GitHub Issues 链接 | README 两版 · `ContactBadge.tsx` 的 `CONTACT_GITHUB_ISSUES_URL` |
+
+- **README 双语同步**：`README.md` 的对外内容（章节增删、入口链接、商标声明等）变更时必须同步 `README.en.md`，反之亦然
+- **对外文案口径**：商业相关表述一律使用中性口径（"欢迎联系合作"），不写价格、不写内部策略；商标声明（名称与标识不在开源许可范围内）保留在两版 README 的协议节
+- **赞助文案红线**：赞助入口保持"零回报承诺"口径，不得添加任何回报/更新义务类表述
+
+## 内部商业文档（不入库）
+
+- `*_PROMPT.md` 与 `BUSINESS_*.md` 已在 .gitignore 中，**不随仓库公开、不需要分支流程**：
+  - `docs/internal/BUSINESS_ROADMAP_B2B.md`：商业化路线（个人开发者版），完成商业相关任务后更新其勾选状态与实现差异登记
+  - `docs/internal/BUSINESS_LEADS.md`：询单/赞助/约稿登记表
+- 内部策略、报价、线索信息**严禁**写入任何会入库的文件（代码注释、CHANGELOG、docs/ 公开文档）
+
 ## 代码规范
 
 ### TypeScript 规范
@@ -71,6 +94,12 @@
 - 场景图层次结构要清晰
 - 避免在渲染循环中创建新对象
 
+### i18n 规范
+- 面向用户的 UI 文案一律入字典（`src/i18n/zh.ts` + `en.ts`），消费侧经 `useT()` / `t(locale, key)` 查找；zh 为类型源，en 缺键/多键均编译报错
+- emoji 由组件层持有，不入字典
+- 3D 场景组件不直接订阅 locale（防语言切换重建场景）：标签走叶组件（`Scene/LocalizedLabelText.tsx`）或帧循环 `getState().locale`
+- 数据来源署名（`dataSource` / `*_ZH` 常量族）保持原文的豁免项见 zh.ts 文件头登记
+
 ### 代码组织
 - 按功能模块组织代码
 - 每个模块包含：类型定义、数据、逻辑、组件
@@ -82,8 +111,9 @@
 ### 单元测试
 - 核心业务逻辑必须有单元测试
 - 使用 Jest + React Testing Library
-- 测试覆盖率目标：80%+
+- 测试覆盖率 gate：**≥90%**（语句/分支/函数/行，CI 强制，低于即失败）
 - 物理计算函数必须有完整测试
+- 提交前必跑四件套：`npm test` / `npm run type-check` / `npm run lint` / （涉及构建路径时）`npm run build`
 
 ### 集成测试
 - 关键用户交互流程需要集成测试
@@ -190,27 +220,24 @@
 
 ```
 src/
-├── components/          # React组件
-│   ├── Scene/          # 3D场景组件
-│   ├── CelestialBody/  # 天体组件
-│   ├── Camera/         # 相机控制
-│   ├── UI/             # 用户界面
-│   └── Audio/          # 音效组件
-├── data/               # 数据文件
-│   ├── planets.ts      # 行星数据
-│   ├── galaxies.ts     # 星系数据
-│   └── sounds.ts       # 音效数据
-├── hooks/              # 自定义Hooks
-│   ├── useCamera.ts    # 相机控制
-│   ├── useAudio.ts     # 音效控制
-│   └── useScene.ts     # 场景控制
-├── utils/              # 工具函数
-│   ├── physics.ts      # 物理计算
-│   └── animation.ts    # 动画工具
-├── types/              # 类型定义
-│   └── index.ts        # 统一导出
-└── store/              # 状态管理
-    └── index.ts        # Zustand store
+├── components/          # React 组件
+│   ├── Scene/          # 3D 场景（银河系/宇宙/超新星/体积星云/引力透镜/星场……）
+│   │   └── volumetric/ # 体积渲染基建（raymarch 材质/半分辨率 RT/黑洞透镜）
+│   ├── CelestialBody/  # 天体（太阳/行星/卫星/彗星/特殊天体……）
+│   ├── Camera/         # 相机控制与运镜
+│   ├── UI/             # 控制面板/HUD/信息面板/通知/商业合作角标
+│   ├── Audio/          # 空间音效
+│   └── dev/            # 开发预览工位（/dev/preview 独立天体调参验证页）
+├── data/               # 天体数据（NASA JPL/SIMBAD 等来源逐项登记）
+├── hooks/              # 自定义 Hooks（快捷键/相机/音效/细节层/烘焙数据加载）
+├── utils/              # 纯函数逻辑（物理计算/尺度管理/事件域……单测覆盖）
+├── i18n/               # 中英双语字典与语言解析
+├── types/              # TypeScript 类型定义
+└── store/              # Zustand 全局状态
+scripts/bake-data/      # 离线数据烘焙（Gaia/SIMBAD/2MRS/DSS2 → public/data/）
+public/data/            # 烘焙产物（真实星表/影像图组/巡天目录，随仓库提交）
+docs/                   # 用户教程（中文 + docs/en/ 英文版）
+docs/internal/          # 内部需求文档（REQUIREMENTS 系列入库；BUSINESS_* 不入库）
 ```
 
 ## 常用命令
