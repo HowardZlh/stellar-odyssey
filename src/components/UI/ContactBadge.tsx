@@ -10,10 +10,12 @@ export const CONTACT_EMAIL = 'stevenzearo@163.com';
 /** GitHub Issues 链接（仓库 HowardZlh/stellar-odyssey） */
 export const CONTACT_GITHUB_ISSUES_URL =
   'https://github.com/HowardZlh/stellar-odyssey/issues';
+/** 爱发电赞助主页（README 赞助小节与 .github/FUNDING.yml 同源） */
+export const SPONSOR_AFDIAN_URL = 'https://afdian.com/a/stellar-odyssey';
 
 /**
  * 商业合作角标（左下角常驻）：点击展开小卡片（邮箱 + GitHub Issues +
- * 一句话说明），再次点击或点击卡片外任意位置收起。
+ * 爱发电赞助链接 + 一句话说明），再次点击或点击卡片外任意位置收起。
  *
  * 布局与避让登记：
  * - 左下角冲突处理取「临时隐藏」方案（隐藏/上移二选一）：任一事件通知
@@ -91,6 +93,14 @@ export function ContactBadge(): JSX.Element | null {
               className="block text-space-accent hover:underline"
             >
               💬 {tr('contactBadge.githubIssues')}
+            </a>
+            <a
+              href={SPONSOR_AFDIAN_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="block text-space-accent hover:underline"
+            >
+              ⚡ {tr('contactBadge.sponsor')}
             </a>
           </div>
         </div>
