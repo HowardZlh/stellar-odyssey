@@ -43,6 +43,9 @@ import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunAc
 export function ControlPanel(): JSX.Element {
   const tr = useT();
   const trf = useTf();
+  // UI 布局优化：面板收起态（把手按钮切换；沉浸模式联动收起/展开）
+  const collapsed = useSimulationStore((s) => s.controlPanelCollapsed);
+  const toggleCollapsed = useSimulationStore((s) => s.toggleControlPanelCollapsed);
   const locale = useSimulationStore((s) => s.locale);
   const setLocale = useSimulationStore((s) => s.setLocale);
   const viewLevel = useSimulationStore((s) => s.viewLevel);
@@ -136,7 +139,25 @@ export function ControlPanel(): JSX.Element {
   };
 
   return (
-    <div className="absolute left-4 top-4 w-64 select-none rounded-lg bg-space-panel p-4 text-sm backdrop-blur">
+    // 收起时整体向左平移（面板宽 16rem + left-4 的 1rem = 刚好滑出屏幕），
+    // 组件不卸载、内部状态保留；右缘把手随动留在屏幕左缘供展开
+    <div
+      className={`absolute left-4 top-4 w-64 select-none text-sm transition-transform duration-300 ${
+        collapsed ? '-translate-x-[calc(100%+1rem)]' : ''
+      }`}
+    >
+      {/* 收起/展开把手（贴面板右缘外侧） */}
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        aria-expanded={!collapsed}
+        aria-label={tr(collapsed ? 'controlPanel.expandAria' : 'controlPanel.collapseAria')}
+        title={tr(collapsed ? 'controlPanel.expandAria' : 'controlPanel.collapseAria')}
+        className="absolute left-full top-0 ml-1 rounded-lg border border-white/10 bg-space-panel px-1.5 py-2.5 text-xs text-gray-400 backdrop-blur transition-colors hover:text-white"
+      >
+        {collapsed ? '▶' : '◀'}
+      </button>
+      <div className="rounded-lg bg-space-panel p-4 backdrop-blur" aria-hidden={collapsed}>
       <div className="mb-3 flex items-start justify-between gap-2">
         <h1 className="text-base font-semibold leading-tight text-space-accent">
           {tr('controlPanel.title')}
@@ -555,6 +576,7 @@ export function ControlPanel(): JSX.Element {
           )}
         </section>
       )}
+      </div>
     </div>
   );
 }

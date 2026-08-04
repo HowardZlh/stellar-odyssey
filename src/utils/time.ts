@@ -160,19 +160,63 @@ export function simDaysToDate(simDays: number): Date {
   return new Date(J2000_EPOCH_MS + simDays * MS_PER_DAY);
 }
 
+/** 超出该年数（|年|）后日期表示退化为"距今约 N"通俗表示（Date 安全范围约 ±27万年） */
+export const SIM_DATE_CALENDAR_LIMIT_YEARS = 250000;
+
 /**
- * 模拟时间格式化为 UI 显示文案
- *
- * 超出 Date 安全范围（约 ±27万年）时退化为"J2000 + N 年"。
- *
- * i18n：超远期单位词"百万年/Myr"按 locale 输出（默认 zh——既有测试
- * 断言零改动）；日期格式本身语言无关。
+ * 模拟时间显示的两段式结果：
+ * - primary：主行（正常范围为 UTC 日期；大时间尺度为"距今约 4,273 万年后"
+ *   通俗表示，中文按 万年/亿年、英文按 years/million/billion 自适应单位）
+ * - epoch：副行专业历元表示（"J2000 + 42.73 Myr"，仅大时间尺度非 null）
  */
-export function formatSimDate(simDays: number, locale: 'zh' | 'en' = 'zh'): string {
+export interface SimDateParts {
+  primary: string;
+  epoch: string | null;
+}
+
+/** 大时间尺度通俗量值文案（中文 万年/亿年、英文 years/million/billion 自适应） */
+function humanYearsText(absYears: number, locale: 'zh' | 'en'): string {
+  if (locale === 'zh') {
+    if (absYears < 1e8) {
+      // 万年档（阈值起点 25 万年，量值恒 ≥25，取整 + 千分组）
+      return `${Math.round(absYears / 1e4).toLocaleString('en-US')} 万年`;
+    }
+    // 亿年档：<100 亿年保留 1 位小数，更大取整
+    const yi = absYears / 1e8;
+    return `${yi < 100 ? yi.toFixed(1) : Math.round(yi).toLocaleString('en-US')} 亿年`;
+  }
+  if (absYears < 1e6) {
+    return `${Math.round(absYears).toLocaleString('en-US')} years`;
+  }
+  if (absYears < 1e9) {
+    const m = absYears / 1e6;
+    return `${m < 100 ? m.toFixed(1) : Math.round(m).toLocaleString('en-US')} million years`;
+  }
+  const b = absYears / 1e9;
+  return `${b < 100 ? b.toFixed(2) : Math.round(b).toLocaleString('en-US')} billion years`;
+}
+
+/**
+ * 模拟时间格式化（两段式，UI 布局优化：通俗主行 + 专业历元副行）
+ *
+ * 正常范围（|年| ≤ 25 万）：primary 为 `YYYY-MM-DD HH:mm UTC`（语言无关），
+ * epoch 为 null。大时间尺度：primary 为"距今约 … 后/前"（en:
+ * "~… from now/ago"），epoch 为 "J2000 ± N.NN Myr"（保持原专业口径）。
+ *
+ * i18n：通俗文案单位词按 locale 输出（沿用本文件既有 locale 三元判断
+ * 豁免口径——纯函数不触达字典）；数字千分组统一 en-US 分组符。
+ */
+export function formatSimDateParts(simDays: number, locale: 'zh' | 'en' = 'zh'): SimDateParts {
   const years = simDays / 365.25;
-  if (Math.abs(years) > 250000) {
+  if (Math.abs(years) > SIM_DATE_CALENDAR_LIMIT_YEARS) {
     const millionYears = years / 1e6;
-    return `J2000 ${millionYears >= 0 ? '+' : '−'} ${Math.abs(millionYears).toFixed(2)} ${locale === 'en' ? 'Myr' : '百万年'}`;
+    const epoch = `J2000 ${millionYears >= 0 ? '+' : '−'} ${Math.abs(millionYears).toFixed(2)} Myr`;
+    const amount = humanYearsText(Math.abs(years), locale);
+    const primary =
+      locale === 'en'
+        ? `~${amount} ${years >= 0 ? 'from now' : 'ago'}`
+        : `距今约 ${amount}${years >= 0 ? '后' : '前'}`;
+    return { primary, epoch };
   }
   const date = simDaysToDate(simDays);
   const y = date.getUTCFullYear();
@@ -180,5 +224,12 @@ export function formatSimDate(simDays: number, locale: 'zh' | 'en' = 'zh'): stri
   const d = String(date.getUTCDate()).padStart(2, '0');
   const hh = String(date.getUTCHours()).padStart(2, '0');
   const mm = String(date.getUTCMinutes()).padStart(2, '0');
-  return `${y}-${m}-${d} ${hh}:${mm} UTC`;
+  return { primary: `${y}-${m}-${d} ${hh}:${mm} UTC`, epoch: null };
+}
+
+/**
+ * 模拟时间格式化为单行 UI 文案（兼容入口：取两段式的主行）
+ */
+export function formatSimDate(simDays: number, locale: 'zh' | 'en' = 'zh'): string {
+  return formatSimDateParts(simDays, locale).primary;
 }

@@ -188,10 +188,10 @@ describe('动态文案 locale 化（merger / solarCycle / solarActivity / scale 
     expect(formatSceneScaleLabel(1000, 3.0, 'en')).toContain('ly');
   });
 
-  it('formatSimDate：超远期单位按 locale（近期日期语言无关）', () => {
+  it('formatSimDate：超远期通俗单位按 locale（近期日期语言无关）', () => {
     const farDays = 1e9 * 365.25;
-    expect(formatSimDate(farDays)).toContain('百万年');
-    expect(formatSimDate(farDays, 'en')).toContain('Myr');
+    expect(formatSimDate(farDays)).toContain('亿年');
+    expect(formatSimDate(farDays, 'en')).toContain('billion years');
     expect(formatSimDate(0, 'en')).toContain('2000-01-01');
   });
 

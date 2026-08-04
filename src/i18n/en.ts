@@ -17,6 +17,22 @@ export const en: I18nDict = {
       'Educational institutions, science museums, and exhibition integrators are welcome to reach out: large-screen exhibit deployment, custom development, and course content.',
     githubIssues: 'GitHub Issues',
     sponsor: 'Sponsor on Afdian',
+    donateLabel: 'Fuel the Voyage',
+    donateAria: 'Open the donation page (new tab)',
+  },
+  donate: {
+    title: 'Fuel the Voyage',
+    subtitle: 'Add a little fuel to Stellar Odyssey',
+    intro:
+      'If this universe ever made you pause your scroll wheel for a moment longer, consider tossing in some fuel. All donations are voluntary support with no reward or update obligations promised — every feature and every line of source code stays equally open to everyone. Your support funds continued development and domain upkeep, keeping the project free, ad-free, and open source.',
+    platformsSection: 'Donation channels',
+    platformAvailable: 'Donate',
+    platformComingSoon: 'Reserved · coming soon',
+    donorsSection: 'Fuel supply roster',
+    donorsNote: 'Sorted by cumulative donation amount, descending (manually registered; may lag)',
+    donorsEmpty: 'This spot is waiting — be the first star to light the voyage.',
+    donorAmount: '¥{amount}',
+    backToApp: 'Back to the star map',
   },
   helpHint: {
     controls:
@@ -28,6 +44,7 @@ export const en: I18nDict = {
     kioskNote:
       'H hides/shows the UI · Kiosk mode: start from the top-left panel (fullscreen auto tour; any input pauses, and it resumes after a short idle) or launch via a ?mode=kiosk link',
     closeAria: 'Dismiss the guide',
+    reopenAria: 'Reopen the controls guide',
   },
   viewLevel: {
     L1: 'Planet View',
@@ -83,6 +100,8 @@ export const en: I18nDict = {
     kioskStart: 'Start kiosk mode (fullscreen auto tour)',
     kioskNote: 'Flies stop to stop within the current tour domain; any input pauses, resuming after a short idle',
     demoSection: 'Dynamic event demos',
+    collapseAria: 'Collapse the control panel',
+    expandAria: 'Expand the control panel',
     supernovaActive: 'Supernova in progress…',
     supernovaTrigger: 'Trigger supernova demo (random spot in a spiral arm)',
     flareActive: 'Flare in progress ({cls}{mag})…',
@@ -105,6 +124,9 @@ export const en: I18nDict = {
   },
   hud: {
     simTime: 'Sim time: {value}',
+    simEpoch: '(epoch {value})',
+    immersiveEnter: 'Maximize (collapse panels)',
+    immersiveExit: 'Exit maximized view',
     scale: 'Scale: {value}',
     frameL1: 'Frame: heliocentric (planet/moon motion)',
     frameL2: 'Frame: heliocentric (ecliptic coordinates)',
