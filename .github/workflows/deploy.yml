@@ -1,6 +1,8 @@
 # 部署到 GitHub Pages（stellar.guushu.com，经 Cloudflare 代理）
 # 触发：仅限打 release tag（v*）或在 Actions 页面手动触发（workflow_dispatch）
-# 流程：单元测试（含覆盖率 gate）→ 静态导出构建 → 部署；测试不通过则不会部署
+# 流程：血统校验（commit 必须在 main 上）→ 单元测试（含覆盖率 gate）→ 静态导出构建 → 部署；任一环节不通过则不会部署
+# 安全说明：血统校验防止在未合入 main 的分支 commit 上打 tag 直接发布；
+# 配合仓库 Tag Ruleset（v* 仅 admin 可创建）形成完整闭环，勿单独移除任一环。
 name: Deploy to GitHub Pages
 
 on:
@@ -18,9 +20,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 血统校验：部署引用（tag 或手动触发的分支）指向的 commit 必须已合入 main，
+  # 否则拒绝部署，防止未经 PR 审查的代码经打 tag 绕过分支保护直接上线
+  verify-ref:
+    name: verify-ref
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify commit is on main
+        run: |
+          git fetch origin main
+          if git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "OK: $GITHUB_REF_NAME ($GITHUB_SHA) 已合入 main，允许继续部署流程"
+          else
+            echo "::error::拒绝部署：$GITHUB_REF_NAME 指向的 commit $GITHUB_SHA 不在 main 分支上"
+            exit 1
+          fi
+
   test:
     name: test
     runs-on: ubuntu-latest
+    needs: verify-ref
     steps:
       - name: Checkout
         uses: actions/checkout@v4
