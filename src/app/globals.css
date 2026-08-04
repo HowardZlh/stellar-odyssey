@@ -12,3 +12,26 @@ body {
 input[type='range'] {
   accent-color: #4d9fff;
 }
+
+/* HUD 信息面板滚动区：细窄深色滚动条，匹配半透明科幻面板风格 */
+.hud-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+.hud-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.hud-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.hud-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.hud-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}

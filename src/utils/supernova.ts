@@ -44,6 +44,10 @@ export const SN_MAX_REMNANTS = 4;
 export const SN_REAL_FREQUENCY_NOTE_ZH =
   '真实银河系超新星频率约每 50–100 年一次；模拟中为可观赏性已大幅提高触发频率（艺术化加速，已登记）';
 
+/** 真实频率文案（英文，科学性说明） */
+export const SN_REAL_FREQUENCY_NOTE_EN =
+  'The real Milky Way supernova rate is about one every 50–100 years; in the simulation the trigger frequency is greatly increased for watchability (artistic acceleration, registered)';
+
 export type SupernovaPhase = 'brightening' | 'shockwave' | 'decay' | 'remnant';
 
 /** 超新星某时刻的可视状态 */

@@ -5,6 +5,7 @@ import type { JSX } from 'react';
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { ClampedHtmlLabel } from "@/components/Scene/ClampedHtmlLabel";
+import { LabelText } from "@/components/Scene/LocalizedLabelText";
 import * as THREE from "three";
 import { LOCAL_GROUP_GALAXIES, MILKY_WAY } from "@/data/galaxies";
 import { isGalaxyAnchoredFocusId } from "@/data/specialBodies";
@@ -54,9 +55,10 @@ import {
   mwM31SignedSeparationLy,
 } from "@/utils/galaxyMerger";
 import { setObjectTreeRaycastEnabled } from "@/utils/raycastGate";
+import { UNIVERSE_RENDER_ORDER } from "@/utils/universeRenderOrder";
 import {
   ORBIT_GRADATION_COUNT,
-  gradationProgressLabel,
+  gradationPercentText,
   isMajorGradation,
   markerBreathScale,
   markerPulse01,
@@ -86,6 +88,7 @@ import {
   createGlowSpriteCanvas,
 } from "@/components/CelestialBody/proceduralTextures";
 import { SpecialBodies } from "@/components/Scene/SpecialBodies";
+import { FermiBubbles } from "@/components/Scene/FermiBubbles";
 import { Supernova } from "@/components/Scene/Supernova";
 
 /**
@@ -177,6 +180,10 @@ export function Galaxy(): JSX.Element {
       "aHeightLy",
       new THREE.BufferAttribute(particles.heightsLy, 1),
     );
+    geo.setAttribute(
+      "aWarpLy",
+      new THREE.BufferAttribute(particles.warpsLy, 1),
+    );
     geo.setAttribute("aColor", new THREE.BufferAttribute(particles.colors, 3));
     geo.setAttribute("aSize", new THREE.BufferAttribute(particles.sizes, 1));
     geo.setAttribute("aBar", new THREE.BufferAttribute(particles.barFlags, 1));
@@ -215,6 +222,7 @@ export function Galaxy(): JSX.Element {
         attribute float aRadiusLy;
         attribute float aPhase;
         attribute float aHeightLy;
+        attribute float aWarpLy;
         attribute vec3 aColor;
         attribute float aSize;
         attribute float aBar;
@@ -241,13 +249,18 @@ export function Galaxy(): JSX.Element {
           // 保持棒形态不被较差自转剪切（utils/galaxy.barParticleAngle 同源）
           float omega = mix((220.0 * 3.3357) / max(aRadiusLy, 500.0), uBarOmega, aBar);
           float angle = aPhase + omega * uMyr;
+          // R5-6 HI 翘曲：aWarpLy 为生成期烘焙的 m=1 S 形基线位移
+          // （utils/galaxy.warpYLy；内盘/核球/棒为 0），morph 在其上
           vec3 pos = vec3(
             aRadiusLy * cos(angle),
-            aHeightLy,
+            aHeightLy + aWarpLy,
             -aRadiusLy * sin(angle)
           ) * uUnitsPerLy;
           // R2-11 终态椭球（Milkomeda）：盘面按半径比例增厚为椭球粒子云
-          // （目标轴比约 0.5，旋臂/团块调制随 uEll 抹平于亮度分支）
+          // （目标轴比约 0.5，旋臂/团块调制随 uEll 抹平于亮度分支）。
+          // R5-6 登记：椭球目标由未翘曲 aHeightLy 派生 → uEll/uExpand→1
+          // 时翘曲随 morph 淡出（终态椭球无翘曲，防位移被 ~r/1000 倍
+          // 放大的形变异常；CPU 镜像 utils/galaxy.diskWarpMorphYLy 单测）
           float hTargetLy = (aHeightLy / 500.0) * max(aRadiusLy, 6000.0) * 0.5;
           pos.y = mix(pos.y, hTargetLy * uUnitsPerLy, uEll);
           // R3-7 银河系整体垂直展开：同一椭球目标的第二次 mix（组合权重
@@ -279,7 +292,9 @@ export function Galaxy(): JSX.Element {
           // 1.6 —— 俯视时棒状暖黄核心在核球辉光之外可辨）
           vWave = mix(vWave, 1.6, aBar);
           // R2-9 尘埃带侧视剪影：侧视时盘中平面（|h| 小）粒子吸光变暗
-          // + 片元红化（加性混合无法画暗，以衰减近似，登记于 utils/galaxy.ts）
+          // + 片元红化（加性混合无法画暗，以衰减近似，登记于 utils/galaxy.ts）。
+          // R5-6：中平面判据用未翘曲 aHeightLy（盘局部高度）——尘埃带
+          // 随翘曲中平面同步抬升（HI/尘埃同盘翘曲语义，登记）
           float midplane = 1.0 - smoothstep(60.0, 380.0, abs(aHeightLy));
           vDust = uDustLane * midplane;
           vWave *= 1.0 - 0.85 * vDust;
@@ -449,9 +464,15 @@ export function Galaxy(): JSX.Element {
       vertexColors: true,
       transparent: true,
       opacity: 0.9,
+      // 透明线不写深度（频闪修复配套）：显式 renderOrder 后绘制次序
+      // 固定，写深度会按次序裁剪其后的透明层，关闭消除交叉裁剪
+      depthWrite: false,
     });
     const line = new THREE.Line(geo, mat);
     line.frustumCulled = false;
+    // L4 透明层注册表（频闪修复）：尾迹顶点逐帧增长致深度键漂移，曾与
+    // 目录点云/静态线环反复交叉、draw 顺序翻转——运动线独立档固定先后
+    line.renderOrder = UNIVERSE_RENDER_ORDER.motionLines;
     return { trailGeometry: geo, trailMaterial: mat, trailLine: line };
   }, []);
 
@@ -471,9 +492,11 @@ export function Galaxy(): JSX.Element {
         opacity: PREDICTION_OPACITY,
         dashSize: 18,
         gapSize: 12,
+        depthWrite: false, // 透明线不写深度（频闪修复配套，同尾迹线）
       });
       const line = new THREE.Line(geo, mat);
       line.frustumCulled = false;
+      line.renderOrder = UNIVERSE_RENDER_ORDER.motionLines; // 运动线层（注册表）
       return {
         predictionGeometry: geo,
         predictionMaterial: mat,
@@ -493,7 +516,7 @@ export function Galaxy(): JSX.Element {
     const rUnits = SUN_GALACTIC_RADIUS_LY * SCENE_UNITS_PER_LY;
     const minor: number[] = [];
     const major: number[] = [];
-    const labels: { key: number; label: string; pos: [number, number, number] }[] = [];
+    const labels: { key: number; percent: string; pos: [number, number, number] }[] = [];
     for (let i = 0; i < ORBIT_GRADATION_COUNT; i += 1) {
       const a = orbitGradationAngle(i);
       // 与 sunGalacticPositionLy 一致：x=R·cosθ，z=−R·sinθ，y=0（平均轨道环）
@@ -501,7 +524,8 @@ export function Galaxy(): JSX.Element {
       const z = -rUnits * Math.sin(a);
       if (isMajorGradation(i)) {
         major.push(x, 0, z);
-        labels.push({ key: i, label: gradationProgressLabel(i), pos: [x, 46, z] });
+        // i18n：仅存百分比文本，"银河年"单位词由字典键渲染（LabelText）
+        labels.push({ key: i, percent: gradationPercentText(i), pos: [x, 46, z] });
       } else {
         minor.push(x, 0, z);
       }
@@ -529,6 +553,9 @@ export function Galaxy(): JSX.Element {
       });
       const pts = new THREE.Points(geo, mat);
       pts.frustumCulled = false;
+      // L4 透明层注册表（频闪修复）：加性流层——与 normal 引导线层
+      // （尾迹/预测线共享轨道区域）先后固定，不再随深度键交叉翻转
+      pts.renderOrder = UNIVERSE_RENDER_ORDER.additiveFlows;
       return { geo, mat, pts };
     };
     return {
@@ -552,9 +579,11 @@ export function Galaxy(): JSX.Element {
       color: "#7fffd4",
       transparent: true,
       opacity: 0.5,
+      depthWrite: false, // 透明线不写深度（频闪修复配套，同尾迹线）
     });
     const line = new THREE.Line(geo, mat);
     line.frustumCulled = false;
+    line.renderOrder = UNIVERSE_RENDER_ORDER.motionLines; // 运动线层（注册表）
     return { heightGeometry: geo, heightMaterial: mat, heightLine: line };
   }, []);
 
@@ -628,6 +657,9 @@ export function Galaxy(): JSX.Element {
   // 保证目标天体及其所在的银河系环境可见；取消跟随后恢复层级门控。
   const focusBoostRef = useRef(0);
 
+  // R5-6 费米气泡：本帧银河系层级权重（useFrame 写入，闭包只读消费）
+  const galaxyWeightRef = useRef(0);
+
   /**
    * 刷新未来预测线（P6 §3.1.2）：前方约 1/4 银河年的**非闭合弧段**，
    * 随时间滚动刷新，与历史尾迹首尾衔接不重叠；y 分量按视觉增益放大
@@ -674,6 +706,8 @@ export function Galaxy(): JSX.Element {
       trapezoidWeight(continuousLevel, 2.5, 2.9, 4.5, 5),
       focusBoostRef.current,
     );
+    // R5-6 费米气泡可见性链路：层级权重经闭包注入（FermiBubbles 消费）
+    galaxyWeightRef.current = weight;
     group.visible = weight > 0.001;
     diskMaterial.uniforms.uOpacity.value = weight;
     // R2-9：银晕淡（包裹感背景层）、星团亮（点簇可辨）
@@ -907,11 +941,12 @@ export function Galaxy(): JSX.Element {
       <points geometry={clusterGeometry} material={clusterMaterial} />
 
       {/* R2-9 尘埃带侧视剪影：盘中平面扁椭球暗带（厚约 1,200 ly，
-          renderOrder=2 在加性粒子之后普通混合 → 真实"吸光"变暗；
+          renderOrder 在加性粒子之后普通混合 → 真实"吸光"变暗；取值迁入
+          L4 透明层注册表（原魔数 2，"晚于全部加性宇宙层"语义保持）；
           侧视渐入、正视透明，强度由 useFrame 按 dustLaneStrength 驱动） */}
       <mesh
         ref={dustLaneRef}
-        renderOrder={2}
+        renderOrder={UNIVERSE_RENDER_ORDER.galaxyDustLane}
         scale={[diskRadiusUnits * 0.96, diskRadiusUnits * 0.012, diskRadiusUnits * 0.96]}
         visible={false}
       >
@@ -949,6 +984,11 @@ export function Galaxy(): JSX.Element {
         />
       </sprite>
 
+      {/* R5-6 费米气泡：银心上下双极椭球体积（64³ 单纹理双泡直绘
+          raymarch，Su et al. 2010 形态登记；层级权重闭包注入 ×
+          showFermiBubbles 开关淡入淡出，组本地原点 = 银心） */}
+      <FermiBubbles getOpacity={() => galaxyWeightRef.current} />
+
       {/* 特殊天体系统（需求 3.1.5，P2）：黑洞（银心人马座A*）、脉冲星、
           红巨星/蓝巨星/天狼星双星、星云类——银心系本地坐标，随组变换 */}
       <SpecialBodies />
@@ -975,7 +1015,7 @@ export function Galaxy(): JSX.Element {
             style={{ pointerEvents: "none" }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-[10px] text-amber-200/80">
-              {item.label}
+              <LabelText k="sceneLabel.galacticYearPercent" params={{ percent: item.percent }} />
             </span>
           </ClampedHtmlLabel>
         ))}
@@ -1049,7 +1089,7 @@ export function Galaxy(): JSX.Element {
             style={{ pointerEvents: "none" }}
           >
             <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-emerald-300">
-              你在这里（太阳系）
+              <LabelText k="sceneLabel.youAreHere" />
             </span>
           </ClampedHtmlLabel>
         )}

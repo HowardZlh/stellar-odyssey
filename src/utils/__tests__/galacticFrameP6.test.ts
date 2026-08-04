@@ -173,6 +173,40 @@ describe('advanceFrameTransition（2 秒平滑过渡）', () => {
     expect(advanceFrameTransition(0.1, 0, 10)).toBe(0);
   });
 
+  // bug 修复回归：到达目标后恒稳定（原实现 current===target===1 落入
+  // 递减分支，形成 1 ↔ 1−step 永久极限环——黑洞近观整屏频闪根因）
+  it('到达 1 后恒稳定：任意 delta 序列不再振荡', () => {
+    expect(advanceFrameTransition(1, 1, 1 / 60)).toBe(1);
+    // 变帧率序列（60/30/120 FPS 混合 + 大步长）持续保持 1
+    let p = 1;
+    for (const delta of [1 / 60, 1 / 30, 1 / 120, 0.5, 1 / 60, 2, 1 / 90]) {
+      p = advanceFrameTransition(p, 1, delta);
+      expect(p).toBe(1);
+    }
+  });
+
+  it('到达 0 后恒稳定（既有行为锚定）', () => {
+    expect(advanceFrameTransition(0, 0, 1 / 60)).toBe(0);
+    let p = 0;
+    for (const delta of [1 / 60, 1 / 30, 0.5, 2]) {
+      p = advanceFrameTransition(p, 0, delta);
+      expect(p).toBe(0);
+    }
+  });
+
+  it('收敛全程仿真：0→1 走完后继续推进 300 帧无一帧回落（频闪根因回归）', () => {
+    let p = 0;
+    const values: number[] = [];
+    for (let i = 0; i < 420; i += 1) {
+      p = advanceFrameTransition(p, 1, 1 / 60, 0.5);
+      values.push(p);
+    }
+    // 0.5s（30 帧）内走完，此后 390 帧全部恒 1
+    for (let i = 30; i < values.length; i += 1) {
+      expect(values[i]).toBe(1);
+    }
+  });
+
   it('默认过渡时长为 2 秒', () => {
     expect(GALACTIC_FRAME_TRANSITION_SECONDS).toBe(2);
     // 单帧（1/60s）推进量 = delta/seconds

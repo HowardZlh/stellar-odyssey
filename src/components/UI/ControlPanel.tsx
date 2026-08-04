@@ -3,7 +3,9 @@
 
 import type { JSX } from 'react';
 import { VIEW_LEVELS } from '@/types';
-import { CAMERA_VIEWS } from '@/data/cameraViews';
+import { VIEW_LEVEL_NAME_KEYS, pickLocalized } from '@/i18n';
+import { useT, useTf } from '@/hooks/useI18n';
+import { kioskNowSec } from '@/hooks/useKiosk';
 import { useSimulationStore } from '@/store';
 import { eventDemoEnabled } from '@/utils/eventScopes';
 import { panelOptionVisible, type PanelOptionId } from '@/utils/panelScopes';
@@ -12,6 +14,13 @@ import {
   GALAXY_EXPAND_GAIN_MIN,
   GALAXY_EXPAND_GAIN_STEP,
 } from '@/utils/galacticLatitude';
+import {
+  GALAXY_CATALOG_DISTORTIONS_EN,
+  GALAXY_CATALOG_DISTORTIONS_ZH,
+  GALAXY_CATALOG_SOURCE_EN,
+  GALAXY_CATALOG_SOURCE_ZH,
+} from '@/utils/galaxyCatalog';
+import { FERMI_BUBBLES_SOURCE_EN, FERMI_BUBBLES_SOURCE_ZH } from '@/utils/fermiBubbles';
 import { SN_DEFAULT_DURATION_SEC } from '@/utils/supernova';
 import { rollSupernovaParams } from '@/components/Scene/Supernova';
 import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunActivity';
@@ -24,8 +33,18 @@ import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunAc
  * R3-8：视角专属选项按 panelScopes 注册表域外隐藏（非置灰，取代 R2-4
  * 置灰方案）；判定源 = viewLevel（跟随期间层级锁定选项不闪变）。
  * 仅整理 UI 显示——域外已开启的开关状态与场景效果全部保留。
+ *
+ * B3 i18n：壳层文案经字典查找（controlPanel.* 键组）。i18n 全站覆盖：
+ * 显示开关下方来源/科学说明段（2MRS 来源与失真、费米气泡来源、垂直展开
+ * 说明、真实比例说明、剖面说明）豁免解除——经字典键（catalogNote/
+ * expandNote/realScaleNote/cutawayNote）与 `*_EN` 来源常量按 locale 取用。
+ * 顶部 zh/EN 语言切换钮（B3-D，§0.5#5 位置微调登记：标题行右侧）。
  */
 export function ControlPanel(): JSX.Element {
+  const tr = useT();
+  const trf = useTf();
+  const locale = useSimulationStore((s) => s.locale);
+  const setLocale = useSimulationStore((s) => s.setLocale);
   const viewLevel = useSimulationStore((s) => s.viewLevel);
   const setViewLevel = useSimulationStore((s) => s.setViewLevel);
   const paused = useSimulationStore((s) => s.paused);
@@ -46,6 +65,12 @@ export function ControlPanel(): JSX.Element {
   const setShowYouAreHere = useSimulationStore((s) => s.setShowYouAreHere);
   const showVelocityVectors = useSimulationStore((s) => s.showVelocityVectors);
   const setShowVelocityVectors = useSimulationStore((s) => s.setShowVelocityVectors);
+  // R5-3：真实巡天背景（2MRS 目录点云）开关
+  const showGalaxyCatalog = useSimulationStore((s) => s.showGalaxyCatalog);
+  const setShowGalaxyCatalog = useSimulationStore((s) => s.setShowGalaxyCatalog);
+  // R5-6：费米气泡（银心双极体积辉光）开关
+  const showFermiBubbles = useSimulationStore((s) => s.showFermiBubbles);
+  const setShowFermiBubbles = useSimulationStore((s) => s.setShowFermiBubbles);
   const realScaleMode = useSimulationStore((s) => s.realScaleMode);
   const setRealScaleMode = useSimulationStore((s) => s.setRealScaleMode);
   // R3-6：银河系视角天体垂直展开（V 键）+ 增益滑块
@@ -74,17 +99,14 @@ export function ControlPanel(): JSX.Element {
   const galacticFrameMode = useSimulationStore((s) => s.galacticFrameMode);
   const toggleGalacticFrameMode = useSimulationStore((s) => s.toggleGalacticFrameMode);
   // 演示按钮可见性/可用性双层（R3-8）：可见性按 viewLevel 域外隐藏（panelScopes），
-  // 可用性保留 R2-4 既有 eventDemoEnabled 连续层级域校验（eventScopes 域窗口语义不动；
-  // 选布尔值，仅域边界跨越时重渲染；耀斑/CME 同属太阳系域窗口共用一个判定）
-  const solarDemoInScope = useSimulationStore((s) =>
-    eventDemoEnabled('flare', s.continuousLevel),
-  );
+  // 可用性保留 R2-4 既有 eventDemoEnabled 域校验（R5-8：判定源同改离散
+  // viewLevel——与可见性层同源，跟随巡游天体期间不随相机距离误置灰；
+  // 选布尔值，仅域边界跨越时重渲染；耀斑/CME 同属太阳系域共用一个判定）
+  const solarDemoInScope = useSimulationStore((s) => eventDemoEnabled('flare', s.viewLevel));
   const supernovaDemoInScope = useSimulationStore((s) =>
-    eventDemoEnabled('supernova', s.continuousLevel),
+    eventDemoEnabled('supernova', s.viewLevel),
   );
-  const mergerDemoInScope = useSimulationStore((s) =>
-    eventDemoEnabled('merger', s.continuousLevel),
-  );
+  const mergerDemoInScope = useSimulationStore((s) => eventDemoEnabled('merger', s.viewLevel));
 
   // R3-8：视角专属选项可见性判定（单一事实来源 panelScopes 注册表）
   const visible = (id: PanelOptionId): boolean => panelOptionVisible(id, viewLevel);
@@ -106,18 +128,54 @@ export function ControlPanel(): JSX.Element {
     triggerCme(rollCmeParams(useSimulationStore.getState().simDays));
   };
 
+  // B5 §5.1-D 入口 1：展馆模式按钮——用户手势内请求全屏（被拒/不支持
+  // 静默降级为不全屏照常巡游，登记）+ 派发状态机 start 事件
+  const handleKioskStart = (): void => {
+    document.documentElement.requestFullscreen?.()?.catch(() => undefined);
+    useSimulationStore.getState().kioskEvent('start', kioskNowSec());
+  };
+
   return (
     <div className="absolute left-4 top-4 w-64 select-none rounded-lg bg-space-panel p-4 text-sm backdrop-blur">
-      <h1 className="mb-3 text-base font-semibold text-space-accent">
-        星海奥德赛
-        <span className="ml-1.5 align-middle text-[10px] font-normal tracking-wide text-gray-400">
-          Stellar Odyssey
-        </span>
-      </h1>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <h1 className="text-base font-semibold leading-tight text-space-accent">
+          {tr('controlPanel.title')}
+          <span className="ml-1.5 whitespace-nowrap align-middle text-[10px] font-normal tracking-wide text-gray-400">
+            {tr('controlPanel.subtitle')}
+          </span>
+        </h1>
+        {/* B3-D：zh/EN 语言切换（即时生效，仅 DOM 层重渲染） */}
+        <div
+          role="group"
+          aria-label={tr('controlPanel.langAria')}
+          className="flex shrink-0 overflow-hidden rounded border border-white/15 text-[10px] leading-none"
+        >
+          <button
+            type="button"
+            onClick={() => setLocale('zh')}
+            aria-pressed={locale === 'zh'}
+            className={`px-1.5 py-1 ${
+              locale === 'zh' ? 'bg-space-accent text-black' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            zh
+          </button>
+          <button
+            type="button"
+            onClick={() => setLocale('en')}
+            aria-pressed={locale === 'en'}
+            className={`px-1.5 py-1 ${
+              locale === 'en' ? 'bg-space-accent text-black' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            EN
+          </button>
+        </div>
+      </div>
 
       {/* 视角锚点 */}
       <section className="mb-4">
-        <h2 className="mb-2 text-xs text-gray-400">视角（快捷键 1-4）</h2>
+        <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.viewSection')}</h2>
         <div className="grid grid-cols-2 gap-2">
           {VIEW_LEVELS.map((level) => (
             <button
@@ -130,7 +188,7 @@ export function ControlPanel(): JSX.Element {
                   : 'bg-white/10 text-gray-200 hover:bg-white/20'
               }`}
             >
-              {CAMERA_VIEWS[level].nameZh}
+              {tr(VIEW_LEVEL_NAME_KEYS[level])}
             </button>
           ))}
         </div>
@@ -140,35 +198,36 @@ export function ControlPanel(): JSX.Element {
           R3-8：整个 section 仅 L3 渲染，域外隐藏） */}
       {visible('galacticFrame') && (
         <section className="mb-4">
-          <h2 className="mb-2 text-xs text-gray-400">银河系视角参考系（G 切换）</h2>
+          <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.galacticFrameSection')}</h2>
           <button
             type="button"
             onClick={toggleGalacticFrameMode}
-            title="银心固定：银心居中不动，俯瞰太阳系沿波浪轨道绕银心公转"
+            title={tr('controlPanel.galacticFrameTitle')}
             className={`w-full rounded px-2 py-1.5 text-xs ${
               galacticFrameMode === 'galactic-center'
                 ? 'bg-emerald-400/90 text-black hover:bg-emerald-300'
                 : 'bg-white/10 text-gray-200 hover:bg-white/20'
             }`}
           >
+            🌀{' '}
             {galacticFrameMode === 'galactic-center'
-              ? '🌀 银心固定中（点按回到跟随太阳系）'
-              : '🌀 切换银心固定视角（观察太阳系公转）'}
+              ? tr('controlPanel.galacticFrameOn')
+              : tr('controlPanel.galacticFrameOff')}
           </button>
         </section>
       )}
 
       {/* 时间控制 */}
       <section className="mb-4">
-        <h2 className="mb-2 text-xs text-gray-400">模拟速度（空格暂停）</h2>
+        <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.speedSection')}</h2>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={togglePaused}
             className="rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20"
-            aria-label={paused ? '继续' : '暂停'}
+            aria-label={paused ? tr('controlPanel.resume') : tr('controlPanel.pause')}
           >
-            {paused ? '▶ 继续' : '⏸ 暂停'}
+            {paused ? `▶ ${tr('controlPanel.resume')}` : `⏸ ${tr('controlPanel.pause')}`}
           </button>
           <span className="text-xs text-gray-300">×{speedMultiplier.toFixed(1)}</span>
         </div>
@@ -180,13 +239,13 @@ export function ControlPanel(): JSX.Element {
           value={speedMultiplier}
           onChange={(e) => setSpeedMultiplier(Number(e.target.value))}
           className="mt-2 w-full"
-          aria-label="模拟速度倍率"
+          aria-label={tr('controlPanel.speedAria')}
         />
       </section>
 
       {/* 音效控制 */}
       <section className="mb-4">
-        <h2 className="mb-2 text-xs text-gray-400">音效（M 静音；真空无声，音效为艺术化设计）</h2>
+        <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.audioSection')}</h2>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -195,7 +254,7 @@ export function ControlPanel(): JSX.Element {
               audioEnabled ? 'bg-space-accent text-black' : 'bg-white/10 hover:bg-white/20'
             }`}
           >
-            {audioEnabled ? '🔊 开' : '🔇 关'}
+            {audioEnabled ? `🔊 ${tr('controlPanel.audioOn')}` : `🔇 ${tr('controlPanel.audioOff')}`}
           </button>
           <input
             type="range"
@@ -205,21 +264,21 @@ export function ControlPanel(): JSX.Element {
             value={audioVolume}
             onChange={(e) => setAudioVolume(Number(e.target.value))}
             className="w-full"
-            aria-label="音量"
+            aria-label={tr('controlPanel.volumeAria')}
           />
         </div>
       </section>
 
       {/* 显示开关 */}
       <section>
-        <h2 className="mb-2 text-xs text-gray-400">显示</h2>
+        <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.displaySection')}</h2>
         <label className="mb-1 flex items-center gap-2 text-xs">
           <input
             type="checkbox"
             checked={showOrbits}
             onChange={(e) => setShowOrbits(e.target.checked)}
           />
-          轨道线（O）
+          {tr('controlPanel.orbits')}
         </label>
         <label className="mb-1 flex items-center gap-2 text-xs">
           <input
@@ -227,7 +286,7 @@ export function ControlPanel(): JSX.Element {
             checked={showLabels}
             onChange={(e) => setShowLabels(e.target.checked)}
           />
-          天体标签（L）
+          {tr('controlPanel.bodyLabels')}
         </label>
         {visible('satelliteOrbits') && (
           <label className="mb-1 flex items-center gap-2 text-xs">
@@ -236,7 +295,7 @@ export function ControlPanel(): JSX.Element {
               checked={showSatelliteOrbits}
               onChange={(e) => setShowSatelliteOrbits(e.target.checked)}
             />
-            卫星轨道线
+            {tr('controlPanel.satelliteOrbits')}
           </label>
         )}
         {visible('youAreHere') && (
@@ -246,7 +305,7 @@ export function ControlPanel(): JSX.Element {
               checked={showYouAreHere}
               onChange={(e) => setShowYouAreHere(e.target.checked)}
             />
-            You are here 标记
+            {tr('controlPanel.youAreHere')}
           </label>
         )}
         {visible('velocityVectors') && (
@@ -256,8 +315,51 @@ export function ControlPanel(): JSX.Element {
               checked={showVelocityVectors}
               onChange={(e) => setShowVelocityVectors(e.target.checked)}
             />
-            速度矢量箭头
+            {tr('controlPanel.velocityVectors')}
           </label>
+        )}
+        {visible('galaxyCatalog') && (
+          <>
+            <label className="mb-1 flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={showGalaxyCatalog}
+                onChange={(e) => setShowGalaxyCatalog(e.target.checked)}
+              />
+              {tr('controlPanel.galaxyCatalog')}
+            </label>
+            {/* i18n：来源说明段按 locale 取用（字典键 + *_EN 常量） */}
+            <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
+              {trf('controlPanel.catalogNote', {
+                source: pickLocalized(
+                  locale,
+                  GALAXY_CATALOG_SOURCE_ZH,
+                  GALAXY_CATALOG_SOURCE_EN,
+                ),
+                distortions: pickLocalized(
+                  locale,
+                  GALAXY_CATALOG_DISTORTIONS_ZH,
+                  GALAXY_CATALOG_DISTORTIONS_EN,
+                ),
+              })}
+            </p>
+          </>
+        )}
+        {visible('fermiBubbles') && (
+          <>
+            <label className="mb-1 flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={showFermiBubbles}
+                onChange={(e) => setShowFermiBubbles(e.target.checked)}
+              />
+              {tr('controlPanel.fermiBubbles')}
+            </label>
+            {/* i18n：来源说明段按 locale 取用 */}
+            <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
+              {pickLocalized(locale, FERMI_BUBBLES_SOURCE_ZH, FERMI_BUBBLES_SOURCE_EN)}
+            </p>
+          </>
         )}
         {visible('verticalExpand') && (
           <>
@@ -267,12 +369,12 @@ export function ControlPanel(): JSX.Element {
                 checked={galaxyVerticalExpand}
                 onChange={(e) => setGalaxyVerticalExpand(e.target.checked)}
               />
-              垂直展开（V）
+              {tr('controlPanel.verticalExpand')}
             </label>
             {galaxyVerticalExpand && (
               <div className="mb-1 pl-5">
                 <label className="flex items-center gap-2 text-[10px] text-gray-400">
-                  增益 ×{galaxyExpandGain.toFixed(1)}
+                  {tr('controlPanel.expandGain')} ×{galaxyExpandGain.toFixed(1)}
                   <input
                     type="range"
                     min={GALAXY_EXPAND_GAIN_MIN}
@@ -281,13 +383,12 @@ export function ControlPanel(): JSX.Element {
                     value={galaxyExpandGain}
                     onChange={(e) => setGalaxyExpandGain(Number(e.target.value))}
                     className="flex-1"
-                    aria-label="垂直展开增益（1–6）"
+                    aria-label={tr('controlPanel.expandGainAria')}
                   />
                 </label>
+                {/* i18n：开关下方科学说明段按 locale 取用 */}
                 <p className="text-[10px] leading-4 text-gray-500">
-                  银河系整体随增益 morph 为扁旋转椭球体（银盘粒子/超新星随盘
-                  抬升、特殊天体垂直高度按增益展开；观察辅助的视觉夸大，
-                  指示线标注为未放大的银纬推算高度）
+                  {tr('controlPanel.expandNote')}
                 </p>
               </div>
             )}
@@ -299,12 +400,12 @@ export function ControlPanel(): JSX.Element {
             checked={realScaleMode}
             onChange={(e) => setRealScaleMode(e.target.checked)}
           />
-          真实比例模式（天体按真实大小）
+          {tr('controlPanel.realScale')}
         </label>
         {realScaleMode && (
+          /* i18n：开关下方科学说明段按 locale 取用 */
           <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
-            真实比例下行星/矮行星极小（矮行星过小不可见属科学事实），
-            可飞往/跟随后近距离观察
+            {tr('controlPanel.realScaleNote')}
           </p>
         )}
         {visible('sunCutaway') && (
@@ -315,11 +416,12 @@ export function ControlPanel(): JSX.Element {
                 checked={sunCutawayMode}
                 onChange={(e) => setSunCutawayMode(e.target.checked)}
               />
-              太阳内部剖面（1/4 切除视图）
+              {tr('controlPanel.sunCutaway')}
             </label>
             {sunCutawayMode && (
+              /* i18n：开关下方科学说明段按 locale 取用 */
               <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
-                剖面下核心/辐射区/对流区可点选查看科普；外部活动特效已暂时淡出
+                {tr('controlPanel.cutawayNote')}
               </p>
             )}
           </>
@@ -330,7 +432,7 @@ export function ControlPanel(): JSX.Element {
             checked={bloomEnabled}
             onChange={(e) => setBloomEnabled(e.target.checked)}
           />
-          泛光效果（Bloom，低性能设备可关闭）
+          {tr('controlPanel.bloom')}
         </label>
         <label className="flex items-center gap-2 text-xs">
           <input
@@ -338,17 +440,31 @@ export function ControlPanel(): JSX.Element {
             checked={showPerformance}
             onChange={(e) => setShowPerformance(e.target.checked)}
           />
-          性能监控（FPS/内存）
+          {tr('controlPanel.performance')}
         </label>
+      </section>
+
+      {/* 展馆模式（B5 §5.1-D：启动即隐 UI 自动巡游，任意输入暂停；
+          暂停角标 KioskBadge 提供退出入口） */}
+      <section className="mt-4">
+        <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.kioskSection')}</h2>
+        <button
+          type="button"
+          onClick={handleKioskStart}
+          className="w-full rounded bg-space-accent/20 px-2 py-1.5 text-xs text-space-accent hover:bg-space-accent/30"
+        >
+          🎪 {tr('controlPanel.kioskStart')}
+        </button>
+        <p className="mt-1 text-[10px] leading-4 text-gray-500">{tr('controlPanel.kioskNote')}</p>
       </section>
 
       {/* 特殊天体演示（需求 3.1.5：支持用户在设置中手动触发超新星）
           R3-8：按钮按视角域外隐藏（取代 R2-4 置灰 + tooltip）；按钮内部
-          既有 disabled 逻辑（活跃事件/剖面模式/eventDemoEnabled 连续层级
-          域校验）保留——可见性与可用性双层 */}
+          既有 disabled 逻辑（活跃事件/剖面模式/eventDemoEnabled 域校验，
+          R5-8 判定源为离散 viewLevel）保留——可见性与可用性双层 */}
       {anyDemoVisible && (
         <section className="mt-4">
-          <h2 className="mb-2 text-xs text-gray-400">动态事件演示</h2>
+          <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.demoSection')}</h2>
           {visible('supernovaDemo') && (
             <button
               type="button"
@@ -360,7 +476,10 @@ export function ControlPanel(): JSX.Element {
                   : 'bg-amber-400/20 text-amber-200 hover:bg-amber-400/30'
               }`}
             >
-              {activeSupernova ? '💥 超新星爆发进行中…' : '💥 触发超新星演示（旋臂内随机）'}
+              💥{' '}
+              {activeSupernova
+                ? tr('controlPanel.supernovaActive')
+                : tr('controlPanel.supernovaTrigger')}
             </button>
           )}
           {/* 太阳耀斑/CME 手动演示（S2 §4.3-2/3 触发方式） */}
@@ -375,11 +494,15 @@ export function ControlPanel(): JSX.Element {
                   : 'bg-orange-400/20 text-orange-200 hover:bg-orange-400/30'
               }`}
             >
+              ☀️{' '}
               {activeSolarFlare
-                ? `☀️ 耀斑进行中（${activeSolarFlare.flareClass}${activeSolarFlare.magnitude.toFixed(1)} 级）…`
+                ? trf('controlPanel.flareActive', {
+                    cls: activeSolarFlare.flareClass,
+                    mag: activeSolarFlare.magnitude.toFixed(1),
+                  })
                 : sunCutawayMode
-                  ? '☀️ 触发太阳耀斑演示（剖面模式下不可用）'
-                  : '☀️ 触发太阳耀斑演示（活动区随机）'}
+                  ? tr('controlPanel.flareCutawayDisabled')
+                  : tr('controlPanel.flareTrigger')}
             </button>
           )}
           {visible('cmeDemo') && (
@@ -393,11 +516,12 @@ export function ControlPanel(): JSX.Element {
                   : 'bg-rose-400/20 text-rose-200 hover:bg-rose-400/30'
               }`}
             >
+              🌊{' '}
               {activeCme
-                ? `🌊 CME 进行中（${Math.round(activeCme.speedKmS)} km/s）…`
+                ? trf('controlPanel.cmeActive', { speed: Math.round(activeCme.speedKmS) })
                 : sunCutawayMode
-                  ? '🌊 触发 CME 演示（剖面模式下不可用）'
-                  : '🌊 触发日冕物质抛射（CME）演示'}
+                  ? tr('controlPanel.cmeCutawayDisabled')
+                  : tr('controlPanel.cmeTrigger')}
             </button>
           )}
           {/* 银河系—仙女座碰撞合并快进预览（可选需求 3.1.3） */}
@@ -413,7 +537,10 @@ export function ControlPanel(): JSX.Element {
                     : 'bg-sky-400/20 text-sky-200 hover:bg-sky-400/30'
                 }`}
               >
-                {mergePreviewActive ? '⏩ 合并预览进行中…' : '⏩ 预览银河系—仙女座碰撞合并'}
+                ⏩{' '}
+                {mergePreviewActive
+                  ? tr('controlPanel.mergerActive')
+                  : tr('controlPanel.mergerTrigger')}
               </button>
               {mergePreviewReturnSimDays !== null && !mergePreviewActive && (
                 <button
@@ -421,7 +548,7 @@ export function ControlPanel(): JSX.Element {
                   onClick={restoreFromMergePreview}
                   className="mt-2 w-full rounded bg-white/10 px-2 py-1.5 text-xs text-gray-200 hover:bg-white/20"
                 >
-                  ⏪ 恢复预览前时间
+                  ⏪ {tr('controlPanel.mergerRestore')}
                 </button>
               )}
             </>

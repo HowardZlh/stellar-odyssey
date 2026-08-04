@@ -20,7 +20,8 @@ const LEVEL_KEYS: Record<string, ViewLevel> = {
  * 全部视角域按域路由：L1/L2 行星 / L3 银河系 / L4 宇宙）/
  * G 银河系视角参考系切换（跟随太阳系 ↔ 银心固定，P6，需求 3.1.1，仅 L3 生效）/
  * V 银河系视角垂直展开开关（R3-6/R3-8：仅 L3 生效，与面板选项
- * 可见性一致；域外已开启的展开状态与场景效果保留）
+ * 可见性一致；域外已开启的展开状态与场景效果保留）/
+ * H 界面显隐总开关（B5 §5.1-A：切换 uiVisible，非 kiosk 亦独立可用）
  */
 export function useKeyboardShortcuts(): void {
   useEffect(() => {
@@ -75,6 +76,16 @@ export function useKeyboardShortcuts(): void {
           // 银河系视角垂直展开（R3-6；R3-8 补 L3 门控，与 G 键同模式）
           if (state.viewLevel === 'L3') {
             state.toggleGalaxyVerticalExpand();
+          }
+          break;
+        case 'h':
+        case 'H':
+          // UI 显隐总开关（B5 §5.1-A，非 kiosk 独立可用）。kiosk 激活态
+          // 下不叠加切换（登记）：该 keydown 已由 useKiosk 全局监听按
+          // "任意输入"消费——touring → 暂停并显 UI / paused → 重置恢复
+          // 计时，若再 toggle 会与暂停显 UI 语义互相抵消
+          if (state.kiosk.phase === 'inactive') {
+            state.toggleUiVisible();
           }
           break;
         case '[':

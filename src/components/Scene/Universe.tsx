@@ -5,6 +5,8 @@ import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
+import { BodyNameText, LabelText } from '@/components/Scene/LocalizedLabelText';
+import { tf } from '@/i18n';
 import * as THREE from 'three';
 import type { GalaxyData } from '@/types';
 import {
@@ -18,12 +20,14 @@ import {
   SATELLITE_GALAXY_ORBITS,
 } from '@/data/galaxies';
 import { useSimulationStore } from '@/store';
-import { cosmicDistanceToSceneUnits, lyToSceneUnits, trapezoidWeight } from '@/utils/scale';
+import { cosmicDistanceToSceneUnits, lyToSceneUnits } from '@/utils/scale';
+import { supergalacticPlanePointScene } from '@/utils/galaxyCatalog';
 import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import { getSoftPointTexture } from '@/components/CelestialBody/sharedTextures';
 import {
   M31_APPROACH_FLOW_COUNT,
   OBSERVABLE_UNIVERSE_RADIUS_LY,
+  UNIVERSE_FADE,
   galaxyPlaneSizeUnits,
   generateCosmicWeb,
   hubbleScaleFactor,
@@ -34,25 +38,31 @@ import {
   satelliteGalaxyPositionLy,
   satelliteOrbitPointsLy,
   tidalStreamPointsLy,
+  universeFadeWeight,
 } from '@/utils/universe';
 import {
   mergerEllipticalMix01,
   mergerStage,
-  mergerStageLabelZh,
+  mergerStageLabel,
   mergerStarburst01,
   mergerTidalDistortion01,
   mwM31SignedSeparationLy,
   mwM31SignedSeparationSceneUnits,
 } from '@/utils/galaxyMerger';
 import {
-  claimGalaxyNearView,
-  galaxyNearViewEnterDistanceUnits,
-  galaxyNearViewHolderIds,
+  galaxyDetailLayerSpec,
+  galaxySpriteImageUrl,
   resetGalaxyNearViewHolders,
 } from '@/utils/galaxyNearView';
-import { NEAR_VIEW_TRANSITION_SECONDS, nearViewGateUpdate } from '@/utils/nearView';
-import { advanceFrameTransition } from '@/utils/galacticFrame';
+import { isDustVolumeGalaxy } from '@/utils/galaxyDustVolume';
+import { UNIVERSE_RENDER_ORDER } from '@/utils/universeRenderOrder';
+import { useDetailLayer } from '@/hooks/useDetailLayer';
+import { useGalaxyCatalog } from '@/hooks/useGalaxyCatalog';
+import { useGalaxyImageMaps } from '@/hooks/useGalaxyImageMaps';
+import { useBitmapTexture } from '@/hooks/useBitmapTexture';
+import { GalaxyCatalog } from '@/components/Scene/GalaxyCatalog';
 import { GalaxyNearViewLayer } from '@/components/Scene/GalaxyNearView';
+import { GalaxyDustVolume } from '@/components/Scene/GalaxyDustVolumeLayer';
 import {
   createGalaxySpriteCanvas,
   createGlowSpriteCanvas,
@@ -64,17 +74,14 @@ import {
   M87Jet,
   Quasar,
 } from '@/components/Scene/ExtragalacticObjects';
+import { M87Environment } from '@/components/Scene/M87Environment';
 
-/** 宇宙级内容 LOD 渐变区间（连续层级） */
-const FADE = { start: 3.05, full: 3.6 } as const;
-
-function fadeWeight(continuousLevel: number): number {
-  // 连续层级上限为 4，平台区延伸至 4 以上保证 L4 锚点处不淡出
-  return trapezoidWeight(continuousLevel, FADE.start, FADE.full, 4.5, 5);
-}
-
-/** 渲染循环共用临时向量（零分配纪律） */
-const GALAXY_TMP_VEC = new THREE.Vector3();
+/**
+ * 宇宙级内容 LOD 渐变区间（连续层级）：R5-3 起同源公式收敛至
+ * utils/universe.universeFadeWeight / UNIVERSE_FADE（真实巡天目录层共用）
+ */
+const FADE = UNIVERSE_FADE;
+const fadeWeight = universeFadeWeight;
 
 interface GalaxyObjectProps {
   galaxy: GalaxyData;
@@ -111,23 +118,30 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
       mergerEllipticalMix01(s.simDays) >= 0.5,
   );
 
-  // ---- R2-8 近观门控状态（滞回 + 0.5s 淡入淡出 + LRU 保留） ----
-  const [nearMounted, setNearMounted] = useState(false);
-  const nearMountedRef = useRef(false);
-  const nearActiveRef = useRef(false);
-  const near01Ref = useRef(0);
+  // ---- R2-8 近观门控（R4-2 起经统一细节层机制 hooks/useDetailLayer 挂接：
+  // 滞回阈值 + 0.5s 淡入淡出 + LRU 保留（'lru-retain'）语义零回退）----
   const weightRef = useRef(0);
-  const nearEnterDistance = useMemo(
-    () => galaxyNearViewEnterDistanceUnits(galaxy.id),
-    [galaxy.id],
-  );
+  const nearSpec = useMemo(() => galaxyDetailLayerSpec(galaxy.id), [galaxy.id]);
+  const { active: nearMounted, opacity01: getNear01 } = useDetailLayer(nearSpec, {
+    objectRef: groupRef,
+    retention: 'lru-retain',
+  });
   /** 近观层不透明度 = 宇宙层级淡入权重 × 近观激活权重 */
   const getNearOpacity = useCallback(
-    () => weightRef.current * near01Ref.current,
-    [],
+    () => weightRef.current * getNear01(),
+    [getNear01],
   );
+  /** R5-2 体积尘埃盘视觉淡入权重（GalaxyDustVolumeLayer 输出；
+   * dust 暗粒子互斥淡出消费，体积未挂载/降级时恒 0 零回退） */
+  const dustVolumeFadeRef = useRef(0);
+  const getDustDim = useCallback(() => dustVolumeFadeRef.current, []);
+  const getWeight = useCallback(() => weightRef.current, []);
 
-  const texture = useMemo(() => {
+  // R5-1：近观影像权重图懒加载（近观层激活时才 fetch/解码；
+  // 加载完成前与失败时为 null → GalaxyNearViewLayer 参数化降级，登记）
+  const imageMaps = useGalaxyImageMaps(nearMounted ? galaxy.id : null);
+
+  const canvasTexture = useMemo(() => {
     // M31/M33 专属形态（P6 §3.4，与通用旋涡星系区分）
     const variant =
       galaxy.id === 'm31' ? 'm31' : galaxy.id === 'm33' ? 'm33' : undefined;
@@ -145,15 +159,22 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
 
   useEffect(() => {
     return () => {
-      texture.dispose();
+      canvasTexture.dispose();
     };
-  }, [texture]);
+  }, [canvasTexture]);
+
+  // R5-1 远景贴图源选择（§R5-1 E）：覆盖星系影像贴图优先（经共享
+  // textureManager 懒加载并计入既有纹理预算/进度体系；L4 淡入域内才
+  // 请求），加载完成前与未覆盖星系降级程序化 canvas（覆盖清单登记于
+  // galaxySpriteImageUrl）。billboard/尺寸/淡入淡出逻辑零改动。
+  const spriteBitmap = useBitmapTexture(galaxySpriteImageUrl(galaxy.id), 6, inRange);
+  const texture = spriteBitmap ?? canvasTexture;
 
   // 视觉尺寸：直径相对银河系换算（同源公式 utils/universe.galaxyPlaneSizeUnits，
   // 登记：×0.55 抑制压缩距离下的透视夸大）
   const sizeUnits = galaxyPlaneSizeUnits(galaxy.diameterLy);
 
-  useFrame(({ camera }, delta) => {
+  useFrame(({ camera }) => {
     const state = useSimulationStore.getState();
     const group = groupRef.current;
     if (!group) return;
@@ -202,41 +223,14 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
     // 其余星系静态（初始 position；M32/M110 随 M31、宇宙网静止属预期，
     // 面板"运动（模拟）"行登记，R2-10）
 
-    // ---- R2-8 近观门控（滞回状态机 utils/nearView.nearViewGateUpdate）----
-    const focused =
-      state.followBodyId === galaxy.id || state.flyToBodyId === galaxy.id;
-    const distance = camera.position.distanceTo(group.getWorldPosition(GALAXY_TMP_VEC));
-    const gate = nearViewGateUpdate(
-      nearActiveRef.current,
-      focused,
-      distance,
-      nearEnterDistance,
-    );
-    nearActiveRef.current = gate.active;
-    // 激活时声明 LRU 持有权（已是最新持有者时跳过，渲染循环零分配）
-    if (gate.active && galaxyNearViewHolderIds()[0] !== galaxy.id) {
-      claimGalaxyNearView(galaxy.id);
-    }
-    near01Ref.current = advanceFrameTransition(
-      near01Ref.current,
-      gate.active ? 1 : 0,
-      delta,
-      NEAR_VIEW_TRANSITION_SECONDS,
-    );
-    // LRU 语义：释放跟随后近观层保留（淡出但不卸载，快速切回免重建）；
-    // 被其他星系挤出持有权时立即卸载（几何/材质随卸载 dispose）
-    const shouldMount = galaxyNearViewHolderIds().includes(galaxy.id);
-    if (shouldMount !== nearMountedRef.current) {
-      nearMountedRef.current = shouldMount;
-      setNearMounted(shouldMount);
-    }
-
+    // R2-8 近观门控/LRU 已迁移至 useDetailLayer（R4-2，本 useFrame 前
+    // 同帧先行更新）；此处仅消费 getNear01() 做贴图交叉淡出
     if (meshRef.current) {
       // billboard 面向相机（薄片修复，登记见组件头注释）；
       // 近观层激活时贴图交叉淡出（释放时随 near01 回落自动淡入）
       meshRef.current.quaternion.copy(camera.quaternion);
       const mat = meshRef.current.material as THREE.MeshBasicMaterial;
-      let opacity = weight * (1 - near01Ref.current);
+      let opacity = weight * (1 - getNear01());
       // R2-11 合并演化：M31 及伴星系随终态过渡淡出并入 Milkomeda
       // （椭球终态由银河系粒子盘着色器承载）；M31 贴图穿越期潮汐拉伸 +
       // 星暴时刻蓝白偏色（艺术化登记于 utils/galaxyMerger 文件头）
@@ -281,9 +275,27 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
           blending={THREE.AdditiveBlending}
         />
       </mesh>
-      {/* R2-8 近观 3D 粒子层（LRU 容量 1；卸载即 dispose） */}
+      {/* R2-8 近观 3D 粒子层（LRU 容量 1；卸载即 dispose）；
+          R5-1：影像权重图就绪时切换影像驱动采样（缺失降级参数化） */}
       {nearMounted && (
-        <GalaxyNearViewLayer galaxy={galaxy} getOpacity={getNearOpacity} />
+        <GalaxyNearViewLayer
+          galaxy={galaxy}
+          getOpacity={getNearOpacity}
+          maps={imageMaps}
+          getDustDim={getDustDim}
+        />
+      )}
+      {/* R5-2 体积尘埃盘（视线消光）：覆盖星系（m31/m33/lmc）经
+          useDetailLayer volume 池（容量 1，与星云体积层互逐）门控；
+          影像产物缺失时不挂载（dust 暗粒子保持 R4-10 现状，登记） */}
+      {isDustVolumeGalaxy(galaxy.id) && (
+        <GalaxyDustVolume
+          galaxy={galaxy}
+          groupRef={groupRef}
+          maps={imageMaps}
+          getWeight={getWeight}
+          fadeRef={dustVolumeFadeRef}
+        />
       )}
       {showLabels && inRange && !focusedNow && !mergedAway && (
         // R3-4：近距反向缩放钳制（焦点隐藏 R2-8 保留）
@@ -292,7 +304,9 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
           distanceFactor={9000}
           style={{ pointerEvents: 'none' }}
         >
-          <span className="whitespace-nowrap text-xs text-gray-200/80">{galaxy.nameZh}</span>
+          <span className="whitespace-nowrap text-xs text-gray-200/80">
+            <BodyNameText body={galaxy} />
+          </span>
         </ClampedHtmlLabel>
       )}
     </group>
@@ -319,6 +333,14 @@ export function Universe(): JSX.Element {
   const showLabels = useSimulationStore((s) => s.showLabels);
   // Html 标签不随父级 visible 隐藏，需单独按层级门控
   const inRange = useSimulationStore((s) => s.continuousLevel > FADE.start);
+
+  // ---------- 真实巡天目录（R5-3：2MRS 点云；进入 L4 淡入窗口才加载） ----------
+  const showGalaxyCatalog = useSimulationStore((s) => s.showGalaxyCatalog);
+  const galaxyCatalog = useGalaxyCatalog(inRange);
+  /** 目录激活 = 加载成功 × 显示开关（关闭/降级时程序化宇宙网恢复主层亮度） */
+  const catalogActive = galaxyCatalog !== null && showGalaxyCatalog;
+  const catalogActiveRef = useRef(false);
+  catalogActiveRef.current = catalogActive;
 
   // ---------- 宇宙网（确定性，节点—纤维—空洞） ----------
   const { webGeometry, webMaterial } = useMemo(() => {
@@ -367,25 +389,33 @@ export function Universe(): JSX.Element {
       opacity: 0,
       dashSize: 260,
       gapSize: 180,
+      depthWrite: false, // 透明线不写深度（频闪修复配套：免交叉裁剪）
     });
     return { approachGeometry: geo, approachMaterial: mat };
   }, []);
   const approachLine = useMemo(() => {
     const line = new THREE.Line(approachGeometry, approachMaterial);
     line.frustumCulled = false;
+    // L4 透明层注册表（频闪修复）：引导线层——normal 混合线与加性层
+    // 的先后不再随深度键交叉翻转（各线注释下同）
+    line.renderOrder = UNIVERSE_RENDER_ORDER.guideLines;
     return line;
   }, [approachGeometry, approachMaterial]);
 
-  // ---------- 拉尼亚凯亚边界示意 ----------
+  // ---------- 拉尼亚凯亚边界示意（R5-3：改置于真实超星系平面） ----------
   const laniakeaRadius = cosmicDistanceToSceneUnits(LANIAKEA.diameterLy / 2);
   const { boundaryGeometry, boundaryMaterial } = useMemo(() => {
     const segments = 128;
     const positions = new Float32Array((segments + 1) * 3);
     for (let s = 0; s <= segments; s += 1) {
       const a = (s / segments) * Math.PI * 2;
-      positions[s * 3] = Math.cos(a) * laniakeaRadius;
-      positions[s * 3 + 1] = 0;
-      positions[s * 3 + 2] = Math.sin(a) * laniakeaRadius;
+      // R5-3 对齐核对：边界环由场景 XZ 平面改置真实超星系平面（SGZ=0，
+      // 室女座团 SGB ≈ −2.3° 落在该面内 → 环穿过目录室女座超密度处；
+      // 相对银盘面倾角 ≈ 84.5° 为真实几何，登记于 utils/galaxyCatalog 文件头）
+      const p = supergalacticPlanePointScene(laniakeaRadius, a);
+      positions[s * 3] = p.x;
+      positions[s * 3 + 1] = p.y;
+      positions[s * 3 + 2] = p.z;
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -393,13 +423,20 @@ export function Universe(): JSX.Element {
       color: '#6a5a9a',
       transparent: true,
       opacity: 0,
+      depthWrite: false, // 透明线不写深度（频闪修复配套）
     });
     return { boundaryGeometry: geo, boundaryMaterial: mat };
   }, [laniakeaRadius]);
-  const boundaryLine = useMemo(
-    () => new THREE.Line(boundaryGeometry, boundaryMaterial),
-    [boundaryGeometry, boundaryMaterial],
-  );
+  /** 边界标签落点：超星系平面环上 0.72R 处（与环同面，抬升 800 单位避让） */
+  const laniakeaLabelPosition = useMemo<[number, number, number]>(() => {
+    const p = supergalacticPlanePointScene(laniakeaRadius * 0.72, 0);
+    return [p.x, p.y + 800, p.z];
+  }, [laniakeaRadius]);
+  const boundaryLine = useMemo(() => {
+    const line = new THREE.Line(boundaryGeometry, boundaryMaterial);
+    line.renderOrder = UNIVERSE_RENDER_ORDER.guideLines; // 引导线层（注册表）
+    return line;
+  }, [boundaryGeometry, boundaryMaterial]);
 
   // ---------- 可观测宇宙边界示意（可选需求 3.1.3） ----------
   const observableRadius = cosmicDistanceToSceneUnits(OBSERVABLE_UNIVERSE_RADIUS_LY);
@@ -418,12 +455,14 @@ export function Universe(): JSX.Element {
       color: '#8a4a5a',
       transparent: true,
       opacity: 0,
+      depthWrite: false, // 透明线不写深度（频闪修复配套）
     });
     return { observableGeometry: geo, observableMaterial: mat };
   }, [observableRadius]);
   const observableLine = useMemo(() => {
     const line = new THREE.Line(observableGeometry, observableMaterial);
     line.frustumCulled = false;
+    line.renderOrder = UNIVERSE_RENDER_ORDER.guideLines; // 引导线层（注册表）
     return line;
   }, [observableGeometry, observableMaterial]);
 
@@ -456,9 +495,11 @@ export function Universe(): JSX.Element {
         color: '#8fb0d8',
         transparent: true,
         opacity: 0,
+        depthWrite: false, // 透明线不写深度（频闪修复配套）
       });
       const line = new THREE.Line(geometry, material);
       line.frustumCulled = false;
+      line.renderOrder = UNIVERSE_RENDER_ORDER.guideLines; // 引导线层（注册表）
       return { id, geometry, material, line };
     });
   }, []);
@@ -485,6 +526,9 @@ export function Universe(): JSX.Element {
   const sgrStreamPoints = useMemo(() => {
     const pts = new THREE.Points(sgrStreamGeometry, sgrStreamMaterial);
     pts.frustumCulled = false;
+    // L4 透明层注册表（频闪修复）：加性流层——顶点逐帧重采样的星流
+    // 与 normal 线层/近观层先后固定，不随深度键交叉翻转（下同）
+    pts.renderOrder = UNIVERSE_RENDER_ORDER.additiveFlows;
     return pts;
   }, [sgrStreamGeometry, sgrStreamMaterial]);
 
@@ -510,6 +554,7 @@ export function Universe(): JSX.Element {
   const flowPoints = useMemo(() => {
     const pts = new THREE.Points(flowGeometry, flowMaterial);
     pts.frustumCulled = false;
+    pts.renderOrder = UNIVERSE_RENDER_ORDER.additiveFlows; // 加性流层（注册表）
     return pts;
   }, [flowGeometry, flowMaterial]);
 
@@ -535,6 +580,7 @@ export function Universe(): JSX.Element {
   const streamPoints = useMemo(() => {
     const pts = new THREE.Points(streamGeometry, streamMaterial);
     pts.frustumCulled = false;
+    pts.renderOrder = UNIVERSE_RENDER_ORDER.additiveFlows; // 加性流层（注册表）
     return pts;
   }, [streamGeometry, streamMaterial]);
 
@@ -579,7 +625,9 @@ export function Universe(): JSX.Element {
     group.visible = weight > 0.001;
     if (!group.visible) return;
 
-    webMaterial.opacity = 0.75 * weight;
+    // R5-3 关系登记（§0.3 方案 G 推荐方案）：真实目录激活时程序化宇宙网
+    // 降为低透明度氛围底层（0.75 → 0.2），目录关闭/降级时恢复主层现状
+    webMaterial.opacity = (catalogActiveRef.current ? 0.2 : 0.75) * weight;
     boundaryMaterial.opacity = 0.28 * weight;
     approachMaterial.opacity = 0.7 * weight;
     observableMaterial.opacity = 0.22 * weight;
@@ -690,14 +738,17 @@ export function Universe(): JSX.Element {
         flowPos.needsUpdate = true;
       }
 
-      // 碰撞倒计时 / 合并演化阶段提示（R2-11 HUD 标签联动）
+      // 碰撞倒计时 / 合并演化阶段提示（R2-11 HUD 标签联动；
+      // i18n：locale 经 getState 读取，逐帧写入即时随语言切换）
       if (mergeLabelRef.current) {
-        const stageLabel = mergerStageLabelZh(state.simDays);
+        const stageLabel = mergerStageLabel(state.locale, state.simDays);
         const countdown = mwM31MergeCountdownMyr(state.simDays);
         mergeLabelRef.current.textContent =
           stageLabel === null
-            ? `银河系—仙女座相互接近（~110 km/s），约 ${(countdown / 1000).toFixed(1)} 十亿年后碰撞合并`
-            : `银河系—仙女座合并演化：${stageLabel}`;
+            ? tf(state.locale, 'sceneLabel.mergerCountdown', {
+                gyr: (countdown / 1000).toFixed(1),
+              })
+            : tf(state.locale, 'sceneLabel.mergerStage', { stage: stageLabel });
       }
 
       // 合并辉光（碰撞合并过程示意）——接近后期在两者之间显现增强；
@@ -742,6 +793,8 @@ export function Universe(): JSX.Element {
           可选项：触须星系碰撞现场 + 星系团引力透镜弧 + 伽马射线暴 */}
       <Quasar />
       <M87Jet />
+      {/* R5-4：M87 纵深与星系团环境（球状星团/室女座成员/ICM + M87* 透镜） */}
+      <M87Environment />
       <AntennaeGalaxies />
       <LensingArcs />
       <GammaRayBurst />
@@ -761,7 +814,11 @@ export function Universe(): JSX.Element {
       <primitive object={flowPoints} />
 
       {/* 银河系—仙女座合并辉光（可选需求：碰撞合并示意，接近后期显现） */}
-      <sprite ref={mergeGlowRef} visible={false}>
+      <sprite
+        ref={mergeGlowRef}
+        visible={false}
+        renderOrder={UNIVERSE_RENDER_ORDER.additiveFlows} /* 加性流层（注册表） */
+      >
         <spriteMaterial
           map={mergeGlowTexture}
           transparent
@@ -817,15 +874,27 @@ export function Universe(): JSX.Element {
             style={{ pointerEvents: 'none' }}
           >
             <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-amber-200">
-              本星系群本动 ~{LG_CMB_VELOCITY_KM_S} km/s（朝巨引源/沙普利方向，相对 CMB）
+              <LabelText k="sceneLabel.localGroupMotion" params={{ v: LG_CMB_VELOCITY_KM_S }} />
             </span>
           </ClampedHtmlLabel>
         </group>
       )}
 
       {/* 宇宙网：星系团（节点）—纤维—空洞（确定性分布）；
-          整体缩放表达哈勃膨胀（可选需求），远端星系颜色偏红（红移示意） */}
-      <points ref={webRef} geometry={webGeometry} material={webMaterial} />
+          整体缩放表达哈勃膨胀（可选需求），远端星系颜色偏红（红移示意）；
+          R5-3：真实目录激活时降为氛围底层（opacity 0.2，useFrame 内切换）；
+          L4 透明层注册表（频闪修复）：哈勃膨胀每帧缩放，层序显式固定 */}
+      <points
+        ref={webRef}
+        geometry={webGeometry}
+        material={webMaterial}
+        renderOrder={UNIVERSE_RENDER_ORDER.cosmicWeb}
+      />
+
+      {/* 真实巡天背景（R5-3）：2MRS ~43,500 星系两级点云（室女座团聚集/
+          银道空带/纤维走向为真实数据）；加载失败或开关关闭时不挂载——
+          程序化宇宙网恢复主层（降级登记） */}
+      {catalogActive && galaxyCatalog && <GalaxyCatalog data={galaxyCatalog} />}
 
       {/* 拉尼亚凯亚超星系团边界示意 + 巨引源标记 */}
       <primitive object={boundaryLine} />
@@ -839,18 +908,19 @@ export function Universe(): JSX.Element {
           style={{ pointerEvents: 'none' }}
         >
           <span className="whitespace-nowrap text-xs text-rose-300/60">
-            可观测宇宙边界示意（半径约 465 亿光年）
+            <LabelText k="sceneLabel.observableEdge" />
           </span>
         </ClampedHtmlLabel>
       )}
       {showLabels && inRange && (
         <ClampedHtmlLabel
-          position={[laniakeaRadius * 0.72, 800, 0]}
+          /* R5-3：标签随边界环迁至真实超星系平面（环上一点 + 少量抬升） */
+          position={laniakeaLabelPosition}
           distanceFactor={14000}
           style={{ pointerEvents: 'none' }}
         >
           <span className="whitespace-nowrap text-xs text-purple-300/70">
-            {LANIAKEA.nameZh}边界示意（直径约 5.2 亿光年）
+            <LabelText k="sceneLabel.laniakeaBoundary" />
           </span>
         </ClampedHtmlLabel>
       )}
@@ -864,7 +934,9 @@ export function Universe(): JSX.Element {
           distanceFactor={14000}
           style={{ pointerEvents: 'none' }}
         >
-          <span className="whitespace-nowrap text-xs text-amber-300/70">{LANIAKEA.greatAttractorZh}</span>
+          <span className="whitespace-nowrap text-xs text-amber-300/70">
+            <LabelText k="sceneLabel.greatAttractor" />
+          </span>
         </ClampedHtmlLabel>
       )}
     </group>

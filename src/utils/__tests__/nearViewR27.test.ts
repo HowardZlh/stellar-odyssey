@@ -43,6 +43,15 @@ describe('近观激活距离（L3 域序列逐成员定义）', () => {
     );
   });
 
+  it('sun 已移出 L3 巡游序列但仍可点选/飞往，激活距离公式保留且与观察距离同源', () => {
+    expect(GALAXY_CYCLE_SEQUENCE).not.toContain('sun');
+    const enter = nearViewEnterDistanceUnits('sun');
+    expect(Number.isFinite(enter)).toBe(true);
+    expect(enter).toBeGreaterThan(0);
+    const target = resolveFocusTarget('sun', 0);
+    expect(enter).toBeCloseTo(target!.viewDistanceUnits * NEAR_VIEW_ENTER_RATIO, 8);
+  });
+
   it('未知 id / 河外天体（非 L3 域成员）抛 RangeError', () => {
     expect(() => nearViewEnterDistanceUnits('not-a-body')).toThrow(RangeError);
     expect(() => nearViewEnterDistanceUnits('quasar-3c273')).toThrow(RangeError);
@@ -139,7 +148,7 @@ describe('星云近观体积云团布局（确定性）', () => {
 });
 
 describe('粒子预算登记（附录 A：全局峰值 ≤20,000）', () => {
-  it('逐成员登记覆盖 L3 域序列全部 15 站', () => {
+  it('逐成员登记覆盖 L3 域序列全部 14 站（sun 已移出序列，登记表同步移除）', () => {
     expect(Object.keys(NEAR_VIEW_PARTICLE_INCREMENTS).sort()).toEqual(
       [...GALAXY_CYCLE_SEQUENCE].sort(),
     );

@@ -28,7 +28,9 @@ export type PanelOptionId =
   | 'youAreHere'
   | 'supernovaDemo'
   | 'velocityVectors'
-  | 'mergerDemo';
+  | 'mergerDemo'
+  | 'galaxyCatalog'
+  | 'fermiBubbles';
 
 const ALL_LEVELS: readonly ViewLevel[] = ['L1', 'L2', 'L3', 'L4'];
 
@@ -40,7 +42,10 @@ const ALL_LEVELS: readonly ViewLevel[] = ['L1', 'L2', 'L3', 'L4'];
  * - L2 太阳系视角：太阳内部剖面
  * - L3 银河系视角：银心固定参考系区块 / 垂直展开（含增益滑块）/
  *   You are here 标记 / 超新星演示
- * - L4 宇宙视角：速度矢量箭头 / 合并预览（含"恢复预览前时间"按钮）
+ * - L4 宇宙视角：速度矢量箭头 / 合并预览（含"恢复预览前时间"按钮）/
+ *   真实巡天背景（R5-3）
+ * - L3+L4：费米气泡（R5-6，银河系可见的两个视角域——L3 银河系视角
+ *   与 L4 近观银河系均可切换，登记）
  */
 export const PANEL_OPTION_SCOPES: Record<PanelOptionId, readonly ViewLevel[]> = {
   orbits: ALL_LEVELS,
@@ -58,6 +63,8 @@ export const PANEL_OPTION_SCOPES: Record<PanelOptionId, readonly ViewLevel[]> = 
   supernovaDemo: ['L3'],
   velocityVectors: ['L4'],
   mergerDemo: ['L4'],
+  galaxyCatalog: ['L4'],
+  fermiBubbles: ['L3', 'L4'],
 };
 
 /**

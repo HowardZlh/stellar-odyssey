@@ -18,9 +18,22 @@ import type { Vec3 } from '@/types';
 import { easeInOutCubic } from '@/utils/animation';
 import { DAYS_PER_MYR, KM_S_TO_LY_PER_MYR, simDaysToMyr } from '@/utils/galaxy';
 import { createSeededRandom } from '@/utils/random';
+import { trapezoidWeight } from '@/utils/scale';
 
 /** 银河系可视半径（场景单位）：银盘半径 5 万光年 × 0.05 场景单位/光年 */
 export const MW_VISUAL_RADIUS_UNITS = 2500;
+
+/** 宇宙级内容 LOD 渐变窗口（连续层级；Universe.tsx 与 GalaxyCatalog.tsx 同源） */
+export const UNIVERSE_FADE = { start: 3.05, full: 3.6 } as const;
+
+/**
+ * 宇宙级内容淡入权重（L4 窗口 3.05–3.6 淡入；平台区延伸至 4 以上
+ * 保证 L4 锚点处不淡出——R5-3 起为 Universe.tsx 与真实巡天目录层的
+ * 同源公式，禁止两套参数）
+ */
+export function universeFadeWeight(continuousLevel: number): number {
+  return trapezoidWeight(continuousLevel, UNIVERSE_FADE.start, UNIVERSE_FADE.full, 4.5, 5);
+}
 
 /**
  * 星系贴图平面透视夸大抑制系数（渲染登记：压缩距离下的透视夸大抑制，

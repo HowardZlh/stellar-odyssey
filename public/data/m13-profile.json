@@ -1,0 +1,22 @@
+{
+  "meta": {
+    "source": "Harris (1996, AJ 112, 1487; 2010 版) 银河系球状星团目录（physics.mcmaster.ca/~harris/mwgc.dat）NGC 6205 行",
+    "retrievedAt": "2026-07-28T00:00:00Z",
+    "license": "公开学术目录，引用 Harris (1996, AJ 112, 1487)；2010 版 arXiv:1012.3224",
+    "count": 1,
+    "note": "潮汐半径由 r_t = r_c·10^c 导出（King 模型定义）；pc 值由距离 7.1 kpc 小角度近似导出"
+  },
+  "profile": {
+    "id": "NGC 6205",
+    "nameZh": "M13 武仙座球状星团",
+    "coreRadiusArcmin": 0.62,
+    "halfLightRadiusArcmin": 1.69,
+    "tidalRadiusArcmin": 21.01,
+    "concentration": 1.53,
+    "distanceKpc": 7.1,
+    "integratedVMag": 5.78,
+    "metallicityFeH": -1.53,
+    "coreRadiusPc": 1.28,
+    "tidalRadiusPc": 43.4
+  }
+}

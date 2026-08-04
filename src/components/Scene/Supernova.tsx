@@ -62,11 +62,13 @@ function eventSpinRad(id: string): number {
 
 /**
  * 超新星可视范围（起点为 L2/L3 边界 2.5；R3-5 上缘收窄）：满值平台终点
- * 3.5 与事件视角域上缘（SUPERNOVA_EVENT_MAX_LEVEL）对齐，淡出延伸至
- * L4 锚点 4.0 处归零——宇宙视角零可见，与"L4 下活跃事件按 R3-3 硬隔离
- * 丢弃"一致（淡出段 3.5–4.0 内特效部分可见但事件将在离域 1 秒后丢弃，
- * 与太阳事件 2.4→3.0 淡出模式相同）。永久遗迹共用本窗口（行为变更登记：
- * 超新星内容整体收敛为银河系视角专属，L4 下遗迹不再显示，状态保留）。
+ * 3.5 与事件视角域上缘（R5-8 后域判定为离散 viewLevel = L3，自由缩放时
+ * 等效边界即 3.5）对齐，淡出延伸至 L4 锚点 4.0 处归零——宇宙视角零可见，
+ * 与"L4 下活跃事件按 R3-3 硬隔离丢弃"一致（淡出段 3.5–4.0 内特效部分
+ * 可见但事件将在离域 1 秒后丢弃，与太阳事件 2.4→3.0 淡出模式相同）。
+ * 永久遗迹共用本窗口（行为变更登记：超新星内容整体收敛为银河系视角
+ * 专属，L4 下遗迹不再显示，状态保留）。特效 LOD 仍由连续层级驱动
+ * （R5-8 §8.2-A：保持缩放平滑，不随离散层级跳变）。
  */
 function snFadeWeight(continuousLevel: number): number {
   return trapezoidWeight(continuousLevel, 2.5, 2.9, 3.5, 4.0);
@@ -376,10 +378,11 @@ export function Supernova(): JSX.Element {
     lastSimDaysRef.current = store.simDays;
     if (last === null || store.simDays <= last) return;
     if (store.activeSupernova) return;
-    // R2-4 §4.1-D：超新星自动触发显式限定银河系/宇宙视角域（≥2.5）。
-    // 此前 L1/L2 不触发只是低时间压缩比下 deltaMyr≈0 的概率副作用，
-    // 这里补显式判定；活跃事件的衰减/遗迹归档不受视角门控影响。
-    if (!eventAutoTriggerAllowed('supernova', store.continuousLevel)) return;
+    // R2-4 §4.1-D：超新星自动触发显式限定银河系视角域（R5-8：判定源改
+    // 离散 viewLevel = L3——银河系巡游跟随天体期间不再因相机距离被误判
+    // 域外）。此前 L1/L2 不触发只是低时间压缩比下 deltaMyr≈0 的概率
+    // 副作用，这里补显式判定；活跃事件的衰减/遗迹归档不受视角门控影响。
+    if (!eventAutoTriggerAllowed('supernova', store.viewLevel)) return;
     const deltaMyr = simDaysToMyr(store.simDays - last);
     if (shouldAutoTriggerSupernova(Math.random(), deltaMyr)) {
       const params = rollSupernovaParams();

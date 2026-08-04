@@ -7,6 +7,36 @@ export type ViewLevel = 'L1' | 'L2' | 'L3' | 'L4';
 
 export const VIEW_LEVELS: readonly ViewLevel[] = ['L1', 'L2', 'L3', 'L4'] as const;
 
+/**
+ * 界面语言（B2 i18n 基建）：默认 zh——既有中文测试断言零改动的前提，
+ * 任何阶段不得变更默认语言；en 经 `?lang=en` / localStorage / setLocale 激活
+ */
+export type Locale = 'zh' | 'en';
+
+/** B4 启动参数：巡游域（与 CycleScope 对齐 + `all` 四域轮转，B5 消费） */
+export type LaunchTour = 'solar' | 'galaxy' | 'universe' | 'all';
+
+/**
+ * 启动 URL 参数解析结果（B4，方案 K4：`utils/launchParams.ts` 纯逻辑解析）
+ *
+ * 非法值静默回退默认（不抛错、控制台零错误）；`mode`/`tour`/`dwell`
+ * 本阶段仅解析入 store（B5 kiosk 消费，未交付时 `mode=kiosk` 无行为，登记）。
+ */
+export interface LaunchParams {
+  /** 展馆模式（`?mode=kiosk`）；无参数/非法值为 null */
+  mode: 'kiosk' | null;
+  /** 巡游域，默认 `solar` */
+  tour: LaunchTour;
+  /** 每站停留秒数（合法整数 5–600），默认 30 */
+  dwell: number;
+  /** 启动后直接飞往的天体 id（非法 id 由 `requestFlyTo` 自含校验静默忽略） */
+  body: string | null;
+  /** 屏幕角落客户 logo（仅 https、长度 ≤2048；onerror 即隐藏，§0.5#9 登记） */
+  logo: string | null;
+  /** 语言（统一解析入口；null = 沿用 B2 优先级链 localStorage > zh） */
+  lang: Locale | null;
+}
+
 /** 三维向量（与 three.js 解耦，便于纯函数测试） */
 export interface Vec3 {
   x: number;
@@ -85,6 +115,8 @@ export interface PlanetData {
   massKg?: number;
   /** 数据来源说明 */
   dataSource: string;
+  /** 数据来源（英文；仅 dataSource 含中文时提供，缺失时英文态回退原文） */
+  dataSourceEn?: string;
   /** 行星环（土星等） */
   ring?: PlanetRingConfig;
   /** 表面视觉特征 */
@@ -144,7 +176,11 @@ export interface MoonData {
   spanMeters?: number;
   /** 备注（共振关系、大气特征等） */
   noteZh?: string;
+  /** 备注（英文；缺失时英文态回退中文） */
+  noteEn?: string;
   dataSource: string;
+  /** 数据来源（英文；仅 dataSource 含中文时提供，缺失时英文态回退原文） */
+  dataSourceEn?: string;
 }
 
 /** 彗星数据（需求 3.1.1 小天体） */
@@ -163,6 +199,8 @@ export interface CometData {
   /** 质量（kg，信息面板质量字段，需求 3.5.2） */
   massKg?: number;
   dataSource: string;
+  /** 数据来源（英文；仅 dataSource 含中文时提供，缺失时英文态回退原文） */
+  dataSourceEn?: string;
 }
 
 /** 粒子带配置（小行星带 / 柯伊伯带，需求 3.1.1） */
@@ -213,6 +251,8 @@ export interface GalaxyData {
   /** 所属结构（本星系群 / 室女座星系团等） */
   groupZh: string;
   descriptionZh: string;
+  /** 描述（英文；缺失时英文态回退中文） */
+  descriptionEn?: string;
   dataSource: string;
 }
 
@@ -287,6 +327,8 @@ export type SpecialBodyPositionMode =
 export interface SpecialBodyFact {
   label: string;
   value: string;
+  /** 英文值（i18n 全站覆盖；缺失时英文态回退中文值） */
+  valueEn?: string;
 }
 
 /** 特殊天体数据（静态形态 + 动态效果定义，基于真实原型，需求 3.1.5） */
@@ -318,7 +360,11 @@ export interface SpecialBodyData {
   factsZh: SpecialBodyFact[];
   /** 动态效果的科学解释（需求 3.1.5 通用要求） */
   dynamicsZh: string;
+  /** 动态效果科学解释（英文；缺失时英文态回退中文） */
+  dynamicsEn?: string;
   dataSource: string;
+  /** 数据来源（英文；仅 dataSource 含中文时提供，缺失时英文态回退原文） */
+  dataSourceEn?: string;
 }
 
 /** 耀斑级别（NOAA GOES 软 X 射线通量分级，S2 §4.3-2） */

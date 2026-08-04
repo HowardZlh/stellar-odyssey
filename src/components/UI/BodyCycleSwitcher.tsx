@@ -2,13 +2,11 @@
 
 
 import type { JSX } from 'react';
+import { SCOPE_NAME_KEYS, displayBodyName } from '@/i18n';
+import { useLocale, useT } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
 import { getBodyInfoById } from '@/data/catalog';
-import {
-  SCOPE_NAME_ZH,
-  isScopeCycleBody,
-  scopeCyclePositionLabel,
-} from '@/utils/cycleScopes';
+import { isScopeCycleBody, scopeCyclePositionLabel } from '@/utils/cycleScopes';
 import { planetSystemIdForBody } from '@/utils/bodyCycle';
 
 /**
@@ -18,11 +16,13 @@ import { planetSystemIdForBody } from '@/utils/bodyCycle';
  * - L1 行星巡游：当前行星系统内循环（行星 + 其卫星）；无卫星的行星
  *   隐藏"上一个/下一个"按钮（R3 需求 1 确认项）
  * - L2 太阳系巡游：行星 + 矮行星 + 彗星（15 天体，按半长轴排序）
- * - L3 银河系巡游 15 站 / L4 宇宙巡游 8 站
+ * - L3 银河系巡游 14 站 / L4 宇宙巡游 8 站
  * 快捷键 [ / ] 按域路由；切换复用飞往运镜 2.5s 并自动跟随，
  * 巡游期间离散层级锁定为域主层级（R3 需求 2）。
  */
 export function BodyCycleSwitcher(): JSX.Element | null {
+  const tr = useT();
+  const locale = useLocale();
   const scope = useSimulationStore((s) => s.cycleScope);
   const followBodyId = useSimulationStore((s) => s.followBodyId);
   const anchorBodyId = useSimulationStore((s) => s.anchorBodyId);
@@ -46,7 +46,8 @@ export function BodyCycleSwitcher(): JSX.Element | null {
   const currentId =
     followBodyId !== null && isScopeCycleBody(scope, followBodyId) ? followBodyId : fallbackId;
 
-  const name = getBodyInfoById(currentId)?.nameZh ?? currentId;
+  // B3-C：天体显示名经 displayBodyName 收口（en 取 name、zh 取 nameZh）
+  const name = displayBodyName(locale, getBodyInfoById(currentId), currentId);
   const position = scopeCyclePositionLabel(scope, currentId);
   // R3 需求 1：行星巡游域中无卫星的行星（单成员序列，position 为 null）
   // 隐藏"上一个/下一个"按钮
@@ -63,13 +64,13 @@ export function BodyCycleSwitcher(): JSX.Element | null {
           type="button"
           onClick={() => cycleScopeBody(-1)}
           className="rounded bg-white/10 px-2 py-1 hover:bg-white/20"
-          aria-label="上一个天体（快捷键 [）"
+          aria-label={tr('bodyCycle.prevAria')}
         >
-          ← 上一个
+          ← {tr('bodyCycle.prev')}
         </button>
       )}
       <span className="min-w-24 text-center text-sm text-space-accent">
-        <span className="mr-1.5 text-[10px] text-gray-400">{SCOPE_NAME_ZH[scope]}</span>
+        <span className="mr-1.5 text-[10px] text-gray-400">{tr(SCOPE_NAME_KEYS[scope])}</span>
         {name}
         {position && <span className="ml-1.5 text-[10px] text-gray-400">{position}</span>}
       </span>
@@ -78,9 +79,9 @@ export function BodyCycleSwitcher(): JSX.Element | null {
           type="button"
           onClick={() => cycleScopeBody(1)}
           className="rounded bg-white/10 px-2 py-1 hover:bg-white/20"
-          aria-label="下一个天体（快捷键 ]）"
+          aria-label={tr('bodyCycle.nextAria')}
         >
-          下一个 →
+          {tr('bodyCycle.next')} →
         </button>
       )}
     </div>

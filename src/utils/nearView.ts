@@ -11,13 +11,16 @@
  * 阈值内）；退出阈值 = 进入阈值 × NEAR_VIEW_EXIT_RATIO（1.4，滞回防抖，
  * 与 planetDetail.detailExitDistance 同比例）。观察距离与
  * utils/cameraFocus.resolveFocusTarget 同源（同一公式，禁止两套参数）：
- * - sun：太阳显示半径 × 6（近观 = 既有 L1 太阳渲染，见差异登记）
+ * - sun：太阳显示半径 × 6（近观 = 既有 L1 太阳渲染，见差异登记；sun 已
+ *   不在 L3 巡游序列内——用户反馈与 heliopause 语境重复——但仍可点选/
+ *   飞往，激活距离公式保留）
  * - heliopause：示意球壳半径 × SHELL_VIEW_DISTANCE_RATIO
  * - L3 特殊天体：max(视觉半径 × 6，银心 40 / 太阳邻域 30 场景单位下限)
  *
  * ── 实现差异登记 ─────────────────────────────────────────────────────────
- * - 序列成员 sun 的"近观细节层" = 既有 L1 太阳渲染（P6 表面 shader/黑子/
- *   日珥，飞抵后相机落入 L1 语境自动呈现），不额外建近观层；
+ * - sun 的"近观细节层" = 既有 L1 太阳渲染（P6 表面 shader/黑子/日珥，
+ *   飞抵后相机落入 L1 语境自动呈现），不额外建近观层；sun 已移出 L3
+ *   巡游序列（保留 heliopause 一站），登记表不再含 sun 条目；
  * - 恒星类成员（参宿四/参宿七/造父一/WR 124）与黑洞类（人马座 A★ 与
  *   天鹅座 X-1）的近观细节已由 P6 恒星表面 shader（3D 噪声对流/临边昏暗）
  *   与吸积盘/引力透镜 shader 交付且常开零边际开销（shader uniform 按可见性
@@ -44,6 +47,11 @@ import {
 } from '@/utils/cameraFocus';
 import { HELIOPAUSE_VISUAL_RADIUS_UNITS } from '@/utils/heliopause';
 import { createSeededRandom } from '@/utils/random';
+import {
+  DETAIL_LAYER_TRANSITION_SECONDS,
+  detailGateUpdate,
+  type DetailGateResult,
+} from '@/utils/detailLayer';
 
 /** 进入阈值 = 飞往观察距离 × 该系数（飞抵后必然处于阈值内） */
 export const NEAR_VIEW_ENTER_RATIO = 1.5;
@@ -51,8 +59,8 @@ export const NEAR_VIEW_ENTER_RATIO = 1.5;
 /** 退出阈值 = 进入阈值 × 该系数（滞回防抖，与 planetDetail 同比例） */
 export const NEAR_VIEW_EXIT_RATIO = 1.4;
 
-/** 近观层淡入淡出过渡时长（秒，激活/释放无突变） */
-export const NEAR_VIEW_TRANSITION_SECONDS = 0.5;
+/** 近观层淡入淡出过渡时长（秒；R4-2 起与 detailLayer 统一机制同源） */
+export const NEAR_VIEW_TRANSITION_SECONDS = DETAIL_LAYER_TRANSITION_SECONDS;
 
 /**
  * 近观激活（进入）距离（场景单位，§7.1-B 逐成员定义）
@@ -84,16 +92,12 @@ export function nearViewExitDistanceUnits(bodyId: string): number {
   return nearViewEnterDistanceUnits(bodyId) * NEAR_VIEW_EXIT_RATIO;
 }
 
-/** 门控更新结果（与 planetDetail.DetailGateUpdate 同构） */
-export interface NearViewGateResult {
-  /** 近观细节层是否激活（挂载/渲染） */
-  active: boolean;
-  /** 是否应立即释放该目标近观层资源（离开跟随语境/超出退出距离） */
-  releaseNow: boolean;
-}
+/** 门控更新结果（与 detailLayer.DetailGateResult 同构，别名保持兼容） */
+export type NearViewGateResult = DetailGateResult;
 
 /**
- * 近观门控状态机（每帧调用，滞回防抖；复用 P4 detailGateUpdate 模式）：
+ * 近观门控状态机（每帧调用，滞回防抖）：R4-2 起委托统一机制
+ * detailLayer.detailGateUpdate（语义逐项一致，行为零回退）：
  * - 未激活 → 激活：正在跟随/飞往本目标（focused）且 距离 < 进入阈值
  * - 激活 → 未激活：焦点离开本目标 或 距离 > 退出阈值（= 进入 × 1.4）
  * - releaseNow：退出即释放（§7.1-B"离开跟随/超出距离即释放"，无 LRU 保留）
@@ -104,49 +108,49 @@ export function nearViewGateUpdate(
   distanceToBodyUnits: number,
   enterDistanceUnits: number,
 ): NearViewGateResult {
-  if (!Number.isFinite(distanceToBodyUnits) || distanceToBodyUnits < 0) {
-    throw new RangeError(`相机距离必须为非负有限数，收到 ${distanceToBodyUnits}`);
-  }
   if (!Number.isFinite(enterDistanceUnits) || enterDistanceUnits <= 0) {
     throw new RangeError(`进入阈值必须为正有限数，收到 ${enterDistanceUnits}`);
   }
-  if (prevActive) {
-    const exit = !focused || distanceToBodyUnits > enterDistanceUnits * NEAR_VIEW_EXIT_RATIO;
-    if (exit) {
-      return { active: false, releaseNow: true };
-    }
-    return { active: true, releaseNow: false };
-  }
-  const enter = focused && distanceToBodyUnits < enterDistanceUnits;
-  return { active: enter, releaseNow: false };
+  return detailGateUpdate(
+    prevActive,
+    focused,
+    distanceToBodyUnits,
+    enterDistanceUnits,
+    enterDistanceUnits * NEAR_VIEW_EXIT_RATIO,
+  );
 }
 
 /**
  * 逐成员近观粒子增量登记（§7.1-B 粒子预算；sprites/points 合并计数）：
  * - m13-cluster：近观星场 points +1,200（中心更密的分级星场）
- * - pleiades：近观星场 points +320 + "七姊妹"亮星辉光 sprite ×7
+ * - pleiades：R4-17 真实星表近观层——Gaia 目录暗星 points +440 +
+ *   命名亮星星芒 sprite ×9 + 反射星云分层 sprite ×12 = 461
+ *   （utils/pleiadesCatalog.PLEIADES_NEAR_PARTICLE_INCREMENT 同值单测防漂移；
+ *   降级路径为现状 +320 points + 辉光 sprite ×7 = 327，取上界登记）
  * - ring-nebula：环体环向软边粒子 +200
  * - orion-nebula：体积感云团 sprite ×18
  * - crab-pulsar：丝状遗迹云团 sprite ×16
  * - horsehead-nebula：视差发射层平面 ×2 + 前景暗云团 sprite ×3
- * - sirius / heliopause：近观层为线条/壳层/标记（非粒子），增量 0
+ * - heliopause：近观层为线条/壳层/标记（非粒子），增量 0
+ * - 恒星类（R4-18 近观点缀）：色球环 sprite ×1 + 衍射星芒 sprite ×1 = 2/站；
+ *   sirius = A 环 + A 芒 + B 环 = 3（B 星常驻芒线不重复计，轨道线非粒子）
+ *   （utils/stellarNearView.STAR_NEAR_DRESS_SPRITE_COUNTS 同值单测防漂移）
  * - 其余成员近观细节由 P6 shader 交付（差异登记见文件头），增量 0
  */
 export const NEAR_VIEW_PARTICLE_INCREMENTS: Readonly<Record<string, number>> = {
-  sun: 0,
   heliopause: 0,
   'sgr-a-star': 0,
-  betelgeuse: 0,
-  rigel: 0,
-  sirius: 0,
-  'delta-cephei': 0,
-  'wr-124': 0,
+  betelgeuse: 2,
+  rigel: 2,
+  sirius: 3,
+  'delta-cephei': 2,
+  'wr-124': 2,
   'cygnus-x1': 0,
   'crab-pulsar': 16,
   'orion-nebula': 18,
   'ring-nebula': 200,
   'horsehead-nebula': 5,
-  pleiades: 327,
+  pleiades: 461,
   'm13-cluster': 1200,
 };
 

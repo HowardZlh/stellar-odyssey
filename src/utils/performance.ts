@@ -55,25 +55,50 @@ export function recordFrame(
 }
 
 /**
+ * 内存字节数 → MB 整数值；不可用（非 Chrome / 非法值）时返回 null
+ *
+ * B3 抽出：UI 组件按 locale 渲染"不可用"文案（字典），本函数保持纯数值。
+ */
+export function usedMemoryMB(usedBytes: number | undefined): number | null {
+  if (usedBytes === undefined || !Number.isFinite(usedBytes) || usedBytes < 0) {
+    return null;
+  }
+  return Number((usedBytes / (1024 * 1024)).toFixed(0));
+}
+
+/**
  * 内存字节数 → "xxx MB" 文案；不可用（非 Chrome 等）时返回提示
  */
 export function formatMemoryMB(usedBytes: number | undefined): string {
-  if (usedBytes === undefined || !Number.isFinite(usedBytes) || usedBytes < 0) {
-    return '不可用';
-  }
-  return `${(usedBytes / (1024 * 1024)).toFixed(0)} MB`;
+  const mb = usedMemoryMB(usedBytes);
+  return mb === null ? '不可用' : `${mb} MB`;
+}
+
+/** FPS 健康度（B3 抽出：与 formatFpsLabel 同源阈值，UI 按 locale 渲染） */
+export type FpsHealth = 'measuring' | 'good' | 'fair' | 'low';
+
+/** FPS → 健康度档位（60 达标 / 30-60 一般 / <30 偏低） */
+export function fpsHealth(fps: number | null): FpsHealth {
+  if (fps === null) return 'measuring';
+  if (fps >= 55) return 'good';
+  if (fps >= 30) return 'fair';
+  return 'low';
 }
 
 /**
  * FPS 显示文案（含健康度指示：60 达标 / 30-60 一般 / <30 偏低）
  */
 export function formatFpsLabel(fps: number | null): string {
-  if (fps === null) {
-    return '统计中…';
+  switch (fpsHealth(fps)) {
+    case 'measuring':
+      return '统计中…';
+    case 'good':
+      return `${fps} FPS`;
+    case 'fair':
+      return `${fps} FPS（一般）`;
+    default:
+      return `${fps} FPS（偏低）`;
   }
-  if (fps >= 55) return `${fps} FPS`;
-  if (fps >= 30) return `${fps} FPS（一般）`;
-  return `${fps} FPS（偏低）`;
 }
 
 /**

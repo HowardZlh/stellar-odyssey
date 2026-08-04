@@ -67,6 +67,14 @@ export const SOLAR_CYCLE_PHASE_LABELS_ZH: Record<SolarCyclePhaseName, string> = 
   minimum: '极小期',
 };
 
+/** 相位名英文标签（i18n 全站覆盖；与 ZH 键集合一致） */
+export const SOLAR_CYCLE_PHASE_LABELS_EN: Record<SolarCyclePhaseName, string> = {
+  rising: 'rising phase',
+  maximum: 'solar maximum',
+  declining: 'declining phase',
+  minimum: 'solar minimum',
+};
+
 /** 周期状态（供渲染/事件/UI 消费） */
 export interface SolarCycleState {
   /** Schwabe 周期序号（第 N 周期） */
@@ -209,14 +217,23 @@ export interface CycleInfoLine {
  * 周期状态信息行（§4.4：HUD 状态行 / 太阳信息面板）：
  * "第 N 周期 · 相位名 + 黑子相对数示意"。
  *
+ * i18n：label 保持中文键（UI 层经 catalogText 直映射），value 按
+ * locale 生成（默认 zh——既有测试断言零改动）。
+ *
  * @param state 周期状态（solarCycleState 结果）
  */
-export function solarCycleStatusLine(state: SolarCycleState): CycleInfoLine {
+export function solarCycleStatusLine(
+  state: SolarCycleState,
+  locale: 'zh' | 'en' = 'zh',
+): CycleInfoLine {
   const bar = sunspotRelativeBar(state.sunspotEnvelope01);
   const pct = Math.round(state.sunspotEnvelope01 * 100);
   return {
     label: '活动周期',
-    value: `第 ${state.cycleNumber} 周期 · ${SOLAR_CYCLE_PHASE_LABELS_ZH[state.phaseName]} · 黑子相对数 ${bar} ${pct}%`,
+    value:
+      locale === 'en'
+        ? `Cycle ${state.cycleNumber} · ${SOLAR_CYCLE_PHASE_LABELS_EN[state.phaseName]} · sunspot number ${bar} ${pct}%`
+        : `第 ${state.cycleNumber} 周期 · ${SOLAR_CYCLE_PHASE_LABELS_ZH[state.phaseName]} · 黑子相对数 ${bar} ${pct}%`,
   };
 }
 
