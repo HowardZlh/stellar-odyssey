@@ -2,9 +2,10 @@
 
 
 import type { JSX } from 'react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
+import { BodyNameText, LabelText } from '@/components/Scene/LocalizedLabelText';
 import * as THREE from 'three';
 import { getGalaxyById } from '@/data/galaxies';
 import { getSpecialBodyById } from '@/data/specialBodies';
@@ -12,6 +13,30 @@ import { useSimulationStore } from '@/store';
 import { cosmicDistanceToSceneUnits, trapezoidWeight } from '@/utils/scale';
 import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import { grbFlashState, jetFlowPhase01, quasarFlicker } from '@/utils/specialBodies';
+import { EXTRAGALACTIC_VIEW_RADIUS_UNITS } from '@/utils/cameraFocus';
+import { quasarCoreNearFactor, quasarDetailLayerSpec } from '@/utils/quasarNearView';
+import { GRB_STATIC_NEAR_DIM, grbDetailLayerSpec } from '@/utils/grbNearView';
+import {
+  ANTENNAE_STATIC_NEAR_DIM,
+  antennaeDetailLayerSpec,
+} from '@/utils/antennaeNearView';
+import {
+  M87_JET_KNOTS,
+  m87JetKnotOpacity01,
+  m87JetKnotT01,
+} from '@/utils/m87Environment';
+import {
+  CLUSTER_LENSING_STATIC_ARC_DIM,
+  clusterLensingSource,
+  lensedBackgroundSources,
+  resetClusterLensingSource,
+  writeClusterLensingSource,
+} from '@/utils/clusterLensing';
+import { useDetailLayer } from '@/hooks/useDetailLayer';
+import { useAntennaeSnapshots } from '@/hooks/useAntennaeSnapshots';
+import { QuasarNearCore } from '@/components/Scene/QuasarNearView';
+import { GrbNearCore } from '@/components/Scene/GrbNearView';
+import { AntennaeNearView } from '@/components/Scene/AntennaeNearView';
 import {
   createGalaxySpriteCanvas,
   createGlowSpriteCanvas,
@@ -36,12 +61,31 @@ interface JetProps {
   /** 是否双向（类星体双向 / M87 单侧可见） */
   bilateral: boolean;
   baseOpacity: number;
+  /** 可见权重读取覆写（默认河外 LOD fadeWeight；R4-16 蟹状 PWN 极向
+   * 双喷流复用登记——注入 L3 近观权重、参数化缩小尺度，锥体 shader 不变） */
+  getWeight?: () => number;
+  /** 锥体半径系数（锥底半径 = 长度 × 系数；缺省 0.035 ≈ 4° 全开角现状
+   * 锚定零回退；R5-5 GRB 近观以 tan(全开角/2) 覆写 ~5° 档） */
+  radiusFactor?: number;
 }
+
+/** 锥体半径系数默认档（现状 0.035 锚定，R5-5 参数化登记） */
+const JET_CONE_RADIUS_FACTOR_DEFAULT = 0.035;
 
 /**
  * 相对论喷流：细长锥体 + 沿喷流方向循环流动的辉光节点（流动动画）
+ *
+ * R4-16 起导出复用（蟹状 PWN 极向双喷流，SpecialBodies.tsx 消费）。
  */
-function RelativisticJet({ direction, lengthUnits, color, bilateral, baseOpacity }: JetProps): JSX.Element {
+export function RelativisticJet({
+  direction,
+  lengthUnits,
+  color,
+  bilateral,
+  baseOpacity,
+  getWeight,
+  radiusFactor,
+}: JetProps): JSX.Element {
   const nodesRef = useRef<THREE.Group>(null);
   const texture = useMemo(() => new THREE.CanvasTexture(createGlowSpriteCanvas(color, 64)), [color]);
   useEffect(() => () => texture.dispose(), [texture]);
@@ -100,7 +144,9 @@ function RelativisticJet({ direction, lengthUnits, color, bilateral, baseOpacity
   }, [direction]);
 
   useFrame(({ clock }) => {
-    const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
+    const weight = getWeight
+      ? getWeight()
+      : fadeWeight(useSimulationStore.getState().continuousLevel);
     jetMaterial.uniforms.uTime.value = clock.elapsedTime;
     jetMaterial.uniforms.uOpacity.value = baseOpacity * 0.5 * weight;
     const nodes = nodesRef.current;
@@ -140,7 +186,15 @@ function RelativisticJet({ direction, lengthUnits, color, bilateral, baseOpacity
           ]}
           material={jetMaterial}
         >
-          <coneGeometry args={[lengthUnits * 0.035, lengthUnits, 16, 1, true]} />
+          <coneGeometry
+            args={[
+              lengthUnits * (radiusFactor ?? JET_CONE_RADIUS_FACTOR_DEFAULT),
+              lengthUnits,
+              16,
+              1,
+              true,
+            ]}
+          />
         </mesh>
       ))}
       {/* 流动节点 */}
@@ -164,6 +218,12 @@ function RelativisticJet({ direction, lengthUnits, color, bilateral, baseOpacity
 
 /**
  * 类星体 3C 273（需求 3.1.5 河外对象）：极亮核心 + 双向相对论喷流 + 光变闪烁
+ *
+ * R4-21：近观挂接细节层（useDetailLayer particles 池，'lru-retain' L4
+ * 语义与 R2-8 星系近观共池）——跟随/飞往且距离达阈值时挂载
+ * QuasarNearCore（吸积盘 + BLR 辉光 + 尘埃环面，盘/环面平面 ⊥ 喷流轴），
+ * 与既有喷流构成内→外四层结构；核心辉光按 quasarCoreNearFactor 减淡
+ * 让出盘视野（光变闪烁保留不回退），退出反向恢复、资源随卸载 dispose。
  */
 export function Quasar(): JSX.Element | null {
   const body = getSpecialBodyById('quasar-3c273');
@@ -184,18 +244,38 @@ export function Quasar(): JSX.Element | null {
   useEffect(() => () => texture.dispose(), [texture]);
 
   const jetDirection = useMemo(() => new THREE.Vector3(0.35, 0.9, 0.25).normalize(), []);
+  // 盘/环面姿态：局部 +y → 喷流轴（盘面 ⊥ 喷流，AGN 统一模型几何）
+  const diskQuaternion = useMemo(
+    () => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), jetDirection),
+    [jetDirection],
+  );
+
+  // R4-21 近观细节层门控（阈值与 resolveFocusTarget 同源，utils/quasarNearView）
+  const weightRef = useRef(0);
+  const nearSpec = useMemo(() => quasarDetailLayerSpec(), []);
+  const { active: nearActive, opacity01: getNear01 } = useDetailLayer(nearSpec, {
+    objectRef: groupRef,
+    retention: 'lru-retain',
+  });
+  /** 近观层不透明度 = 河外层级淡入权重 × 近观激活权重 */
+  const getNearOpacity = useCallback(
+    () => weightRef.current * getNear01(),
+    [getNear01],
+  );
 
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group) return;
     const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
+    weightRef.current = weight;
     group.visible = weight > 0.001;
     setObjectTreeRaycastEnabled(group, weight > INTERACTIVE_WEIGHT);
     if (!group.visible) return;
     if (coreRef.current) {
-      // 光变闪烁（不规则光变，需求 3.1.5）
+      // 光变闪烁（不规则光变，需求 3.1.5）；R4-21 近观减淡让出盘视野
+      // （quasarCoreNearFactor，光变因子保留不回退）
       (coreRef.current.material as THREE.SpriteMaterial).opacity =
-        0.95 * quasarFlicker(clock.elapsedTime) * weight;
+        0.95 * quasarFlicker(clock.elapsedTime) * weight * quasarCoreNearFactor(getNear01());
     }
   });
 
@@ -233,11 +313,21 @@ export function Quasar(): JSX.Element | null {
         bilateral
         baseOpacity={0.8}
       />
+      {/* R4-21 近观细节层：吸积盘 + BLR 辉光 + 尘埃环面（⊥ 喷流轴） */}
+      {nearActive && (
+        <group quaternion={diskQuaternion}>
+          <QuasarNearCore
+            baseRadiusUnits={EXTRAGALACTIC_VIEW_RADIUS_UNITS}
+            getOpacity={getNearOpacity}
+          />
+        </group>
+      )}
       {showLabels && inRange && !focused && (
         // R3-4：近距反向缩放钳制 + 焦点隐藏（治理缺口补齐）
         <ClampedHtmlLabel position={[0, 700, 0]} distanceFactor={12000} style={{ pointerEvents: 'none' }}>
           <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-sky-200">
-            {body.nameZh}（约 24 亿光年）
+            <BodyNameText body={body} />
+            <LabelText k="sceneLabel.quasarSuffix" />
           </span>
         </ClampedHtmlLabel>
       )}
@@ -246,8 +336,37 @@ export function Quasar(): JSX.Element | null {
 }
 
 /**
+ * 触须星系近观层挂载器（R4-22）：仅近观激活时挂载 → 首次激活才 fetch
+ * 烘焙快照；加载中/失败返回 null——外层静态渲染即降级现状（登记）。
+ */
+function AntennaeNearLayer({
+  getOpacity,
+  getSimDays,
+}: {
+  getOpacity: () => number;
+  getSimDays: () => number;
+}): JSX.Element | null {
+  const data = useAntennaeSnapshots();
+  if (!data) return null;
+  return (
+    <AntennaeNearView
+      data={data}
+      baseRadiusUnits={EXTRAGALACTIC_VIEW_RADIUS_UNITS}
+      getOpacity={getOpacity}
+      getSimDays={getSimDays}
+    />
+  );
+}
+
+/**
  * 触须星系（NGC 4038/4039，可选需求 3.1.5）：星系碰撞现场——
  * 两个相互扭曲的旋涡星系盘 + 两条潮汐尾（"触须"）+ 星暴区亮斑
+ *
+ * R4-22：近观挂接细节层（useDetailLayer starCatalog 池，容量 1 与
+ * R4-17 昴星团共池、'lru-retain' L4 语义）——跟随/飞往且距离达阈值时
+ * 挂载 AntennaeNearLayer（两核 + 双潮汐尾烘焙快照粒子，随 simDays
+ * 快照插值缓慢演化）；既有静态层按 ANTENNAE_STATIC_NEAR_DIM 减淡让位
+ * 粒子结构；快照加载失败降级现状静态渲染（AntennaeNearLayer 返回 null）。
  */
 export function AntennaeGalaxies(): JSX.Element | null {
   const body = getSpecialBodyById('antennae-galaxies');
@@ -315,20 +434,41 @@ export function AntennaeGalaxies(): JSX.Element | null {
     [tails],
   );
 
+  // R4-22 近观细节层门控（starCatalog 池；阈值与 resolveFocusTarget 同源）
+  const weightRef = useRef(0);
+  const nearSpec = useMemo(() => antennaeDetailLayerSpec(), []);
+  const { active: nearActive, opacity01: getNear01 } = useDetailLayer(nearSpec, {
+    objectRef: groupRef,
+    retention: 'lru-retain',
+  });
+  /** 近观层不透明度 = 河外层级淡入权重 × 近观激活权重 */
+  const getNearOpacity = useCallback(
+    () => weightRef.current * getNear01(),
+    [getNear01],
+  );
+  /** 快照演化时钟 = 主场景 simDays（时间映射登记见 utils/antennaeNearView） */
+  const getSimDays = useCallback(() => useSimulationStore.getState().simDays, []);
+
   useFrame(() => {
     const group = groupRef.current;
     if (!group) return;
     const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
+    weightRef.current = weight;
     group.visible = weight > 0.001;
     setObjectTreeRaycastEnabled(group, weight > INTERACTIVE_WEIGHT);
     if (!group.visible) return;
+    // R4-22：近观时静态示意层减淡让位烘焙粒子结构（登记；近观层 sprite
+    // 由 AntennaeNearView 自管 —— 标记 userData.nearLayer 跳过）
+    const staticDim = 1 - ANTENNAE_STATIC_NEAR_DIM * getNear01();
     group.traverse((obj) => {
+      if (obj.userData.nearLayer) return;
       if (obj instanceof THREE.Mesh || obj instanceof THREE.Sprite) {
         const mat = obj.material as THREE.Material & { opacity: number };
-        mat.opacity = ((obj.userData.baseOpacity as number | undefined) ?? 0.85) * weight;
+        mat.opacity =
+          ((obj.userData.baseOpacity as number | undefined) ?? 0.85) * weight * staticDim;
       }
       if (obj instanceof THREE.Line) {
-        (obj.material as THREE.LineBasicMaterial).opacity = 0.55 * weight;
+        (obj.material as THREE.LineBasicMaterial).opacity = 0.55 * weight * staticDim;
       }
     });
   });
@@ -392,10 +532,15 @@ export function AntennaeGalaxies(): JSX.Element | null {
       {tails.map((tail, i) => (
         <primitive key={i} object={tail} />
       ))}
+      {/* R4-22 近观细节层：两核 + 双潮汐尾烘焙快照粒子（加载失败降级现状） */}
+      {nearActive && (
+        <AntennaeNearLayer getOpacity={getNearOpacity} getSimDays={getSimDays} />
+      )}
       {showLabels && inRange && !focused && (
         <ClampedHtmlLabel position={[0, 900, 0]} distanceFactor={12000} style={{ pointerEvents: 'none' }}>
           <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-orange-200">
-            {body.nameZh}（星系碰撞现场，约 4500 万光年）
+            <BodyNameText body={body} />
+            <LabelText k="sceneLabel.antennaeSuffix" />
           </span>
         </ClampedHtmlLabel>
       )}
@@ -403,13 +548,27 @@ export function AntennaeGalaxies(): JSX.Element | null {
   );
 }
 
+/** LensingArcs 渲染循环临时向量（世界坐标写入持有者，零分配） */
+const LENSING_TMP_WORLD = new THREE.Vector3();
+
 /**
- * 星系团引力透镜弧（可选需求 3.1.5）：围绕星系团中心的蓝色弧状
- * 背景星系拉伸虚像（示意置于室女座星系团位置，原型 Abell 370，已登记）
+ * 星系团引力透镜弧（可选需求 3.1.5 + R4-23 升级）：围绕星系团中心的
+ * 蓝色弧状背景星系拉伸虚像（示意置于室女座星系团位置，原型 Abell 370，
+ * 已登记）。
+ *
+ * R4-23：近观（跟随/飞往本天体）时由 PostEffects 挂载屏幕空间 SIS
+ * 偏转 Effect（方案 a，登记见 ClusterLensingEffect.tsx）呈现真折射——
+ * 本组件每帧把团块质心世界坐标/可见权重写入 clusterLensingSource
+ * 持有者供后期管线消费；静态示意 ring 弧按效果强度减淡 75% 让位
+ * 真折射弧（保留残影登记）；新增确定性背景源 sprite（团块之后的
+ * "背景星系"，世界系固定 → 绕行视差下被拉伸弧位置随视角一致）与
+ * 团块弥散光晕。非跟随时持有者 visible01 随层级权重写入但 Effect
+ * 不挂载（PostEffects 域判据），仍为零渲染开销。
  */
 export function LensingArcs(): JSX.Element | null {
   const body = getSpecialBodyById('cluster-lensing');
   const groupRef = useRef<THREE.Group>(null);
+  const arcsRef = useRef<THREE.Group>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const showLabels = useSimulationStore((s) => s.showLabels);
   const inRange = useSimulationStore((s) => s.continuousLevel > 3.05);
@@ -428,18 +587,64 @@ export function LensingArcs(): JSX.Element | null {
     [],
   );
 
+  // R4-23 近观背景源（确定性布局，被 SIS Effect 拉伸成切向弧）与
+  // 团块弥散光晕贴图；背景源组姿态：局部 +z 对齐团块视向"更远"方向
+  const sources = useMemo(() => lensedBackgroundSources(), []);
+  const sourceTextures = useMemo(
+    () => ({
+      warm: new THREE.CanvasTexture(createGlowSpriteCanvas('#ffe3c8', 64)),
+      cool: new THREE.CanvasTexture(createGlowSpriteCanvas('#cfe0ff', 64)),
+      core: new THREE.CanvasTexture(createGlowSpriteCanvas('#dfe6ff', 128)),
+    }),
+    [],
+  );
+  useEffect(
+    () => () => {
+      sourceTextures.warm.dispose();
+      sourceTextures.cool.dispose();
+      sourceTextures.core.dispose();
+    },
+    [sourceTextures],
+  );
+  const sourcesQuaternion = useMemo(() => {
+    if (!body?.direction) return new THREE.Quaternion();
+    const dir = new THREE.Vector3(
+      body.direction.x,
+      body.direction.y,
+      body.direction.z,
+    ).normalize();
+    return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+  }, [body]);
+  // 组件卸载：清空持有者（Effect 读到 present=false 即归零）
+  useEffect(() => () => resetClusterLensingSource(), []);
+
   useFrame(({ camera }) => {
     const group = groupRef.current;
     if (!group) return;
     const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
     group.visible = weight > 0.001;
     setObjectTreeRaycastEnabled(group, weight > INTERACTIVE_WEIGHT);
+    // R4-23：团块质心世界坐标 + 可见权重写入持有者（后期 Effect 消费）
+    group.getWorldPosition(LENSING_TMP_WORLD);
+    writeClusterLensingSource(
+      LENSING_TMP_WORLD.x,
+      LENSING_TMP_WORLD.y,
+      LENSING_TMP_WORLD.z,
+      weight,
+    );
     if (!group.visible) return;
-    // 弧面朝向相机（透镜像沿视线方向观察）
-    group.quaternion.copy(camera.quaternion);
+    // 弧面朝向相机（透镜像沿视线方向观察；背景源组保持世界系固定）
+    arcsRef.current?.quaternion.copy(camera.quaternion);
+    // 静态示意弧按效果强度减淡（真折射弧接管，保留残影登记）
+    const staticDim =
+      1 - CLUSTER_LENSING_STATIC_ARC_DIM * clusterLensingSource().effectStrength01;
     group.traverse((obj) => {
       if (obj instanceof THREE.Mesh) {
-        (obj.material as THREE.MeshBasicMaterial).opacity = 0.6 * weight;
+        (obj.material as THREE.MeshBasicMaterial).opacity = 0.6 * weight * staticDim;
+      }
+      if (obj instanceof THREE.Sprite) {
+        const mat = obj.material as THREE.SpriteMaterial;
+        mat.opacity = ((obj.userData.baseOpacity as number | undefined) ?? 0.6) * weight;
       }
     });
   });
@@ -453,30 +658,62 @@ export function LensingArcs(): JSX.Element | null {
       position={[body.direction.x * d, body.direction.y * d, body.direction.z * d]}
       name={body.id}
     >
-      {arcs.map((arc, i) => (
-        <mesh
-          key={i}
-          rotation={[0, 0, arc.tilt]}
-          onClick={(e) => {
-            e.stopPropagation();
-            selectBody(body.id);
-          }}
-        >
-          {/* 细环弧段：背景星系被拉伸成的弧状虚像 */}
-          <ringGeometry args={[arc.radius - 28, arc.radius + 28, 48, 1, arc.start, arc.length]} />
-          <meshBasicMaterial
-            color="#a8d4ff"
-            transparent
-            side={THREE.DoubleSide}
-            blending={THREE.AdditiveBlending}
-            depthWrite={false}
-          />
-        </mesh>
-      ))}
+      {/* 静态示意弧组（面向相机 billboard，近观按效果强度减淡） */}
+      <group ref={arcsRef}>
+        {arcs.map((arc, i) => (
+          <mesh
+            key={i}
+            rotation={[0, 0, arc.tilt]}
+            onClick={(e) => {
+              e.stopPropagation();
+              selectBody(body.id);
+            }}
+          >
+            {/* 细环弧段：背景星系被拉伸成的弧状虚像 */}
+            <ringGeometry args={[arc.radius - 28, arc.radius + 28, 48, 1, arc.start, arc.length]} />
+            <meshBasicMaterial
+              color="#a8d4ff"
+              transparent
+              side={THREE.DoubleSide}
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
+            />
+          </mesh>
+        ))}
+      </group>
+      {/* R4-23 团块弥散光晕（透镜体可见锚点） */}
+      <sprite scale={[900, 900, 1]} userData={{ baseOpacity: 0.4 }}>
+        <spriteMaterial
+          map={sourceTextures.core}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          opacity={0}
+        />
+      </sprite>
+      {/* R4-23 背景源（世界系固定于团块之后，近观被 SIS Effect 拉伸成弧） */}
+      <group quaternion={sourcesQuaternion}>
+        {sources.map((s, i) => (
+          <sprite
+            key={i}
+            position={[s.x, s.y, s.z]}
+            scale={[s.scale, s.scale, 1]}
+            userData={{ baseOpacity: 0.85 }}
+          >
+            <spriteMaterial
+              map={s.warmth01 < 0.5 ? sourceTextures.warm : sourceTextures.cool}
+              transparent
+              depthWrite={false}
+              blending={THREE.AdditiveBlending}
+              opacity={0}
+            />
+          </sprite>
+        ))}
+      </group>
       {showLabels && inRange && !focused && (
         <ClampedHtmlLabel position={[0, 1550, 0]} distanceFactor={12000} style={{ pointerEvents: 'none' }}>
           <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-sky-200">
-            星系团引力透镜弧（示意，原型 Abell 370）
+            <LabelText k="sceneLabel.lensingArcs" />
           </span>
         </ClampedHtmlLabel>
       )}
@@ -484,9 +721,19 @@ export function LensingArcs(): JSX.Element | null {
   );
 }
 
+/** GRB 双喷流轴姿态（静态双锥与 R5-5 近观细节层共用，单点同源） */
+const GRB_JET_ROTATION_RAD: readonly [number, number, number] = [0.4, 0, 0.9];
+
 /**
  * 伽马射线暴（GRB 221009A，可选需求 3.1.5）：周期性重放的
  * 极亮闪光 + 双向窄喷流（真实为一次性事件，演示示意已登记）
+ *
+ * R5-5：近观挂接细节层（useDetailLayer particles 池，'lru-retain' L4
+ * 语义与星系近观/类星体共池）——跟随/飞往且距离达阈值时挂载
+ * GrbNearCore（相对论双喷流 ~5° 蓝白更亮 + 余辉膨胀壳）。现状核对
+ * 结论登记（§R5-5 B）：GRB 为常驻演示物（周期重放 45s，非事件触发），
+ * 近观层随周期时钟出现/衰减（utils/grbNearView 文件头）；静态双锥按
+ * GRB_STATIC_NEAR_DIM 减淡让位细节喷流，退出反向恢复。
  */
 export function GammaRayBurst(): JSX.Element | null {
   const body = getSpecialBodyById('grb-221009a');
@@ -507,10 +754,24 @@ export function GammaRayBurst(): JSX.Element | null {
   );
   useEffect(() => () => texture.dispose(), [texture]);
 
+  // R5-5 近观细节层门控（阈值与 resolveFocusTarget 同源，utils/grbNearView）
+  const weightRef = useRef(0);
+  const nearSpec = useMemo(() => grbDetailLayerSpec(), []);
+  const { active: nearActive, opacity01: getNear01 } = useDetailLayer(nearSpec, {
+    objectRef: groupRef,
+    retention: 'lru-retain',
+  });
+  /** 近观层不透明度 = 河外层级淡入权重 × 近观激活权重 */
+  const getNearOpacity = useCallback(
+    () => weightRef.current * getNear01(),
+    [getNear01],
+  );
+
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group) return;
     const weight = fadeWeight(useSimulationStore.getState().continuousLevel);
+    weightRef.current = weight;
     group.visible = weight > 0.001;
     setObjectTreeRaycastEnabled(group, weight > INTERACTIVE_WEIGHT);
     if (!group.visible) return;
@@ -522,9 +783,12 @@ export function GammaRayBurst(): JSX.Element | null {
     }
     if (beamsRef.current) {
       beamsRef.current.visible = intensity01 > 0.02;
+      // R5-5：近观时静态双锥减淡让位细节喷流（退出随 near01 回落恢复）
+      const staticDim = 1 - GRB_STATIC_NEAR_DIM * getNear01();
       beamsRef.current.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
-          (obj.material as THREE.MeshBasicMaterial).opacity = 0.5 * intensity01 * weight;
+          (obj.material as THREE.MeshBasicMaterial).opacity =
+            0.5 * intensity01 * weight * staticDim;
         }
       });
     }
@@ -555,7 +819,7 @@ export function GammaRayBurst(): JSX.Element | null {
         />
       </sprite>
       {/* 双向窄相对论喷流（核坍缩喷流示意） */}
-      <group ref={beamsRef} rotation={[0.4, 0, 0.9]}>
+      <group ref={beamsRef} rotation={GRB_JET_ROTATION_RAD as [number, number, number]}>
         {[1, -1].map((dir) => (
           <mesh key={dir} position={[0, dir * 900, 0]} rotation={[dir < 0 ? Math.PI : 0, 0, 0]}>
             <coneGeometry args={[70, 1800, 10, 1, true]} />
@@ -569,10 +833,21 @@ export function GammaRayBurst(): JSX.Element | null {
           </mesh>
         ))}
       </group>
+      {/* R5-5 近观细节层：双喷流（~5° 蓝白更亮）+ 余辉膨胀壳（轴与
+          静态双锥同姿态；随周期时钟演化，登记 utils/grbNearView） */}
+      {nearActive && (
+        <group rotation={GRB_JET_ROTATION_RAD as [number, number, number]}>
+          <GrbNearCore
+            baseRadiusUnits={EXTRAGALACTIC_VIEW_RADIUS_UNITS}
+            getOpacity={getNearOpacity}
+          />
+        </group>
+      )}
       {showLabels && inRange && !focused && (
         <ClampedHtmlLabel position={[0, 800, 0]} distanceFactor={12000} style={{ pointerEvents: 'none' }}>
           <span className="whitespace-nowrap rounded bg-black/50 px-2 py-0.5 text-xs text-violet-200">
-            {body.nameZh}（演示重放，约 20 亿光年）
+            <BodyNameText body={body} />
+            <LabelText k="sceneLabel.grbSuffix" />
           </span>
         </ClampedHtmlLabel>
       )}
@@ -581,8 +856,70 @@ export function GammaRayBurst(): JSX.Element | null {
 }
 
 /**
+ * M87 喷流亮节点（R5-4：HST-1 类 knot，sprite 方案登记于 utils/m87Environment
+ * 文件头）：3–5 个亮 knot 沿喷流轴分布，亮度沿轴衰减 + 循环缓慢外移
+ * （视觉化登记，非真实视超光速运动）。主场景 M87Jet 与预览页共用。
+ */
+export function M87JetKnots({
+  direction,
+  lengthUnits,
+  getWeight,
+}: {
+  direction: THREE.Vector3;
+  lengthUnits: number;
+  /** 读取本帧可见权重（主场景 = 宇宙层级淡入；预览 = 恒 1） */
+  getWeight: () => number;
+}): JSX.Element {
+  const knotsRef = useRef<THREE.Group>(null);
+  const texture = useMemo(
+    () => new THREE.CanvasTexture(createGlowSpriteCanvas('#e8f1ff', 64)),
+    [],
+  );
+  useEffect(() => () => texture.dispose(), [texture]);
+
+  useFrame(({ clock }) => {
+    const group = knotsRef.current;
+    if (!group) return;
+    const weight = getWeight();
+    group.visible = weight > 0.001;
+    if (!group.visible) return;
+    for (let i = 0; i < M87_JET_KNOTS.length; i += 1) {
+      const sprite = group.children[i] as THREE.Sprite | undefined;
+      if (!sprite) continue;
+      const knot = M87_JET_KNOTS[i];
+      const t = m87JetKnotT01(knot.t0, clock.elapsedTime);
+      const d = t * lengthUnits;
+      sprite.position.set(direction.x * d, direction.y * d, direction.z * d);
+      (sprite.material as THREE.SpriteMaterial).opacity =
+        m87JetKnotOpacity01(t, knot.brightness) * weight;
+    }
+  });
+
+  return (
+    <group ref={knotsRef}>
+      {M87_JET_KNOTS.map((knot, i) => (
+        <sprite
+          key={i}
+          scale={[lengthUnits * knot.sizeFactor, lengthUnits * knot.sizeFactor, 1]}
+          raycast={() => null}
+        >
+          <spriteMaterial
+            map={texture}
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </sprite>
+      ))}
+    </group>
+  );
+}
+
+/**
  * M87 活动星系核喷流（需求 3.1.5）：与室女座星系团 M87 条目联动为同一对象
  * （附着于 Universe 中 M87 星系的静态位置），单侧可见喷流。
+ *
+ * R5-4：叠加 HST-1 类亮节点（M87JetKnots，登记见 utils/m87Environment）。
  */
 export function M87Jet(): JSX.Element | null {
   const galaxy = getGalaxyById('m87');
@@ -612,6 +949,17 @@ export function M87Jet(): JSX.Element | null {
         bilateral={false}
         baseOpacity={0.7}
       />
+      {/* R5-4：HST-1 类亮节点（亮度沿轴衰减 + 缓慢外移，视觉化登记） */}
+      <M87JetKnots
+        direction={jetDirection}
+        lengthUnits={1500}
+        getWeight={m87JetWeight}
+      />
     </group>
   );
+}
+
+/** M87 喷流可见权重（模块级常量函数：宇宙层级淡入，零逐帧分配） */
+function m87JetWeight(): number {
+  return fadeWeight(useSimulationStore.getState().continuousLevel);
 }

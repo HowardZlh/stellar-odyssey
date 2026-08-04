@@ -5,6 +5,7 @@ import type { JSX } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
+import { BodyNameText, LabelText } from '@/components/Scene/LocalizedLabelText';
 import * as THREE from 'three';
 import { useSimulationStore } from '@/store';
 import {
@@ -24,11 +25,11 @@ import {
   voyagerMarkerPositionUnits,
 } from '@/utils/heliopause';
 import {
-  NEAR_VIEW_TRANSITION_SECONDS,
   nearViewEnterDistanceUnits,
-  nearViewGateUpdate,
+  nearViewExitDistanceUnits,
 } from '@/utils/nearView';
-import { advanceFrameTransition } from '@/utils/galacticFrame';
+import type { DetailLayerSpec } from '@/utils/detailLayer';
+import { useDetailLayer } from '@/hooks/useDetailLayer';
 import { setObjectTreeRaycastEnabled } from '@/utils/raycastGate';
 import { createGlowSpriteCanvas } from '@/components/CelestialBody/proceduralTextures';
 
@@ -148,7 +149,10 @@ function HeliopauseNearStructure({
             style={{ pointerEvents: 'none' }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-amber-300/85">
-              终端激波（示意，约 {TERMINATION_SHOCK_REAL_DISTANCE_AU} AU）
+              <LabelText
+                k="sceneLabel.terminationShock"
+                params={{ au: TERMINATION_SHOCK_REAL_DISTANCE_AU }}
+              />
             </span>
           </ClampedHtmlLabel>
           <ClampedHtmlLabel
@@ -157,7 +161,7 @@ function HeliopauseNearStructure({
             style={{ pointerEvents: 'none' }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-orange-200/80">
-              日鞘（渐变区）
+              <LabelText k="sceneLabel.heliosheath" />
             </span>
           </ClampedHtmlLabel>
         </>
@@ -191,7 +195,8 @@ function HeliopauseNearStructure({
           {showLabels && focusedMarkerId !== m.id && (
             <ClampedHtmlLabel position={[0, 22, 0]} distanceFactor={480} style={{ pointerEvents: 'none' }}>
               <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-amber-200/90">
-                {m.nameZh}（{m.crossedYear} 穿越）
+                <BodyNameText body={m} />
+                <LabelText k="sceneLabel.voyagerCrossedSuffix" params={{ year: m.crossedYear }} />
               </span>
             </ClampedHtmlLabel>
           )}
@@ -226,11 +231,28 @@ export function Heliopause(): JSX.Element {
         s.continuousLevel < HELIOPAUSE_VISIBLE_LEVEL_MAX),
   );
 
-  // R2-7 近观门控（滞回状态机纯逻辑 utils/nearView，Comet.tsx nearView 范式）
-  const [nearActive, setNearActive] = useState(false);
-  const nearActiveRef = useRef(false);
-  const near01Ref = useRef(0);
-  const nearEnterDistance = useMemo(() => nearViewEnterDistanceUnits('heliopause'), []);
+  // R2-7 近观门控（R4-2 起经统一细节层机制 hooks/useDetailLayer 挂接，
+  // 阈值/退出即释放/0.5s 淡入淡出语义零回退）：
+  // 跟随判据含旅行者标记（isHeliopauseNearFocusId），距离 = 相机位置模长
+  // （球壳中心位于场景原点），故经自定义判据注入
+  const heliopauseSpec = useMemo<DetailLayerSpec>(
+    () => ({
+      bodyId: 'heliopause',
+      kind: 'particles',
+      enterDistanceUnits: nearViewEnterDistanceUnits('heliopause'),
+      exitDistanceUnits: nearViewExitDistanceUnits('heliopause'),
+      // 近观层为线条/壳层/标记（非粒子），增量 0（R2-7 登记）
+      budget: { particles: 0, gpuBytesEstimate: 0 },
+    }),
+    [],
+  );
+  const { active: nearActive, opacity01: getNear01 } = useDetailLayer(heliopauseSpec, {
+    getFocused: () => {
+      const s = useSimulationStore.getState();
+      return isHeliopauseNearFocusId(s.followBodyId) || isHeliopauseNearFocusId(s.flyToBodyId);
+    },
+    getDistanceUnits: (camera) => camera.position.length(),
+  });
 
   const { geometry, material } = useMemo(() => {
     const geo = new THREE.SphereGeometry(HELIOPAUSE_VISUAL_RADIUS_UNITS, 48, 32);
@@ -252,35 +274,17 @@ export function Heliopause(): JSX.Element {
     };
   }, [geometry, material]);
 
-  useFrame(({ camera }, delta) => {
+  useFrame(() => {
     const { continuousLevel, followBodyId, flyToBodyId } = useSimulationStore.getState();
     // L2 段淡入（进入 L1 近观或 L3 银河系视角淡出）；
     // 飞往/跟随期间聚焦权重提升为满值（R2-1，防层级门控淡出）
     const focused =
       isHeliopauseNearFocusId(followBodyId) || isHeliopauseNearFocusId(flyToBodyId);
     const weight = heliopauseVisibilityWeight(continuousLevel, focused);
-    // R2-7 近观门控：球壳中心位于场景原点，相机-目标距离 = 相机位置模长
-    const gate = nearViewGateUpdate(
-      nearActiveRef.current,
-      focused,
-      camera.position.length(),
-      nearEnterDistance,
-    );
-    near01Ref.current = advanceFrameTransition(
-      near01Ref.current,
-      gate.active ? 1 : 0,
-      delta,
-      NEAR_VIEW_TRANSITION_SECONDS,
-    );
-    // 淡出完成后再卸载（释放几何/材质，无突变）
-    const shouldMount = gate.active || near01Ref.current > 0.001;
-    if (shouldMount !== nearActiveRef.current) {
-      nearActiveRef.current = shouldMount;
-      setNearActive(shouldMount);
-    }
-    // 近观期间外边界壳增亮（三层结构中"日球层顶外边界"更可辨）
+    // 近观期间外边界壳增亮（三层结构中"日球层顶外边界"更可辨）；
+    // 近观权重由 useDetailLayer 帧读 getter 提供（同帧先行更新）
     material.opacity =
-      HELIOPAUSE_MAX_OPACITY * weight + HELIOPAUSE_NEAR_OPACITY_BOOST * near01Ref.current;
+      HELIOPAUSE_MAX_OPACITY * weight + HELIOPAUSE_NEAR_OPACITY_BOOST * getNear01();
     // R3 需求 3：L3 银河系视角（连续层级 ≥ 2.5）下球壳禁用 raycast，
     // 不再拦截其后方太阳系外天体（L3 特殊天体/奥尔特云等）的点击；
     // L2 内保留点选科普，跟随/飞往日球层顶或旅行者期间恒可点
@@ -303,7 +307,7 @@ export function Heliopause(): JSX.Element {
           selectBody('heliopause');
         }}
       />
-      {nearActive && <HeliopauseNearStructure getNear01={() => near01Ref.current} />}
+      {nearActive && <HeliopauseNearStructure getNear01={getNear01} />}
       {showLabels && inRange && (
         // R3-4：跟随期间保持可见（R2-1 语义保留）但近距反向缩放钳制不遮挡结构
         <ClampedHtmlLabel
@@ -312,7 +316,7 @@ export function Heliopause(): JSX.Element {
           style={{ pointerEvents: 'none' }}
         >
           <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-sky-300/80">
-            日球层顶（示意，实际约 120 AU）
+            <LabelText k="sceneLabel.heliopause" />
           </span>
         </ClampedHtmlLabel>
       )}

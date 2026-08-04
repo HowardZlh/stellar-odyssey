@@ -4,43 +4,67 @@
 import type { JSX } from 'react';
 import { useEffect, useState } from 'react';
 import type { ViewLevel } from '@/types';
-import { CAMERA_VIEWS } from '@/data/cameraViews';
+import type { MessageKey } from '@/i18n';
+import {
+  VIEW_LEVEL_NAME_KEYS,
+  displayBodyName,
+  localizeCatalogText,
+  pickLocalized,
+  tf,
+} from '@/i18n';
+import { useLocale, useT, useTf } from '@/hooks/useI18n';
 import { getBodyInfoById } from '@/data/catalog';
 import {
+  CME_GEOMAGNETIC_NOTE_EN,
   CME_GEOMAGNETIC_NOTE_ZH,
+  FLARE_ENERGY_NOTE_EN,
   FLARE_ENERGY_NOTE_ZH,
   SUN_STRUCTURE_DATA_SOURCE,
+  SUN_STRUCTURE_DATA_SOURCE_EN,
   getSunLayerById,
 } from '@/data/sunStructure';
 import { useSimulationStore } from '@/store';
 import { scopeCyclePositionLabel } from '@/utils/cycleScopes';
 import { eventNoticeVisibleInScope } from '@/utils/eventScopes';
-import { galacticFrameHudLabel } from '@/utils/galacticFrame';
 import {
+  MERGER_FATE_NOTE_EN,
   MERGER_FATE_NOTE_ZH,
+  MERGER_SOURCE_NOTE_EN,
   MERGER_SOURCE_NOTE_ZH,
-  mergerNoticeZh,
+  mergerNotice,
 } from '@/utils/galaxyMerger';
 import { galacticYearProgress, sunGalacticPositionLy } from '@/utils/galaxy';
 import { formatSceneScaleLabel } from '@/utils/scale';
 import { sunActivityStatusLines } from '@/utils/solarActivity';
 import { solarCycleState, solarCycleStatusLine } from '@/utils/solarCycle';
-import { SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
+import { SN_REAL_FREQUENCY_NOTE_EN, SN_REAL_FREQUENCY_NOTE_ZH } from '@/utils/supernova';
 import { formatSimDate } from '@/utils/time';
 
-/** 各层级运动参考系说明（需求 3.1.3 参考系定义） */
-const REFERENCE_FRAMES: Record<ViewLevel, string> = {
-  L1: '参考系：日心系（行星/卫星运动）',
-  L2: '参考系：日心系（黄道坐标）',
-  L3: '参考系：银心系（太阳系绕银心）',
-  L4: '参考系：本星系群质心系（本动以矢量指示）',
+/** 各层级运动参考系说明键（需求 3.1.3 参考系定义；B3 文案入字典） */
+const REFERENCE_FRAME_KEYS: Record<ViewLevel, MessageKey> = {
+  L1: 'hud.frameL1',
+  L2: 'hud.frameL2',
+  L3: 'hud.frameL3',
+  L4: 'hud.frameL4',
 };
 
 /**
  * HUD 信息（需求 3.5.2）：当前视角/尺度标尺、参考系、模拟时间、
  * 银河年进度（L3）、速率钳制提示、选中天体信息（统一目录）
+ *
+ * B3 i18n：壳层框架文案与事件通知（耀斑/CME/CME 抵达/超新星）经字典
+ * 查找（hud.* 键组）。
+ *
+ * i18n 全站覆盖：科学注记常量（SN 频率/耀斑能量/地磁暴/合并结局与来源）
+ * 经 `*_EN` 常量族 + pickLocalized 按 locale 取用；合并阶段名经
+ * mergerNotice(locale)；信息面板值行经 getBodyInfoById(id, locale)
+ * 双目录；黑子/日珥卡片与剖面分层经数据层 `*En` 字段；dataSource 署名
+ * 同随 locale（含中文的署名补 `dataSourceEn`/`*_SOURCE_EN`，纯英文原样）。
  */
 export function HudInfo(): JSX.Element {
+  const tr = useT();
+  const trf = useTf();
+  const locale = useLocale();
   const viewLevel = useSimulationStore((s) => s.viewLevel);
   const selectedBodyId = useSimulationStore((s) => s.selectedBodyId);
   const selectBody = useSimulationStore((s) => s.selectBody);
@@ -74,12 +98,13 @@ export function HudInfo(): JSX.Element {
   const cmeArrivalNoticeVisible = useSimulationStore((s) => s.cmeArrivalNoticeVisible);
   const dismissCmeArrivalNotice = useSimulationStore((s) => s.dismissCmeArrivalNotice);
   // R2-4 §4.1-B：事件通知按视角域过滤（选布尔值，仅域边界跨越时重渲染；
-  // 耀斑/CME/CME 抵达同属太阳系域窗口，共用一个判定）
+  // 耀斑/CME/CME 抵达同属太阳系域，共用一个判定）。R5-8：判定源改离散
+  // viewLevel——跟随巡游天体期间与 HUD 视角标签一致，不随相机距离漂移
   const solarNoticeInScope = useSimulationStore((s) =>
-    eventNoticeVisibleInScope('flare', s.continuousLevel),
+    eventNoticeVisibleInScope('flare', s.viewLevel),
   );
   const supernovaNoticeInScope = useSimulationStore((s) =>
-    eventNoticeVisibleInScope('supernova', s.continuousLevel),
+    eventNoticeVisibleInScope('supernova', s.viewLevel),
   );
   const sunCutawayMode = useSimulationStore((s) => s.sunCutawayMode);
   const setSunCutawayMode = useSimulationStore((s) => s.setSunCutawayMode);
@@ -101,38 +126,49 @@ export function HudInfo(): JSX.Element {
   const [cycleLine, setCycleLine] = useState<{ label: string; value: string } | null>(null);
   // R2-11：银河系—仙女座合并演化科普卡片（L4 且模拟时间越过合并时刻时显示；
   // 时间回退（恢复预览前时间）后卡片随之消失——纯模拟时间驱动）
-  const [mergerCard, setMergerCard] = useState<{ stageZh: string; tauMyr: number } | null>(
+  const [mergerCard, setMergerCard] = useState<{ stageText: string; tauMyr: number } | null>(
     null,
   );
   const [mergerCardDismissed, setMergerCardDismissed] = useState(false);
+  // 信息面板收起态：收起后仅保留标题栏与底部操作按钮区；
+  // 状态跨天体切换保持（组件常驻，选中变化不重置）
+  const [infoCollapsed, setInfoCollapsed] = useState(false);
   useEffect(() => {
     const update = (): void => {
       const state = useSimulationStore.getState();
-      setSimDateText(formatSimDate(state.simDays));
+      setSimDateText(formatSimDate(state.simDays, locale));
       // R2-11 合并演化卡片（仅宇宙视角；合并前为 null）
-      const notice = state.viewLevel === 'L4' ? mergerNoticeZh(state.simDays) : null;
+      const notice = state.viewLevel === 'L4' ? mergerNotice(locale, state.simDays) : null;
       setMergerCard(notice);
       if (notice === null) setMergerCardDismissed(false);
       // 尺度标尺：相机距离按当前层级的尺度映射解释（AU / 光年 / Mpc）
-      setScaleText(formatSceneScaleLabel(state.cameraDistanceUnits, state.continuousLevel));
+      setScaleText(
+        formatSceneScaleLabel(state.cameraDistanceUnits, state.continuousLevel, locale),
+      );
       // 银河年进度 + 太阳当前银盘面高度（L3 显示，P6 §3.1.2 垂直振荡指示）
       if (state.viewLevel === 'L3') {
         const progress = galacticYearProgress(state.simDays);
         const heightLy = sunGalacticPositionLy(state.simDays).y;
         const heightSign = heightLy >= 0 ? '+' : '−';
         setGalacticText(
-          `银河年进度：第 ${progress.orbits + 1} 圈 ${(progress.progress01 * 100).toFixed(1)}%（绕行 ${((progress.orbits + progress.progress01) * 360).toFixed(0)}°）｜银盘面高度 ${heightSign}${Math.abs(heightLy).toFixed(0)} ly`,
+          tf(locale, 'hud.galacticYear', {
+            orbit: progress.orbits + 1,
+            percent: (progress.progress01 * 100).toFixed(1),
+            deg: ((progress.orbits + progress.progress01) * 360).toFixed(0),
+            sign: heightSign,
+            height: Math.abs(heightLy).toFixed(0),
+          }),
         );
       } else {
         setGalacticText('');
       }
       // 太阳活动周期状态行（第 N 周期 · 相位名 · 黑子相对数示意）
-      setCycleLine(solarCycleStatusLine(solarCycleState(state.simDays)));
+      setCycleLine(solarCycleStatusLine(solarCycleState(state.simDays), locale));
     };
     update();
     const id = setInterval(update, 250);
     return () => clearInterval(id);
-  }, []);
+  }, [locale]);
 
   // R2-6 §6.1：首次进入 L3（锚点切换或连续缩放均更新 viewLevel）触发
   // 一次性 G 键引导；12 秒未操作自动收起
@@ -147,16 +183,23 @@ export function HudInfo(): JSX.Element {
     return () => clearTimeout(id);
   }, [galacticFrameTipVisible, dismissGalacticFrameTip]);
 
-  const selected = selectedBodyId ? getBodyInfoById(selectedBodyId) : undefined;
+  // i18n：信息面板值行按 locale 取目录（zh/en 各一份懒加载缓存）
+  const selected = selectedBodyId ? getBodyInfoById(selectedBodyId, locale) : undefined;
 
   return (
     <>
       <div className="absolute right-4 top-4 rounded-lg bg-space-panel px-4 py-3 text-right text-xs backdrop-blur">
-        <p className="text-sm font-medium text-space-accent">{CAMERA_VIEWS[viewLevel].nameZh}</p>
-        <p className="mt-1 text-gray-300">模拟时间：{simDateText}</p>
-        <p className="mt-1 text-gray-300">当前尺度：{scaleText}</p>
+        <p className="text-sm font-medium text-space-accent">{tr(VIEW_LEVEL_NAME_KEYS[viewLevel])}</p>
+        <p className="mt-1 text-gray-300">{trf('hud.simTime', { value: simDateText })}</p>
+        <p className="mt-1 text-gray-300">{trf('hud.scale', { value: scaleText })}</p>
         <p className="mt-1 text-gray-500">
-          {viewLevel === 'L3' ? galacticFrameHudLabel(galacticFrameMode) : REFERENCE_FRAMES[viewLevel]}
+          {viewLevel === 'L3'
+            ? tr(
+                galacticFrameMode === 'galactic-center'
+                  ? 'hud.frameHudCenter'
+                  : 'hud.frameHudFollow',
+              )
+            : tr(REFERENCE_FRAME_KEYS[viewLevel])}
         </p>
         {galacticText && <p className="mt-1 text-emerald-300/80">{galacticText}</p>}
         {viewLevel === 'L3' && (
@@ -166,25 +209,35 @@ export function HudInfo(): JSX.Element {
               onClick={toggleGalacticFrameMode}
               className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] hover:bg-white/20"
             >
-              🌀 参考系：{galacticFrameMode === 'galactic-center' ? '银心固定' : '跟随太阳系'}（G 切换）
+              🌀{' '}
+              {trf('hud.frameToggle', {
+                mode: tr(
+                  galacticFrameMode === 'galactic-center'
+                    ? 'hud.frameModeCenter'
+                    : 'hud.frameModeFollow',
+                ),
+              })}
             </button>
           </p>
         )}
         {rateClampNotice && (
-          <p className="mt-1 text-amber-300/90">⚠ 快周期卫星运动已减速显示（防闪烁）</p>
+          <p className="mt-1 text-amber-300/90">⚠ {tr('hud.rateClampSatellite')}</p>
         )}
         {planetRateClampNotice && (
-          <p className="mt-1 text-amber-300/90">⚠ 行星运动已减速显示（防闪烁）</p>
+          <p className="mt-1 text-amber-300/90">⚠ {tr('hud.rateClampPlanet')}</p>
         )}
         {followBodyId && (
           <p className="mt-1 text-cyan-300/90">
-            🔒 跟随模式：{getBodyInfoById(followBodyId)?.nameZh ?? followBodyId}
+            🔒{' '}
+            {trf('hud.followMode', {
+              name: displayBodyName(locale, getBodyInfoById(followBodyId), followBodyId),
+            })}
             <button
               type="button"
               onClick={() => setFollowBody(null)}
               className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] hover:bg-white/20"
             >
-              取消（Esc）
+              {tr('hud.followCancel')}
             </button>
           </p>
         )}
@@ -197,15 +250,17 @@ export function HudInfo(): JSX.Element {
           <div className="rounded-lg border border-emerald-400/40 bg-space-panel p-3 text-xs backdrop-blur">
             <div className="flex items-center justify-between gap-2">
               <p className="text-gray-200">
-                💡 按 <span className="font-semibold text-emerald-300">G</span>{' '}
-                切换<span className="text-emerald-300">银心固定视角</span>
-                ，俯瞰太阳系沿波浪轨道绕银心公转
+                💡 {tr('hud.gTipPrefix')}{' '}
+                <span className="font-semibold text-emerald-300">G</span>{' '}
+                {tr('hud.gTipMiddle')}
+                <span className="text-emerald-300">{tr('hud.gTipHighlight')}</span>
+                {tr('hud.gTipSuffix')}
               </p>
               <button
                 type="button"
                 onClick={dismissGalacticFrameTip}
                 className="shrink-0 text-gray-400 hover:text-white"
-                aria-label="关闭银心固定视角引导"
+                aria-label={tr('hud.gTipCloseAria')}
               >
                 ✕
               </button>
@@ -215,7 +270,7 @@ export function HudInfo(): JSX.Element {
               onClick={toggleGalacticFrameMode}
               className="mt-2 rounded bg-emerald-400/90 px-2 py-1 text-black hover:bg-emerald-300"
             >
-              🌀 立即切换（G）
+              🌀 {tr('hud.gTipNow')}
             </button>
           </div>
         )}
@@ -225,23 +280,31 @@ export function HudInfo(): JSX.Element {
           <div className="rounded-lg border border-sky-400/40 bg-space-panel p-3 text-xs backdrop-blur">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-sky-300">
-                🌌 银河系—仙女座合并演化
+                🌌 {tr('hud.mergerTitle')}
               </p>
               <button
                 type="button"
                 onClick={() => setMergerCardDismissed(true)}
                 className="text-gray-400 hover:text-white"
-                aria-label="关闭合并演化卡片"
+                aria-label={tr('hud.mergerCloseAria')}
               >
                 ✕
               </button>
             </div>
+            {/* i18n：合并阶段名与科学注记按 locale 取用（*_EN 常量族） */}
             <p className="mt-1 text-gray-200">
-              {mergerCard.stageZh}（合并时刻后约 {(mergerCard.tauMyr / 100).toFixed(1)}{' '}
-              亿年）
+              {mergerCard.stageText}
+              {trf('hud.mergerTau', {
+                yi: (mergerCard.tauMyr / 100).toFixed(1),
+                myr: Math.round(mergerCard.tauMyr),
+              })}
             </p>
-            <p className="mt-1 leading-4 text-gray-300">{MERGER_FATE_NOTE_ZH}</p>
-            <p className="mt-1 text-[10px] text-gray-500">{MERGER_SOURCE_NOTE_ZH}</p>
+            <p className="mt-1 leading-4 text-gray-300">
+              {pickLocalized(locale, MERGER_FATE_NOTE_ZH, MERGER_FATE_NOTE_EN)}
+            </p>
+            <p className="mt-1 text-[10px] text-gray-500">
+              {pickLocalized(locale, MERGER_SOURCE_NOTE_ZH, MERGER_SOURCE_NOTE_EN)}
+            </p>
           </div>
         )}
 
@@ -251,21 +314,23 @@ export function HudInfo(): JSX.Element {
         {supernovaNoticeInScope && supernovaNoticeVisible && activeSupernova && (
           <div className="rounded-lg border border-amber-400/40 bg-space-panel p-3 text-xs backdrop-blur">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-amber-300">💥 超新星爆发！</p>
+              <p className="text-sm font-semibold text-amber-300">💥 {tr('hud.snTitle')}</p>
               <button
                 type="button"
                 onClick={dismissSupernovaNotice}
                 className="text-gray-400 hover:text-white"
-                aria-label="关闭超新星通知"
+                aria-label={tr('hud.snCloseAria')}
               >
                 ✕
               </button>
             </div>
             <p className="mt-1 text-gray-300">
-              银河系旋臂内探测到核坍缩超新星（前身星约{' '}
-              {activeSupernova.progenitorMassSun.toFixed(0)} 倍太阳质量）
+              {trf('hud.snBody', { mass: activeSupernova.progenitorMassSun.toFixed(0) })}
             </p>
-            <p className="mt-1 text-[10px] text-gray-500">{SN_REAL_FREQUENCY_NOTE_ZH}</p>
+            {/* i18n：科学注记按 locale 取用 */}
+            <p className="mt-1 text-[10px] text-gray-500">
+              {pickLocalized(locale, SN_REAL_FREQUENCY_NOTE_ZH, SN_REAL_FREQUENCY_NOTE_EN)}
+            </p>
             <div className="mt-2 flex gap-2">
               <button
                 type="button"
@@ -275,7 +340,7 @@ export function HudInfo(): JSX.Element {
                 }}
                 className="rounded bg-amber-400/90 px-2 py-1 text-black hover:bg-amber-300"
               >
-                🚀 飞往观看
+                🚀 {tr('hud.flyBtn')}
               </button>
               <button
                 type="button"
@@ -284,7 +349,7 @@ export function HudInfo(): JSX.Element {
                 }}
                 className="rounded bg-white/10 px-2 py-1 hover:bg-white/20"
               >
-                查看详情
+                {tr('hud.detailBtn')}
               </button>
             </div>
           </div>
@@ -298,23 +363,29 @@ export function HudInfo(): JSX.Element {
           <div className="rounded-lg border border-orange-400/40 bg-space-panel p-3 text-xs backdrop-blur">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-orange-300">
-                ☀️ 太阳耀斑爆发（{solarFlareNoticeInfo.flareClass}
-                {solarFlareNoticeInfo.magnitude.toFixed(1)} 级）！
+                ☀️{' '}
+                {trf('hud.flareTitle', {
+                  cls: solarFlareNoticeInfo.flareClass,
+                  mag: solarFlareNoticeInfo.magnitude.toFixed(1),
+                })}
               </p>
               <button
                 type="button"
                 onClick={dismissSolarFlareNotice}
                 className="text-gray-400 hover:text-white"
-                aria-label="关闭耀斑通知"
+                aria-label={tr('hud.flareCloseAria')}
               >
                 ✕
               </button>
             </div>
             <p className="mt-1 text-gray-300">
-              活动区（黑子群附近）发生磁重联能量释放
-              {solarFlareNoticeInfo.cmeLinked && '，预计伴随日冕物质抛射（CME）'}
+              {tr('hud.flareBody')}
+              {solarFlareNoticeInfo.cmeLinked && tr('hud.flareCmeLinked')}
             </p>
-            <p className="mt-1 text-[10px] text-gray-500">{FLARE_ENERGY_NOTE_ZH}</p>
+            {/* i18n：科学注记按 locale 取用 */}
+            <p className="mt-1 text-[10px] text-gray-500">
+              {pickLocalized(locale, FLARE_ENERGY_NOTE_ZH, FLARE_ENERGY_NOTE_EN)}
+            </p>
             <div className="mt-2 flex gap-2">
               <button
                 type="button"
@@ -324,7 +395,7 @@ export function HudInfo(): JSX.Element {
                 }}
                 className="rounded bg-orange-400/90 px-2 py-1 text-black hover:bg-orange-300"
               >
-                🚀 飞往观看
+                🚀 {tr('hud.flyBtn')}
               </button>
               <button
                 type="button"
@@ -333,7 +404,7 @@ export function HudInfo(): JSX.Element {
                 }}
                 className="rounded bg-white/10 px-2 py-1 hover:bg-white/20"
               >
-                查看详情
+                {tr('hud.detailBtn')}
               </button>
             </div>
           </div>
@@ -346,23 +417,26 @@ export function HudInfo(): JSX.Element {
           <div className="rounded-lg border border-rose-400/40 bg-space-panel p-3 text-xs backdrop-blur">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-rose-300">
-                🌊 日冕物质抛射（CME）！约 {Math.round(cmeNoticeInfo.speedKmS)} km/s
+                🌊 {trf('hud.cmeTitle', { speed: Math.round(cmeNoticeInfo.speedKmS) })}
               </p>
               <button
                 type="button"
                 onClick={dismissCmeNotice}
                 className="text-gray-400 hover:text-white"
-                aria-label="关闭 CME 通知"
+                aria-label={tr('hud.cmeCloseAria')}
               >
                 ✕
               </button>
             </div>
             <p className="mt-1 text-gray-300">
-              大团等离子体从日冕喷出，呈扩张壳层飞离太阳
-              {cmeNoticeInfo.earthDirected && '——本次抛射朝向地球！'}
+              {tr('hud.cmeBody')}
+              {cmeNoticeInfo.earthDirected && tr('hud.cmeEarthDirected')}
             </p>
+            {/* i18n：科学注记按 locale 取用 */}
             {cmeNoticeInfo.earthDirected && (
-              <p className="mt-1 text-[10px] text-amber-300/90">⚠ {CME_GEOMAGNETIC_NOTE_ZH}</p>
+              <p className="mt-1 text-[10px] text-amber-300/90">
+                ⚠ {pickLocalized(locale, CME_GEOMAGNETIC_NOTE_ZH, CME_GEOMAGNETIC_NOTE_EN)}
+              </p>
             )}
             <div className="mt-2 flex gap-2">
               <button
@@ -373,7 +447,7 @@ export function HudInfo(): JSX.Element {
                 }}
                 className="rounded bg-rose-400/90 px-2 py-1 text-black hover:bg-rose-300"
               >
-                🚀 飞往观看
+                🚀 {tr('hud.flyBtn')}
               </button>
             </div>
           </div>
@@ -384,21 +458,18 @@ export function HudInfo(): JSX.Element {
           <div className="rounded-lg border border-emerald-400/40 bg-space-panel p-3 text-xs backdrop-blur">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-emerald-300">
-                🌌 CME 已抵达地球！
+                🌌 {tr('hud.cmeArrivalTitle')}
               </p>
               <button
                 type="button"
                 onClick={dismissCmeArrivalNotice}
                 className="text-gray-400 hover:text-white"
-                aria-label="关闭 CME 抵达通知"
+                aria-label={tr('hud.cmeArrivalCloseAria')}
               >
                 ✕
               </button>
             </div>
-            <p className="mt-1 text-gray-300">
-              等离子体云抵达地球磁层，扰动引发地磁暴——极区高层大气激发出增强极光
-              （示意）。
-            </p>
+            <p className="mt-1 text-gray-300">{tr('hud.cmeArrivalBody')}</p>
             <div className="mt-2 flex gap-2">
               <button
                 type="button"
@@ -408,7 +479,7 @@ export function HudInfo(): JSX.Element {
                 }}
                 className="rounded bg-emerald-400/90 px-2 py-1 text-black hover:bg-emerald-300"
               >
-                🚀 飞往地球观看
+                🚀 {tr('hud.flyEarthBtn')}
               </button>
             </div>
           </div>
@@ -422,27 +493,30 @@ export function HudInfo(): JSX.Element {
       {/* S3 §4.5：黑子群/日珥点选科普卡片（含"可容纳 N 个地球"动态换算） */}
       {selectedSolarFeature && (
         <div className="absolute bottom-4 left-1/2 w-80 -translate-x-1/2 rounded-lg border border-orange-300/30 bg-space-panel p-4 text-xs backdrop-blur">
+          {/* i18n：titleEn/descEn 数据驱动，按 locale 取用（缺失回退中文） */}
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-orange-300">
-              {selectedSolarFeature.titleZh}
+              {pickLocalized(locale, selectedSolarFeature.titleZh, selectedSolarFeature.titleEn)}
             </h3>
             <button
               type="button"
               onClick={() => setSelectedSolarFeature(null)}
               className="text-gray-400 hover:text-white"
-              aria-label="关闭特征卡片"
+              aria-label={tr('hud.featureCloseAria')}
             >
               ✕
             </button>
           </div>
-          <p className="leading-5 text-gray-300">{selectedSolarFeature.descZh}</p>
+          <p className="leading-5 text-gray-300">
+            {pickLocalized(locale, selectedSolarFeature.descZh, selectedSolarFeature.descEn)}
+          </p>
           {selectedSolarFeature.earthCount !== null && (
             <p className="mt-2 rounded bg-orange-400/10 px-2 py-1 text-orange-200">
-              🌍 该黑子约可容纳{' '}
+              🌍 {tr('hud.sunspotEarthsPre')}{' '}
               <span className="font-semibold">
                 {selectedSolarFeature.earthCount.toLocaleString('zh-CN')}
               </span>{' '}
-              个地球（按放大前真实尺寸换算）
+              {tr('hud.sunspotEarthsPost')}
             </p>
           )}
         </div>
@@ -457,31 +531,46 @@ export function HudInfo(): JSX.Element {
             return (
               <>
                 <div className="mb-2 flex items-center justify-between">
+                  {/* 标题：zh 中英并列、en 仅英文（hud.bodyTitle，实现差异登记） */}
                   <h3 className="text-sm font-semibold text-orange-300">
-                    {layer.nameZh}（{layer.name}）
+                    {trf('hud.bodyTitle', { nameZh: layer.nameZh, nameEn: layer.name })}
                   </h3>
                   <button
                     type="button"
                     onClick={() => setSunCutawayLayer(null)}
                     className="text-gray-400 hover:text-white"
-                    aria-label="关闭分层卡片"
+                    aria-label={tr('hud.layerCloseAria')}
                   >
                     ✕
                   </button>
                 </div>
+                {/* i18n：分层范围/温度/说明按 locale 取用（缺失回退中文） */}
                 <dl className="space-y-1 text-gray-300">
                   <div className="flex justify-between gap-2">
-                    <dt className="shrink-0">范围</dt>
-                    <dd className="text-right">{layer.rangeZh}</dd>
+                    <dt className="shrink-0">{tr('hud.layerRange')}</dt>
+                    <dd className="text-right">
+                      {pickLocalized(locale, layer.rangeZh, layer.rangeEn)}
+                    </dd>
                   </div>
                   <div className="flex justify-between gap-2">
-                    <dt className="shrink-0">温度</dt>
-                    <dd className="text-right">{layer.temperatureZh}</dd>
+                    <dt className="shrink-0">{tr('hud.layerTemp')}</dt>
+                    <dd className="text-right">
+                      {pickLocalized(locale, layer.temperatureZh, layer.temperatureEn)}
+                    </dd>
                   </div>
                 </dl>
-                <p className="mt-2 leading-5 text-gray-300">{layer.descriptionZh}</p>
+                <p className="mt-2 leading-5 text-gray-300">
+                  {pickLocalized(locale, layer.descriptionZh, layer.descriptionEn)}
+                </p>
+                {/* i18n：结构数据来源按 locale 取用 */}
                 <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-gray-500">
-                  数据来源：{SUN_STRUCTURE_DATA_SOURCE}
+                  {trf('hud.dataSource', {
+                    value: pickLocalized(
+                      locale,
+                      SUN_STRUCTURE_DATA_SOURCE,
+                      SUN_STRUCTURE_DATA_SOURCE_EN,
+                    ),
+                  })}
                 </p>
               </>
             );
@@ -490,65 +579,101 @@ export function HudInfo(): JSX.Element {
       )}
 
       {selected && (
-        <div className="absolute bottom-4 right-4 w-72 rounded-lg bg-space-panel p-4 text-xs backdrop-blur">
+        <div className="absolute bottom-4 right-4 flex max-h-[70vh] w-72 flex-col rounded-lg bg-space-panel p-4 text-xs backdrop-blur">
           <div className="mb-2 flex items-center justify-between">
+            {/* 标题：zh 中英并列、en 仅英文（hud.bodyTitle + displayBodyName 口径） */}
             <h3 className="text-sm font-semibold text-space-accent">
-              {selected.nameZh}（{selected.name}）
+              {trf('hud.bodyTitle', { nameZh: selected.nameZh, nameEn: selected.name })}
             </h3>
-            <button
-              type="button"
-              onClick={() => selectBody(null)}
-              className="text-gray-400 hover:text-white"
-              aria-label="关闭信息面板"
-            >
-              ✕
-            </button>
+            <span className="flex shrink-0 items-center gap-2">
+              {/* 收起/展开：仅折叠中间信息列表，标题栏与操作按钮区常驻 */}
+              <button
+                type="button"
+                onClick={() => setInfoCollapsed(!infoCollapsed)}
+                className="text-gray-400 hover:text-white"
+                aria-expanded={!infoCollapsed}
+                aria-label={tr(infoCollapsed ? 'hud.infoExpandAria' : 'hud.infoCollapseAria')}
+              >
+                {infoCollapsed ? '▸' : '▾'}
+              </button>
+              <button
+                type="button"
+                onClick={() => selectBody(null)}
+                className="text-gray-400 hover:text-white"
+                aria-label={tr('hud.infoCloseAria')}
+              >
+                ✕
+              </button>
+            </span>
           </div>
-          <p className="mb-2 text-[11px] text-gray-400">{selected.typeZh}</p>
-          <dl className="space-y-1 text-gray-300">
-            {selected.lines.map((line) => (
-              <div key={line.label} className="flex justify-between gap-2">
-                <dt className="shrink-0">{line.label}</dt>
-                <dd className="text-right">{line.value}</dd>
-              </div>
-            ))}
-            {/* S3 §4.4：太阳活动周期状态行（第 N 周期 · 相位名 · 黑子相对数） */}
-            {selected.id === 'sun' && cycleLine && (
-              <div key={cycleLine.label} className="flex justify-between gap-2">
-                <dt className="shrink-0 text-amber-300/90">{cycleLine.label}</dt>
-                <dd className="text-right text-amber-200/90">{cycleLine.value}</dd>
-              </div>
-            )}
-            {/* S2 §4.5：太阳当前活动事件行（耀斑级别/CME 速度/平静） */}
-            {selected.id === 'sun' &&
-              sunActivityStatusLines(
-                activeSolarFlare
-                  ? { class: activeSolarFlare.flareClass, magnitude: activeSolarFlare.magnitude }
-                  : null,
-                activeCme
-                  ? { speedKmS: activeCme.speedKmS, earthDirected: activeCme.earthDirected }
-                  : null,
-              ).map((line) => (
-                <div key={line.label} className="flex justify-between gap-2">
-                  <dt className="shrink-0 text-orange-300/90">{line.label}</dt>
-                  <dd className="text-right text-orange-200/90">{line.value}</dd>
-                </div>
-              ))}
-          </dl>
-          {/* S2 §4.1：剖面模式入口（信息面板侧） */}
-          {selected.id === 'sun' && (
-            <button
-              type="button"
-              onClick={() => setSunCutawayMode(!sunCutawayMode)}
-              className={`mt-2 w-full rounded px-2 py-1 text-[11px] ${
-                sunCutawayMode
-                  ? 'bg-orange-400/90 text-black hover:bg-orange-300'
-                  : 'bg-white/10 hover:bg-white/20'
+          {/* 中间信息区：grid-rows 过渡实现平滑收起；展开时超高（>70vh
+              扣除固定区）出现细窄滚动条（hud-scroll，globals.css） */}
+          <div
+            className={`grid min-h-0 transition-[grid-template-rows] duration-300 ${
+              infoCollapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]'
+            }`}
+          >
+            <div
+              className={`hud-scroll min-h-0 ${
+                infoCollapsed ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain pr-1'
               }`}
             >
-              {sunCutawayMode ? '🔬 关闭内部结构剖面' : '🔬 查看内部结构（1/4 剖面）'}
-            </button>
-          )}
+              {/* 类型行/标签列经 catalogText 直映射；值行留中文（B3 豁免登记） */}
+              <p className="mb-2 text-[11px] text-gray-400">
+                {localizeCatalogText(locale, selected.typeZh)}
+              </p>
+              <dl className="space-y-1 text-gray-300">
+                {selected.lines.map((line, index) => (
+                  // key 含序号：不同来源行可能同 label（防 React 同 key 复用串卡）
+                  <div key={`${index}-${line.label}`} className="flex justify-between gap-2">
+                    <dt className="shrink-0">{localizeCatalogText(locale, line.label)}</dt>
+                    <dd className="text-right">{line.value}</dd>
+                  </div>
+                ))}
+                {/* S3 §4.4：太阳活动周期状态行（第 N 周期 · 相位名 · 黑子相对数） */}
+                {selected.id === 'sun' && cycleLine && (
+                  <div key={cycleLine.label} className="flex justify-between gap-2">
+                    <dt className="shrink-0 text-amber-300/90">
+                      {localizeCatalogText(locale, cycleLine.label)}
+                    </dt>
+                    <dd className="text-right text-amber-200/90">{cycleLine.value}</dd>
+                  </div>
+                )}
+                {/* S2 §4.5：太阳当前活动事件行（耀斑级别/CME 速度/平静） */}
+                {selected.id === 'sun' &&
+                  sunActivityStatusLines(
+                    activeSolarFlare
+                      ? { class: activeSolarFlare.flareClass, magnitude: activeSolarFlare.magnitude }
+                      : null,
+                    activeCme
+                      ? { speedKmS: activeCme.speedKmS, earthDirected: activeCme.earthDirected }
+                      : null,
+                    locale,
+                  ).map((line) => (
+                    <div key={line.label} className="flex justify-between gap-2">
+                      <dt className="shrink-0 text-orange-300/90">
+                        {localizeCatalogText(locale, line.label)}
+                      </dt>
+                      <dd className="text-right text-orange-200/90">{line.value}</dd>
+                    </div>
+                  ))}
+              </dl>
+              {/* S2 §4.1：剖面模式入口（信息面板侧） */}
+              {selected.id === 'sun' && (
+                <button
+                  type="button"
+                  onClick={() => setSunCutawayMode(!sunCutawayMode)}
+                  className={`mt-2 w-full rounded px-2 py-1 text-[11px] ${
+                    sunCutawayMode
+                      ? 'bg-orange-400/90 text-black hover:bg-orange-300'
+                      : 'bg-white/10 hover:bg-white/20'
+                  }`}
+                >
+                  🔬 {sunCutawayMode ? tr('hud.cutawayOn') : tr('hud.cutawayOff')}
+                </button>
+              )}
+            </div>
+          </div>
           {/* 飞往 / 跟随（需求 3.2.3：点选后可飞往，可锁定任意天体跟随） */}
           <div className="mt-2 flex gap-2 border-t border-white/10 pt-2">
             <button
@@ -556,7 +681,7 @@ export function HudInfo(): JSX.Element {
               onClick={() => requestFlyTo(selected.id)}
               className="rounded bg-space-accent/90 px-2 py-1 text-[11px] text-black hover:bg-space-accent"
             >
-              🚀 飞往（F）
+              🚀 {tr('hud.flyShort')}
             </button>
             <button
               type="button"
@@ -569,7 +694,9 @@ export function HudInfo(): JSX.Element {
                   : 'bg-white/10 hover:bg-white/20'
               }`}
             >
-              {followBodyId === selected.id ? '🔓 取消跟随' : '🔒 跟随'}
+              {followBodyId === selected.id
+                ? `🔓 ${tr('hud.unfollow')}`
+                : `🔒 ${tr('hud.follow')}`}
             </button>
             {/* R2-5 §5.1-B：域序列内天体补"上一个/下一个"快捷入口
                 （与底部切换控件行为一致，按域路由，快捷键 [ / ]；
@@ -580,8 +707,8 @@ export function HudInfo(): JSX.Element {
                   type="button"
                   onClick={() => cycleScopeBody(-1)}
                   className="rounded bg-white/10 px-2 py-1 text-[11px] hover:bg-white/20"
-                  aria-label="序列上一个天体（快捷键 [）"
-                  title="上一个（[）"
+                  aria-label={tr('hud.prevAria')}
+                  title={tr('hud.prevTitle')}
                 >
                   ←
                 </button>
@@ -592,17 +719,21 @@ export function HudInfo(): JSX.Element {
                   type="button"
                   onClick={() => cycleScopeBody(1)}
                   className="rounded bg-white/10 px-2 py-1 text-[11px] hover:bg-white/20"
-                  aria-label="序列下一个天体（快捷键 ]）"
-                  title="下一个（]）"
+                  aria-label={tr('hud.nextAria')}
+                  title={tr('hud.nextTitle')}
                 >
                   →
                 </button>
               </span>
             )}
           </div>
-          <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-gray-500">
-            数据来源：{selected.dataSource}
-          </p>
+          {/* i18n：dataSource 随 en 目录本地化（含中文的署名已补英文版）；
+              收起态随信息列表一并隐藏，仅保留标题栏与操作按钮区 */}
+          {!infoCollapsed && (
+            <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-gray-500">
+              {trf('hud.dataSource', { value: selected.dataSource })}
+            </p>
+          )}
         </div>
       )}
     </>

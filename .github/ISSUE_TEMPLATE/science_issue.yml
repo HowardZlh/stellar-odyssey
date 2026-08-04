@@ -1,0 +1,29 @@
+name: 🔬 科学性问题 / Science Accuracy Issue
+description: 天体参数、轨道、比例、颜色等与真实数据不符 / Astrophysical parameters, orbits, scales, or colors that don't match real data
+labels: [science]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        本项目承诺"科学准确性优先"，所有艺术化处理均已登记（见 [docs/science-notes.md](../blob/main/docs/science-notes.md)）。
+        提交前请先确认该现象不在艺术化处理登记清单内。
+        We register every artistic liberty — please check the science notes first.
+  - type: textarea
+    id: issue
+    attributes:
+      label: 不符之处 / The discrepancy
+      description: 应用内呈现的是什么？真实数据应该是什么？/ What the app shows vs. what real data says
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: 数据来源 / Data source
+      description: 文献、数据库（SIMBAD/JPL/NED…）或链接 / Papers, databases, or links supporting the correction
+    validations:
+      required: true
+  - type: input
+    id: location
+    attributes:
+      label: 位置 / Where in the app
+      placeholder: "例如：L3 银河系视角 → 飞往参宿四 → 信息面板半径参数"

@@ -29,9 +29,14 @@ export const MILKY_WAY = {
   diskThicknessLy: 1000,
   // 4 条主旋臂，全文档统一命名
   armNames: ['英仙臂', '人马臂', '矩尺臂', '盾牌-半人马臂'] as const,
+  armNamesEn: ['Perseus Arm', 'Sagittarius Arm', 'Norma Arm', 'Scutum–Centaurus Arm'] as const,
   sagittariusAStarZh: '人马座A*（银心超大质量黑洞，约430万太阳质量）',
+  sagittariusAStarEn:
+    'Sagittarius A* — the supermassive black hole at the Galactic Center, ~4.3 million solar masses',
   dataSource:
     'NASA/JPL-Caltech 银河系结构图 / Gaia DR3；黑洞质量来源：GRAVITY Collaboration (2019)',
+  dataSourceEn:
+    'NASA/JPL-Caltech Milky Way structure map / Gaia DR3; black-hole mass from GRAVITY Collaboration (2019)',
 } as const;
 
 /**
@@ -54,6 +59,8 @@ export const LOCAL_GROUP_GALAXIES: readonly GalaxyData[] = [
     groupZh: '本星系群',
     descriptionZh:
       '本星系群最大的星系，正以约 110 km/s 接近银河系，预计约 45 亿年后与银河系碰撞合并',
+    descriptionEn:
+      'The largest galaxy in the Local Group, approaching the Milky Way at about 110 km/s; the two are expected to collide and merge in roughly 4.5 billion years',
     dataSource: NED_SOURCE,
   },
   {
@@ -68,6 +75,8 @@ export const LOCAL_GROUP_GALAXIES: readonly GalaxyData[] = [
     radialVelocityKmS: -179,
     groupZh: '本星系群',
     descriptionZh: '本星系群第三大星系，正面朝向地球的旋涡星系，与仙女座星系相距仅约 75 万光年',
+    descriptionEn:
+      'The third-largest galaxy in the Local Group, a face-on spiral as seen from Earth, only about 750,000 light-years from the Andromeda Galaxy',
     dataSource: NED_SOURCE,
   },
   {
@@ -82,6 +91,8 @@ export const LOCAL_GROUP_GALAXIES: readonly GalaxyData[] = [
     radialVelocityKmS: 262,
     groupZh: '本星系群（银河系卫星）',
     descriptionZh: '银河系最大的卫星星系，南半球肉眼可见，拥有活跃恒星形成区蜘蛛星云',
+    descriptionEn:
+      "The Milky Way's largest satellite galaxy, visible to the naked eye from the Southern Hemisphere, home to the Tarantula Nebula, an active star-forming region",
     dataSource: NED_SOURCE,
   },
   {
@@ -96,6 +107,8 @@ export const LOCAL_GROUP_GALAXIES: readonly GalaxyData[] = [
     radialVelocityKmS: 146,
     groupZh: '本星系群（银河系卫星）',
     descriptionZh: '银河系的矮不规则卫星星系，与大麦哲伦云之间由麦哲伦桥的气体流相连',
+    descriptionEn:
+      'A dwarf irregular satellite galaxy of the Milky Way, connected to the Large Magellanic Cloud by a stream of gas known as the Magellanic Bridge',
     dataSource: NED_SOURCE,
   },
   {
@@ -111,6 +124,8 @@ export const LOCAL_GROUP_GALAXIES: readonly GalaxyData[] = [
     groupZh: '本星系群（仙女座卫星）',
     descriptionZh:
       '仙女座星系的致密椭圆（cE）伴星系，可能是被 M31 潮汐剥离的星系核残骸；渲染位置随 M31 一同移动（示意偏移已登记）',
+    descriptionEn:
+      'A compact elliptical (cE) companion of the Andromeda Galaxy, possibly the remnant core of a galaxy tidally stripped by M31; rendered position moves together with M31 (schematic offset registered)',
     dataSource: NED_SOURCE,
   },
   {
@@ -126,6 +141,8 @@ export const LOCAL_GROUP_GALAXIES: readonly GalaxyData[] = [
     groupZh: '本星系群（仙女座卫星）',
     descriptionZh:
       '仙女座星系的矮椭圆伴星系，与 M32 分列 M31 两侧；渲染位置随 M31 一同移动（示意偏移已登记）',
+    descriptionEn:
+      'A dwarf elliptical companion of the Andromeda Galaxy, flanking M31 on the opposite side from M32; rendered position moves together with M31 (schematic offset registered)',
     dataSource: NED_SOURCE,
   },
   {
@@ -141,6 +158,8 @@ export const LOCAL_GROUP_GALAXIES: readonly GalaxyData[] = [
     groupZh: '本星系群（银河系卫星）',
     descriptionZh:
       '最靠近银河系的卫星星系之一（距银心约 5 万光年），正被银河系潮汐撕裂，其恒星流（人马座星流）环绕整个银河系',
+    descriptionEn:
+      "One of the closest satellite galaxies to the Milky Way (about 50,000 light-years from the Galactic Center), currently being tidally torn apart; its stellar stream (the Sagittarius Stream) wraps around the entire Milky Way",
     dataSource: NED_SOURCE,
   },
   {
@@ -156,6 +175,8 @@ export const LOCAL_GROUP_GALAXIES: readonly GalaxyData[] = [
     groupZh: '室女座星系团',
     descriptionZh:
       '室女座星系团中心的巨椭圆星系，中心超大质量黑洞 M87* 是首张黑洞照片的主角，并喷出数千光年长的相对论喷流',
+    descriptionEn:
+      'The giant elliptical galaxy at the heart of the Virgo Cluster; its central supermassive black hole M87* was the subject of the first-ever black hole image and launches a relativistic jet thousands of light-years long',
     dataSource: NED_SOURCE,
   },
 ] as const;
@@ -170,8 +191,10 @@ export const VIRGO_CLUSTER = {
 /** 拉尼亚凯亚超星系团（本星系群所属的超星系团，Tully et al. 2014） */
 export const LANIAKEA = {
   nameZh: '拉尼亚凯亚超星系团',
+  name: 'Laniakea Supercluster',
   diameterLy: 5.2e8,
   greatAttractorZh: '巨引源',
+  greatAttractorEn: 'Great Attractor',
 } as const;
 
 /**
@@ -272,6 +295,21 @@ export const GALAXY_MOTION_NOTE_ZH: Readonly<Record<string, string>> = {
   'sagittarius-dwarf':
     '沿极轨道缓慢绕银河系运动（周期约 9 亿年，示意近似）；潮汐流粒子沿轨道前后延伸，呼应"正被潮汐撕裂"',
   m87: '位置静态（星系团尺度运动未建模，属预期）',
+};
+
+/**
+ * English counterpart of GALAXY_MOTION_NOTE_ZH (same key set)
+ */
+export const GALAXY_MOTION_NOTE_EN: Readonly<Record<string, string>> = {
+  m31: 'Approaching the Milky Way along the dashed line at about 110 km/s (the flowing light dots on the dashed line indicate progress only; the flow speed is not a physical quantity)',
+  m33: 'Position static (its space motion is not modeled, as expected)',
+  lmc: 'Orbits the Milky Way along the thin orbit line (circular orbit, period about 1.5 billion years, schematic approximation); the Magellanic Stream is gas tidally stripped along its past trajectory (a diffuse particle band, not an orbit line)',
+  smc: 'Orbits the Milky Way along the thin orbit line (circular orbit, period about 2.1 billion years, schematic approximation)',
+  m32: 'Approaches the Milky Way together with M31 (schematic offset, as expected)',
+  m110: 'Approaches the Milky Way together with M31 (schematic offset, as expected)',
+  'sagittarius-dwarf':
+    'Slowly orbits the Milky Way on a polar orbit (period about 900 million years, schematic approximation); tidal-stream particles extend ahead of and behind it along the orbit, echoing "currently being tidally torn apart"',
+  m87: 'Position static (cluster-scale motion is not modeled, as expected)',
 };
 
 /**

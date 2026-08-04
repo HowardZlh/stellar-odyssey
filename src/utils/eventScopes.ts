@@ -1,14 +1,34 @@
 /**
- * 动态事件视角域隔离纯逻辑（R2-4 软隔离 + R3-3 硬隔离，
- * IMPROVEMENT_REQUIREMENTS_2 §R2-4 / IMPROVEMENT_REQUIREMENTS_3 §R3-3）
+ * 动态事件视角域隔离纯逻辑（R2-4 软隔离 + R3-3 硬隔离 + R5-8 判定基准修订，
+ * IMPROVEMENT_REQUIREMENTS_2 §R2-4 / IMPROVEMENT_REQUIREMENTS_3 §R3-3 /
+ * IMPROVEMENT_REQUIREMENTS_5 §R5-8）
  *
  * 各视角只呈现本视角域的动态事件：太阳耀斑/CME/CME 抵达属太阳系尺度
  * （L1/L2），超新星属银河系尺度（L3，R3-5 起不含 L4），银河系—仙女座
- * 合并预览属宇宙尺度（L4）。本模块建立事件 → 连续层级窗口的映射，并
+ * 合并预览属宇宙尺度（L4）。本模块建立事件 → 离散视角集合的映射，并
  * 提供门控判定，供组件按需接入：
  *
+ * **语义变迁登记（R5-8，2026-07）**：判定基准由 R2-4 的"连续层级窗口"
+ * （`continuousLevel` ∈ 闭区间——太阳 [1, 2.4] / 超新星 [2.5, 3.5] /
+ * 合并 [3.6, 4]）修订为"离散 `viewLevel` 视角集合"（太阳 {L1, L2} /
+ * 超新星 {L3} / 合并 {L4}），不再判断相机距离。根因：R3 层级锁定使
+ * 跟随/飞往巡游天体期间 `viewLevel` 锁定为域主层级而 `continuousLevel`
+ * 仍随相机距离同步——银河系巡游跟随造父一（距原点 ~190 单位）时
+ * continuousLevel≈2.2 落入原太阳事件窗口，HUD 显示"银河系视角"却弹
+ * 太阳事件通知（镜像缺陷：同场景超新星被判域外误丢弃/演示按钮误置灰）。
+ * 改判 viewLevel 后门控与用户所见视角标签严格一致；原连续窗口常量
+ * （SOLAR_EVENT_MAX_LEVEL / SUPERNOVA_EVENT_MIN_LEVEL /
+ * SUPERNOVA_EVENT_MAX_LEVEL / MERGER_EVENT_MIN_LEVEL）随之废弃删除。
+ * 自由缩放（无跟随）时 viewLevel 本就随距离同步离散层级
+ * （utils/scale.ts discreteLevelFromContinuous，边界 1.5/2.5/3.5），
+ * 行为基本不变；等效边界两处微调（用户已确认，§8.2-B）：太阳事件上界
+ * 2.4 → 2.5（消除原 2.4–2.5"事件已域外但特效仍满值"空窗）、合并预览
+ * 下界 3.6 → 3.5。特效 LOD 淡入淡出仍由连续层级驱动（SunActivity
+ * trapezoid(0.5, 0.9, 2.4, 3.0)、Supernova snFadeWeight(2.5, 2.9, 3.5,
+ * 4.0) 不动，保持缩放平滑；已知边界差异登记于需求文档 §8.2-A）。
+ *
  * - 自动触发域：`SunActivity.tsx`（耀斑/CME 泊松触发）与 `Supernova.tsx`
- *   （超新星泊松触发）显式限定触发层级——此前耀斑/CME 在 L3/L4 停摆仅是
+ *   （超新星泊松触发）显式限定触发视角——此前耀斑/CME 在 L3/L4 停摆仅是
  *   `timeJumped`（Δ>50 天）守卫在高时间压缩比下的副作用，非显式设计；
  *   超新星在 L1/L2 不触发也仅是时间压缩比过小（ΔMyr≈0）的概率副作用。
  * - 通知可见域：`HudInfo.tsx` 事件通知列按域过滤——域外隐藏完整通知卡片
@@ -19,104 +39,70 @@
  *   模拟时间压缩比无关、不受暂停影响——丢弃语义随视角而非模拟时间）后，
  *   活跃事件被 store.tick 直接丢弃（清空全部关联状态、超新星不归档遗迹、
  *   合并预览恢复预览前时间）；回到域内不恢复，等待下一次自然触发。
- *   锚点切换/飞往运镜期间计时豁免（运镜路径瞬间穿越域边界不误丢弃，
- *   尤其合并预览启动自动切 L4 的 2 秒运镜途中连续层级 <3.6）。
+ *   锚点切换/飞往运镜期间计时豁免语义不变（R5-8 后按 1-4 显式切换时
+ *   viewLevel 即时变更而相机仍在运镜，豁免窗口继续防误丢弃）。
  *
- * 三层窗口当前取值一致（同一事件同一窗口），但语义独立成函数，便于
- * 未来分层微调与逐层单测（需求 §4.1-D"三层窗口"）。
- *
- * 窗口边界依据（与既有渲染门控对齐，避免"通知可见但特效不可见"）：
- * - 太阳活动事件 ≤2.4：SunActivity levelWeight 梯形平台上缘
- *   trapezoidWeight(level, 0.5, 0.9, 2.4, 3.0) 的满值段终点；
- * - 超新星 [2.5, 3.5]（R3-5 收窄，原 ≥2.5 含 L4）：下缘为 Supernova
- *   snFadeWeight 淡入起点（L2/L3 边界），上缘为其满值平台终点——超新星
- *   为单恒星尺度事件，宇宙视角（L4）下星系间尺度不宜再弹超新星通知，
- *   L4 下活跃超新星按 R3-3 硬隔离丢弃（特效淡出窗口同步收窄至 L4 锚点
- *   4.0 处归零，与太阳事件"域上缘=平台终点、淡出延伸到下一锚点"模式一致）；
- * - 合并预览 ≥3.6：L4 视角段（星系间距/辉光演化仅宇宙视角可辨）；
- *   超新星域上缘 3.5 与合并预览下缘 3.6 互补无重叠。
+ * 三层门控当前取值一致（同一事件同一视角集合），但语义独立成函数，
+ * 便于未来分层微调与逐层单测（R2-4 需求 §4.1-D"三层窗口"结构保留）。
  */
+
+import type { ViewLevel } from '@/types';
 
 /** 受视角域门控的动态事件类别 */
 export type ScopedEventKind = 'flare' | 'cme' | 'cmeArrival' | 'supernova' | 'merger';
 
-/** 太阳活动事件（耀斑/CME/CME 抵达）视角域上缘（含），对齐 SunActivity 平台段 */
-export const SOLAR_EVENT_MAX_LEVEL = 2.4;
-
-/** 超新星事件视角域下缘（含），对齐 Supernova 淡入起点 */
-export const SUPERNOVA_EVENT_MIN_LEVEL = 2.5;
-
 /**
- * 超新星事件视角域上缘（含，R3-5）：对齐 Supernova snFadeWeight 满值
- * 平台终点——银河系视角（L3）专属事件，宇宙视角（L4）域外丢弃。
+ * 事件 → 离散视角集合映射（R5-8 §8.2-A 数据层）：
+ * - 太阳活动事件（耀斑/CME/CME 抵达）→ {L1, L2}（太阳系尺度）
+ * - 超新星 → {L3}（银河系视角专属，R3-5 收窄语义保持）
+ * - 合并预览 → {L4}（宇宙视角专属）
  */
-export const SUPERNOVA_EVENT_MAX_LEVEL = 3.5;
-
-/** 合并预览视角域下缘（含），L4 视角段 */
-export const MERGER_EVENT_MIN_LEVEL = 3.6;
-
-/** 连续层级全域边界（store 将 continuousLevel 钳制在 [1, 4]） */
-const LEVEL_FLOOR = 1;
-const LEVEL_CEIL = 4;
-
-/** 事件视角域窗口（连续层级闭区间） */
-export interface EventScopeWindow {
-  readonly minLevel: number;
-  readonly maxLevel: number;
-}
-
-const EVENT_SCOPE_WINDOWS: Record<ScopedEventKind, EventScopeWindow> = {
-  flare: { minLevel: LEVEL_FLOOR, maxLevel: SOLAR_EVENT_MAX_LEVEL },
-  cme: { minLevel: LEVEL_FLOOR, maxLevel: SOLAR_EVENT_MAX_LEVEL },
-  cmeArrival: { minLevel: LEVEL_FLOOR, maxLevel: SOLAR_EVENT_MAX_LEVEL },
-  supernova: { minLevel: SUPERNOVA_EVENT_MIN_LEVEL, maxLevel: SUPERNOVA_EVENT_MAX_LEVEL },
-  merger: { minLevel: MERGER_EVENT_MIN_LEVEL, maxLevel: LEVEL_CEIL },
+const EVENT_SCOPE_LEVELS: Record<ScopedEventKind, readonly ViewLevel[]> = {
+  flare: ['L1', 'L2'],
+  cme: ['L1', 'L2'],
+  cmeArrival: ['L1', 'L2'],
+  supernova: ['L3'],
+  merger: ['L4'],
 };
 
-/** 事件 → 视角域窗口映射（§4.1-A 数据层） */
-export function eventScopeWindow(kind: ScopedEventKind): EventScopeWindow {
-  return EVENT_SCOPE_WINDOWS[kind];
+/** 事件 → 视角域集合映射（§8.2-A 数据层，只读） */
+export function eventScopeLevels(kind: ScopedEventKind): readonly ViewLevel[] {
+  return EVENT_SCOPE_LEVELS[kind];
 }
 
 /**
- * 事件是否处于视角域窗口内（闭区间判定，边界含）。
- * 三层门控共用的基础判定；非有限层级视为编程错误直接抛出。
+ * 事件是否处于视角域内（离散视角集合成员判定，R5-8）。
+ * 三层门控共用的基础判定；层级来源必须为离散 `viewLevel`
+ * （store 单一语义，类型收窄为 ViewLevel 杜绝再传 continuousLevel 分叉）。
  */
-export function eventInScope(kind: ScopedEventKind, continuousLevel: number): boolean {
-  if (!Number.isFinite(continuousLevel)) {
-    throw new RangeError(`连续层级必须为有限数，收到 ${continuousLevel}`);
-  }
-  const { minLevel, maxLevel } = EVENT_SCOPE_WINDOWS[kind];
-  return continuousLevel >= minLevel && continuousLevel <= maxLevel;
+export function eventInScope(kind: ScopedEventKind, viewLevel: ViewLevel): boolean {
+  return EVENT_SCOPE_LEVELS[kind].includes(viewLevel);
 }
 
 /**
- * 自动触发域（§4.1-D）：泊松自动触发仅在域内进行。
+ * 自动触发域（R2-4 §4.1-D）：泊松自动触发仅在域内进行。
  * 域外事件状态机照常推进（衰减/归档不受影响），仅新触发被抑制。
  */
-export function eventAutoTriggerAllowed(
-  kind: ScopedEventKind,
-  continuousLevel: number,
-): boolean {
-  return eventInScope(kind, continuousLevel);
+export function eventAutoTriggerAllowed(kind: ScopedEventKind, viewLevel: ViewLevel): boolean {
+  return eventInScope(kind, viewLevel);
 }
 
 /**
- * 通知可见域（§4.1-B）：域外隐藏完整通知卡片（折叠为一行小字提醒），
- * 通知标志位不改动——回到域内且事件仍活跃时通知自动恢复。
+ * 通知可见域（R2-4 §4.1-B）：域外隐藏完整通知卡片，通知标志位不改动——
+ * 回到域内且事件仍活跃时通知自动恢复。
  */
 export function eventNoticeVisibleInScope(
   kind: ScopedEventKind,
-  continuousLevel: number,
+  viewLevel: ViewLevel,
 ): boolean {
-  return eventInScope(kind, continuousLevel);
+  return eventInScope(kind, viewLevel);
 }
 
 /**
- * 演示按钮可用域（§4.1-C）：域外置灰禁用 + tooltip 提示。
+ * 演示按钮可用域（R2-4 §4.1-C）：域外置灰禁用 + tooltip 提示。
  */
-export function eventDemoEnabled(kind: ScopedEventKind, continuousLevel: number): boolean {
-  return eventInScope(kind, continuousLevel);
+export function eventDemoEnabled(kind: ScopedEventKind, viewLevel: ViewLevel): boolean {
+  return eventInScope(kind, viewLevel);
 }
 
 /** 事件所属视角域的中文名（tooltip / 折叠提醒用） */
@@ -139,9 +125,9 @@ export function eventDemoDisabledHintZh(kind: ScopedEventKind): string {
 }
 
 /**
- * 丢弃宽限期（R3-3 §3.1-A，真实秒）：连续层级离开事件视角域窗口并
- * 持续超过该时长才执行丢弃；宽限期内折返域内则计时清零、事件保留
- * （防连续滚轮缩放瞬间穿越域边界误丢弃，用户确认项 3）。
+ * 丢弃宽限期（R3-3 §3.1-A，真实秒）：离散视角（viewLevel，R5-8）离开
+ * 事件视角域并持续超过该时长才执行丢弃；宽限期内折返域内则计时清零、
+ * 事件保留（防连续滚轮缩放瞬间穿越域边界误丢弃，用户确认项 3）。
  */
 export const EVENT_DISCARD_GRACE_SEC = 1;
 
@@ -164,8 +150,9 @@ export const FLY_TO_DISCARD_EXEMPT_SEC = 2.5;
  *
  * 运镜豁免通过将计时器置为负豁免窗口实现（store 在 viewTransitionId /
  * flyToRequestId 变更时写入 -EXEMPT_SEC），累加自负值起步，运镜期间
- * 到不了宽限阈值。锚点间过渡路径的连续层级单调，域边界至多穿越一次，
- * "域内归零取消剩余豁免"不会导致运镜中途误丢弃（登记于文件头）。
+ * 到不了宽限阈值。R5-8 后域判定基于离散 viewLevel（显式切换即时生效、
+ * 单帧至多翻转一次），"域内归零取消剩余豁免"不会导致运镜中途误丢弃
+ * （登记于文件头）。
  */
 export function outOfScopeElapsedUpdate(
   prevElapsedSec: number,

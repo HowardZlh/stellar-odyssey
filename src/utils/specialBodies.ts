@@ -115,6 +115,50 @@ export function pulsarPulseIntensity(tSec: number, periodSec: number): number {
   return Math.pow(Math.abs(Math.cos(angle)), PULSAR_PULSE_SHARPNESS);
 }
 
+/* ── 脉冲星射束轻量体积锥密度塑形（R4-20，shader GLSL 镜像的 CPU 纯函数） ── */
+
+/** 射束轴向密度衰减指数（根部亮 → 尖端软淡出，越大衰减越快） */
+export const PULSAR_BEAM_AXIAL_EXPONENT = 1.6;
+
+/** 射束边缘软化指数（弦长近似的锐化档：1 = 纯物理弦长，>1 边缘更软） */
+export const PULSAR_BEAM_EDGE_EXPONENT = 1.3;
+
+/**
+ * 射束轴向密度衰减（R4-20：轻量体积锥沿锥轴密度分布）
+ *
+ * 根部（y01=0，近脉冲星端）密度 1，沿轴幂律软衰减至尖端 0——替代原
+ * smoothstep 线性观感的更长尾部（等离子体沿磁轴外流密度递减近似）。
+ * shader 侧同式镜像（单测锚定端点/单调性）。
+ *
+ * @param y01 沿锥轴归一化坐标（0 = 根部，1 = 尖端；域外钳制）
+ */
+export function pulsarBeamAxial01(y01: number): number {
+  if (!Number.isFinite(y01)) {
+    throw new RangeError(`轴向坐标必须为有限数，收到 ${y01}`);
+  }
+  const t = Math.min(1, Math.max(0, y01));
+  return Math.pow(1 - t, PULSAR_BEAM_AXIAL_EXPONENT);
+}
+
+/**
+ * 射束边缘软化系数（R4-20：视线穿越圆锥截面的弦长近似）
+ *
+ * 圆截面几何：视线在投影偏移 d 处穿越半径 R 圆的弦长 = 2R·cosφ，而
+ * 表面法线与视线夹角满足 cosφ = |n·v| → 弦长 ∝ |n·v|。以表面着色近似
+ * 体积积分：轮廓边缘（n⊥v）弦长 → 0 平滑消失（无硬边锥），中心线
+ * 弦长最长最亮。指数 >1 进一步软化边缘（艺术化档登记）。
+ * shader 侧同式镜像（单测锚定对称性/端点/单调性）。
+ *
+ * @param cosNV 表面法线与视线方向夹角余弦（[-1,1] 域外钳制；正背面对称）
+ */
+export function pulsarBeamChord01(cosNV: number): number {
+  if (!Number.isFinite(cosNV)) {
+    throw new RangeError(`法线视线夹角余弦必须为有限数，收到 ${cosNV}`);
+  }
+  const a = Math.min(1, Math.abs(cosNV));
+  return Math.pow(a, PULSAR_BEAM_EDGE_EXPONENT);
+}
+
 /**
  * 吸积盘开普勒较差旋转角速度（相对值）
  *

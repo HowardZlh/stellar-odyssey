@@ -143,6 +143,14 @@ export const GALACTIC_FRAME_TRANSITION_SECONDS = 2;
 /**
  * 推进参考系切换的线性过渡进度（0→1），钳制在 [0,1]。
  *
+ * 到达目标值后恒稳定（bug 修复：原实现 current===target===1 时
+ * `target > current` 为 false 落入递减分支，1 − step 后下一帧又加回，
+ * 形成永久的逐帧极限环 1 ↔ 1−delta/seconds——所有停在 1 的过渡权重
+ * （细节层淡入 opacity01、聚焦提升、参考系切换等）以 ~3% 振幅 30Hz
+ * 振荡；黑洞透镜层 uFade 为双权重乘积、振幅翻倍且作用于最亮 HDR 内容
+ * 经 Bloom 放大，呈整屏一亮一暗频闪。target===current 直接返回即修复；
+ * 到达 0 无此问题——递减分支 max(0, 0−step)=0 本就稳定）。
+ *
  * @param current 当前线性进度 ∈ [0,1]
  * @param target  目标线性进度（0 或 1）
  * @param deltaSeconds 帧时长（秒）
@@ -157,6 +165,9 @@ export function advanceFrameTransition(
 ): number {
   if (!(seconds > 0)) {
     throw new RangeError(`过渡时长必须为正数，收到 ${seconds}`);
+  }
+  if (target === current) {
+    return current;
   }
   const step = deltaSeconds / seconds;
   if (target > current) {

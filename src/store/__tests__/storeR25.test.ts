@@ -57,21 +57,22 @@ describe('cycleScopeBody：L3 银河系域（§5.1-B）', () => {
     expect(useSimulationStore.getState().followBodyId).toBe('heliopause');
   });
 
-  it('遍历一整圈（15 步）回到起点且每步均产生飞往请求', () => {
-    useSimulationStore.setState({ followBodyId: 'sun' });
-    for (let i = 0; i < 15; i += 1) {
+  it('遍历一整圈（14 步，sun 已移出序列）回到起点且每步均产生飞往请求', () => {
+    useSimulationStore.setState({ followBodyId: 'heliopause' });
+    for (let i = 0; i < 14; i += 1) {
       useSimulationStore.getState().cycleScopeBody(1);
     }
     const s = useSimulationStore.getState();
-    expect(s.followBodyId).toBe('sun');
-    expect(s.flyToRequestId).toBe(15);
+    expect(s.followBodyId).toBe('heliopause');
+    expect(s.flyToRequestId).toBe(14);
   });
 
   it('飞抵太阳后（连续层级读数降低）仍按银河系域继续且离散层级锁定 L3（R3）', () => {
-    // 模拟飞抵太阳后相机贴近：连续层级 1.2、跟随 sun（巡游域保持 galaxy）
+    // 模拟飞抵太阳后相机贴近：连续层级 1.2、跟随 sun（巡游域保持 galaxy；
+    // sun 已移出序列 → 点击"下一个"回落到域记忆天体，默认 sgr-a-star）
     useSimulationStore.setState({ continuousLevel: 1.2, followBodyId: 'sun' });
     useSimulationStore.getState().cycleScopeBody(1);
-    expect(useSimulationStore.getState().followBodyId).toBe('heliopause');
+    expect(useSimulationStore.getState().followBodyId).toBe('sgr-a-star');
     expect(useSimulationStore.getState().viewLevel).toBe('L3');
   });
 

@@ -11,6 +11,7 @@
 import type { JSX } from 'react';
 import { useEffect, useState } from 'react';
 
+import { useLocaleInit, useT } from '@/hooks/useI18n';
 import { NOT_FOUND_REDIRECT_DELAY_SEC, countdownNext, redirectHome } from '@/utils/notFound';
 import { createSeededRandom } from '@/utils/random';
 
@@ -44,6 +45,9 @@ const STARS: readonly Star[] = ((): readonly Star[] => {
 })();
 
 export default function NotFound(): JSX.Element {
+  // i18n：404 页独立于主场景，同样按 ?lang= > localStorage > zh 初始化
+  useLocaleInit();
+  const tr = useT();
   const [remainingSec, setRemainingSec] = useState(NOT_FOUND_REDIRECT_DELAY_SEC);
 
   // 每真实秒推进倒计时（下钳 0）
@@ -93,19 +97,28 @@ export default function NotFound(): JSX.Element {
         <p className="bg-gradient-to-b from-space-accent to-indigo-300 bg-clip-text text-8xl font-bold tracking-widest text-transparent">
           404
         </p>
-        <h1 className="mt-4 text-xl font-semibold text-gray-100">你已漂流到已知宇宙之外</h1>
-        <p className="mt-3 text-sm leading-relaxed text-gray-400">
-          这片坐标上观测不到任何天体——页面不存在，或已被引力弹弓抛向了别处。
-        </p>
+        <h1 className="mt-4 text-xl font-semibold text-gray-100">{tr('notFound.title')}</h1>
+        <p className="mt-3 text-sm leading-relaxed text-gray-400">{tr('notFound.body')}</p>
         <p className="mt-6 text-xs text-gray-500" role="status">
-          <span className="font-mono text-space-accent">{remainingSec}</span> 秒后自动返回星图
+          {tr('notFound.autoReturn')
+            .split('{sec}')
+            .map((part, i) =>
+              i === 0 ? (
+                <span key="pre">{part}</span>
+              ) : (
+                <span key="post">
+                  <span className="font-mono text-space-accent">{remainingSec}</span>
+                  {part}
+                </span>
+              ),
+            )}
         </p>
         <button
           type="button"
           onClick={() => redirectHome()}
           className="mt-4 rounded-lg border border-space-accent/60 bg-space-panel px-6 py-2 text-sm text-space-accent backdrop-blur transition-colors hover:bg-space-accent/20"
         >
-          立即返回星图
+          {tr('notFound.returnNow')}
         </button>
       </div>
     </main>

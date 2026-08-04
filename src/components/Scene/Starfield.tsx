@@ -21,6 +21,7 @@ import * as THREE from 'three';
 import { useSimulationStore } from '@/store';
 import { createSeededRandom } from '@/utils/random';
 import { twinkleAmplitude, twinkleFrequencyHz, twinkleLevelGain } from '@/utils/starTwinkle';
+import { UNIVERSE_RENDER_ORDER } from '@/utils/universeRenderOrder';
 
 /** 恒星温度色板（O/B 蓝 → M 红，需求 4.1/4.2） */
 const STAR_COLORS = ['#9bb0ff', '#aabfff', '#cad7ff', '#f8f7ff', '#fff4ea', '#ffd2a1', '#ffcc6f'];
@@ -158,5 +159,14 @@ export function Starfield({
     material.uniforms.uTime.value = state.clock.elapsedTime;
   });
 
-  return <points geometry={geometry} material={material} />;
+  // L4 透明层注册表（频闪修复）：星场登记 −1 = 透明队列最先绘制——
+  // 星场 shell 几何上最远，但对象原点在 (0,0,0) 深度键具欺骗性（实测
+  // 曾与银晕加性粒子深度键交叉、draw 顺序翻转），负值锁定最先
+  return (
+    <points
+      geometry={geometry}
+      material={material}
+      renderOrder={UNIVERSE_RENDER_ORDER.starfield}
+    />
+  );
 }

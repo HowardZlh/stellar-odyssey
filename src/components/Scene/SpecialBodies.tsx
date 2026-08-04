@@ -5,6 +5,7 @@ import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { ClampedHtmlLabel } from "@/components/Scene/ClampedHtmlLabel";
+import { BodyNameText, LabelText } from "@/components/Scene/LocalizedLabelText";
 import * as THREE from "three";
 import type { SpecialBodyData, Vec3 } from "@/types";
 import {
@@ -34,24 +35,110 @@ import {
   blueGiantFlicker,
   cepheidBrightness,
   nebulaExpansionScale,
+  PULSAR_BEAM_AXIAL_EXPONENT,
+  PULSAR_BEAM_EDGE_EXPONENT,
   pulsarBeamAngle,
   pulsarPulseIntensity,
   redGiantPulsation,
   stellarWindPhase01,
 } from "@/utils/specialBodies";
 import {
-  NEAR_VIEW_TRANSITION_SECONDS,
+  NEAR_VIEW_PARTICLE_INCREMENTS,
   nearViewEnterDistanceUnits,
-  nearViewGateUpdate,
+  nearViewExitDistanceUnits,
   nebulaPuffLayout,
 } from "@/utils/nearView";
+import { estimateGpuBytes, type DetailLayerSpec } from "@/utils/detailLayer";
+import { useDetailLayer } from "@/hooks/useDetailLayer";
 import {
+  CRAB_PWN_COLOR,
+  CRAB_PWN_JET_LENGTH_FACTOR,
+  CRAB_PWN_TORUS_RADIUS_FACTOR,
+  crabBaseLayerFactor,
+  crabCoreBoostFactor,
+  crabNearLayerFactor,
+  crabVolumeBoxEdgeUnits,
+  crabVolumeDetailLayerSpec,
+  crabVolumeLayerConfig,
+  horseheadCurtainFactor,
+  horseheadNearLayerFactor,
+  horseheadVolumeBoxEdgeUnits,
+  horseheadVolumeDetailLayerSpec,
+  horseheadVolumeLayerConfig,
+  m57BillboardFactor,
+  m57NearLayerFactor,
+  m57VolumeBoxEdgeUnits,
+  m57VolumeDetailLayerSpec,
+  m57VolumeLayerConfig,
+  orionBaseLayerFactor,
+  orionPuffFactor,
+  orionVolumeBoxEdgeUnits,
+  orionVolumeDetailLayerSpec,
+  orionVolumeLayerConfig,
+  wr124CoreBoostFactor,
+  wr124ShellMeshFactor,
+  wr124VolumeBoxEdgeUnits,
+  wr124VolumeDetailLayerSpec,
+  wr124VolumeLayerConfig,
+} from "@/utils/nebulaVolumeScene";
+import {
+  CRAB_TORUS_INNER_RHO01,
+  CRAB_TORUS_INNER_SIGMA,
+  CRAB_TORUS_RING_RHO01,
+  CRAB_TORUS_RING_SIGMA,
+} from "@/utils/nebulaVolume";
+import { NebulaVolumeLayer } from "@/components/Scene/NebulaVolumeLayer";
+import { RelativisticJet } from "@/components/Scene/ExtragalacticObjects";
+import {
+  blackHoleLensedConfig,
+  blackHoleLensingDetailLayerSpec,
+  blackHoleRsWorldUnits,
+} from "@/utils/blackHoleScene";
+import { BlackHoleLensedLayer } from "@/components/Scene/BlackHoleLensedLayer";
+import {
+  createChromosphereRingCanvas,
   createDiffractionSpikeCanvas,
   createGlowSpriteCanvas,
 } from "@/components/CelestialBody/proceduralTextures";
+import {
+  BETELGEUSE_SH_AMPLITUDE_DEFAULT,
+  CHROMOSPHERE_RING_OPACITY_MAX,
+  STAR_SPIKE_OPACITY_MAX,
+  chromosphereRGB,
+  chromosphereRingSpriteScale,
+  rgb01ToCss,
+  starSpikeSpriteScale,
+  starSpikeWindow01,
+} from "@/utils/stellarNearView";
 import { getSoftPointTexture } from "@/components/CelestialBody/sharedTextures";
 import { getNebulaTexture } from "@/components/CelestialBody/nebulaTextures";
 import { stellarSphereSegments } from "@/utils/stellarSurface";
+import { blackbodyRGB, stellarSurfacePhysics } from "@/utils/starPhysics";
+import { useStarParams } from "@/hooks/useStarParams";
+import { usePleiadesCatalog } from "@/hooks/usePleiadesCatalog";
+import {
+  PLEIADES_BASE_STAR_COUNT,
+  buildPleiadesStarAttributes,
+  pleiadesCatalogDetailLayerSpec,
+  pleiadesNamedStarPlacements,
+  pleiadesReflectionNebulaLayout,
+  sortPleiadesStarsByV,
+} from "@/utils/pleiadesCatalog";
+import {
+  PleiadesCatalogPoints,
+  PleiadesNamedStars,
+  PleiadesReflectionNebula,
+  pleiadesSkyViewQuaternion,
+} from "@/components/Scene/PleiadesCluster";
+import { useM13Profile } from "@/hooks/useM13Profile";
+import {
+  M13_BASE_STAR_COUNT,
+  M13_NEAR_STAR_COUNT,
+  buildKingRadiusTable01,
+  buildM13ClusterAttributes,
+  kingShapeFromProfile,
+  type M13ClusterAttributes,
+} from "@/utils/m13Cluster";
 
 /**
  * 特殊天体 LOD 淡入淡出（需求 3.1.5 通用要求）：
@@ -79,44 +166,74 @@ interface BodyProps {
 }
 
 /**
- * 恒星表面 shader（P6 §3.2）：对流颗粒 fBm（缓慢演化）+ 边缘昏暗（limb
- * darkening）+ 色温梯度（边缘偏暗红）。GLSL 与 utils/stellarSurface.ts 纯函数
- * 镜像一致（valueNoise/limbDarkening/色温梯度公式），单测覆盖 CPU 侧。
+ * 恒星表面 shader（P6 §3.2 基线 + R4-6 物理化增强）：
+ * - 基色 = `blackbodyRGB(teffK)` 黑体色温（替换 P6 硬编码颜色，utils/starPhysics）
+ * - 临边昏暗系数 u 按光谱型档位注入（`limbDarkeningU`，Claret 2000 近似档）
+ * - 噪声频率（cellScale）按 `granulationCellScale(radiusRsun)` 调制
+ *   （巨星颗粒大而少、矮星细密）
+ * - 对流时变：uTime 驱动 fBm 噪声域缓慢漂移（首层视觉周期 ≈20 s，
+ *   落在需求 20–60 s 区间，登记）+ 自转流动（uSpin 绕 y 轴旋转采样域；
+ *   各恒星无既有自转参数，取缓慢默认值为可视化选择，登记）
+ * - log depth buffer 兼容（附录 A §5，P6 遗留补齐，Starfield.tsx 先例）
+ * - R4-18：可选低阶球谐（l ≤ 3）非对称巨对流胞叠加（uShAmp/uShSpeed，
+ *   参宿四专属；默认 0 关闭，其余恒星行为零回退）
+ *
+ * GLSL 与 utils/stellarSurface.ts / utils/stellarNearView.ts 纯函数镜像一致
+ * （valueNoise/limbDarkening/色温梯度/球谐扰动公式），单测覆盖 CPU 侧。
  *
  * 视觉夸大登记：对流演化速率加速、色温梯度为简化 RGB 近似（见 stellarSurface 文件头）。
  * 门控：仅 L3 可见时推进 uTime（uniform），L1/L2/L4 零开销。
  */
-interface StellarSurfaceProps {
+export interface StellarSurfaceProps {
   radius: number;
   segments: number;
-  color: string;
-  /** 边缘昏暗系数（红巨星大、蓝巨星小） */
+  /** 有效温度（K）：经 blackbodyRGB 查表得 sRGB 基色（R4-6） */
+  teffK: number;
+  /** 边缘昏暗系数（limbDarkeningU(光谱型) 档位；红巨星大、蓝巨星小） */
   limbU: number;
-  /** 对流胞尺度（红巨星小 → 大胞；蓝巨星大 → 细） */
+  /** 对流胞噪声频率（granulationCellScale(半径R☉)；巨星小 → 大胞） */
   cellScale: number;
   /** 对流对比强度 ∈ [0,1] */
   convection: number;
   /** 色温梯度边缘偏红强度 ∈ [0,1] */
   rednessStrength: number;
+  /** 自转流动角速度（rad/s，绕本地 y 轴平移噪声采样域；默认缓慢自转） */
+  spinRadPerSec?: number;
+  /**
+   * 低阶球谐（l ≤ 3）非对称巨对流胞幅度 ∈ [0,1]（R4-18 参宿四专属；
+   * 默认 0 = 关闭，其余恒星零开销观感不变）。CPU 镜像：
+   * utils/stellarNearView.betelgeuseShPerturbation。
+   */
+  shAmplitude?: number;
+  /** 球谐演化速度倍率（≥0，默认 1；视觉周期 46–88 s 登记见 stellarNearView） */
+  shEvolveSpeed?: number;
   /** 读取本帧有效可见权重（由 useGalacticPlacement 提供，含聚焦提升） */
   getWeight: () => number;
   onClick?: (e: { stopPropagation: () => void }) => void;
 }
 
-function StellarSurface({
+/** 默认自转流动角速度（rad/s）：约 5 分钟一圈的缓慢可辨流动（登记） */
+const STELLAR_DEFAULT_SPIN_RAD_PER_SEC = 0.02;
+
+export function StellarSurface({
   radius,
   segments,
-  color,
+  teffK,
   limbU,
   cellScale,
   convection,
   rednessStrength,
+  spinRadPerSec = STELLAR_DEFAULT_SPIN_RAD_PER_SEC,
+  shAmplitude = 0,
+  shEvolveSpeed = 1,
   getWeight,
   onClick,
 }: StellarSurfaceProps): JSX.Element {
   const meshRef = useRef<THREE.Mesh>(null);
   const material = useMemo(() => {
-    const c = new THREE.Color(color);
+    // 黑体基色（sRGB 查表值 → 线性工作色彩空间）
+    const rgb = blackbodyRGB(teffK);
+    const c = new THREE.Color().setRGB(rgb.r, rgb.g, rgb.b, THREE.SRGBColorSpace);
     return new THREE.ShaderMaterial({
       transparent: true,
       uniforms: {
@@ -127,8 +244,13 @@ function StellarSurface({
         uCellScale: { value: cellScale },
         uConvection: { value: convection },
         uRedness: { value: rednessStrength },
+        uSpin: { value: spinRadPerSec },
+        uShAmp: { value: shAmplitude },
+        uShSpeed: { value: shEvolveSpeed },
       },
       vertexShader: /* glsl */ `
+        #include <common>
+        #include <logdepthbuf_pars_vertex>
         varying vec3 vNormal;
         varying vec3 vViewDir;
         varying vec3 vObjPos;
@@ -138,9 +260,12 @@ function StellarSurface({
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
           vViewDir = normalize(-mv.xyz);
           gl_Position = projectionMatrix * mv;
+          #include <logdepthbuf_vertex>
         }
       `,
       fragmentShader: /* glsl */ `
+        #include <common>
+        #include <logdepthbuf_pars_fragment>
         uniform float uTime;
         uniform float uOpacity;
         uniform vec3 uColor;
@@ -148,6 +273,9 @@ function StellarSurface({
         uniform float uCellScale;
         uniform float uConvection;
         uniform float uRedness;
+        uniform float uSpin;
+        uniform float uShAmp;
+        uniform float uShSpeed;
         varying vec3 vNormal;
         varying vec3 vViewDir;
         varying vec3 vObjPos;
@@ -185,14 +313,46 @@ function StellarSurface({
           return sum / total;
         }
 
+        // R4-18 参宿四非对称巨对流胞：低阶实球谐（l ≤ 3）4 项峰值归一基
+        // 固定系数展开，系数缓变余弦驱动（周期 46/61/74/88 s，需求 40–90 s
+        // 区间登记；VLTI/Montargès 2021 观感）。与
+        // utils/stellarNearView.betelgeuseShPerturbation 镜像一致。
+        float shPerturb(vec3 n, float t) {
+          float c1 = 0.45 * cos(6.2831853 * t / 46.0);
+          float c2 = 0.35 * cos(6.2831853 * t / 61.0 + 1.7);
+          float c3 = 0.30 * cos(6.2831853 * t / 74.0 + 3.9);
+          float c4 = 0.25 * cos(6.2831853 * t / 88.0 + 5.1);
+          float xx = n.x * n.x;
+          float yy = n.y * n.y;
+          float s = c1 * n.x
+            + c2 * (xx - yy)
+            + c3 * (2.0 * n.x * n.z)
+            + c4 * (2.598 * n.z * (xx - yy));
+          return clamp(s, -1.0, 1.0);
+        }
+
         void main() {
-          // 单位球面坐标直接采样 3D 噪声（无经度接缝、无极点收缩）
-          float cells = fbm3(vObjPos * 1.5, uTime);
+          #include <logdepthbuf_fragment>
+          // 自转流动（R4-6）：绕本地 y 轴旋转噪声采样域，对流图案随自转平移
+          float spinAng = uSpin * uTime;
+          float cs = cos(spinAng);
+          float sn = sin(spinAng);
+          vec3 spun = vec3(
+            cs * vObjPos.x + sn * vObjPos.z,
+            vObjPos.y,
+            -sn * vObjPos.x + cs * vObjPos.z
+          );
+          // 单位球面坐标直接采样 3D 噪声（无经度接缝、无极点收缩）；
+          // 对流时变：fbm3 内各层噪声域随 uTime 缓慢漂移（首层 ≈20 s/胞）
+          float cells = fbm3(spun * 1.5, uTime);
           // 边缘昏暗 μ = N·V
           float mu = clamp(dot(normalize(vNormal), normalize(vViewDir)), 0.0, 1.0);
           float limb = 1.0 - uLimbU * (1.0 - mu);
           // 对流亮度调制
           float bright = limb * (1.0 - uConvection * 0.5 + uConvection * cells);
+          // R4-18：球谐大尺度不对称亮/暗斑（spun 域——斑块随自转共转；
+          // uShAmp=0 时乘 1 无观感变化，其余恒星行为零回退）
+          bright *= 1.0 + uShAmp * shPerturb(spun, uTime * uShSpeed);
           // 色温梯度：边缘偏暗红
           float edge = pow(1.0 - mu, 1.5) * uRedness;
           vec3 col = uColor * vec3(1.0 - 0.15*edge, 1.0 - 0.55*edge, 1.0 - 0.75*edge);
@@ -201,7 +361,7 @@ function StellarSurface({
       `,
     });
      
-  }, [color, limbU, cellScale, convection, rednessStrength]);
+  }, [teffK, limbU, cellScale, convection, rednessStrength, spinRadPerSec, shAmplitude, shEvolveSpeed]);
 
   useEffect(() => () => material.dispose(), [material]);
 
@@ -298,12 +458,10 @@ function useGalacticPlacement(
   return getWeight;
 }
 
-/** 渲染循环共用临时向量（零分配纪律） */
-const NEAR_VIEW_TMP_VEC = new THREE.Vector3();
-
 /**
- * 近观 LOD 门控 hook（R2-7 §7.1-B）：复用 P4 detailGateUpdate 滞回模式
- * （纯逻辑 utils/nearView.nearViewGateUpdate），仅当前跟随/飞往目标激活。
+ * 近观 LOD 门控 hook（R2-7 §7.1-B；R4-2 起为统一细节层机制
+ * hooks/useDetailLayer 的薄包装——kind='particles'、退出即释放语义、
+ * 阈值/0.5s 淡入淡出逐项与现状一致，行为零回退）。
  *
  * @returns nearActive 近观层是否挂载（React state，卸载即释放几何/材质）；
  *   getNear01 读取平滑激活权重（0.5s 淡入淡出，淡出完成后才卸载）
@@ -312,42 +470,108 @@ function useNearViewGate(
   body: SpecialBodyData,
   groupRef: React.RefObject<THREE.Group | null>,
 ): { nearActive: boolean; getNear01: () => number } {
-  const [nearActive, setNearActive] = useState(false);
-  const mountedRef = useRef(false);
-  const activeRef = useRef(false);
-  const near01Ref = useRef(0);
-  const enterDistance = useMemo(() => nearViewEnterDistanceUnits(body.id), [body.id]);
-  const getNear01 = useCallback(() => near01Ref.current, []);
-  useFrame(({ camera }, delta) => {
-    const group = groupRef.current;
-    if (!group) return;
-    const state = useSimulationStore.getState();
-    const focused =
-      state.followBodyId === body.id || state.flyToBodyId === body.id;
-    const distance = camera.position.distanceTo(
-      group.getWorldPosition(NEAR_VIEW_TMP_VEC),
-    );
-    const gate = nearViewGateUpdate(
-      activeRef.current,
-      focused,
-      distance,
-      enterDistance,
-    );
-    activeRef.current = gate.active;
-    near01Ref.current = advanceFrameTransition(
-      near01Ref.current,
-      gate.active ? 1 : 0,
-      delta,
-      NEAR_VIEW_TRANSITION_SECONDS,
-    );
-    // 淡出完成后再卸载（激活/释放无突变；卸载即释放，无 LRU 保留）
-    const shouldMount = gate.active || near01Ref.current > 0.001;
-    if (shouldMount !== mountedRef.current) {
-      mountedRef.current = shouldMount;
-      setNearActive(shouldMount);
+  const spec = useMemo<DetailLayerSpec>(() => {
+    const particles = NEAR_VIEW_PARTICLE_INCREMENTS[body.id] ?? 0;
+    return {
+      bodyId: body.id,
+      kind: "particles",
+      enterDistanceUnits: nearViewEnterDistanceUnits(body.id),
+      exitDistanceUnits: nearViewExitDistanceUnits(body.id),
+      budget: { particles, gpuBytesEstimate: estimateGpuBytes({ particles }) },
+    };
+  }, [body.id]);
+  const { active, opacity01 } = useDetailLayer(spec, { objectRef: groupRef });
+  return { nearActive: active, getNear01: opacity01 };
+}
+
+/** StarNearDress useFrame 世界坐标暂存（模块级复用，渲染循环零分配） */
+const STAR_DRESS_WORLD_POS = new THREE.Vector3();
+
+/**
+ * 恒星近观点缀（R4-18，全部 6 类恒星通用）：
+ * - 色球边缘辉光环：limb 外 1.04× 半径薄发射环 sprite，颜色与色温联动
+ *   （chromosphereRGB：冷星向 Hα 红端混合；近似登记见 stellarNearView 文件头）
+ * - 中距衍射星芒 sprite：距离窗口 starSpikeWindow01（≥4r 全显、≤2.2r 全隐，
+ *   推近表面平滑淡出防遮挡）；spike=false 不挂星芒（天狼星 B 已有常驻
+ *   衍射芒线，近观仅加色球环，登记）
+ *
+ * 仅在父组件 useNearViewGate nearActive 时挂载（远景零开销），纹理卸载即
+ * dispose（附录 A §6）。透明度 = 层级权重 × 近观权重（× 星芒距离窗口）。
+ */
+function StarNearDress({
+  radiusUnits,
+  teffK,
+  spike = true,
+  getWeight,
+  getNear01,
+}: {
+  radiusUnits: number;
+  teffK: number;
+  spike?: boolean;
+  getWeight: () => number;
+  getNear01: () => number;
+}): JSX.Element {
+  const anchorRef = useRef<THREE.Group>(null);
+  const ringRef = useRef<THREE.Sprite>(null);
+  const spikeRef = useRef<THREE.Sprite>(null);
+  // 色温联动颜色（环与星芒同源：恒星本征色观感一致）
+  const dressColorCss = useMemo(() => rgb01ToCss(chromosphereRGB(teffK)), [teffK]);
+  const ringTexture = useMemo(
+    () => new THREE.CanvasTexture(createChromosphereRingCanvas(dressColorCss, 256)),
+    [dressColorCss],
+  );
+  const spikeTexture = useMemo(
+    () =>
+      spike
+        ? new THREE.CanvasTexture(createDiffractionSpikeCanvas(dressColorCss, 128))
+        : null,
+    [spike, dressColorCss],
+  );
+  useEffect(() => () => ringTexture.dispose(), [ringTexture]);
+  useEffect(() => () => spikeTexture?.dispose(), [spikeTexture]);
+
+  useFrame(({ camera }) => {
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+    const base = getWeight() * getNear01();
+    if (ringRef.current) {
+      (ringRef.current.material as THREE.SpriteMaterial).opacity =
+        CHROMOSPHERE_RING_OPACITY_MAX * base;
+    }
+    if (spikeRef.current) {
+      anchor.getWorldPosition(STAR_DRESS_WORLD_POS);
+      const d = camera.position.distanceTo(STAR_DRESS_WORLD_POS);
+      (spikeRef.current.material as THREE.SpriteMaterial).opacity =
+        STAR_SPIKE_OPACITY_MAX * base * starSpikeWindow01(d, radiusUnits);
     }
   });
-  return { nearActive, getNear01 };
+
+  const ringScale = chromosphereRingSpriteScale(radiusUnits);
+  const spikeScale = starSpikeSpriteScale(radiusUnits);
+  return (
+    <group ref={anchorRef}>
+      <sprite ref={ringRef} scale={[ringScale, ringScale, 1]}>
+        <spriteMaterial
+          map={ringTexture}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          opacity={0}
+        />
+      </sprite>
+      {spikeTexture && (
+        <sprite ref={spikeRef} scale={[spikeScale, spikeScale, 1]}>
+          <spriteMaterial
+            map={spikeTexture}
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            opacity={0}
+          />
+        </sprite>
+      )}
+    </group>
+  );
 }
 
 /**
@@ -437,7 +661,7 @@ function BodyLabel({
       style={{ pointerEvents: "none" }}
     >
       <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-sky-200/90">
-        {body.nameZh}
+        <BodyNameText body={body} />
       </span>
     </ClampedHtmlLabel>
   );
@@ -453,6 +677,9 @@ function RedGiant({ body }: BodyProps): JSX.Element {
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
   const segments = stellarSphereSegments(size);
+  // R4-6：Teff/光谱型/半径 → 黑体基色/临边昏暗档/对流颗粒频率
+  const star = useStarParams().betelgeuse;
+  const physics = stellarSurfacePhysics(star);
 
   const glowTexture = useMemo(
     () => new THREE.CanvasTexture(createGlowSpriteCanvas(body.color, 128)),
@@ -461,6 +688,8 @@ function RedGiant({ body }: BodyProps): JSX.Element {
   useEffect(() => () => glowTexture.dispose(), [glowTexture]);
 
   const getWeight = useGalacticPlacement(body, groupRef);
+  // R4-18 近观点缀门控（色球环 + 衍射星芒仅近观挂载，远景零开销）
+  const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
@@ -479,23 +708,34 @@ function RedGiant({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 恒星表面（对流颗粒 + 边缘昏暗 + 色温梯度，P6 §3.2）；
-          红巨星：大对流胞（cellScale 小）、强边缘昏暗、显著边缘偏红 */}
+      {/* 恒星表面（对流颗粒 + 边缘昏暗 + 色温梯度，P6 §3.2 + R4-6 物理化）；
+          红巨星：M 档强临边昏暗、巨对流胞（764 R☉ → 低噪声频率）、显著边缘偏红；
+          R4-18：叠加低阶球谐非对称巨对流胞（参宿四专属，VLTI/Montargès 2021） */}
       <group ref={coreRef}>
         <StellarSurface
           getWeight={getWeight}
           radius={size}
           segments={segments}
-          color={body.color}
-          limbU={0.75}
-          cellScale={2.2}
+          teffK={star.teffK}
+          limbU={physics.limbU}
+          cellScale={physics.cellScale}
           convection={0.7}
           rednessStrength={0.6}
+          shAmplitude={BETELGEUSE_SH_AMPLITUDE_DEFAULT}
           onClick={(e) => {
             e.stopPropagation();
             selectBody(body.id);
           }}
         />
+        {/* R4-18 近观点缀：色球环 + 衍射星芒（随脉动一同缩放） */}
+        {nearActive && (
+          <StarNearDress
+            radiusUnits={size}
+            teffK={star.teffK}
+            getWeight={getWeight}
+            getNear01={getNear01}
+          />
+        )}
       </group>
       {/* 外层弥散气体壳（分段 32：近观轮廓无棱角，与恒星表面标准一致） */}
       <mesh>
@@ -639,6 +879,9 @@ function BlueGiant({ body }: BodyProps): JSX.Element {
   const glowRef = useRef<THREE.Sprite>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
+  // R4-6：参宿七 B8Ia（12,100 K 蓝白、弱临边昏暗、78.9 R☉ 中低颗粒频率）
+  const star = useStarParams().rigel;
+  const physics = stellarSurfacePhysics(star);
 
   const glowTexture = useMemo(
     () => new THREE.CanvasTexture(createGlowSpriteCanvas(body.color, 128)),
@@ -647,6 +890,8 @@ function BlueGiant({ body }: BodyProps): JSX.Element {
   useEffect(() => () => glowTexture.dispose(), [glowTexture]);
 
   const getWeight = useGalacticPlacement(body, groupRef);
+  // R4-18 近观点缀门控（色球环 + 衍射星芒仅近观挂载）
+  const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
@@ -659,14 +904,14 @@ function BlueGiant({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 蓝巨星表面：细对流颗粒、弱边缘昏暗、无边缘偏红（高温） */}
+      {/* 蓝巨星表面：黑体蓝白基色、B 档弱边缘昏暗、无边缘偏红（高温） */}
       <StellarSurface
         getWeight={getWeight}
         radius={size}
         segments={stellarSphereSegments(size)}
-        color="#cfe0ff"
-        limbU={0.3}
-        cellScale={9}
+        teffK={star.teffK}
+        limbU={physics.limbU}
+        cellScale={physics.cellScale}
         convection={0.35}
         rednessStrength={0}
         onClick={(e) => {
@@ -692,6 +937,15 @@ function BlueGiant({ body }: BodyProps): JSX.Element {
         cycleSec={6}
         seed={20260731}
       />
+      {/* R4-18 近观点缀：色球环 + 衍射星芒 */}
+      {nearActive && (
+        <StarNearDress
+          radiusUnits={size}
+          teffK={star.teffK}
+          getWeight={getWeight}
+          getNear01={getNear01}
+        />
+      )}
       <BodyLabel body={body} sizeUnits={size} />
     </group>
   );
@@ -700,6 +954,14 @@ function BlueGiant({ body }: BodyProps): JSX.Element {
 /**
  * 沃尔夫-拉叶星（WR 124，可选需求 3.1.5）：炽热蓝白核心 + 强星风外流
  * + M1-67 抛射星云壳（缓慢膨胀）
+ *
+ * R4-20：近观挂接团块泡沫抛射壳体积层（useDetailLayer volume 池，容量
+ * 1，与 M42/M57/马头/蟹状同池——巡游切换时 LRU 逐出）——跟随/飞往且
+ * 距离达阈值（与 R4-18 近观点缀同源同值）时挂载 NebulaVolumeLayer
+ * （64³ 小型层，径向膨胀 uTime 驱动与既有壳 mesh 动画同参）；既有抛射
+ * 壳 mesh 随体积淡入交叉淡出（wr124ShellMeshFactor），退出反向恢复、
+ * 体积纹理随卸载 dispose；光晕 sprite 按 wr124CoreBoostFactor 补偿体积
+ * 透射压暗（深度关系登记见 nebulaVolumeScene.ts WR 124 段头）。
  */
 function WolfRayet({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
@@ -707,6 +969,9 @@ function WolfRayet({ body }: BodyProps): JSX.Element {
   const shellRef = useRef<THREE.Mesh>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
+  // R4-6：WR 124 WN8h（44,700 K 深蓝、O 档极弱昏暗、11.93 R☉ 细颗粒）
+  const star = useStarParams().wr124;
+  const physics = stellarSurfacePhysics(star);
 
   const glowTexture = useMemo(
     () => new THREE.CanvasTexture(createGlowSpriteCanvas(body.color, 128)),
@@ -715,34 +980,54 @@ function WolfRayet({ body }: BodyProps): JSX.Element {
   useEffect(() => () => glowTexture.dispose(), [glowTexture]);
 
   const getWeight = useGalacticPlacement(body, groupRef);
+  // R4-18 近观点缀门控（色球环 + 衍射星芒仅近观挂载）
+  const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
+  // R4-20 体积层门控（volume 池容量 1，release-on-exit：退出淡出即卸载）
+  const volumeSpec = useMemo(() => wr124VolumeDetailLayerSpec(), []);
+  const volumeConfig = useMemo(() => wr124VolumeLayerConfig(), []);
+  const { active: volumeActive, opacity01: getVolumeGate01 } = useDetailLayer(
+    volumeSpec,
+    { objectRef: groupRef },
+  );
+  // 体积视觉淡入权重（NebulaVolumeLayer 每帧写入：门控 × 烘焙就绪；
+  // 卸载复位 0——抛射壳 mesh 交叉淡出/光晕透射补偿的唯一消费源）
+  const volumeFadeRef = useRef(0);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
+    const vol01 = volumeFadeRef.current;
     if (glowRef.current) {
-      (glowRef.current.material as THREE.SpriteMaterial).opacity =
-        0.85 * blueGiantFlicker(clock.elapsedTime * 1.4) * weight;
+      // 光晕透射补偿（R4-20：体积合成压暗主场景发射体，登记）
+      (glowRef.current.material as THREE.SpriteMaterial).opacity = Math.min(
+        1,
+        0.85 *
+          blueGiantFlicker(clock.elapsedTime * 1.4) *
+          weight *
+          wr124CoreBoostFactor(vol01),
+      );
     }
     if (shellRef.current) {
-      // M1-67 抛射星云壳：缓慢膨胀（艺术化加速，已登记）
+      // M1-67 抛射星云壳：缓慢膨胀（艺术化加速，已登记）；体积淡入时
+      // 交叉淡出——团块泡沫体积接管壳层（R4-20）
       shellRef.current.scale.setScalar(
         nebulaExpansionScale(clock.elapsedTime, 80, 0.14),
       );
       (shellRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.14 * weight;
+        0.14 * weight * wr124ShellMeshFactor(vol01);
     }
   });
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 炽热核心（约 44,000 K，蓝白色）：极细对流颗粒 + 强湍流 */}
+      {/* 炽热核心（44,700 K 黑体蓝）：细对流颗粒 + 强湍流 */}
       <StellarSurface
         getWeight={getWeight}
         radius={size * 0.6}
         segments={stellarSphereSegments(size * 0.6)}
-        color="#e8f0ff"
-        limbU={0.25}
-        cellScale={12}
+        teffK={star.teffK}
+        limbU={physics.limbU}
+        cellScale={physics.cellScale}
         convection={0.45}
         rednessStrength={0}
         onClick={(e) => {
@@ -779,6 +1064,28 @@ function WolfRayet({ body }: BodyProps): JSX.Element {
         cycleSec={3.2}
         seed={20260732}
       />
+      {/* R4-18 近观点缀：色球环 + 衍射星芒（半径与核心球同源 size×0.6） */}
+      {nearActive && (
+        <StarNearDress
+          radiusUnits={size * 0.6}
+          teffK={star.teffK}
+          getWeight={getWeight}
+          getNear01={getNear01}
+        />
+      )}
+      {/* R4-20 近观抛射壳体积层（64³ RG raymarch：团块泡沫 + 径向膨胀；
+          detailLayer volume 池门控，卸载即 dispose 纹理/RT/材质，交叉
+          淡出权重经 volumeFadeRef 输出） */}
+      {volumeActive && (
+        <NebulaVolumeLayer
+          groupRef={groupRef}
+          boxEdgeUnits={wr124VolumeBoxEdgeUnits(size)}
+          config={volumeConfig}
+          getWeight={getWeight}
+          getGate01={getVolumeGate01}
+          fadeRef={volumeFadeRef}
+        />
+      )}
       <BodyLabel body={body} sizeUnits={size} />
     </group>
   );
@@ -794,6 +1101,9 @@ function Cepheid({ body }: BodyProps): JSX.Element {
   const glowRef = useRef<THREE.Sprite>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
+  // R4-6：造父一 F5Iab（5,960 K 白黄、F 档中等昏暗、43.3 R☉ 中等颗粒）
+  const star = useStarParams().deltaCephei;
+  const physics = stellarSurfacePhysics(star);
 
   const glowTexture = useMemo(
     () => new THREE.CanvasTexture(createGlowSpriteCanvas(body.color, 128)),
@@ -802,6 +1112,8 @@ function Cepheid({ body }: BodyProps): JSX.Element {
   useEffect(() => () => glowTexture.dispose(), [glowTexture]);
 
   const getWeight = useGalacticPlacement(body, groupRef);
+  // R4-18 近观点缀门控（色球环 + 衍射星芒仅近观挂载）
+  const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
@@ -821,15 +1133,15 @@ function Cepheid({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 造父变星表面：中等对流颗粒（黄超巨星） */}
+      {/* 造父变星表面：黑体白黄基色、中等对流颗粒（黄超巨星） */}
       <group ref={coreRef}>
         <StellarSurface
           getWeight={getWeight}
           radius={size * 0.5}
           segments={stellarSphereSegments(size * 0.5)}
-          color={body.color}
-          limbU={0.55}
-          cellScale={5}
+          teffK={star.teffK}
+          limbU={physics.limbU}
+          cellScale={physics.cellScale}
           convection={0.5}
           rednessStrength={0.3}
           onClick={(e) => {
@@ -837,6 +1149,15 @@ function Cepheid({ body }: BodyProps): JSX.Element {
             selectBody(body.id);
           }}
         />
+        {/* R4-18 近观点缀：色球环 + 衍射星芒（随脉动一同缩放） */}
+        {nearActive && (
+          <StarNearDress
+            radiusUnits={size * 0.5}
+            teffK={star.teffK}
+            getWeight={getWeight}
+            getNear01={getNear01}
+          />
+        )}
       </group>
       <sprite ref={glowRef}>
         <spriteMaterial
@@ -852,8 +1173,10 @@ function Cepheid({ body }: BodyProps): JSX.Element {
 }
 
 /**
- * 疏散星团（昴星团，可选需求 3.1.5）：松散分布的年轻热蓝星
- * + 蓝色反射星云（与球状星团的致密老年恒星形成对比）
+ * 疏散星团（昴星团，可选需求 3.1.5 + R4-17）：
+ * Gaia DR3 真实成员星（pleiades.json，位置/颜色/粒径数据驱动）
+ * + 命名亮星星芒 + 蓝色反射星云（与球状星团的致密老年恒星形成对比）。
+ * 星表加载失败/未就绪时降级现状程序化分布（§R4-17 降级登记）。
  */
 function OpenCluster({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
@@ -877,7 +1200,34 @@ function OpenCluster({ body }: BodyProps): JSX.Element {
   );
   const nebulaRef = useRef<THREE.Sprite>(null);
 
-  const { geometry, material } = useMemo(() => {
+  // R4-17：真实星表（Gaia DR3 烘焙产物；null = 加载中/失败 → 降级现状）
+  const catalog = usePleiadesCatalog();
+  const catalogModel = useMemo(() => {
+    if (!catalog) return null;
+    const sorted = sortPleiadesStarsByV(catalog.stars);
+    const attrs = buildPleiadesStarAttributes(sorted, size);
+    const baseCount = Math.min(PLEIADES_BASE_STAR_COUNT, sorted.length);
+    const named = pleiadesNamedStarPlacements(sorted, size);
+    return {
+      // 基础星场（远景常驻）：最亮 160 颗；其余进近观 starCatalog 细节层
+      base: {
+        positions: attrs.positions.slice(0, baseCount * 3),
+        colors: attrs.colors.slice(0, baseCount * 3),
+        sizes: attrs.sizes.slice(0, baseCount),
+      },
+      near: {
+        positions: attrs.positions.slice(baseCount * 3),
+        colors: attrs.colors.slice(baseCount * 3),
+        sizes: attrs.sizes.slice(baseCount),
+      },
+      named,
+      nebula: pleiadesReflectionNebulaLayout(named, size),
+    };
+  }, [catalog, size]);
+
+  // 降级基础星场（程序化 120 粒，现状保留；真实星表就绪后不再构建）
+  const fallback = useMemo(() => {
+    if (catalogModel) return null;
     const rand = createSeededRandom(20260733);
     const count = 120;
     const positions = new Float32Array(count * 3);
@@ -912,24 +1262,38 @@ function OpenCluster({ body }: BodyProps): JSX.Element {
       sizeAttenuation: true,
     });
     return { geometry: geo, material: mat };
-  }, [size]);
+  }, [size, catalogModel]);
 
   useEffect(
     () => () => {
-      geometry.dispose();
-      material.dispose();
+      fallback?.geometry.dispose();
+      fallback?.material.dispose();
     },
-    [geometry, material],
+    [fallback],
   );
 
   const getWeight = useGalacticPlacement(body, groupRef);
-  // R2-7 近观门控：跟随时挂载近观星场与"七姊妹"亮星，离开即释放
-  const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
+  // R4-17 近观门控：starCatalog 细节层（R4-2 统一机制；阈值与 R2-7 同源），
+  // 真实星表近观层与降级近观层共用同一门控
+  const catalogSpec = useMemo(() => pleiadesCatalogDetailLayerSpec(), []);
+  const { active: nearActive, opacity01: getNear01 } = useDetailLayer(
+    catalogSpec,
+    { objectRef: groupRef },
+  );
+  const getBaseOpacity = useCallback(() => 0.95 * getWeight(), [getWeight]);
+  const getNearOpacity = useCallback(
+    () => getWeight() * getNear01(),
+    [getWeight, getNear01],
+  );
+  // 地球天空视图姿态（与预览页共用；"自地球方向看"构型与公版图像一致，登记）
+  const skyView = useMemo(() => pleiadesSkyViewQuaternion(), []);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
-    material.opacity = 0.95 * weight;
+    if (fallback) {
+      fallback.material.opacity = 0.95 * weight;
+    }
     if (nebulaRef.current) {
       // 反射星云微闪烁（星光散射）
       (nebulaRef.current.material as THREE.SpriteMaterial).opacity =
@@ -948,9 +1312,39 @@ function OpenCluster({ body }: BodyProps): JSX.Element {
           blending={THREE.AdditiveBlending}
         />
       </sprite>
-      <points geometry={geometry} material={material} />
-      {/* R2-7 近观分级星场（+320 粒更小的暗成员星，疏散分布保持松散感） */}
-      {nearActive && (
+      {/* 基础星场：真实星表最亮 160 颗（R4-17）或降级程序化 120 粒 */}
+      {catalogModel ? (
+        <group quaternion={skyView}>
+          <PleiadesCatalogPoints
+            attributes={catalogModel.base}
+            getOpacity={getBaseOpacity}
+          />
+        </group>
+      ) : (
+        fallback && (
+          <points geometry={fallback.geometry} material={fallback.material} />
+        )
+      )}
+      {/* R4-17 近观 starCatalog 细节层：目录暗星 440 粒 + 命名亮星星芒 ×9
+          + 反射星云分层 sprite ×12（R2-7 +320 程序化增量被真实星表替代，登记） */}
+      {nearActive && catalogModel && (
+        <group quaternion={skyView}>
+          <PleiadesCatalogPoints
+            attributes={catalogModel.near}
+            getOpacity={getNearOpacity}
+          />
+          <PleiadesNamedStars
+            placements={catalogModel.named}
+            getOpacity={getNearOpacity}
+          />
+          <PleiadesReflectionNebula
+            placements={catalogModel.nebula}
+            getOpacity={getNearOpacity}
+          />
+        </group>
+      )}
+      {/* 降级近观层（现状 R2-7：+320 程序化星场 + "七姊妹"辉光 ×7，登记） */}
+      {nearActive && !catalogModel && (
         <>
           <ClusterNearStarField
             seed={20260734}
@@ -960,12 +1354,9 @@ function OpenCluster({ body }: BodyProps): JSX.Element {
             flattenY={0.7}
             pointSizeUnits={size * 0.05}
             bluePalette
-            getOpacity={() => getWeight() * getNear01()}
+            getOpacity={getNearOpacity}
           />
-          <PleiadesSistersNear
-            sizeUnits={size}
-            getOpacity={() => getWeight() * getNear01()}
-          />
+          <PleiadesSistersNear sizeUnits={size} getOpacity={getNearOpacity} />
         </>
       )}
       {/* 点选热区 */}
@@ -1039,6 +1430,10 @@ function PleiadesSistersNear({
 /**
  * 暗星云（马头星云，可选需求 3.1.5）：剪影遮挡效果——
  * 前景冷分子云（不发光、普通混合的暗色块）遮挡背景发射星云 IC 434 的红光
+ *
+ * R4-15：近观跟随时挂载吸收体积层（96³ RG raymarch——马头轮廓 SDF 暗云柱
+ * + IC 434 发射幕烘焙进体积），前景剪影 billboard 与 R2-7 近观层交叉淡出，
+ * 背景 billboard 保留作幕布远景延伸（方案登记见 utils/nebulaVolumeScene.ts）
  */
 function DarkNebula({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
@@ -1078,16 +1473,35 @@ function DarkNebula({ body }: BodyProps): JSX.Element {
   const getWeight = useGalacticPlacement(body, groupRef);
   // R2-7 近观门控：跟随时挂载视差发射层与前景暗云团，离开即释放
   const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
+  // R4-15 体积层门控（volume 池容量 1 与 M42/M57 共池，release-on-exit）
+  const volumeSpec = useMemo(() => horseheadVolumeDetailLayerSpec(), []);
+  const volumeConfig = useMemo(() => horseheadVolumeLayerConfig(), []);
+  const { active: volumeActive, opacity01: getVolumeGate01 } = useDetailLayer(
+    volumeSpec,
+    { objectRef: groupRef },
+  );
+  // 体积视觉淡入权重（NebulaVolumeLayer 每帧写入：门控 × 烘焙就绪；
+  // 卸载复位 0——剪影/近观层/幕布交叉淡出的唯一消费源）
+  const volumeFadeRef = useRef(0);
   useFrame(() => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
     const near01 = getNear01();
+    const vol01 = volumeFadeRef.current;
     group.traverse((obj) => {
       const base = obj.userData.baseOpacity as number | undefined;
       if (base === undefined) return;
-      // 近观层（视差发射面/前景暗云团）额外乘近观权重淡入
-      const factor = obj.userData.nearLayer ? weight * near01 : weight;
+      // R2-7 近观层（视差发射面/暗云团）近观淡入 × 体积交叉淡出（R4-15）；
+      // 前景剪影 billboard 体积激活时隐去（体积吸收柱接管剪影）；
+      // 背景 IC 434 billboard 保留作幕布远景延伸、部分减淡（方案登记）
+      const factor = obj.userData.nearLayer
+        ? weight * horseheadNearLayerFactor(near01, vol01)
+        : obj.userData.volDim
+          ? weight * (1 - vol01)
+          : obj.userData.curtain
+            ? weight * horseheadCurtainFactor(vol01)
+            : weight;
       if (obj instanceof THREE.Sprite) {
         obj.material.opacity = base * factor;
       } else if (obj instanceof THREE.Mesh) {
@@ -1117,10 +1531,11 @@ function DarkNebula({ body }: BodyProps): JSX.Element {
 
   return (
     <group ref={groupRef} name={body.id}>
-      {/* 背景发射星云 IC 434（氢α红光不规则云，加色混合） */}
+      {/* 背景发射星云 IC 434（氢α红光不规则云，加色混合；R4-15：体积
+          激活时保留作幕布远景延伸并部分减淡，方案登记见 nebulaVolumeScene） */}
       <mesh
         position={[0, 0, -size * 0.5]}
-        userData={{ baseOpacity: 0.45 }}
+        userData={{ baseOpacity: 0.45, curtain: true }}
         onClick={(e) => {
           e.stopPropagation();
           selectBody(body.id);
@@ -1135,12 +1550,13 @@ function DarkNebula({ body }: BodyProps): JSX.Element {
           side={THREE.DoubleSide}
         />
       </mesh>
-      {/* 前景暗分子云柱剪影（噪声侵蚀边缘的暗云形态，普通混合遮挡背景红光） */}
+      {/* 前景暗分子云柱剪影（噪声侵蚀边缘的暗云形态，普通混合遮挡背景红光；
+          R4-15：体积激活时交叉淡出——体积吸收柱接管剪影） */}
       {silhouette.map((s, i) => (
         <mesh
           key={i}
           position={[s.x, s.y, size * 0.3]}
-          userData={{ baseOpacity: s.opacity }}
+          userData={{ baseOpacity: s.opacity, volDim: true }}
           renderOrder={10}
         >
           <planeGeometry args={[size * s.scale, size * s.scale * 1.4]} />
@@ -1202,6 +1618,19 @@ function DarkNebula({ body }: BodyProps): JSX.Element {
           ))}
         </>
       )}
+      {/* R4-15 近观体积层（96³ RG raymarch：吸收暗云柱 + IC 434 发射幕；
+          detailLayer volume 池门控，卸载即 dispose 纹理/RT/材质，交叉
+          淡出权重经 volumeFadeRef 输出） */}
+      {volumeActive && (
+        <NebulaVolumeLayer
+          groupRef={groupRef}
+          boxEdgeUnits={horseheadVolumeBoxEdgeUnits(size)}
+          config={volumeConfig}
+          getWeight={getWeight}
+          getGate01={getVolumeGate01}
+          fadeRef={volumeFadeRef}
+        />
+      )}
       <BodyLabel body={body} sizeUnits={size} />
     </group>
   );
@@ -1218,6 +1647,11 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
   const selectBody = useSimulationStore((s) => s.selectBody);
   const showLabels = useSimulationStore((s) => s.showLabels);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
+  // R4-6：A 星 A0mA1Va（9,940 K 蓝白）；B 星白矮星 DA1.9（25,200 K 蓝、
+  // 最弱昏暗档、上限颗粒频率——与 R2-7 既有 ~25,000 K 调蓝一致化）
+  const starParams = useStarParams();
+  const physicsA = stellarSurfacePhysics(starParams.siriusA);
+  const physicsB = stellarSurfacePhysics(starParams.siriusB);
   const separation = size * 1.7;
   // 绕共同质心的轨道半径（binaryStarPositions 同源公式：重星轨道小）
   const rPrimary = separation / (1 + SIRIUS_MASS_RATIO);
@@ -1262,17 +1696,23 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
           getOpacity={() => getWeight() * getNear01()}
         />
       )}
-      {/* 天狼星A：主序星（大而亮） */}
+      {/* 天狼星A：主序星（大而亮）——R4-6 黑体蓝白 + A 档临边昏暗
+          （A 型星表面对流弱，convection 取低档，视觉选择登记） */}
       <group ref={primaryRef}>
-        <mesh
+        <StellarSurface
+          getWeight={getWeight}
+          radius={size * 0.42}
+          segments={stellarSphereSegments(size * 0.42)}
+          teffK={starParams.siriusA.teffK}
+          limbU={physicsA.limbU}
+          cellScale={physicsA.cellScale}
+          convection={0.18}
+          rednessStrength={0}
           onClick={(e) => {
             e.stopPropagation();
             selectBody(body.id);
           }}
-        >
-          <sphereGeometry args={[size * 0.42, 20, 20]} />
-          <meshBasicMaterial color="#f4f8ff" />
-        </mesh>
+        />
         <sprite scale={[size * 2.2, size * 2.2, 1]}>
           <spriteMaterial
             map={glowTexture}
@@ -1282,6 +1722,15 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
             opacity={0.7}
           />
         </sprite>
+        {/* R4-18 近观点缀：A 星色球环 + 衍射星芒（随互绕轨道运动） */}
+        {nearActive && (
+          <StarNearDress
+            radiusUnits={size * 0.42}
+            teffK={starParams.siriusA.teffK}
+            getWeight={getWeight}
+            getNear01={getNear01}
+          />
+        )}
         {/* R2-7 近观两星身份标注（大小/颜色对比 + 名称可辨）；
             R3-4：近观专用标注只钳制不隐藏（用户确认项 3） */}
         {nearActive && showLabels && (
@@ -1291,23 +1740,29 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
             style={{ pointerEvents: "none" }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-sky-100/90">
-              天狼星A · 主序星
+              <LabelText k="sceneLabel.siriusA" />
             </span>
           </ClampedHtmlLabel>
         )}
       </group>
-      {/* 天狼星B：白矮星（极小、白蓝色致密高亮点 + 衍射芒线，高密度在信息面板强调） */}
+      {/* 天狼星B：白矮星（极小、致密高亮点 + 衍射芒线，高密度在信息面板强调）
+          —— R4-6 白矮星单独档：25,200 K 黑体蓝基色（R2-7 调蓝一致化）、
+          u 最弱档、颗粒频率上限（矮星细密） */}
       <group ref={secondaryRef}>
-        <mesh
+        <StellarSurface
+          getWeight={getWeight}
+          radius={size * 0.1}
+          segments={stellarSphereSegments(size * 0.1)}
+          teffK={starParams.siriusB.teffK}
+          limbU={physicsB.limbU}
+          cellScale={physicsB.cellScale}
+          convection={0.12}
+          rednessStrength={0}
           onClick={(e) => {
             e.stopPropagation();
             selectBody(body.id);
           }}
-        >
-          <sphereGeometry args={[size * 0.1, 20, 20]} />
-          {/* R2-7：白矮星取更蓝的色调（~25,000 K 高温白矮星，与主星对比清晰） */}
-          <meshBasicMaterial color="#cfe4ff" />
-        </mesh>
+        />
         <sprite scale={[size * 1.6, size * 1.6, 1]}>
           <spriteMaterial
             map={spikeTexture}
@@ -1317,6 +1772,16 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
             opacity={0.9}
           />
         </sprite>
+        {/* R4-18 近观点缀：B 星仅色球环（常驻衍射芒线已有，不叠加，登记） */}
+        {nearActive && (
+          <StarNearDress
+            radiusUnits={size * 0.1}
+            teffK={starParams.siriusB.teffK}
+            spike={false}
+            getWeight={getWeight}
+            getNear01={getNear01}
+          />
+        )}
         {nearActive && showLabels && (
           <ClampedHtmlLabel
             position={[0, size * 0.32, 0]}
@@ -1324,7 +1789,7 @@ function SiriusBinary({ body }: BodyProps): JSX.Element {
             style={{ pointerEvents: "none" }}
           >
             <span className="whitespace-nowrap rounded bg-black/40 px-1.5 py-0.5 text-xs text-blue-200/90">
-              天狼星B · 白矮星
+              <LabelText k="sceneLabel.siriusB" />
             </span>
           </ClampedHtmlLabel>
         )}
@@ -1404,6 +1869,18 @@ function SiriusNearOrbits({
 /**
  * 蟹状星云脉冲星 + 超新星遗迹（同一对象联动，需求 3.1.5）：
  * 丝状膨胀星云 + 中心中子星 + 双极射束旋转扫描（灯塔效应）
+ *
+ * R4-16：近观挂接丝状体积模型（useDetailLayer volume 池，容量 1，与
+ * M42/M57/马头同池——巡游切换时 LRU 逐出）——跟随/飞往且距离达阈值
+ * （与 R2-7 近观层同源同值）时挂载 NebulaVolumeLayer（丝状网络 + OIII
+ * 弥散密度场 128³）；遗迹壳 billboard（crabBaseLayerFactor）与 R2-7
+ * +16 丝状云团（crabNearLayerFactor）随体积淡入交叉淡出（0.5s），退出
+ * 反向恢复、体积纹理随卸载 dispose。射束扫描/脉冲节奏保留（节奏函数
+ * 零改动），射束/脉冲闪烁按 crabCoreBoostFactor 补偿体积透射压暗
+ * （深度关系登记见 nebulaVolumeScene.ts 蟹状段头）。近观同时挂载 PWN
+ * 内核（CrabPwnCore：Chandra 形态参考赤道环面 shader 发射体 + 极向
+ * 双喷流复用 RelativisticJet 参数化缩小），不随体积淡出——蓝白同步
+ * 辐射内核为体积双色（红橙丝/青弥散）之外的第三层结构。
  */
 function PulsarRemnant({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
@@ -1434,8 +1911,14 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
   );
   useEffect(() => () => flashTexture.dispose(), [flashTexture]);
 
-  // 射束 shader（P6 §3.2）：径向渐变（轴心亮边缘淡）+ 沿轴噪声扰动，
-  // 替换纯色 cone。锥体侧面 uv.y 为沿轴归一化坐标、uv.x 为环向
+  // 射束 shader（P6 §3.2 → R4-20 轻量体积锥升级）：
+  // - 轴向密度衰减：幂律软衰减（pulsarBeamAxial01 的 GLSL 镜像）；
+  // - 边缘软化：视线穿越圆锥截面的弦长近似（弦长 ∝ |n·v|，
+  //   pulsarBeamChord01 镜像）——轮廓边缘弦长 → 0 平滑消失，替代原
+  //   静态 uv.x 条纹（视角无关的假径向渐变），侧视/斜视均无硬边锥；
+  // - 扫描旋转/脉冲节奏保留（beamsRef 旋转与 pulsarPulseIntensity 零改动）；
+  // - DoubleSide 前后两面各按半弦长贡献（×0.5，相机入锥内仍连续）；
+  // - 补齐 log depth buffer 兼容（附录 A §5，P6 遗留，Starfield 先例）。
   const beamMaterial = useMemo(
     () =>
       new THREE.ShaderMaterial({
@@ -1445,28 +1928,44 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
         blending: THREE.AdditiveBlending,
         uniforms: { uTime: { value: 0 }, uOpacity: { value: 0.5 } },
         vertexShader: /* glsl */ `
+          #include <common>
+          #include <logdepthbuf_pars_vertex>
           varying vec2 vUv;
+          varying vec3 vNormalView;
+          varying vec3 vPosView;
           void main() {
             vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            vNormalView = normalMatrix * normal;
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+            vPosView = mvPosition.xyz;
+            gl_Position = projectionMatrix * mvPosition;
+            #include <logdepthbuf_vertex>
           }
         `,
         fragmentShader: /* glsl */ `
+          #include <common>
+          #include <logdepthbuf_pars_fragment>
           uniform float uTime;
           uniform float uOpacity;
           varying vec2 vUv;
+          varying vec3 vNormalView;
+          varying vec3 vPosView;
           float hash(float x){ return fract(sin(x*127.1)*43758.5453); }
           void main() {
-            // 沿轴：根部（uv.y≈0）亮，尖端淡出
-            float axial = smoothstep(1.0, 0.0, vUv.y);
-            // 环向径向渐变：中心线亮、边缘淡
-            float radial = 1.0 - abs(vUv.x - 0.5) * 2.0;
-            radial = pow(clamp(radial, 0.0, 1.0), 1.5);
-            // 噪声扰动（沿轴流动的等离子体团块）
+            #include <logdepthbuf_fragment>
+            // 轴向密度衰减：根部（uv.y≈0）亮 → 尖端幂律软淡出
+            // （pulsarBeamAxial01 镜像）
+            float axial = pow(1.0 - clamp(vUv.y, 0.0, 1.0), ${PULSAR_BEAM_AXIAL_EXPONENT.toFixed(2)});
+            // 边缘软化：弦长近似 ∝ |n·v|（pulsarBeamChord01 镜像；
+            // 轮廓边缘 n⊥v → 0，无硬边）
+            float cosNV = abs(dot(normalize(vNormalView), normalize(vPosView)));
+            float chord = pow(min(cosNV, 1.0), ${PULSAR_BEAM_EDGE_EXPONENT.toFixed(2)});
+            // 噪声扰动（沿轴流动的等离子体团块，保留）
             float n = hash(floor(vUv.y * 12.0) + floor(uTime * 3.0));
             float flow = 0.7 + 0.3 * n;
             vec3 col = vec3(0.75, 0.9, 1.0);
-            float a = axial * radial * flow * uOpacity;
+            // DoubleSide 前后两面各贡献半弦长（×0.5）
+            float a = axial * chord * flow * uOpacity * 0.5;
             gl_FragColor = vec4(col, a);
           }
         `,
@@ -1506,15 +2005,29 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
   const getWeight = useGalacticPlacement(body, groupRef);
   // R2-7 近观门控：跟随时挂载丝状体积云团层，离开即释放
   const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
+  // R4-16 体积层门控（volume 池容量 1，release-on-exit：退出淡出即卸载）
+  const volumeSpec = useMemo(() => crabVolumeDetailLayerSpec(), []);
+  const volumeConfig = useMemo(() => crabVolumeLayerConfig(), []);
+  const { active: volumeActive, opacity01: getVolumeGate01 } = useDetailLayer(
+    volumeSpec,
+    { objectRef: groupRef },
+  );
+  // 体积视觉淡入权重（NebulaVolumeLayer 每帧写入：门控 × 烘焙就绪；
+  // 卸载复位 0——遗迹壳 billboard/丝状云团交叉淡出的唯一消费源）
+  const volumeFadeRef = useRef(0);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
     const near01 = getNear01();
+    const vol01 = volumeFadeRef.current;
     const t = clock.elapsedTime;
+    // 射束/脉冲透射补偿（R4-16：体积合成压暗主场景发射体，登记）
+    const boost = crabCoreBoostFactor(vol01);
     beamMaterial.uniforms.uTime.value = t;
     // 近观时射束增亮（扫描形态更清晰，R2-7）
-    beamMaterial.uniforms.uOpacity.value = 0.5 * weight * (1 + 0.6 * near01);
+    beamMaterial.uniforms.uOpacity.value =
+      0.5 * weight * (1 + 0.6 * near01) * boost;
     // 射束旋转扫描（可视化降频周期，已登记）
     if (beamsRef.current) {
       beamsRef.current.rotation.y = pulsarBeamAngle(
@@ -1522,18 +2035,23 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
         PULSAR_VISUAL_SPIN_PERIOD_SEC,
       );
     }
-    // 射束扫过视线方向 → 周期性脉冲闪烁
+    // 射束扫过视线方向 → 周期性脉冲闪烁（节奏函数零改动，R4-16 不回退）
     if (flashRef.current) {
-      (flashRef.current.material as THREE.SpriteMaterial).opacity =
-        pulsarPulseIntensity(t, PULSAR_VISUAL_SPIN_PERIOD_SEC) * 0.95 * weight;
+      (flashRef.current.material as THREE.SpriteMaterial).opacity = Math.min(
+        1,
+        pulsarPulseIntensity(t, PULSAR_VISUAL_SPIN_PERIOD_SEC) *
+          0.95 *
+          weight *
+          boost,
+      );
     }
     // 遗迹星云缓慢膨胀（联动蟹状星云）；近观时单张光晕减淡交叉过渡到
-    // 体积云团（R2-7"无单张圆形光晕"）
+    // 体积云团（R2-7"无单张圆形光晕"）；体积淡入时完全隐去（R4-16）
     if (nebulaRef.current) {
       const s = size * 2.6 * nebulaExpansionScale(t, 90, 0.1);
       nebulaRef.current.scale.set(s, s, 1);
       (nebulaRef.current.material as THREE.SpriteMaterial).opacity =
-        0.4 * weight * (1 - 0.45 * near01);
+        0.4 * weight * crabBaseLayerFactor(near01, vol01);
     }
   });
 
@@ -1548,7 +2066,8 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
           blending={THREE.AdditiveBlending}
         />
       </sprite>
-      {/* R2-7 近观丝状体积云团（16 sprite，遗迹壳层立体感） */}
+      {/* R2-7 近观丝状体积云团（16 sprite，遗迹壳层立体感；
+          R4-16：体积淡入时交叉淡出——丝状云团移交体积丝网） */}
       {nearActive && (
         <NebulaPuffCloud
           seed={1054}
@@ -1556,6 +2075,29 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
           radiusUnits={size * 1.2}
           flattenY={0.85}
           textures={filamentTextures}
+          getOpacity={() =>
+            getWeight() * crabNearLayerFactor(getNear01(), volumeFadeRef.current)
+          }
+        />
+      )}
+      {/* R4-16 近观丝状体积层（128³ RG raymarch：红橙丝网 + OIII 青弥散；
+          detailLayer volume 池门控，卸载即 dispose 纹理/RT/材质） */}
+      {volumeActive && (
+        <NebulaVolumeLayer
+          groupRef={groupRef}
+          boxEdgeUnits={crabVolumeBoxEdgeUnits(size)}
+          config={volumeConfig}
+          getWeight={getWeight}
+          getGate01={getVolumeGate01}
+          fadeRef={volumeFadeRef}
+        />
+      )}
+      {/* R4-16 PWN 内核（Chandra 形态参考）：赤道环面 shader 发射体 +
+          极向双喷流（复用 RelativisticJet 参数化缩小）——近观激活、
+          不随体积淡出（蓝白同步辐射第三层结构） */}
+      {nearActive && (
+        <CrabPwnCore
+          sizeUnits={size}
           getOpacity={() => getWeight() * getNear01()}
         />
       )}
@@ -1599,15 +2141,114 @@ function PulsarRemnant({ body }: BodyProps): JSX.Element {
 }
 
 /**
- * 人马座A* 黑洞（需求 3.1.5）：事件视界（纯黑球体）+ 吸积盘
- * （开普勒较差旋转 + 多普勒不对称，shader）+ 引力透镜环状扭曲（shader）
+ * 蟹状 PWN 内核（R4-16 §16.1 第 2 条，Chandra/Weisskopf et al. 2000
+ * 形态参考）：赤道环面 shader 发射体（蓝白同步辐射色，径向剖面 =
+ * `crabTorusIntensity` 的 GLSL 镜像——主环 + 内环 + 中心弱辉；环面
+ * 平面增强项由平面几何承载 height01=0，登记见 nebulaVolume.ts）+
+ * 极向双喷流（复用 `RelativisticJet` 锥体 shader 参数化缩小尺度，
+ * 复用登记；方向 = ±y 自转轴，与射束进动轴一致）。
+ *
+ * 环面细纹随时间缓慢外流（Chandra 观测 wisp 移动的观感示意）；尺度
+ * 夸大登记见 nebulaVolumeScene.ts 蟹状段头（环面半径 0.30× 视觉半径）。
+ */
+function CrabPwnCore({
+  sizeUnits,
+  getOpacity,
+}: {
+  sizeUnits: number;
+  /** 读取本帧不透明度权重（层级权重 × 近观权重） */
+  getOpacity: () => number;
+}): JSX.Element {
+  const torusMaterial = useMemo(() => {
+    const c = new THREE.Color(CRAB_PWN_COLOR);
+    return new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      uniforms: {
+        uTime: { value: 0 },
+        uOpacity: { value: 0 },
+        uColor: { value: new THREE.Vector3(c.r, c.g, c.b) },
+      },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform float uTime;
+        uniform float uOpacity;
+        uniform vec3 uColor;
+        varying vec2 vUv;
+        void main() {
+          float rho = length(vUv * 2.0 - 1.0);
+          if (rho > 1.0) discard;
+          // crabTorusIntensity 径向部分 GLSL 镜像（单点同源常数经模板插值）
+          float ring = exp(-pow((rho - ${CRAB_TORUS_RING_RHO01.toFixed(4)}) / ${CRAB_TORUS_RING_SIGMA.toFixed(4)}, 2.0));
+          float inner = 0.75 * exp(-pow((rho - ${CRAB_TORUS_INNER_RHO01.toFixed(4)}) / ${CRAB_TORUS_INNER_SIGMA.toFixed(4)}, 2.0));
+          float glow = 0.22 * exp(-pow(rho / 0.5, 2.0));
+          // wisp 细纹缓慢外流（Chandra wisp 移动观感示意）
+          float wisp = 0.85 + 0.15 * sin(rho * 24.0 - uTime * 1.8);
+          float a = (ring + inner + glow) * wisp * uOpacity;
+          gl_FragColor = vec4(uColor * (0.8 + 0.6 * ring), a);
+        }
+      `,
+    });
+  }, []);
+  useEffect(() => () => torusMaterial.dispose(), [torusMaterial]);
+
+  const jetDirection = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+
+  useFrame(({ clock }) => {
+    torusMaterial.uniforms.uTime.value = clock.elapsedTime;
+    // 0.68：目验调参——保蓝白色阶不被 Bloom 洗成纯白
+    torusMaterial.uniforms.uOpacity.value = 0.68 * getOpacity();
+  });
+
+  const torusEdge = sizeUnits * CRAB_PWN_TORUS_RADIUS_FACTOR * 2;
+  return (
+    <group>
+      {/* 赤道环面（x-z 平面，⊥ 自转轴 y；蓝白同步辐射色） */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} material={torusMaterial}>
+        <planeGeometry args={[torusEdge, torusEdge]} />
+      </mesh>
+      {/* 极向双喷流（RelativisticJet 参数化复用：近观权重注入 + 缩小尺度） */}
+      <RelativisticJet
+        direction={jetDirection}
+        lengthUnits={sizeUnits * CRAB_PWN_JET_LENGTH_FACTOR}
+        color={CRAB_PWN_COLOR}
+        bilateral
+        baseOpacity={0.85}
+        getWeight={getOpacity}
+      />
+    </group>
+  );
+}
+
+/**
+ * 黑洞（需求 3.1.5：人马座 A* / 天鹅座 X-1）：事件视界（纯黑球体）+
+ * 吸积盘（开普勒较差旋转 + 多普勒不对称，shader）+ 引力透镜环状扭曲
+ * （公告板 shader）——远景廉价表现。
+ *
+ * R4-13：近观挂接透镜细节层（useDetailLayer lensing 池容量 1）——跟随/
+ * 飞往且距离达阈值（R2-7 同源）时挂载 BlackHoleLensedLayer（R4-11/R4-12
+ * raymarch：光子环 + 背景弯曲 + 盘翻折 + 束流不对称），廉价盘/光环按
+ * (1 − 门控权重) 交叉淡出，退出反向恢复、资源随卸载 dispose。透镜接管
+ * 后事件视界黑球停写颜色/深度（colorWrite/depthWrite 关闭）——raymarch
+ * 阴影（b_crit ≈ 2.6 r_s）大于黑球（1 r_s），保留黑球深度会切断盘前景
+ * 翻折像；黑球 mesh 仍保留为点选 raycast 命中体（登记）。
  */
 function BlackHole({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
   const lensRef = useRef<THREE.Mesh>(null);
+  const horizonMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
-  const horizonRadius = size * 0.32;
+  // 视界半径 = 透镜 r_s 世界长度（单点同源，utils/blackHoleScene 尺度登记）
+  const horizonRadius = blackHoleRsWorldUnits(size);
 
   // 吸积盘 shader：较差旋转（ω ∝ r^-1.5）+ 内亮外暗 + 多普勒集束不对称
   const diskMaterial = useMemo(
@@ -1713,18 +2354,47 @@ function BlackHole({ body }: BodyProps): JSX.Element {
   );
 
   const getWeight = useGalacticPlacement(body, groupRef);
+  // R4-13 透镜细节层门控（lensing 池容量 1，release-on-exit）
+  const lensedConfig = useMemo(() => blackHoleLensedConfig(body.id), [body.id]);
+  const lensedSpec = useMemo(
+    () => blackHoleLensingDetailLayerSpec(body.id),
+    [body.id],
+  );
+  // 跟随判据注入：仅按 followBodyId（requestFlyTo 同步置 followBodyId，
+  // 运镜期门控不变；flyToBodyId 抵达后不清零，若纳入判据则 Esc 退出跟随
+  // 无法释放透镜层——§R4-13 验收"Esc 退出恢复"，实现差异登记）
+  const getLensedFocused = useCallback(
+    () => useSimulationStore.getState().followBodyId === body.id,
+    [body.id],
+  );
+  const { active: lensedActive, opacity01: getLensed01 } = useDetailLayer(
+    lensedSpec,
+    { objectRef: groupRef, getFocused: getLensedFocused },
+  );
   useFrame(({ clock, camera }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
+    const lensed01 = getLensed01();
+    // 廉价盘/光环交叉淡出：透镜层淡入时反向淡出（R4-13），退出恢复
+    const cheap = 1 - lensed01;
     // 动态效果按需渲染（需求 3.1.5）：仅可见时推进 shader 时间
     diskMaterial.uniforms.uTime.value = clock.elapsedTime;
-    diskMaterial.uniforms.uOpacity.value = weight;
+    diskMaterial.uniforms.uOpacity.value = weight * cheap;
     lensMaterial.uniforms.uTime.value = clock.elapsedTime;
-    lensMaterial.uniforms.uOpacity.value = weight * 0.85;
+    lensMaterial.uniforms.uOpacity.value = weight * 0.85 * cheap;
     // 透镜公告板始终面向相机
     if (lensRef.current) {
       lensRef.current.quaternion.copy(camera.quaternion);
+    }
+    // 透镜接管（>0.5）后黑球停写颜色/深度（保留 raycast 点选，登记见组件头）
+    const horizonMat = horizonMatRef.current;
+    if (horizonMat) {
+      const writeOn = lensed01 <= 0.5;
+      if (horizonMat.colorWrite !== writeOn) {
+        horizonMat.colorWrite = writeOn;
+        horizonMat.depthWrite = writeOn;
+      }
     }
   });
 
@@ -1738,7 +2408,7 @@ function BlackHole({ body }: BodyProps): JSX.Element {
         }}
       >
         <sphereGeometry args={[horizonRadius, 32, 32]} />
-        <meshBasicMaterial color="#000000" />
+        <meshBasicMaterial ref={horizonMatRef} color="#000000" />
       </mesh>
       {/* 吸积盘（较差旋转 + 多普勒不对称） */}
       <mesh rotation={[-Math.PI / 2.6, 0, 0]} material={diskMaterial}>
@@ -1748,6 +2418,16 @@ function BlackHole({ body }: BodyProps): JSX.Element {
       <mesh ref={lensRef} material={lensMaterial}>
         <planeGeometry args={[size * 3.6, size * 3.6]} />
       </mesh>
+      {/* R4-13 近观透镜 raymarch 细节层（光子环 + 盘翻折 + 束流不对称；
+          detailLayer lensing 池门控，卸载即 dispose 材质/cubemap/LUT） */}
+      {lensedActive && lensedConfig && (
+        <BlackHoleLensedLayer
+          config={lensedConfig}
+          rsWorld={horizonRadius}
+          getWeight={getWeight}
+          getGate01={getLensed01}
+        />
+      )}
       <BodyLabel body={body} sizeUnits={size} />
     </group>
   );
@@ -1755,6 +2435,13 @@ function BlackHole({ body }: BodyProps): JSX.Element {
 
 /**
  * 发射星云（猎户座星云）：氢α粉红雾状层 + 内部年轻恒星点亮局部
+ *
+ * R4-8：近观挂接体积层（useDetailLayer volume 池，容量 1）——跟随/飞往
+ * 且距离达阈值（与 R2-7 近观层同源同值）时挂载 NebulaVolumeLayer，
+ * billboard 平面层（nearDim）/ PuffCloud 团絮 / youngStars 星点（volDim）
+ * 随体积淡入交叉淡出（0.5s，utils/nebulaVolumeScene 纯函数），退出反向
+ * 恢复、体积纹理随卸载 dispose。体积激活期间 billboard 平面透明度趋 0
+ * 但仍保留 raycast 命中（点选星云信息面板不受影响，登记）。
  */
 function EmissionNebula({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
@@ -1827,16 +2514,32 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
   const getWeight = useGalacticPlacement(body, groupRef);
   // R2-7 近观门控：跟随时挂载体积感云团层，离开即释放
   const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
+  // R4-8 体积层门控（volume 池容量 1，release-on-exit：退出淡出即卸载）
+  const volumeSpec = useMemo(() => orionVolumeDetailLayerSpec(), []);
+  const volumeConfig = useMemo(() => orionVolumeLayerConfig(), []);
+  const { active: volumeActive, opacity01: getVolumeGate01 } = useDetailLayer(
+    volumeSpec,
+    { objectRef: groupRef },
+  );
+  // 体积视觉淡入权重（NebulaVolumeLayer 每帧写入：门控 × 烘焙就绪；
+  // 卸载复位 0——billboard/PuffCloud/星点交叉淡出的唯一消费源）
+  const volumeFadeRef = useRef(0);
   useFrame(() => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
     const near01 = getNear01();
+    const vol01 = volumeFadeRef.current;
     group.traverse((obj) => {
       const base = obj.userData.baseOpacity as number | undefined;
       if (base === undefined) return;
-      // 近观时基础平面层减淡（体积云团接管主体，削弱"平面贴片"观感）
-      const factor = obj.userData.nearDim ? weight * (1 - 0.35 * near01) : weight;
+      // 近观时基础平面层减淡（R2-7）+ 体积层交叉淡出（R4-8：体积淡入时
+      // billboard 隐去、youngStars 星点移交给体积子场景 Trapezium sprite）
+      const factor = obj.userData.nearDim
+        ? weight * orionBaseLayerFactor(near01, vol01)
+        : obj.userData.volDim
+          ? weight * (1 - vol01)
+          : weight;
       if (obj instanceof THREE.Sprite) {
         obj.material.opacity = base * factor;
       } else if (obj instanceof THREE.Mesh) {
@@ -1876,7 +2579,7 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
           />
         </mesh>
       ))}
-      {/* R2-7 近观体积感云团（18 sprite，绕行观察无"单张圆形光晕"） */}
+      {/* R2-7 近观体积感云团（18 sprite；R4-8：体积淡入时交叉淡出） */}
       {nearActive && (
         <NebulaPuffCloud
           seed={4210}
@@ -1884,16 +2587,32 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
           radiusUnits={size * 1.05}
           flattenY={0.55}
           textures={cloudLayers}
-          getOpacity={() => getWeight() * getNear01()}
+          getOpacity={() =>
+            getWeight() * orionPuffFactor(getNear01(), volumeFadeRef.current)
+          }
         />
       )}
-      {/* 内部年轻恒星 + Trapezium 聚星（点亮局部） */}
+      {/* R4-8 近观体积层（128³ RG raymarch，detailLayer volume 池门控；
+          卸载即 dispose 纹理/RT/材质，交叉淡出权重经 volumeFadeRef 输出；
+          R4-14 起经泛化 NebulaVolumeLayer 接线，行为零回退） */}
+      {volumeActive && (
+        <NebulaVolumeLayer
+          groupRef={groupRef}
+          boxEdgeUnits={orionVolumeBoxEdgeUnits(size)}
+          config={volumeConfig}
+          getWeight={getWeight}
+          getGate01={getVolumeGate01}
+          fadeRef={volumeFadeRef}
+        />
+      )}
+      {/* 内部年轻恒星 + Trapezium 聚星（点亮局部；体积激活时交叉淡出，
+          星点移交体积子场景内嵌 Trapezium sprite——位置与空腔一致） */}
       {youngStars.map((p, i) => (
         <sprite
           key={i}
           position={[p.x, p.y, p.z]}
           scale={[size * p.s, size * p.s, 1]}
-          userData={{ baseOpacity: 0.9 }}
+          userData={{ baseOpacity: 0.9, volDim: true }}
         >
           <spriteMaterial
             map={starTexture}
@@ -1910,11 +2629,21 @@ function EmissionNebula({ body }: BodyProps): JSX.Element {
 
 /**
  * 行星状星云（环状星云 M57）：环壳结构 + 中心白矮星 + 缓慢膨胀动画
+ *
+ * R4-14：近观挂接壳层体积模型（useDetailLayer volume 池，容量 1，与
+ * M42 同池——巡游切换时 LRU 逐出）——跟随/飞往且距离达阈值（与 R2-7
+ * 近观层同源同值）时挂载 NebulaVolumeLayer（三轴椭球壳密度场 96³）；
+ * 环面 billboard/中心白矮星网格（m57BillboardFactor）与 R2-7 环体
+ * +200 环向粒子/外晕壳（m57NearLayerFactor）随体积淡入交叉淡出（0.5s，
+ * §R4-14 第 3 条登记），退出反向恢复、体积纹理随卸载 dispose。体积
+ * 位姿参考 = 环壳缩放组（倾斜姿态 + 膨胀动画随动）。体积激活期间环面
+ * 透明度趋 0 但仍保留 raycast 命中（点选信息面板不受影响，同 R4-8）。
  */
 function PlanetaryNebula({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
   const shellRef = useRef<THREE.Group>(null);
   const planeRef = useRef<THREE.Mesh>(null);
+  const dwarfRef = useRef<THREE.Mesh>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
 
@@ -1937,20 +2666,37 @@ function PlanetaryNebula({ body }: BodyProps): JSX.Element {
   const getWeight = useGalacticPlacement(body, groupRef);
   // R2-7 近观门控：跟随时挂载环体 3D 粒子与外晕层，离开即释放
   const { nearActive, getNear01 } = useNearViewGate(body, groupRef);
+  // R4-14 体积层门控（volume 池容量 1，release-on-exit：退出淡出即卸载）
+  const volumeSpec = useMemo(() => m57VolumeDetailLayerSpec(), []);
+  const volumeConfig = useMemo(() => m57VolumeLayerConfig(), []);
+  const { active: volumeActive, opacity01: getVolumeGate01 } = useDetailLayer(
+    volumeSpec,
+    { objectRef: groupRef },
+  );
+  // 体积视觉淡入权重（NebulaVolumeLayer 每帧写入：门控 × 烘焙就绪；
+  // 卸载复位 0——环面/环粒子/外晕/白矮星交叉淡出的唯一消费源）
+  const volumeFadeRef = useRef(0);
   useFrame(({ clock }) => {
     const group = groupRef.current;
     if (!group || !group.visible) return;
     const weight = getWeight();
+    const vol01 = volumeFadeRef.current;
     if (shellRef.current) {
       // 缓慢膨胀（真实约 20–30 km/s，动画为艺术化加速，已登记）；
-      // 近观环体粒子挂在同一缩放组内与环面同步膨胀
+      // 近观环体粒子挂在同一缩放组内与环面同步膨胀（体积层随动）
       shellRef.current.scale.setScalar(
         nebulaExpansionScale(clock.elapsedTime, 75, 0.12),
       );
     }
     if (planeRef.current) {
+      // R4-14：体积淡入时环面 billboard 交叉淡出（vol01=0 行为零回退）
       (planeRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.85 * weight;
+        0.85 * weight * m57BillboardFactor(vol01);
+    }
+    if (dwarfRef.current) {
+      // 中心白矮星网格移交体积子场景白矮星色档 sprite（R4-6 色档）
+      (dwarfRef.current.material as THREE.MeshBasicMaterial).opacity =
+        weight * m57BillboardFactor(vol01);
     }
   });
 
@@ -1976,25 +2722,45 @@ function PlanetaryNebula({ body }: BodyProps): JSX.Element {
             side={THREE.DoubleSide}
           />
         </mesh>
-        {/* R2-7 近观环体 3D 粒子（环向软边粒子，侧向观察环体有厚度） */}
+        {/* R2-7 近观环体 3D 粒子（环向软边粒子，侧向观察环体有厚度；
+            R4-14：体积淡入时交叉淡出——+200 环向粒子移交体积壳） */}
         {nearActive && (
           <RingNebulaNearTorus
             sizeUnits={size}
-            getOpacity={() => getWeight() * getNear01()}
+            getOpacity={() =>
+              getWeight() *
+              m57NearLayerFactor(getNear01(), volumeFadeRef.current)
+            }
+          />
+        )}
+        {/* R4-14 近观壳层体积（96³ RG raymarch，三轴椭球壳；位姿参考 =
+            环壳缩放组——倾斜姿态与膨胀动画随动；detailLayer volume 池
+            门控，卸载即 dispose 纹理/RT/材质） */}
+        {volumeActive && (
+          <NebulaVolumeLayer
+            groupRef={shellRef}
+            boxEdgeUnits={m57VolumeBoxEdgeUnits(size)}
+            config={volumeConfig}
+            getWeight={getWeight}
+            getGate01={getVolumeGate01}
+            fadeRef={volumeFadeRef}
           />
         )}
       </group>
-      {/* R2-7 近观外晕壳（外缘 Hα 弥散晕，体积包裹感） */}
+      {/* R2-7 近观外晕壳（外缘 Hα 弥散晕，体积包裹感；R4-14 交叉淡出：
+          体积外晕弱壳接管） */}
       {nearActive && (
         <RingNebulaNearHalo
           sizeUnits={size}
-          getOpacity={() => getWeight() * getNear01()}
+          getOpacity={() =>
+            getWeight() * m57NearLayerFactor(getNear01(), volumeFadeRef.current)
+          }
         />
       )}
-      {/* 中心白矮星 */}
-      <mesh>
+      {/* 中心白矮星（体积激活时交叉淡出，移交体积子场景白矮星色档 sprite） */}
+      <mesh ref={dwarfRef}>
         <sphereGeometry args={[size * 0.07, 12, 12]} />
-        <meshBasicMaterial color="#ffffff" />
+        <meshBasicMaterial color="#ffffff" transparent depthWrite={false} />
       </mesh>
       <BodyLabel body={body} sizeUnits={size} />
     </group>
@@ -2119,41 +2885,82 @@ function RingNebulaNearHalo({
 
 /**
  * 球状星团（M13）：银晕中的致密老年恒星集团（偏红黄色调）
+ *
+ * R4-19：位置分布按 King (1966) profile 逆变换采样（Harris 目录 NGC 6205
+ * 参数经 m13-profile.json 烘焙产物；潮汐半径映射满视觉半径——核半径仅占
+ * ~3%，中心致密核 + 外围稀疏晕），颜色按 HR 图两档（红黄老年星族 90% +
+ * 蓝离散/水平支 10%）→ blackbodyRGB。加载失败降级现状 rand² 分布（登记）。
  */
 function GlobularCluster({ body }: BodyProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const size = body.visualRadiusLy * SCENE_UNITS_PER_LY;
 
+  // R4-19：King profile（null = 加载中/失败 → 降级现状程序化分布）
+  const profile = useM13Profile();
+  const kingModel = useMemo(() => {
+    if (!profile) return null;
+    const table = buildKingRadiusTable01(kingShapeFromProfile(profile.profile));
+    return {
+      // 远观基础星场（420 粒）与 R2-7 近观增量（+1,200 粒）：总预算不变，
+      // 种子沿用现状（20260722/20260723，确定性登记）
+      base: buildM13ClusterAttributes({
+        seed: 20260722,
+        count: M13_BASE_STAR_COUNT,
+        radiusUnits: size,
+        table,
+        brightnessMin: 0.6,
+        brightnessMax: 1.0,
+      }),
+      near: buildM13ClusterAttributes({
+        seed: 20260723,
+        count: M13_NEAR_STAR_COUNT,
+        radiusUnits: size,
+        table,
+        brightnessMin: 0.35,
+        brightnessMax: 0.8,
+      }),
+    };
+  }, [profile, size]);
+
   const { geometry, material } = useMemo(() => {
-    const rand = createSeededRandom(20260722);
-    const count = 420;
-    const positions = new Float32Array(count * 3);
-    const colors = new Float32Array(count * 3);
-    // M13 星族色板（P6 §3.2）：老年星族以红黄为主 + 少量蓝离散星
-    // （HST 测光；蓝离散星为并合/物质转移形成的偏蓝恒星）
-    const old = [
-      [1.0, 0.82, 0.55], // 橙黄（K/G 巨星，老年星族主体）
-      [1.0, 0.7, 0.42], // 橙红
-      [1.0, 0.9, 0.72], // 黄白
-    ];
-    const blueStraggler = [0.72, 0.82, 1.0];
-    for (let i = 0; i < count; i += 1) {
-      // 中心致密的球状分布（半径取 rand² 使中心更密）
-      const r = size * rand() * rand();
-      const cosPolar = rand() * 2 - 1;
-      const azimuth = Math.PI * 2 * rand();
-      const sinPolar = Math.sqrt(1 - cosPolar * cosPolar);
-      positions[i * 3] = r * sinPolar * Math.cos(azimuth);
-      positions[i * 3 + 1] = r * cosPolar;
-      positions[i * 3 + 2] = r * sinPolar * Math.sin(azimuth);
-      // 约 8% 蓝离散星，其余老年红黄星族
-      const isBlue = rand() < 0.08;
-      const c = isBlue ? blueStraggler : old[Math.floor(rand() * old.length)];
-      const brightness = 0.6 + 0.4 * rand();
-      colors[i * 3] = c[0] * brightness;
-      colors[i * 3 + 1] = c[1] * brightness;
-      colors[i * 3 + 2] = c[2] * brightness;
+    let positions: Float32Array;
+    let colors: Float32Array;
+    if (kingModel) {
+      ({ positions, colors } = kingModel.base);
+    } else {
+      // 降级现状（R4-19 登记）：rand² 分布 + P6 §3.2 色板
+      const rand = createSeededRandom(20260722);
+      const count = M13_BASE_STAR_COUNT;
+      positions = new Float32Array(count * 3);
+      colors = new Float32Array(count * 3);
+      // M13 星族色板（P6 §3.2）：老年星族以红黄为主 + 少量蓝离散星
+      // （HST 测光；蓝离散星为并合/物质转移形成的偏蓝恒星）
+      const old = [
+        [1.0, 0.82, 0.55], // 橙黄（K/G 巨星，老年星族主体）
+        [1.0, 0.7, 0.42], // 橙红
+        [1.0, 0.9, 0.72], // 黄白
+      ];
+      const blueStraggler = [0.72, 0.82, 1.0];
+      for (let i = 0; i < count; i += 1) {
+        // 中心致密的球状分布（半径取 rand² 使中心更密）
+        const r = size * rand() * rand();
+        const cosPolar = rand() * 2 - 1;
+        const azimuth = Math.PI * 2 * rand();
+        const sinPolar = Math.sqrt(1 - cosPolar * cosPolar);
+        positions[i * 3] = r * sinPolar * Math.cos(azimuth);
+        positions[i * 3 + 1] = r * cosPolar;
+        positions[i * 3 + 2] = r * sinPolar * Math.sin(azimuth);
+        // 约 8% 蓝离散星，其余老年红黄星族
+        const isBlue = rand() < 0.08;
+        const c = isBlue
+          ? blueStraggler
+          : old[Math.floor(rand() * old.length)];
+        const brightness = 0.6 + 0.4 * rand();
+        colors[i * 3] = c[0] * brightness;
+        colors[i * 3 + 1] = c[1] * brightness;
+        colors[i * 3 + 2] = c[2] * brightness;
+      }
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -2169,7 +2976,7 @@ function GlobularCluster({ body }: BodyProps): JSX.Element {
       sizeAttenuation: true,
     });
     return { geometry: geo, material: mat };
-  }, [size]);
+  }, [size, kingModel]);
 
   useEffect(
     () => () => {
@@ -2192,9 +2999,16 @@ function GlobularCluster({ body }: BodyProps): JSX.Element {
   return (
     <group ref={groupRef} name={body.id}>
       <points geometry={geometry} material={material} />
-      {/* R2-7 近观分级星场（+1,200 粒更小的暗星，rand^2.4 分布中心更密——
-          近观时中心密集/边缘稀疏的分辨力提升，粒子均为圆形软边贴图） */}
-      {nearActive && (
+      {/* R2-7 近观分级星场（+1,200 粒更小的暗星）：King 采样（R4-19）或
+          降级现状 rand^2.4 分布，粒子均为圆形软边贴图 */}
+      {nearActive && kingModel && (
+        <M13KingStarField
+          attributes={kingModel.near}
+          pointSizeUnits={size * 0.035}
+          getOpacity={() => getWeight() * getNear01()}
+        />
+      )}
+      {nearActive && !kingModel && (
         <ClusterNearStarField
           seed={20260723}
           count={1200}
@@ -2219,6 +3033,59 @@ function GlobularCluster({ body }: BodyProps): JSX.Element {
       <BodyLabel body={body} sizeUnits={size} />
     </group>
   );
+}
+
+/**
+ * M13 King 采样星场（R4-19）：渲染 `buildM13ClusterAttributes` 预构建的
+ * 位置/颜色属性（King 逆变换采样 + HR 黑体色，构建在消费方 useMemo 完成
+ * ——本组件仅装配几何/材质与帧驱动不透明度）。粒子为圆形软边贴图，
+ * 加色混合；卸载即 dispose。预览页（?body=m13）与主场景近观层共用。
+ */
+export function M13KingStarField({
+  attributes,
+  pointSizeUnits,
+  baseOpacity = 0.85,
+  getOpacity,
+}: {
+  attributes: M13ClusterAttributes;
+  pointSizeUnits: number;
+  /** 满权重不透明度（远观基础层 0.9 / 近观暗星层 0.85 现状对齐） */
+  baseOpacity?: number;
+  getOpacity: () => number;
+}): JSX.Element {
+  const { geometry, material } = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute(
+      "position",
+      new THREE.BufferAttribute(attributes.positions, 3),
+    );
+    geo.setAttribute("color", new THREE.BufferAttribute(attributes.colors, 3));
+    const mat = new THREE.PointsMaterial({
+      map: getSoftPointTexture(),
+      vertexColors: true,
+      size: pointSizeUnits,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: true,
+    });
+    return { geometry: geo, material: mat };
+  }, [attributes, pointSizeUnits]);
+
+  useEffect(
+    () => () => {
+      geometry.dispose();
+      material.dispose();
+    },
+    [geometry, material],
+  );
+
+  useFrame(() => {
+    material.opacity = baseOpacity * getOpacity();
+  });
+
+  return <points geometry={geometry} material={material} />;
 }
 
 /**

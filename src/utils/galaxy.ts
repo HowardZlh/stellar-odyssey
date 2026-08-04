@@ -53,6 +53,21 @@
  * 4. 尘埃带侧视剪影：加性混合无法"画暗"，以「侧视时盘中平面粒子亮度
  *    衰减 + 红化」近似尘埃吸光（真实为视线积分消光，视角依赖调制为
  *    艺术化手法，已登记）；正视时旋臂内侧尘埃暗纹沿用既有 shader。
+ *
+ * ── R5-6 HI 翘曲盘（Levine, Blitz & Heiles 2006 近似参数登记）────────────
+ * 外盘（r > 35,000 ly）叠加 m=1 S 形垂直位移 warpYLy(r, φ) =
+ * A(r)·sin(φ − φ₀)：Levine et al. 2006 测得银河系 HI 盘 m=1 翘曲模在
+ * R ≳ 10–16 kpc 起振、振幅随半径增长（R≈25 kpc 处达 ~2 kpc 量级）。
+ * 近似登记：① 本项目银盘可视截断于 50,000 ly（≈15.3 kpc），真实该半径处
+ * 振幅仅 ~0.3 kpc，按"侧视可辨"验收目标将盘缘振幅艺术化放大至
+ * 3,000 ly（≈0.9 kpc，量级仍取自 Levine m=1 径向增长趋势）；② 振幅径向
+ * 增长取二次方（起点 C¹ 连续，Levine 近似线性增长的平滑化）；③ 交点线
+ * （line of nodes）取本地坐标 +x 轴（φ₀=0，太阳–银心方向，方位近似
+ * 登记）；④ 位移为 CPU 生成期一次性烘焙（warpsLy 通道），粒子较差自转
+ * 后图案随恒星绕转缓慢缠绕（生成期近似登记，t=0 形态与文献相位对应）；
+ * ⑤ morph 组合：warp 为基线位移，R2-11 uEll / R3-7 uExpand 的椭球目标
+ * 高度仍由未翘曲 aHeightLy 派生 → 终态椭球无翘曲、组合无形变放大
+ * （CPU 镜像 diskWarpMorphYLy，单测断言组合顺序）。
  */
 
 import type { Vec3 } from '@/types';
@@ -294,6 +309,82 @@ export function barParticleAngle(initialPhaseRad: number, simDays: number): numb
   return initialPhaseRad + BAR_PATTERN_SPEED_RAD_PER_MYR * simDaysToMyr(simDays);
 }
 
+// ---------------------------------------------------------------------------
+// R5-6 HI 翘曲盘（m=1 S 形垂直位移，Levine, Blitz & Heiles 2006 近似，
+// 参数与近似项登记见文件头）
+// ---------------------------------------------------------------------------
+
+/** HI 翘曲起始半径（光年）：内盘（r ≤ 本值）零位移 */
+export const GALACTIC_WARP_START_LY = 35000;
+
+/** 盘缘（GALACTIC_DISK_RADIUS_LY 处）翘曲振幅（光年，艺术化放大登记） */
+export const GALACTIC_WARP_AMP_EDGE_LY = 3000;
+
+/** m=1 翘曲交点线相位 φ₀（弧度；取 +x 轴 = 太阳–银心方向，近似登记） */
+export const GALACTIC_WARP_PHASE_RAD = 0;
+
+/**
+ * HI 翘曲垂直位移（光年）：m=1 S 形 warp = A(r)·sin(φ − φ₀)
+ *
+ * A(r)：r ≤ 起始半径为 0；向外二次增长（起点 C¹ 连续），盘缘
+ * （GALACTIC_DISK_RADIUS_LY）处达 GALACTIC_WARP_AMP_EDGE_LY。
+ * m=1：方位角相对两侧一升一降（sin 反号）→ 侧视 S 形。
+ *
+ * @param rLy 银盘面内半径（光年，≥0）
+ * @param phiRad 方位角（弧度）
+ * @throws RangeError 当输入非有限数或 rLy < 0
+ */
+export function warpYLy(rLy: number, phiRad: number): number {
+  if (!Number.isFinite(rLy) || !Number.isFinite(phiRad)) {
+    throw new RangeError(`翘曲输入必须为有限数，收到 (${rLy}, ${phiRad})`);
+  }
+  if (rLy < 0) {
+    throw new RangeError(`半径必须 ≥ 0，收到 ${rLy}`);
+  }
+  if (rLy <= GALACTIC_WARP_START_LY) return 0;
+  const t =
+    (rLy - GALACTIC_WARP_START_LY) / (GALACTIC_DISK_RADIUS_LY - GALACTIC_WARP_START_LY);
+  return GALACTIC_WARP_AMP_EDGE_LY * t * t * Math.sin(phiRad - GALACTIC_WARP_PHASE_RAD);
+}
+
+/**
+ * 盘粒子最终垂直位置（光年）——渲染端顶点着色器组合链的 CPU 镜像
+ * （R5-6 组合顺序单测锚定，`Scene/Galaxy.tsx` 盘 shader 同式）：
+ *
+ *   y₀ = aHeightLy + aWarpLy（warp 为生成期基线位移）
+ *   hT = (aHeightLy / 500)·max(aRadiusLy, 6000)·0.5（椭球目标，
+ *        由未翘曲高度派生——防翘曲被 morph 放大 ~r/1000 倍形变异常）
+ *   y  = mix(mix(y₀, hT, uEll), hT, uExpand)
+ *
+ * 性质（单测断言）：uEll=uExpand=0 → y₀（翘曲完整呈现）；任一权重达 1
+ * → hT（终态椭球/展开态无翘曲）；等价闭式 y = (1−w)·y₀ + w·hT，
+ * w = combinedMorphWeight(uEll, uExpand)。
+ *
+ * @throws RangeError 当权重不在 [0,1] 或输入非有限数
+ */
+export function diskWarpMorphYLy(
+  heightLy: number,
+  warpLy: number,
+  radiusLy: number,
+  ell: number,
+  expand: number,
+): number {
+  if (
+    !Number.isFinite(heightLy) ||
+    !Number.isFinite(warpLy) ||
+    !Number.isFinite(radiusLy)
+  ) {
+    throw new RangeError(`输入必须为有限数，收到 (${heightLy}, ${warpLy}, ${radiusLy})`);
+  }
+  if (!(ell >= 0 && ell <= 1) || !(expand >= 0 && expand <= 1)) {
+    throw new RangeError(`morph 权重必须在 [0,1] 内，收到 (${ell}, ${expand})`);
+  }
+  const hTargetLy = (heightLy / 500) * Math.max(radiusLy, 6000) * 0.5;
+  const y0 = heightLy + warpLy;
+  const y1 = y0 + (hTargetLy - y0) * ell;
+  return y1 + (hTargetLy - y1) * expand;
+}
+
 /** 银盘粒子生成参数 */
 export interface GalaxyDiskParams {
   /** 粒子数 */
@@ -331,8 +422,10 @@ export interface GalaxyDiskParticles {
   radiiLy: Float32Array;
   /** 初始方位角（弧度，含旋臂结构） */
   phases: Float32Array;
-  /** 垂直高度（光年） */
+  /** 垂直高度（光年，未含翘曲——morph 椭球目标由本通道派生） */
   heightsLy: Float32Array;
+  /** R5-6 HI 翘曲垂直位移（光年，生成期一次性烘焙；内盘/核球/棒为 0） */
+  warpsLy: Float32Array;
   /** RGB 颜色（count*3，0-1） */
   colors: Float32Array;
   /** 粒子大小，中心大边缘小（1.0–2.5） */
@@ -381,6 +474,8 @@ const NEBULA_FRACTION = 0.08;
  *          + 高斯抖动（Box-Muller）·armSpreadRad（对数螺旋臂），
  *   其中约 20% 为臂间弥散星（相位全随机）；
  * - 高度 = 高斯 × thickness/2 × (1 − 0.5·r/diskRadius)（外缘更薄）；
+ * - 翘曲（R5-6）= warpYLy(r, φ)（外盘 m=1 S 形，独立 warpsLy 通道，
+ *   银河系渲染端叠加；近观星系复用本生成器时不消费该通道，登记）；
  * - 大小从中心 2.5 线性递减到边缘 1.0；
  * - 棒粒子（R2-9，barFraction 占比）：沿 x 轴的三轴椭球高斯分布
  *   （长半轴 barHalfLengthLy、短轴比 barAxisRatio、厚度 barThicknessLy），
@@ -411,6 +506,7 @@ export function generateGalaxyDiskParticles(params: GalaxyDiskParams): GalaxyDis
     radiiLy: new Float32Array(n),
     phases: new Float32Array(n),
     heightsLy: new Float32Array(n),
+    warpsLy: new Float32Array(n),
     colors: new Float32Array(n * 3),
     sizes: new Float32Array(n),
     barFlags: new Float32Array(n),
@@ -476,6 +572,10 @@ export function generateGalaxyDiskParticles(params: GalaxyDiskParams): GalaxyDis
       // 高度：高斯 × 半厚度 × 外缘变薄因子
       result.heightsLy[i] =
         gaussian(rand) * (params.thicknessLy / 2) * (1 - 0.5 * (r / params.diskRadiusLy));
+      // R5-6 HI 翘曲：外盘 m=1 S 形垂直位移（确定性派生自 r/φ，
+      // 不消耗随机数——heightsLy 等既有通道逐字节不变；核球/棒半径
+      // 恒在起始半径内位移为 0，仅盘粒子写入）
+      result.warpsLy[i] = warpYLy(r, result.phases[i]);
 
       // 颜色：恒星色板采样；旋臂区域掺入少量星云粉色
       const color =

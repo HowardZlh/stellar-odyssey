@@ -42,6 +42,7 @@ import { detailGateUpdateScoped, detailStrength01 } from '@/utils/planetDetail';
 import { focusBodyIdForDetail, planetDetailScopeAllowed } from '@/utils/bodyCycle';
 import { getMoonById } from '@/data/moons';
 import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
+import { BodyNameText } from '@/components/Scene/LocalizedLabelText';
 import { auroraEnhancement01 } from '@/utils/solarActivity';
 import {
   RING_SHADOW_STRENGTH,
@@ -949,7 +950,7 @@ export function Planet({ data }: PlanetProps): JSX.Element {
           style={{ pointerEvents: 'none' }}
         >
           <span ref={labelElRef} className="whitespace-nowrap text-xs text-gray-200/80">
-            {data.nameZh}
+            <BodyNameText body={data} />
           </span>
         </ClampedHtmlLabel>
       )}

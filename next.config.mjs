@@ -6,6 +6,8 @@ const baseConfig = {
   output: 'export',
   reactStrictMode: true,
   transpilePackages: ['three'],
+  // 关闭开发模式左下角的 Next.js "N" 指示器：与站内左下角「商业合作」角标位置冲突
+  devIndicators: false,
 };
 
 /**
