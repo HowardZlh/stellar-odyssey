@@ -14,7 +14,7 @@
 
 [![live](https://img.shields.io/badge/在线体验-stellar.guushu.com-4d9fff)](https://stellar.guushu.com) [![CI](https://github.com/HowardZlh/stellar-odyssey/actions/workflows/pr-gate.yml/badge.svg)](https://github.com/HowardZlh/stellar-odyssey/actions/workflows/pr-gate.yml) ![tech](https://img.shields.io/badge/Next.js-16-black) ![tech](https://img.shields.io/badge/React-19-61dafb) ![tech](https://img.shields.io/badge/Three.js-R3F-049ef4) ![tech](https://img.shields.io/badge/TypeScript-strict-3178c6) ![coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0-blue)
 
-**目录**：[效果演示](#-效果演示) · [亮点特性](#-亮点特性) · [快速开始](#-快速开始) · [文档与教程](#-文档与教程) · [技术栈](#-技术栈) · [科学性承诺](#-科学性承诺) · [参与贡献](#-参与贡献) · [商业合作](#-商业合作) · [开源协议](#️-开源协议)
+**目录**：[效果演示](#-效果演示) · [亮点特性](#-亮点特性) · [快速开始](#-快速开始) · [文档与教程](#-文档与教程) · [技术栈](#-技术栈) · [科学性承诺](#-科学性承诺) · [参与贡献](#-参与贡献) · [赞助支持](#-赞助支持) · [商业合作](#-商业合作) · [开源协议](#️-开源协议)
 
 ---
 
@@ -208,6 +208,14 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 
 欢迎 issue 与 PR！请先阅读 [贡献指南](CONTRIBUTING.md)——代码贡献需签署 [CLA](CLA.md)（许可授予型，你保留自己贡献的版权），以维持本项目 AGPL-3.0 + 商业授权的双许可模式。
 
+## 💖 赞助支持
+
+如果这个宇宙曾让你停下滚轮多看了一会儿，欢迎通过爱发电支持项目：
+
+- ⚡ 爱发电：[afdian.com/a/stellar-odyssey](https://afdian.com/a/stellar-odyssey)
+
+赞助没有任何回报承诺——项目的全部功能与源代码对所有人平等开放。你的支持将用于持续开发与域名维护，让它保持**免费、无广告、开源**。
+
 ## 💼 商业合作
 
 欢迎教育机构、科技馆与展陈集成商联系合作。合作方向示例：展馆大屏部署、定制开发、课程内容。
@@ -224,3 +232,4 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 - **个人学习、教育教学、科研用途**：自由使用、修改与分发（遵循 AGPL 条款）
 - **商业闭源集成**（如展馆展项、商业产品嵌入等不愿以 AGPL 开源衍生代码的场景）：请联系作者获取商业授权——邮箱 [stevenzearo@163.com](mailto:stevenzearo@163.com)，或通过 [GitHub Issues](https://github.com/HowardZlh/stellar-odyssey/issues) 留言
 - 纹理、3D 模型等素材的许可归属见 [docs/attribution.md](docs/attribution.md)，不适用代码协议
+- **商标声明**：「星海奥德赛」与「Stellar Odyssey」名称及项目标识不在开源许可授权范围内，fork 与衍生项目请使用自己的名称

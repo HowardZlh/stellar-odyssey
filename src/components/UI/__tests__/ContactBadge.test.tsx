@@ -12,6 +12,7 @@ import {
   CONTACT_EMAIL,
   CONTACT_GITHUB_ISSUES_URL,
   ContactBadge,
+  SPONSOR_AFDIAN_URL,
 } from '../ContactBadge';
 
 /** 避让相关标志复位（其余 store 字段不动，沿用既有 store 测试口径） */
@@ -44,7 +45,7 @@ describe('ContactBadge 渲染', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('展开后卡片包含邮箱 mailto 链接与 GitHub Issues 链接', () => {
+  it('展开后卡片包含邮箱 mailto 链接、GitHub Issues 链接与爱发电赞助链接', () => {
     render(<ContactBadge />);
     expandBadge();
     expect(screen.getByRole('dialog', { name: '商业合作联系方式' })).toBeInTheDocument();
@@ -52,6 +53,9 @@ describe('ContactBadge 渲染', () => {
     expect(mail).toHaveAttribute('href', `mailto:${CONTACT_EMAIL}`);
     const issues = screen.getByRole('link', { name: /GitHub Issues/ });
     expect(issues).toHaveAttribute('href', CONTACT_GITHUB_ISSUES_URL);
+    const sponsor = screen.getByRole('link', { name: /爱发电赞助支持/ });
+    expect(sponsor).toHaveAttribute('href', SPONSOR_AFDIAN_URL);
+    expect(sponsor).toHaveAttribute('target', '_blank');
   });
 });
 
