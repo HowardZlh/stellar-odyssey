@@ -1,12 +1,12 @@
 /**
  * 捐赠名单排序与平台注册表单测（捐赠页 /donate）：
  * - sortDonorsByAmountDesc 金额降序、同额昵称字典序、纯函数不改入参
- * - DONATION_PLATFORMS：爱发电链接同源（ContactBadge 常量）、预留位登记
+ * - DONATION_PLATFORMS：爱发电/Ko-fi 链接同源常量、预留位登记
  * - DONORS 登记数据完整性（当前空名单上线）
  */
 
 import { SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
-import { DONATION_PLATFORMS } from '@/data/donationPlatforms';
+import { DONATION_PLATFORMS, SPONSOR_KOFI_URL } from '@/data/donationPlatforms';
 import { DONORS } from '@/data/donors';
 import type { DonorRecord } from '@/utils/donors';
 import { sortDonorsByAmountDesc } from '@/utils/donors';
@@ -48,7 +48,12 @@ describe('DONATION_PLATFORMS 注册表', () => {
     expect(afdian?.url).toBe(SPONSOR_AFDIAN_URL);
   });
 
-  it('包含五个平台（微信/GitHub Sponsors/Ko-fi/Buy Me a Coffee 为预留位）', () => {
+  it('Ko-fi 链接复用同源常量且可用', () => {
+    const kofi = DONATION_PLATFORMS.find((p) => p.id === 'kofi');
+    expect(kofi?.url).toBe(SPONSOR_KOFI_URL);
+  });
+
+  it('包含五个平台（微信/GitHub Sponsors/Buy Me a Coffee 为预留位）', () => {
     expect(DONATION_PLATFORMS.map((p) => p.id)).toEqual([
       'afdian',
       'wechat',
@@ -60,7 +65,6 @@ describe('DONATION_PLATFORMS 注册表', () => {
     expect(reserved.map((p) => p.id)).toEqual([
       'wechat',
       'github-sponsors',
-      'kofi',
       'buymeacoffee',
     ]);
   });

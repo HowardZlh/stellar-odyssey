@@ -9,6 +9,9 @@
 import { SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
 import type { DonationPlatformId } from '@/utils/donors';
 
+/** Ko-fi 主页（README 赞助小节与 .github/FUNDING.yml 同源，对外入口同源纪律） */
+export const SPONSOR_KOFI_URL = 'https://ko-fi.com/howardzlh';
+
 export interface DonationPlatform {
   id: DonationPlatformId;
   nameZh: string;
@@ -26,7 +29,7 @@ export const DONATION_PLATFORMS: readonly DonationPlatform[] = [
     nameEn: 'GitHub Sponsors',
     url: null,
   },
-  { id: 'kofi', nameZh: 'Ko-fi', nameEn: 'Ko-fi', url: null },
+  { id: 'kofi', nameZh: 'Ko-fi', nameEn: 'Ko-fi', url: SPONSOR_KOFI_URL },
   {
     id: 'buymeacoffee',
     nameZh: 'Buy Me a Coffee',

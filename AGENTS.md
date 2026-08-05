@@ -59,6 +59,7 @@
 |---|---|
 | 商业合作邮箱 `stevenzearo@163.com` | README.md「商业合作」与「开源协议」节 · README.en.md 对应节 · `src/components/UI/ContactBadge.tsx` 的 `CONTACT_EMAIL` |
 | 爱发电赞助链接 `https://afdian.com/a/stellar-odyssey` | README.md「赞助支持」节 · README.en.md「Sponsor」节 · `.github/FUNDING.yml` · `ContactBadge.tsx` 的 `SPONSOR_AFDIAN_URL` |
+| Ko-fi 链接 `https://ko-fi.com/howardzlh` | README.md「赞助支持」节 · README.en.md「Sponsor」节 · `.github/FUNDING.yml`（`ko_fi` 字段） · `src/data/donationPlatforms.ts` 的 `SPONSOR_KOFI_URL` |
 | GitHub Issues 链接 | README 两版 · `ContactBadge.tsx` 的 `CONTACT_GITHUB_ISSUES_URL` |
 
 - **README 双语同步**：`README.md` 的对外内容（章节增删、入口链接、商标声明等）变更时必须同步 `README.en.md`，反之亦然

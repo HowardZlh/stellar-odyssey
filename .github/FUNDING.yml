@@ -1,3 +1,4 @@
 # 赞助入口：GitHub Sponsors 收款不支持中国大陆（Stripe Connect 限制），
-# 走 custom 链接指向爱发电主页；仓库页面右上将显示 "Sponsor" 按钮。
+# 爱发电走 custom 链接；Ko-fi 用平台原生字段。仓库页面右上将显示 "Sponsor" 按钮。
+ko_fi: howardzlh
 custom: ["https://afdian.com/a/stellar-odyssey"]
