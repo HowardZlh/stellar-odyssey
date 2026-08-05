@@ -93,7 +93,10 @@ export default function ContributorsPage(): JSX.Element {
     selectedIndex !== null ? donors[selectedIndex] : undefined;
 
   return (
-    <main className="min-h-screen bg-space-dark pb-[calc(2.5rem+env(safe-area-inset-bottom))] pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] pt-[max(2.5rem,env(safe-area-inset-top))] text-gray-200">
+    // 滚动修复（与 donate 页同根因同方案）：html/body 全局 overflow:hidden
+    // 下长内容页自身做滚动容器（fixed inset-0 + overflow-y-auto）；
+    // isCompact 详情卡 fixed 定位不受本容器影响（无 transform 祖先），行为不变
+    <main className="hud-scroll fixed inset-0 overflow-y-auto bg-space-dark pb-[calc(2.5rem+env(safe-area-inset-bottom))] pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] pt-[max(2.5rem,env(safe-area-inset-top))] text-gray-200">
       {/* 深空氛围背景（纯 CSS 渐变） */}
       <div
         aria-hidden="true"

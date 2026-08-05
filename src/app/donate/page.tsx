@@ -48,9 +48,13 @@ export default function DonatePage(): JSX.Element {
   const [openQrId, setOpenQrId] = useState<DonationPlatformId | null>(null);
 
   return (
+    // 滚动修复：globals.css 对 html/body 全局 overflow:hidden（主 3D 场景
+    // 需要），min-h-screen 长内容会被裁切且整页不可滚——donate 页自身改为
+    // 滚动容器（fixed inset-0 + overflow-y-auto，触屏 pan-y 天然可用），
+    // 不动全局样式、主场景零影响。
     // M5-1 safe-area：viewport-fit=cover 下四向避让刘海/Home Indicator
     // （px/py 与 inset 取 max/求和，safe-area 为 0 时与原 px-6 py-10 逐像素一致）
-    <main className="min-h-screen bg-space-dark pb-[calc(2.5rem+env(safe-area-inset-bottom))] pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] pt-[max(2.5rem,env(safe-area-inset-top))] text-gray-200">
+    <main className="hud-scroll fixed inset-0 overflow-y-auto bg-space-dark pb-[calc(2.5rem+env(safe-area-inset-bottom))] pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] pt-[max(2.5rem,env(safe-area-inset-top))] text-gray-200">
       {/* 深空氛围背景（纯 CSS 渐变，无 3D 负担） */}
       <div
         aria-hidden="true"
