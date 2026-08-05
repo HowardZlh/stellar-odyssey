@@ -35,6 +35,28 @@ export const en: I18nDict = {
     donorAmount: '¥{amount}',
     backToApp: 'Back to the star map',
   },
+  contributors: {
+    title: 'Contributor Universe',
+    subtitle:
+      'Every supporter is on display here — each star corresponds to one registered donor',
+    intro:
+      'Star size and brightness follow a logarithmic mapping of cumulative donation amount; positions are derived deterministically from nickname and platform, independent of registration order.',
+    sortNote:
+      'Sorted by cumulative donation amount, descending (manually registered; may lag)',
+    empty: 'This spot is waiting — be the first star to light the voyage.',
+    goDonate: 'Go to the donation page',
+    backToApp: 'Back to the star map',
+    hintDesktop: 'Drag to look around · scroll to zoom · click a star for details',
+    listSection: 'Text roster',
+    webglFallback:
+      '3D rendering is unavailable in this environment; showing the text roster instead.',
+    preparing: 'Lighting up the stars…',
+    detailAmount: 'Amount',
+    detailDate: 'Date',
+    detailPlatform: 'Platform',
+    detailMessage: 'Message',
+    detailCloseAria: 'Close details',
+  },
   helpHint: {
     controls:
       '🖱 Drag to rotate · Scroll to zoom · Right-drag to pan \u00a0|\u00a0 ⌨ 1-4 switch views · [ / ] tour previous/next body (per view domain: planet system / Solar System / galaxy / universe sequences) · G galactic-center view (in the galaxy view, look down on the Solar System riding its wavy orbit around the Galactic Center; press again to re-follow the Solar System) · V vertical expansion (galaxy view only; the whole galaxy morphs into an oblate spheroid: disk / supernovae / special objects spread out with gain, with height indicator lines) · Space pause · M audio · O orbit lines \u00a0|\u00a0 Click a planet for details',

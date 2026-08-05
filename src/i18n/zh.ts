@@ -53,6 +53,31 @@ export const zh = {
     donorAmount: '¥{amount}',
     backToApp: '返回星图',
   },
+  /**
+   * 贡献者宇宙页（/contributors，C2）。文案红线（REQUIREMENTS_CONTRIBUTORS §0.5）：
+   * 一律陈述口径（"这里陈列了每一位支持者"），禁止"捐赠即点亮专属星"类承诺式表述。
+   */
+  contributors: {
+    title: '贡献者宇宙',
+    subtitle: '这里陈列了每一位支持者——每颗星对应一位已登记的燃料补给者',
+    intro:
+      '星的大小与亮度按累计捐赠金额的对数映射呈现，位置由昵称与平台确定性生成，与登记顺序无关。',
+    sortNote: '按累计捐赠金额降序排列（人工登记，可能存在延迟）',
+    empty: '虚位以待——成为第一颗点亮航程的星。',
+    goDonate: '前往捐赠页',
+    backToApp: '返回星图',
+    /** 桌面操作提示（触屏版见 C3） */
+    hintDesktop: '拖动环视 · 滚轮缩放 · 点击星星查看详情',
+    /** 画布下方常驻文字名单（兼作屏幕阅读器/降级形态，实现裁决登记于需求文档） */
+    listSection: '文字名单',
+    webglFallback: '当前环境不支持 3D 渲染，已切换为文字名单。',
+    preparing: '正在点亮星空…',
+    detailAmount: '金额',
+    detailDate: '登记日期',
+    detailPlatform: '平台',
+    detailMessage: '留言',
+    detailCloseAria: '关闭详情卡',
+  },
   helpHint: {
     /**
      * 操作引导正文（迁移自 HelpHint JSX：空格/\u00a0 与原 JSX 空白折叠
