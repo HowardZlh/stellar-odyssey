@@ -271,6 +271,11 @@ export const zh = {
     textures: '加载纹理资源',
     scene: '正在加载星系场景…',
   },
+  /** 音频提示（M5-1：AudioContext.resume 失败从静默改为用户可见） */
+  audioNotice: {
+    resumeFailed: '音效未能启动：浏览器拦截了音频播放，请再点一次「音效」开关重试。',
+    dismissAria: '关闭音效提示',
+  },
   /** 404 页（app/not-found.tsx） */
   notFound: {
     title: '你已漂流到已知宇宙之外',

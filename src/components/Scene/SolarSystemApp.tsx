@@ -18,6 +18,7 @@ import {
 } from '@/utils/qualityTier';
 import { AdaptiveQualityDriver } from '@/components/Scene/AdaptiveQualityDriver';
 import { AudioController } from '@/components/Audio/AudioController';
+import { AudioResumeNotice } from '@/components/UI/AudioResumeNotice';
 import { SpatialAudio } from '@/components/Audio/SpatialAudio';
 import { CameraController } from '@/components/Camera/CameraController';
 import { getTextureManager } from '@/components/CelestialBody/textureManager';
@@ -154,6 +155,9 @@ export default function SolarSystemApp(): JSX.Element {
           定位/层叠语义，桌面零变化） */}
       <div className="touch-manipulation select-none">
         <LoadingProgress />
+        {/* M5-1：AudioContext.resume 失败可见提示（置于包裹外——音效开着
+            却无声的矛盾态提示不应随 UI 隐藏消失，登记见组件头） */}
+        <AudioResumeNotice />
         {/* M4-3：uiVisible=false 时的半透明恢复按钮（仅 isTouch；置于包裹
             外——触屏用户不可永久失去 UI；kiosk 激活态不渲染，登记见组件头） */}
         <UiRestoreButton />

@@ -96,6 +96,12 @@ export interface SimulationState {
   audioEnabled: boolean;
   /** 音量（0-1） */
   audioVolume: number;
+  /**
+   * 音频恢复失败提示（M5-1）：AudioContext.resume() 被自动播放策略拦截
+   * （或恢复后仍 suspended）时置 true，UI 展示可见提示（AudioResumeNotice）；
+   * 关闭音效开关或用户手动关闭提示时清除。默认 false。
+   */
+  audioResumeFailed: boolean;
   /** 选中天体 id（null 为未选中） */
   selectedBodyId: string | null;
   /** 速率钳制提示（快周期卫星"运动已减速显示"，需求 3.3） */
@@ -388,6 +394,8 @@ export interface SimulationState {
   setAudioEnabled: (enabled: boolean) => void;
   toggleAudio: () => void;
   setAudioVolume: (volume: number) => void;
+  /** 写入音频恢复失败标记（M5-1：AudioController resume 结果 / 提示关闭钮清除） */
+  setAudioResumeFailed: (failed: boolean) => void;
   selectBody: (id: string | null) => void;
   setRateClampNotice: (active: boolean) => void;
   setPlanetRateClampNotice: (active: boolean) => void;
@@ -660,6 +668,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   showFermiBubbles: true,
   audioEnabled: false,
   audioVolume: 0.8,
+  audioResumeFailed: false,
   selectedBodyId: null,
   rateClampNotice: false,
   planetRateClampNotice: false,
@@ -952,6 +961,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   toggleAudio: () => set((state) => ({ audioEnabled: !state.audioEnabled })),
 
   setAudioVolume: (volume) => set({ audioVolume: Math.min(1, Math.max(0, volume)) }),
+  setAudioResumeFailed: (failed) => set({ audioResumeFailed: failed }),
 
   selectBody: (id) => set({ selectedBodyId: id }),
 

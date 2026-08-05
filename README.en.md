@@ -128,9 +128,10 @@ npm run start
 Once open: **scroll to zoom**, press `1`–`4` to switch levels, and **click any celestial body** to inspect and fly to it. Full controls are documented in [docs/en/controls.md](docs/en/controls.md).
 
 > A modern browser with WebGL 2 is recommended (Chrome / Edge / Firefox / Safari).
-> The project is designed and tested for **desktop browsers and large exhibition screens**; on touch
-> devices you can rotate with one finger, pinch to zoom, and tap to select bodies for basic browsing,
-> but the layout and performance are not optimized for phones/tablets.
+> Phones and tablets are **fully supported**: rotate with one finger, pinch to zoom, and tap to
+> select bodies. On small screens the interface automatically switches to a mobile layout (bottom
+> tab bar + drawer panel), and rendering quality scales down to match device capability. See the
+> "Touch Controls" section in [docs/en/controls.md](docs/en/controls.md) for details.
 
 ## 📖 Documentation
 

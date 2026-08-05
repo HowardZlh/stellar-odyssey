@@ -91,4 +91,4 @@ Volume rendering (nebulae / black holes / dust disks) has built-in adaptive qual
 Use the alternate scripts `npm run dev:3100` or `npm run dev:3200` (each uses its own build directory and can run alongside the port-3000 instance). Note that Next.js places a mutex lock on the build directory, so simply switching ports with `next dev -p <port>` will be refused.
 
 **Q: Does it work on phones/tablets?**
-Basic browsing works: one-finger rotate, two-finger pinch zoom, and tap-to-select are all available. However, the layout and performance target desktop browsers and large exhibition screens; it is not optimized for mobile.
+Yes, the whole site is mobile-ready: one-finger drag to rotate, two-finger pinch to zoom, and tap to select bodies. On small screens the interface automatically switches to a mobile layout (bottom tab bar + drawer panel), and rendering quality scales down to match device capability. See the "Touch Controls" section in [controls.md](controls.md) for the full reference.

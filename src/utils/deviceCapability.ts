@@ -52,6 +52,12 @@ export interface DeviceTierSignals {
   maxTextureSize: number | undefined;
   /** WebGL renderer 字符串（WEBGL_debug_renderer_info 优先，缺失 = 扩展不可用） */
   renderer: string | undefined;
+  /**
+   * 用户省流开关（M5-1：Network Information API `navigator.connection.saveData`，
+   * Chrome 系可用；缺省 = 能力不可用（Safari/Firefox 未实现）跳过本判据，登记）。
+   * 可选字段——既有调用方/测试用例不受影响。
+   */
+  saveData?: boolean | undefined;
 }
 
 /**
@@ -79,6 +85,7 @@ export function isLowEndRenderer(renderer: string): boolean {
  *
  * | 条件 | 档位 |
  * |---|---|
+ * | saveData === true（用户显式省流请求，M5-1） | 恒 'low'（最高优先——用户明示降耗，凌驾桌面恒 high；能力不可用时字段缺省不参与判定） |
  * | pointer 非 coarse（桌面鼠标/触控板） | 恒 'high'（桌面零降档硬约束） |
  * | coarse 且命中任一低端信号：hardwareConcurrency ≤ 3 / MAX_TEXTURE_SIZE < 4096 / renderer 命中低端 GPU 关键字 | 'low' |
  * | coarse 且全部高端信号满足：hardwareConcurrency ≥ 8 且 MAX_TEXTURE_SIZE ≥ 8192 且 devicePixelRatio ≥ 2 | 'high' |
@@ -87,6 +94,9 @@ export function isLowEndRenderer(renderer: string): boolean {
  * 低端判定优先于高端判定（同时命中时宁降勿超，稳定性优先）。
  */
 export function classifyDeviceTier(signals: DeviceTierSignals): DeviceTier {
+  // M5-1：用户显式省流（navigator.connection.saveData）→ 锁 low 档，
+  // 优先于全部硬件信号（含桌面恒 high——省流为用户主动请求非能力推断）
+  if (signals.saveData === true) return 'low';
   if (!signals.coarsePointer) return 'high';
 
   const { devicePixelRatio, hardwareConcurrency, maxTextureSize, renderer } = signals;
@@ -135,6 +145,29 @@ function readMaxTextureSize(
   }
 }
 
+/** Network Information API 局部形状（lib.dom 未收录 connection，最小声明） */
+interface NavigatorConnectionLike {
+  saveData?: unknown;
+}
+
+/**
+ * 读取用户省流开关（M5-1）：`navigator.connection.saveData`。
+ * 能力不可用（Safari/Firefox 无 connection、字段非布尔、SSR）返回
+ * undefined = 跳过本判据（REQUIREMENTS_MOBILE §M5-1 登记）。
+ */
+export function readSaveData(): boolean | undefined {
+  if (typeof navigator === 'undefined') return undefined;
+  try {
+    const connection = (navigator as Navigator & { connection?: NavigatorConnectionLike })
+      .connection;
+    return connection !== undefined && typeof connection.saveData === 'boolean'
+      ? connection.saveData
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** 从运行环境收集档位判定信号（SSR 下全部 undefined + coarse false） */
 export function collectDeviceTierSignals(
   gl?: WebGLRenderingContext | WebGL2RenderingContext,
@@ -142,6 +175,7 @@ export function collectDeviceTierSignals(
   const hasWindow = typeof window !== 'undefined';
   const hasNavigator = typeof navigator !== 'undefined';
   return {
+    saveData: readSaveData(),
     coarsePointer: isTouchPrimary(),
     devicePixelRatio:
       hasWindow && typeof window.devicePixelRatio === 'number'

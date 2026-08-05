@@ -42,7 +42,9 @@ export default function DonatePage(): JSX.Element {
   const donors = sortDonorsByAmountDesc(DONORS);
 
   return (
-    <main className="min-h-screen bg-space-dark px-6 py-10 text-gray-200">
+    // M5-1 safe-area：viewport-fit=cover 下四向避让刘海/Home Indicator
+    // （px/py 与 inset 取 max/求和，safe-area 为 0 时与原 px-6 py-10 逐像素一致）
+    <main className="min-h-screen bg-space-dark pb-[calc(2.5rem+env(safe-area-inset-bottom))] pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] pt-[max(2.5rem,env(safe-area-inset-top))] text-gray-200">
       {/* 深空氛围背景（纯 CSS 渐变，无 3D 负担） */}
       <div
         aria-hidden="true"
@@ -52,7 +54,11 @@ export default function DonatePage(): JSX.Element {
       <div className="relative mx-auto max-w-2xl">
         {/* 顶部：返回主站 + 语言切换 */}
         <div className="flex items-center justify-between text-xs">
-          <Link href="/" className="text-space-accent hover:underline">
+          {/* M5-1 触控目标：移动端（max-md）返回/语言切换命中区 ≥44pt，桌面原样 */}
+          <Link
+            href="/"
+            className="text-space-accent hover:underline max-md:-my-3 max-md:inline-flex max-md:min-h-11 max-md:items-center"
+          >
             ← {tr('donate.backToApp')}
           </Link>
           <div
@@ -64,7 +70,7 @@ export default function DonatePage(): JSX.Element {
               type="button"
               onClick={() => setLocale('zh')}
               aria-pressed={locale === 'zh'}
-              className={`px-1.5 py-1 ${
+              className={`px-1.5 py-1 max-md:px-4 max-md:py-3.5 max-md:text-xs ${
                 locale === 'zh'
                   ? 'bg-space-accent text-black'
                   : 'text-gray-400 hover:text-white'
@@ -76,7 +82,7 @@ export default function DonatePage(): JSX.Element {
               type="button"
               onClick={() => setLocale('en')}
               aria-pressed={locale === 'en'}
-              className={`px-1.5 py-1 ${
+              className={`px-1.5 py-1 max-md:px-4 max-md:py-3.5 max-md:text-xs ${
                 locale === 'en'
                   ? 'bg-space-accent text-black'
                   : 'text-gray-400 hover:text-white'
@@ -117,7 +123,7 @@ export default function DonatePage(): JSX.Element {
                     href={platform.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="shrink-0 rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent"
+                    className="shrink-0 rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent max-md:px-4 max-md:py-3.5"
                   >
                     {tr('donate.platformAvailable')}
                   </a>
@@ -175,7 +181,10 @@ export default function DonatePage(): JSX.Element {
         </section>
 
         <footer className="mt-12 pb-6 text-center text-xs text-gray-500">
-          <Link href="/" className="text-space-accent hover:underline">
+          <Link
+            href="/"
+            className="text-space-accent hover:underline max-md:inline-flex max-md:min-h-11 max-md:items-center max-md:px-4"
+          >
             {tr('donate.backToApp')}
           </Link>
         </footer>

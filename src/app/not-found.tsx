@@ -113,10 +113,11 @@ export default function NotFound(): JSX.Element {
               ),
             )}
         </p>
+        {/* M5-1 触控目标：移动端按钮命中区 ≥44pt（max-md:py-3 ≈ 45px），桌面原样 */}
         <button
           type="button"
           onClick={() => redirectHome()}
-          className="mt-4 rounded-lg border border-space-accent/60 bg-space-panel px-6 py-2 text-sm text-space-accent backdrop-blur transition-colors hover:bg-space-accent/20"
+          className="mt-4 rounded-lg border border-space-accent/60 bg-space-panel px-6 py-2 text-sm text-space-accent backdrop-blur transition-colors hover:bg-space-accent/20 max-md:py-3"
         >
           {tr('notFound.returnNow')}
         </button>

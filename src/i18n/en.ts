@@ -229,6 +229,11 @@ export const en: I18nDict = {
     textures: 'Loading textures',
     scene: 'Loading the galaxy scene…',
   },
+  audioNotice: {
+    resumeFailed:
+      'Audio could not start: the browser blocked playback. Tap the "Sound" toggle again to retry.',
+    dismissAria: 'Dismiss audio notice',
+  },
   notFound: {
     title: 'You have drifted beyond the known universe',
     body:

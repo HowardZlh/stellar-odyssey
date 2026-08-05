@@ -12,6 +12,7 @@ import {
   isCompactViewport,
   isLowEndRenderer,
   isTouchPrimary,
+  readSaveData,
 } from '@/utils/deviceCapability';
 import type { DeviceTierSignals } from '@/utils/deviceCapability';
 
@@ -128,6 +129,30 @@ describe('classifyDeviceTier 判定表（穷举）', () => {
         renderer: undefined,
       }),
     ).toBe('medium');
+  });
+
+  describe('saveData 省流锁 low 档（M5-1）', () => {
+    it('saveData=true 恒 low——凌驾触屏全高端信号', () => {
+      expect(classifyDeviceTier({ ...HIGH_TOUCH_SIGNALS, saveData: true })).toBe('low');
+    });
+
+    it('saveData=true 恒 low——凌驾桌面恒 high（用户显式省流请求）', () => {
+      expect(
+        classifyDeviceTier({
+          coarsePointer: false,
+          devicePixelRatio: 2,
+          hardwareConcurrency: 16,
+          maxTextureSize: 16384,
+          renderer: 'NVIDIA GeForce RTX 3080',
+          saveData: true,
+        }),
+      ).toBe('low');
+    });
+
+    it('saveData=false / 缺省不参与判定（能力不可用跳过，登记）', () => {
+      expect(classifyDeviceTier({ ...HIGH_TOUCH_SIGNALS, saveData: false })).toBe('high');
+      expect(classifyDeviceTier({ ...HIGH_TOUCH_SIGNALS, saveData: undefined })).toBe('high');
+    });
   });
 });
 
@@ -248,5 +273,40 @@ describe('collectDeviceTierSignals / getDeviceTier（环境信号收集）', () 
     mockMatchMedia({ [POINTER_COARSE_QUERY]: true });
     expect(getDeviceTier(mockGl({ maxTextureSize: 2048, renderer: 'Mali-450' }))).toBe('low');
     expect(getDeviceTier()).toBe('medium');
+  });
+});
+
+describe('readSaveData（M5-1 省流能力读取）', () => {
+  /** navigator.connection mock；用后删除回 jsdom 现状（无 connection） */
+  function mockConnection(connection: unknown): void {
+    Object.defineProperty(navigator, 'connection', {
+      configurable: true,
+      value: connection,
+    });
+  }
+
+  afterEach(() => {
+    delete (navigator as { connection?: unknown }).connection;
+  });
+
+  it('jsdom 无 navigator.connection → undefined（能力不可用跳过，登记）', () => {
+    expect(readSaveData()).toBeUndefined();
+  });
+
+  it('saveData 布尔值原样返回', () => {
+    mockConnection({ saveData: true });
+    expect(readSaveData()).toBe(true);
+    mockConnection({ saveData: false });
+    expect(readSaveData()).toBe(false);
+  });
+
+  it('saveData 非布尔（非法类型）→ undefined', () => {
+    mockConnection({ saveData: 'on' });
+    expect(readSaveData()).toBeUndefined();
+  });
+
+  it('getDeviceTier 集成：saveData=true 时即便桌面（pointer fine）也锁 low', () => {
+    mockConnection({ saveData: true });
+    expect(getDeviceTier()).toBe('low');
   });
 });
