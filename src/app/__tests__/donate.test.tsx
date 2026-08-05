@@ -11,6 +11,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import DonatePage from '@/app/donate/page';
 import { SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
 import { SPONSOR_KOFI_URL } from '@/data/donationPlatforms';
+import { CONTRIBUTORS_PAGE_PATH } from '@/utils/contributorUniverse';
 import { useSimulationStore } from '@/store';
 
 afterEach(() => {
@@ -79,6 +80,12 @@ describe('DonatePage 渲染（空名单）', () => {
     expect(screen.getByText(/按累计捐赠金额降序排列/)).toBeInTheDocument();
   });
 
+  it('空名单态同样显示贡献者宇宙入口（C4-1，指向 /contributors）', () => {
+    render(<DonatePage />);
+    const entry = screen.getByRole('link', { name: /进入贡献者宇宙/ });
+    expect(entry).toHaveAttribute('href', CONTRIBUTORS_PAGE_PATH);
+  });
+
   it('返回主站链接指向 /', () => {
     render(<DonatePage />);
     const back = screen.getAllByRole('link', { name: /返回星图/ });
@@ -92,5 +99,8 @@ describe('DonatePage 渲染（空名单）', () => {
     expect(screen.getByRole('heading', { name: /Fuel the Voyage/ })).toBeInTheDocument();
     expect(screen.getAllByText('Reserved · coming soon')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Show tip code' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /Enter the Contributor Universe/ }),
+    ).toHaveAttribute('href', CONTRIBUTORS_PAGE_PATH);
   });
 });

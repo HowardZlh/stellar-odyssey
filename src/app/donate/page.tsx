@@ -20,6 +20,7 @@ import { useLocaleInit, useT, useTf } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
 import { DONATION_PLATFORMS } from '@/data/donationPlatforms';
 import { DONORS } from '@/data/donors';
+import { CONTRIBUTORS_PAGE_PATH } from '@/utils/contributorUniverse';
 import type { DonationPlatformId } from '@/utils/donors';
 import { sortDonorsByAmountDesc } from '@/utils/donors';
 
@@ -185,6 +186,13 @@ export default function DonatePage(): JSX.Element {
           <p className="mb-3 text-[10px] text-gray-500">
             {tr('donate.donorsNote')}
           </p>
+          {/* 贡献者宇宙入口（C4-1）：空/非空名单两态常驻，命中区 ≥44pt（min-h-11） */}
+          <Link
+            href={CONTRIBUTORS_PAGE_PATH}
+            className="mb-3 flex min-h-11 items-center justify-center gap-2 rounded-lg border border-space-accent/30 bg-space-panel px-4 text-xs text-space-accent backdrop-blur transition-colors hover:border-space-accent/60 hover:text-white"
+          >
+            ✨ {tr('donate.contributorsEntry')}
+          </Link>
           {donors.length === 0 ? (
             <p className="rounded-lg border border-dashed border-white/15 bg-space-panel p-6 text-center text-xs text-gray-400 backdrop-blur">
               ✨ {tr('donate.donorsEmpty')}

@@ -9,6 +9,8 @@
 
 ### 新增
 
+- 新增捐赠页 `/donate` 的贡献者宇宙入口（C4，贡献者名单 3D 呈现升级收尾批）：燃料补给名单区新增「✨ 进入贡献者宇宙」链接（空名单态同样显示），通往 `/contributors` 页——已登记的每位支持者在星团中对应一颗星，星的大小与亮度按累计捐赠金额对数映射呈现；宇宙页内保留返回主站与前往捐赠页链接（入口二跳链路：投喂燃料 → 捐赠页 → 贡献者宇宙 → 返回）；入口链接命中区 ≥44pt（移动/桌面同款），路径常量 `CONTRIBUTORS_PAGE_PATH` 登记于 `src/utils/contributorUniverse.ts`；i18n 新增 `donate.contributorsEntry` 键（zh/en）；捐赠名单登记文件补充隐私口径注释（仅登记本人同意公开的昵称与留言）；文案保持陈述口径与零回报承诺
+
 - 新增微信赞赏码捐赠通道：站内捐赠页 `/donate` 的微信卡片由预留位转为二维码形态——点「查看赞赏码」卡片内展开赞赏码图（再点按钮或图片收起），附「微信内长按识别，或用手机微信扫码」双路径提示；桌面/移动双端适配（移动端按钮命中区 ≥44pt、二维码图自适应宽度无水平溢出、展开时不拉伸同排卡片）；平台注册表新增 `qrImage` 字段（无跳转链接通道的二维码形态），i18n 新增 `donate.platformShowQr/platformHideQr/wechatQrAlt/wechatQrHint` 四键（zh/en）；文案保持零回报承诺口径
 
 - 新增 Ko-fi 捐赠通道：站内捐赠页 `/donate` 的 Ko-fi 卡片由预留位转为可用链接（`ko-fi.com/howardzlh`，`SPONSOR_KOFI_URL` 同源常量登记于 `src/data/donationPlatforms.ts`）；README 中/英两版赞助节新增 Ko-fi 行；`.github/FUNDING.yml` 新增 `ko_fi` 原生字段（仓库页 Sponsor 按钮同时展示爱发电与 Ko-fi 入口）；文案保持零回报承诺口径

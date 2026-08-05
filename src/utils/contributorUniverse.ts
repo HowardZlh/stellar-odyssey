@@ -20,6 +20,13 @@ import { createSeededRandom } from '@/utils/random';
 import { twinkleAmplitude, twinkleFrequencyHz } from '@/utils/starTwinkle';
 
 /**
+ * 贡献者宇宙页路径（C4-1，仿 ContactBadge.tsx DONATE_PAGE_PATH 范式）。
+ * 定义于本纯模块而非 ContactBadge（避让 M3 弹层化改造，需求文档 §C4-1）；
+ * 消费点：/donate 页名单区入口链接（src/app/donate/page.tsx）。
+ */
+export const CONTRIBUTORS_PAGE_PATH = '/contributors';
+
+/**
  * 恒星温度色板（O/B 蓝 → M 红）。
  * 出处登记（C1-3）：复制自 components/Scene/Starfield.tsx STAR_COLORS（:27），
  * 选择"复制并登记"而非抽共享常量，避免本迭代触碰主场景组件（零回归面）。

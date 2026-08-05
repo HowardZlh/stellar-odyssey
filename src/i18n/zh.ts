@@ -55,6 +55,8 @@ export const zh = {
     donorsNote: '按累计捐赠金额降序排列（人工登记，可能存在延迟）',
     donorsEmpty: '虚位以待——成为第一颗点亮航程的星。',
     donorAmount: '¥{amount}',
+    /** 名单区贡献者宇宙入口（C4-1；emoji ✨ 由组件层持有；陈述口径，无回报承诺） */
+    contributorsEntry: '进入贡献者宇宙',
     backToApp: '返回星图',
   },
   /**
