@@ -44,6 +44,8 @@ export const en: I18nDict = {
       'Language 语言: use the zh/EN buttons on the top-left panel to switch the UI language instantly (UI, body labels, and descriptions all switch; data-source attributions keep their original language)',
     kioskNote:
       'H hides/shows the UI · Kiosk mode: start from the top-left panel (fullscreen auto tour; any input pauses, and it resumes after a short idle) or launch via a ?mode=kiosk link',
+    /** M4-5 touch guide (isTouch branch: replaces the mouse/keyboard line) */
+    controlsTouch: 'Drag with one finger to rotate · pinch to zoom / two-finger pan · tap a body to select it',
     closeAria: 'Dismiss the guide',
     reopenAria: 'Reopen the controls guide',
   },
@@ -137,6 +139,9 @@ export const en: I18nDict = {
     immersiveEnter: 'Maximize (collapse panels)',
     immersiveExit: 'Exit maximized view',
     immersiveEnterNoFullscreen: 'Collapse panels (fullscreen unsupported in this browser)',
+    /** M4-3: touch-equivalent entry for the H shortcut (hide UI + restore badge) */
+    uiHide: 'Hide UI',
+    uiShow: 'Show UI',
     statusExpandAria: 'Expand status details',
     statusCollapseAria: 'Collapse status details',
     sheetDragAria: 'Swipe down to close the panel',

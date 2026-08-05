@@ -32,6 +32,7 @@ import { LaunchLogo } from '@/components/UI/LaunchLogo';
 import { LoadingProgress } from '@/components/UI/LoadingProgress';
 import { PerformanceMonitor } from '@/components/UI/PerformanceMonitor';
 import { HelpHint } from '@/components/UI/HelpHint';
+import { UiRestoreButton } from '@/components/UI/UiVisibilityToggle';
 import { Galaxy } from '@/components/Scene/Galaxy';
 import { PostEffects } from '@/components/Scene/PostEffects';
 import { SimulationClock } from '@/components/Scene/SimulationClock';
@@ -153,6 +154,9 @@ export default function SolarSystemApp(): JSX.Element {
           定位/层叠语义，桌面零变化） */}
       <div className="touch-manipulation select-none">
         <LoadingProgress />
+        {/* M4-3：uiVisible=false 时的半透明恢复按钮（仅 isTouch；置于包裹
+            外——触屏用户不可永久失去 UI；kiosk 激活态不渲染，登记见组件头） */}
+        <UiRestoreButton />
         {/* B5 展馆模式暂停角标（仅 paused 态显示；置于包裹外——作为退出
             入口须不受 uiVisible 影响恒可达，登记） */}
         <KioskBadge />

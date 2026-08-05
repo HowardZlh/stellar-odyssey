@@ -111,7 +111,8 @@ describe('HelpHint 弹层化（M3-3）', () => {
     act(() => {
       useSimulationStore.getState().setMobilePanel('help');
     });
-    expect(screen.getByText(/点击行星查看信息/)).toBeInTheDocument();
+    // M4-5：isTouch 下首段为触屏口径（setCompact 置 isTouch=true）
+    expect(screen.getByText(/点按选中天体/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '关闭引导' }));
     expect(useSimulationStore.getState().mobilePanel).toBeNull();
   });

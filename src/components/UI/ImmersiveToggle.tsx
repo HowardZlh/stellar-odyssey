@@ -18,9 +18,12 @@ import { useSimulationStore } from '@/store';
  * - M3-5：`requestFullscreen` 不可用（iPhone Safari 无 Fullscreen API）
  *   时按钮保留但降级文案为"仅收起 UI"口径（二选一登记：取降级文案而非
  *   隐藏——收起面板功能仍有效）；检测经 useState 惰性初始化一次完成。
+ * - M4-4 title 裁决：功能必要（沉浸态语义仅靠 ⛶/🗗 图标不明）——isTouch
+ *   下 title 转为可见文本标签；桌面保留 title 悬停提示零变化。
  */
 export function ImmersiveToggle(): JSX.Element {
   const immersive = useSimulationStore((s) => s.immersiveMode);
+  const isTouch = useSimulationStore((s) => s.isTouch);
   const tr = useT();
   // M3-5：Fullscreen API 可用性（SSR/不支持环境为 false → 降级文案）
   const [fullscreenSupported] = useState(
@@ -66,6 +69,8 @@ export function ImmersiveToggle(): JSX.Element {
       className="rounded bg-white/10 px-1.5 py-0.5 text-xs text-gray-300 transition-colors hover:bg-white/20 hover:text-white max-md:px-4 max-md:py-3"
     >
       {immersive ? '🗗' : '⛶'}
+      {/* M4-4：触屏无 hover tooltip，功能标签转可见文本（桌面不渲染） */}
+      {isTouch && <span className="ml-1">{label}</span>}
     </button>
   );
 }

@@ -280,6 +280,10 @@ export function SatelliteModel({
     }
   });
 
+  // M4-2：触屏下增设透明拾取球（模型包围半径 bodyRadius×1.2 的 ×2），
+  // 桌面不渲染（命中区零变化）；visible=false 不渲染但仍参与射线检测
+  const isTouch = useSimulationStore((s) => s.isTouch);
+
   return (
     <group
       ref={containerRef}
@@ -289,6 +293,12 @@ export function SatelliteModel({
       }}
     >
       <primitive object={model} />
+      {isTouch && (
+        <mesh visible={false}>
+          <sphereGeometry args={[bodyRadius * 2.4, 12, 12]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
+      )}
     </group>
   );
 }

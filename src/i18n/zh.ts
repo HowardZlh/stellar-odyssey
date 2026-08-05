@@ -69,6 +69,8 @@ export const zh = {
     /** B5 展馆模式与 H 键说明（新增行） */
     kioskNote:
       'H 隐藏/显示界面 · 展馆模式：左上角面板启动（全屏自动巡游，任意操作暂停、片刻无操作自动恢复）或以 ?mode=kiosk 链接启动',
+    /** M4-5 触屏版引导（isTouch 分流：替换键鼠口径首段；快捷键段落隐藏） */
+    controlsTouch: '单指拖动旋转 · 双指缩放/平移 · 点按选中天体',
     closeAria: '关闭引导',
     /** 关闭后底部中央"?"重开按钮（UI 布局优化：引导 5 秒自动关闭后可重开） */
     reopenAria: '重新打开操作引导',
@@ -175,6 +177,9 @@ export const zh = {
     immersiveExit: '退出最大化',
     /** M3-5：全屏 API 不可用（iPhone Safari）时的降级文案（仅收起 UI） */
     immersiveEnterNoFullscreen: '收起面板（此浏览器不支持全屏）',
+    /** M4-3：H 键 UI 显隐的触屏等价入口（沉浸按钮旁"隐藏界面"+ 恢复角标） */
+    uiHide: '隐藏界面',
+    uiShow: '显示界面',
     /** M3 移动版顶部状态条：tap 展开/收起详情 */
     statusExpandAria: '展开状态详情',
     statusCollapseAria: '收起状态详情',

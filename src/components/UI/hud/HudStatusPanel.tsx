@@ -10,6 +10,7 @@ import { getBodyInfoById } from '@/data/catalog';
 import { useSimulationStore } from '@/store';
 import type { SimDateParts } from '@/utils/time';
 import { ImmersiveToggle } from '@/components/UI/ImmersiveToggle';
+import { HideUiButton } from '@/components/UI/UiVisibilityToggle';
 
 /** 各层级运动参考系说明键（需求 3.1.3 参考系定义；B3 文案入字典） */
 const REFERENCE_FRAME_KEYS: Record<ViewLevel, MessageKey> = {
@@ -142,6 +143,8 @@ export function HudStatusPanel({
         {statusExpanded && (
           <div className="border-t border-white/10 px-3 py-2 text-right text-xs">
             <p className="flex items-center justify-end gap-2">
+              {/* M4-3：H 键触屏等价入口（仅 isTouch 渲染，组件内自持门控） */}
+              <HideUiButton />
               <ImmersiveToggle />
             </p>
             {simDate.epoch && (
@@ -163,6 +166,9 @@ export function HudStatusPanel({
   return (
     <div className="absolute right-4 top-4 rounded-lg bg-space-panel px-4 py-3 text-right text-xs backdrop-blur">
       <div className="flex items-center justify-end gap-2">
+        {/* M4-3：H 键触屏等价入口（仅 isTouch 渲染——触屏宽视口如 iPad
+            桌面布局可达；桌面键鼠 isTouch=false 不渲染零变化） */}
+        <HideUiButton />
         {/* 页面最大化（沉浸模式）按钮：收起/展开左侧面板与天体说明 */}
         <ImmersiveToggle />
         <p className="text-sm font-medium text-space-accent">

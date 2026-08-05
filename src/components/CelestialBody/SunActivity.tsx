@@ -9,6 +9,7 @@ import { useSimulationStore } from '@/store';
 import type { Vec3 } from '@/types';
 import { getPlanetById } from '@/data/planets';
 import { eventAutoTriggerAllowed } from '@/utils/eventScopes';
+import { pickRadiusScale } from '@/utils/touchControls';
 import { qualityTierSpec } from '@/utils/qualityTier';
 import { heliocentricPosition } from '@/utils/physics';
 import { createSeededRandom } from '@/utils/random';
@@ -907,6 +908,8 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
     }
 
     // ---- S3 §4.5 点选热区：黑子群（前导黑子处）+ 日珥 ----
+    // M4-2：触屏下热区半径 ×2（桌面 ×1 = 现状）
+    const pickScale = pickRadiusScale(useSimulationStore.getState().isTouch);
     for (let slot = 0; slot < SUNSPOT_PAIR_SLOTS; slot += 1) {
       const hs = spotHotspotRefs.current[slot];
       if (!hs) continue;
@@ -917,7 +920,7 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
         hs.position.set(d.x, d.y, d.z).multiplyScalar(radius * 1.01);
         // 热区半径按黑子角半径对应的弦长（略放大便于点选）
         const hsR = Math.max(radius * 0.04, radius * Math.sin(leader.radiusRad) * 1.3);
-        hs.scale.setScalar(hsR);
+        hs.scale.setScalar(hsR * pickScale);
         spotRadiusRef.current[slot] = leader.radiusRad;
         hs.visible = true;
       } else {
@@ -931,7 +934,7 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
       if (prom && prom.visible) {
         // 热区置于日珥拱顶附近（日珥 mesh 已定位，取其上方径向偏移）
         hs.position.copy(prom.position).multiplyScalar(1.12);
-        hs.scale.setScalar(radius * 0.08);
+        hs.scale.setScalar(radius * 0.08 * pickScale);
         hs.visible = true;
       } else {
         hs.visible = false;
