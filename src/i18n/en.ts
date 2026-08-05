@@ -19,6 +19,7 @@ export const en: I18nDict = {
     sponsor: 'Sponsor on Afdian',
     donateLabel: 'Fuel the Voyage',
     donateAria: 'Open the donation page (new tab)',
+    closeAria: 'Close the support & partnership panel',
   },
   donate: {
     title: 'Fuel the Voyage',
@@ -45,6 +46,14 @@ export const en: I18nDict = {
       'H hides/shows the UI · Kiosk mode: start from the top-left panel (fullscreen auto tour; any input pauses, and it resumes after a short idle) or launch via a ?mode=kiosk link',
     closeAria: 'Dismiss the guide',
     reopenAria: 'Reopen the controls guide',
+  },
+  tabBar: {
+    help: 'Help',
+    helpAria: 'Open the controls guide',
+    controls: 'Controls',
+    controlsAria: 'Open the control panel',
+    contact: 'Support',
+    contactAria: 'Open the support & partnership panel',
   },
   viewLevel: {
     L1: 'Planet View',
@@ -127,6 +136,10 @@ export const en: I18nDict = {
     simEpoch: '(epoch {value})',
     immersiveEnter: 'Maximize (collapse panels)',
     immersiveExit: 'Exit maximized view',
+    immersiveEnterNoFullscreen: 'Collapse panels (fullscreen unsupported in this browser)',
+    statusExpandAria: 'Expand status details',
+    statusCollapseAria: 'Collapse status details',
+    sheetDragAria: 'Swipe down to close the panel',
     scale: 'Scale: {value}',
     frameL1: 'Frame: heliocentric (planet/moon motion)',
     frameL2: 'Frame: heliocentric (ecliptic coordinates)',

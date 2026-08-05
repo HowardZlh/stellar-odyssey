@@ -60,6 +60,9 @@ import { SN_MAX_REMNANTS, clampSupernovaDuration } from '@/utils/supernova';
 import { advanceSimTimeContinuous, clampSpeedMultiplier } from '@/utils/time';
 import { MERGE_PREVIEW_DURATION_SEC, mergePreviewSimDays } from '@/utils/universe';
 
+/** 移动布局底部面板标识（M3：底部标签栏三入口，互斥打开） */
+export type MobilePanel = 'help' | 'controls' | 'contact';
+
 export interface SimulationState {
   /** 模拟时间：J2000 历元起天数（初始为真实当前日期，需求 3.1.1 真实日期模式） */
   simDays: number;
@@ -308,6 +311,14 @@ export interface SimulationState {
    * 设备）不挂载驱动，恒 true = 现状。用户 bloomEnabled 开关不受改写。
    */
   adaptiveBloomGate: boolean;
+  /**
+   * 移动布局当前打开的底部面板（M3，仅 isCompact 消费；默认 null=全关）：
+   * 'help' 操作引导弹层 / 'controls' 控制抽屉 / 'contact' 投喂与合作弹层。
+   * 单值互斥——同一时间至多一个面板打开（底部标签栏三钮共用本状态）。
+   * 桌面布局不读取本字段（HelpHint/ContactBadge/ControlPanel 桌面分支
+   * 沿用各自既有状态，零变化）。
+   */
+  mobilePanel: MobilePanel | null;
 
   // actions
   tick: (realDeltaSeconds: number) => void;
@@ -354,6 +365,10 @@ export interface SimulationState {
   setIsCompact: (isCompact: boolean) => void;
   /** 写入自适应 bloom 门（M2：AdaptiveQualityDriver 换档联动） */
   setAdaptiveBloomGate: (gate: boolean) => void;
+  /** 设置移动布局底部面板（M3：null 关闭全部） */
+  setMobilePanel: (panel: MobilePanel | null) => void;
+  /** 切换移动布局底部面板（M3：同面板再点关闭，异面板互斥切换） */
+  toggleMobilePanel: (panel: MobilePanel) => void;
   /** 相机缩放驱动的连续层级同步（不触发锚点过渡动画） */
   syncZoomLevel: (continuousLevel: number) => void;
   /**
@@ -704,6 +719,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   isTouch: false,
   isCompact: false,
   adaptiveBloomGate: true,
+  mobilePanel: null,
 
   setLaunchParams: (params) => set({ launch: params }),
 
@@ -714,6 +730,11 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   setIsCompact: (isCompact) => set({ isCompact }),
 
   setAdaptiveBloomGate: (gate) => set({ adaptiveBloomGate: gate }),
+
+  setMobilePanel: (panel) => set({ mobilePanel: panel }),
+
+  toggleMobilePanel: (panel) =>
+    set((state) => ({ mobilePanel: state.mobilePanel === panel ? null : panel })),
 
   setUiVisible: (visible) => set({ uiVisible: visible }),
 

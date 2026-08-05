@@ -23,6 +23,7 @@ import { CameraController } from '@/components/Camera/CameraController';
 import { getTextureManager } from '@/components/CelestialBody/textureManager';
 import { getSatelliteModelManager } from '@/components/CelestialBody/modelManager';
 import { BodyCycleSwitcher } from '@/components/UI/BodyCycleSwitcher';
+import { BottomTabBar } from '@/components/UI/BottomTabBar';
 import { ContactBadge } from '@/components/UI/ContactBadge';
 import { ControlPanel } from '@/components/UI/ControlPanel';
 import { HudInfo } from '@/components/UI/HudInfo';
@@ -144,6 +145,9 @@ export default function SolarSystemApp(): JSX.Element {
         {/* 商业合作角标（左下角常驻，事件通知/剖面卡片占位时避让隐藏；
             B1 预留登记收口：经本包裹接入 uiVisible） */}
         <ContactBadge />
+        {/* M3-3 移动底部标签栏（仅 isCompact 渲染；帮助/巡游/控制/投喂
+            四入口合并，桌面零变化） */}
+        <BottomTabBar />
       </div>
       {/* uiVisible 包裹外的常驻悬浮层（M1-2 触屏属性同上；静态 div 不改
           定位/层叠语义，桌面零变化） */}

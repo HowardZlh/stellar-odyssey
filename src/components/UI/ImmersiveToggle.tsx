@@ -1,7 +1,7 @@
 'use client';
 
 import type { JSX } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useT } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
 
@@ -15,10 +15,19 @@ import { useSimulationStore } from '@/store';
  * - 全屏请求随用户手势发起，被拒/不支持时静默降级为仅收起面板
  *   （与展馆模式全屏口径一致）；监听 fullscreenchange——Esc/系统手势
  *   退出全屏时同步退出沉浸模式，按钮状态不失联。
+ * - M3-5：`requestFullscreen` 不可用（iPhone Safari 无 Fullscreen API）
+ *   时按钮保留但降级文案为"仅收起 UI"口径（二选一登记：取降级文案而非
+ *   隐藏——收起面板功能仍有效）；检测经 useState 惰性初始化一次完成。
  */
 export function ImmersiveToggle(): JSX.Element {
   const immersive = useSimulationStore((s) => s.immersiveMode);
   const tr = useT();
+  // M3-5：Fullscreen API 可用性（SSR/不支持环境为 false → 降级文案）
+  const [fullscreenSupported] = useState(
+    () =>
+      typeof document !== 'undefined' &&
+      typeof document.documentElement.requestFullscreen === 'function',
+  );
 
   useEffect(() => {
     const onFullscreenChange = (): void => {
@@ -43,14 +52,18 @@ export function ImmersiveToggle(): JSX.Element {
     }
   };
 
+  const label = immersive
+    ? tr('hud.immersiveExit')
+    : tr(fullscreenSupported ? 'hud.immersiveEnter' : 'hud.immersiveEnterNoFullscreen');
+
   return (
     <button
       type="button"
       onClick={handleToggle}
       aria-pressed={immersive}
-      aria-label={tr(immersive ? 'hud.immersiveExit' : 'hud.immersiveEnter')}
-      title={tr(immersive ? 'hud.immersiveExit' : 'hud.immersiveEnter')}
-      className="rounded bg-white/10 px-1.5 py-0.5 text-xs text-gray-300 transition-colors hover:bg-white/20 hover:text-white"
+      aria-label={label}
+      title={label}
+      className="rounded bg-white/10 px-1.5 py-0.5 text-xs text-gray-300 transition-colors hover:bg-white/20 hover:text-white max-md:px-4 max-md:py-3"
     >
       {immersive ? '🗗' : '⛶'}
     </button>

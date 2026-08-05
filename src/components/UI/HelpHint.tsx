@@ -3,6 +3,7 @@
 import type { JSX } from 'react';
 import { useEffect, useState } from 'react';
 import { useT } from '@/hooks/useI18n';
+import { useSimulationStore } from '@/store';
 
 /** 打开后自动关闭延时（毫秒，UI 布局优化：避免长期遮挡画面中央） */
 export const HELP_HINT_AUTO_CLOSE_MS = 5000;
@@ -18,6 +19,11 @@ export const HELP_HINT_AUTO_CLOSE_MS = 5000;
  * - 页面打开 5 秒后自动关闭（鼠标悬停暂停倒计时，移出后重新计满 5 秒）；
  * - 关闭后原位置保留一个「?」小按钮可重新打开；手动重开后不再自动关闭
  *   （用户主动查看时不打断阅读）。
+ *
+ * M3-3 移动布局（isCompact）：底部悬浮卡与「?」重开钮不渲染——引导
+ * 入口并入底部标签栏（[? 帮助] 钮，store.mobilePanel 互斥位），打开时
+ * 呈居中弹层（内滚，关闭钮 + 点按遮罩关闭）；默认不自动弹出（实现
+ * 差异登记：避免首屏遮挡，引导经标签栏常驻入口可达）。桌面分支原样。
  */
 export function HelpHint(): JSX.Element | null {
   const [visible, setVisible] = useState(true);
@@ -25,12 +31,56 @@ export function HelpHint(): JSX.Element | null {
   // 自动关闭仅武装一次：手动经「?」重开后解除（不再自动关闭）
   const [autoCloseArmed, setAutoCloseArmed] = useState(true);
   const tr = useT();
+  const isCompact = useSimulationStore((s) => s.isCompact);
+  const mobileOpen = useSimulationStore((s) => s.mobilePanel === 'help');
+  const setMobilePanel = useSimulationStore((s) => s.setMobilePanel);
 
   useEffect(() => {
-    if (!visible || !autoCloseArmed || hovered) return undefined;
+    if (isCompact || !visible || !autoCloseArmed || hovered) return undefined;
     const id = setTimeout(() => setVisible(false), HELP_HINT_AUTO_CLOSE_MS);
     return () => clearTimeout(id);
-  }, [visible, autoCloseArmed, hovered]);
+  }, [isCompact, visible, autoCloseArmed, hovered]);
+
+  // 共用正文（桌面悬浮卡 / 移动居中弹层）
+  const body = (
+    <p>
+      {tr('helpHint.controls')}
+      <br />
+      <span className="text-gray-500">✦ {tr('helpHint.disclaimer')}</span>
+      <br />
+      <span className="text-gray-500">🌐 {tr('helpHint.langNote')}</span>
+      <br />
+      {/* B5：H 键与展馆模式说明（附录 A#4 快捷键表同步） */}
+      <span className="text-gray-500">🖥 {tr('helpHint.kioskNote')}</span>
+    </p>
+  );
+
+  if (isCompact) {
+    if (!mobileOpen) return null;
+    return (
+      <div className="fixed inset-0 z-30 flex items-center justify-center p-4">
+        {/* 遮罩：点按任意空白关闭 */}
+        <div
+          className="absolute inset-0 bg-black/50"
+          onClick={() => setMobilePanel(null)}
+          aria-hidden
+        />
+        <div className="relative max-h-[70dvh] w-full max-w-96 overflow-y-auto overscroll-contain rounded-lg bg-space-panel p-4 pr-2 text-sm leading-6 text-gray-300 backdrop-blur hud-scroll">
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">{body}</div>
+            <button
+              type="button"
+              onClick={() => setMobilePanel(null)}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded text-gray-400"
+              aria-label={tr('helpHint.closeAria')}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!visible) {
     return (
@@ -56,16 +106,7 @@ export function HelpHint(): JSX.Element | null {
       className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-space-panel px-5 py-3 text-xs text-gray-300 backdrop-blur"
     >
       <div className="flex items-center gap-4">
-        <p>
-          {tr('helpHint.controls')}
-          <br />
-          <span className="text-gray-500">✦ {tr('helpHint.disclaimer')}</span>
-          <br />
-          <span className="text-gray-500">🌐 {tr('helpHint.langNote')}</span>
-          <br />
-          {/* B5：H 键与展馆模式说明（附录 A#4 快捷键表同步） */}
-          <span className="text-gray-500">🖥 {tr('helpHint.kioskNote')}</span>
-        </p>
+        {body}
         <button
           type="button"
           onClick={() => setVisible(false)}

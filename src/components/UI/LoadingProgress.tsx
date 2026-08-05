@@ -47,7 +47,9 @@ export function LoadingProgress(): JSX.Element | null {
   const percent = Math.round(progress.percent01 * 100);
 
   return (
-    <div className="pointer-events-none absolute left-1/2 top-16 w-56 -translate-x-1/2 rounded-lg bg-space-panel px-4 py-2 backdrop-blur">
+    // M3-5：紧凑视口下移避让顶部状态条（pointer-events-none 短暂驻留，
+    // 与事件通知列同位偶发视觉重叠登记为可接受）；桌面 md:top-16 原样
+    <div className="pointer-events-none absolute left-1/2 top-[calc(env(safe-area-inset-top)+3.25rem)] w-56 -translate-x-1/2 rounded-lg bg-space-panel px-4 py-2 backdrop-blur md:top-16">
       <div className="mb-1 flex items-center justify-between text-[10px] tracking-widest text-space-accent">
         <span>{tr('loading.textures')}</span>
         <span>{percent}%</span>

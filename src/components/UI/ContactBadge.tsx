@@ -33,11 +33,19 @@ export const DONATE_PAGE_PATH = '/donate';
  *
  * i18n（B2 打样件）：全部文案经字典查找（`contactBadge.*` 键组），
  * 作为客户端 locale 机制的验证件；六大 UI 组件批量迁移属 B3。
+ *
+ * M3-3 移动布局（isCompact）：左下角角标不渲染——入口并入底部标签栏
+ * （[♥ 投喂] 钮，store.mobilePanel 互斥位），打开时展开卡改为居中弹层
+ * （捐赠入口 + 商业合作三链接合并一卡；点按遮罩/✕ 关闭）。对外入口与
+ * 文案同源纪律：邮箱/爱发电/Issues 链接常量与字典键零改动，仅布局改。
  */
 export function ContactBadge(): JSX.Element | null {
   const [expanded, setExpanded] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const tr = useT();
+  const isCompact = useSimulationStore((s) => s.isCompact);
+  const mobileOpen = useSimulationStore((s) => s.mobilePanel === 'contact');
+  const setMobilePanel = useSimulationStore((s) => s.setMobilePanel);
 
   // 避让判定：事件通知可见标志 + 左下角剖面分层卡片（实际占位者）
   const avoided = useSimulationStore(
@@ -67,6 +75,80 @@ export function ContactBadge(): JSX.Element | null {
     return () => window.removeEventListener('pointerdown', onPointerDown);
   }, [expanded]);
 
+  // 三个对外链接（桌面展开卡 / 移动居中弹层共用；常量同源纪律不动）
+  const links = (
+    <div className="mt-2 space-y-1 max-md:space-y-0">
+      <a
+        href={`mailto:${CONTACT_EMAIL}`}
+        className="block text-space-accent hover:underline max-md:py-3"
+      >
+        📮 {CONTACT_EMAIL}
+      </a>
+      <a
+        href={CONTACT_GITHUB_ISSUES_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="block text-space-accent hover:underline max-md:py-3"
+      >
+        💬 {tr('contactBadge.githubIssues')}
+      </a>
+      <a
+        href={SPONSOR_AFDIAN_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="block text-space-accent hover:underline max-md:py-3"
+      >
+        ⚡ {tr('contactBadge.sponsor')}
+      </a>
+    </div>
+  );
+
+  if (isCompact) {
+    // M3-3：入口在底部标签栏（BottomTabBar），此处仅渲染居中弹层
+    if (!mobileOpen) return null;
+    return (
+      <div className="fixed inset-0 z-30 flex items-center justify-center p-4 text-sm">
+        {/* 遮罩：点按任意空白关闭 */}
+        <div
+          className="absolute inset-0 bg-black/50"
+          onClick={() => setMobilePanel(null)}
+          aria-hidden
+        />
+        <div
+          role="dialog"
+          aria-label={tr('contactBadge.dialogAriaLabel')}
+          className="relative w-full max-w-80 rounded-lg border border-space-accent/30 bg-space-panel p-4 backdrop-blur"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-base font-semibold text-space-accent">
+              {tr('contactBadge.title')}
+            </h3>
+            <button
+              type="button"
+              onClick={() => setMobilePanel(null)}
+              className="-m-3 flex h-11 w-11 shrink-0 items-center justify-center rounded text-gray-400"
+              aria-label={tr('contactBadge.closeAria')}
+            >
+              ✕
+            </button>
+          </div>
+          {/* 捐赠入口（新标签页打开站内捐赠页 /donate） */}
+          <a
+            href={DONATE_PAGE_PATH}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={tr('contactBadge.donateAria')}
+            className="mt-3 block rounded-lg border border-amber-300/30 bg-space-panel px-3 py-3 text-center text-amber-200/90"
+          >
+            ☄️ {tr('contactBadge.donateLabel')}
+          </a>
+          <p className="mt-3 leading-6 text-gray-300">{tr('contactBadge.description')}</p>
+          {links}
+        </div>
+      </div>
+    );
+  }
+
   if (avoided) return null;
 
   return (
@@ -81,30 +163,7 @@ export function ContactBadge(): JSX.Element | null {
             {tr('contactBadge.title')}
           </h3>
           <p className="mt-1 leading-5 text-gray-300">{tr('contactBadge.description')}</p>
-          <div className="mt-2 space-y-1">
-            <a
-              href={`mailto:${CONTACT_EMAIL}`}
-              className="block text-space-accent hover:underline"
-            >
-              📮 {CONTACT_EMAIL}
-            </a>
-            <a
-              href={CONTACT_GITHUB_ISSUES_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="block text-space-accent hover:underline"
-            >
-              💬 {tr('contactBadge.githubIssues')}
-            </a>
-            <a
-              href={SPONSOR_AFDIAN_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="block text-space-accent hover:underline"
-            >
-              ⚡ {tr('contactBadge.sponsor')}
-            </a>
-          </div>
+          {links}
         </div>
       )}
       <div className="flex items-center gap-2">

@@ -35,6 +35,8 @@ export const zh = {
     /** 捐赠入口按钮文字（emoji ☄️ 由组件层持有；跳转 /donate 新页面） */
     donateLabel: '投喂燃料',
     donateAria: '打开捐赠页（新标签页）',
+    /** M3 移动弹层关闭按钮（居中弹层化，桌面不使用） */
+    closeAria: '关闭投喂与合作面板',
   },
   /** 捐赠页（/donate，零回报承诺口径——不承诺任何回报或更新义务） */
   donate: {
@@ -70,6 +72,15 @@ export const zh = {
     closeAria: '关闭引导',
     /** 关闭后底部中央"?"重开按钮（UI 布局优化：引导 5 秒自动关闭后可重开） */
     reopenAria: '重新打开操作引导',
+  },
+  /** M3 移动布局底部标签栏（仅 isCompact 渲染；emoji/符号由组件层持有） */
+  tabBar: {
+    help: '帮助',
+    helpAria: '打开操作引导',
+    controls: '控制',
+    controlsAria: '打开控制面板',
+    contact: '投喂',
+    contactAria: '打开投喂与合作面板',
   },
   /** 四视角锚点名（cameraViews.nameZh 迁移，ControlPanel 按钮 + HUD 标题共用） */
   viewLevel: {
@@ -162,6 +173,13 @@ export const zh = {
     /** 沉浸模式（页面最大化）按钮（emoji 由组件层持有） */
     immersiveEnter: '最大化（收起面板）',
     immersiveExit: '退出最大化',
+    /** M3-5：全屏 API 不可用（iPhone Safari）时的降级文案（仅收起 UI） */
+    immersiveEnterNoFullscreen: '收起面板（此浏览器不支持全屏）',
+    /** M3 移动版顶部状态条：tap 展开/收起详情 */
+    statusExpandAria: '展开状态详情',
+    statusCollapseAria: '收起状态详情',
+    /** M3 移动版信息面板底部半屏卡：顶部拖拽把手（下滑关闭） */
+    sheetDragAria: '下滑关闭面板',
     scale: '当前尺度：{value}',
     frameL1: '参考系：日心系（行星/卫星运动）',
     frameL2: '参考系：日心系（黄道坐标）',

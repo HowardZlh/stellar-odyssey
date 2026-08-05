@@ -108,13 +108,15 @@ describe('ImmersiveToggle', () => {
     expect(useSimulationStore.getState().immersiveMode).toBe(false);
   });
 
-  it('全屏 API 不可用时静默降级：面板联动照常', () => {
+  it('全屏 API 不可用时降级（M3-5）：按钮保留 + 降级文案，面板联动照常', () => {
     Object.defineProperty(document.documentElement, 'requestFullscreen', {
       value: undefined,
       configurable: true,
     });
     render(<ImmersiveToggle />);
-    fireEvent.click(screen.getByRole('button', { name: '最大化（收起面板）' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: '收起面板（此浏览器不支持全屏）' }),
+    );
     expect(useSimulationStore.getState().immersiveMode).toBe(true);
     expect(useSimulationStore.getState().controlPanelCollapsed).toBe(true);
   });

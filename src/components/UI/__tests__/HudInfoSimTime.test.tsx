@@ -33,8 +33,10 @@ describe('HudInfo 模拟时间显示', () => {
     expect(screen.getByText('（天文历元 J2000 + 42.73 Myr）')).toBeInTheDocument();
   });
 
-  it('右上角面板含沉浸模式按钮', () => {
+  it('右上角面板含沉浸模式按钮（jsdom 无 Fullscreen API → M3-5 降级文案）', () => {
     render(<HudInfo />);
-    expect(screen.getByRole('button', { name: '最大化（收起面板）' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '收起面板（此浏览器不支持全屏）' }),
+    ).toBeInTheDocument();
   });
 });
