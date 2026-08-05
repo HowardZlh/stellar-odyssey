@@ -53,7 +53,13 @@ describe('DONATION_PLATFORMS 注册表', () => {
     expect(kofi?.url).toBe(SPONSOR_KOFI_URL);
   });
 
-  it('包含五个平台（微信/GitHub Sponsors/Buy Me a Coffee 为预留位）', () => {
+  it('微信赞赏码为二维码形态（无跳转链接、qrImage 指向站内资产）', () => {
+    const wechat = DONATION_PLATFORMS.find((p) => p.id === 'wechat');
+    expect(wechat?.url).toBeNull();
+    expect(wechat?.qrImage).toBe('/donate/wechat-tip-code.jpg');
+  });
+
+  it('包含五个平台（GitHub Sponsors/Buy Me a Coffee 为预留位）', () => {
     expect(DONATION_PLATFORMS.map((p) => p.id)).toEqual([
       'afdian',
       'wechat',
@@ -61,9 +67,10 @@ describe('DONATION_PLATFORMS 注册表', () => {
       'kofi',
       'buymeacoffee',
     ]);
-    const reserved = DONATION_PLATFORMS.filter((p) => p.url === null);
+    const reserved = DONATION_PLATFORMS.filter(
+      (p) => p.url === null && !p.qrImage,
+    );
     expect(reserved.map((p) => p.id)).toEqual([
-      'wechat',
       'github-sponsors',
       'buymeacoffee',
     ]);

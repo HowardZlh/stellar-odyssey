@@ -4,14 +4,16 @@
  * 捐赠页（/donate，静态导出为 donate.html）
  *
  * 左下角「☄️ 投喂燃料」入口新标签页打开。内容：多平台捐赠通道卡片
- * （data/donationPlatforms.ts 注册表，预留位显示"即将开通"）+ 捐赠名单
- * （data/donors.ts 人工登记，渲染前按金额降序排列）+ 返回主站链接。
+ * （data/donationPlatforms.ts 注册表，链接型跳转 / 二维码型卡片内展开
+ * （微信赞赏码，桌面扫码与微信内长按识别双路径）/ 预留位显示"即将开通"）
+ * + 捐赠名单（data/donors.ts 人工登记，渲染前按金额降序排列）+ 返回主站链接。
  *
  * 文案口径（AGENTS.md 赞助红线）：零回报承诺——不承诺任何回报或更新
  * 义务；i18n 经 donate.* 键组双语化，页面右上角提供 zh/EN 切换。
  */
 
 import type { JSX } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { pickLocalized } from '@/i18n';
 import { useLocaleInit, useT, useTf } from '@/hooks/useI18n';
@@ -40,6 +42,9 @@ export default function DonatePage(): JSX.Element {
 
   // 名单按金额降序（数据文件无需保序，排序逻辑单测覆盖）
   const donors = sortDonorsByAmountDesc(DONORS);
+
+  // 二维码形态通道（微信赞赏码）：卡片内展开/收起，至多一张同时展开
+  const [openQrId, setOpenQrId] = useState<DonationPlatformId | null>(null);
 
   return (
     // M5-1 safe-area：viewport-fit=cover 下四向避让刘海/Home Indicator
@@ -108,29 +113,64 @@ export default function DonatePage(): JSX.Element {
           <h2 className="mb-3 text-sm font-semibold text-gray-300">
             {tr('donate.platformsSection')}
           </h2>
-          <ul className="grid gap-3 sm:grid-cols-2">
+          {/* items-start：二维码卡展开时不拉伸同排卡片（收起态各卡等高无视觉差异） */}
+          <ul className="grid items-start gap-3 sm:grid-cols-2">
             {DONATION_PLATFORMS.map((platform) => (
               <li
                 key={platform.id}
-                className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur"
+                className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur"
               >
-                <span className="text-sm text-gray-200">
-                  {PLATFORM_EMOJI[platform.id]}{' '}
-                  {pickLocalized(locale, platform.nameZh, platform.nameEn)}
-                </span>
-                {platform.url ? (
-                  <a
-                    href={platform.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="shrink-0 rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent max-md:px-4 max-md:py-3.5"
-                  >
-                    {tr('donate.platformAvailable')}
-                  </a>
-                ) : (
-                  <span className="shrink-0 rounded bg-white/5 px-3 py-1.5 text-xs text-gray-500">
-                    {tr('donate.platformComingSoon')}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-gray-200">
+                    {PLATFORM_EMOJI[platform.id]}{' '}
+                    {pickLocalized(locale, platform.nameZh, platform.nameEn)}
                   </span>
+                  {platform.url ? (
+                    <a
+                      href={platform.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent max-md:px-4 max-md:py-3.5"
+                    >
+                      {tr('donate.platformAvailable')}
+                    </a>
+                  ) : platform.qrImage ? (
+                    <button
+                      type="button"
+                      aria-expanded={openQrId === platform.id}
+                      onClick={() =>
+                        setOpenQrId((current) =>
+                          current === platform.id ? null : platform.id,
+                        )
+                      }
+                      className="shrink-0 rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent max-md:px-4 max-md:py-3.5"
+                    >
+                      {tr(
+                        openQrId === platform.id
+                          ? 'donate.platformHideQr'
+                          : 'donate.platformShowQr',
+                      )}
+                    </button>
+                  ) : (
+                    <span className="shrink-0 rounded bg-white/5 px-3 py-1.5 text-xs text-gray-500">
+                      {tr('donate.platformComingSoon')}
+                    </span>
+                  )}
+                </div>
+                {platform.qrImage && openQrId === platform.id && (
+                  <div className="mt-3 text-center">
+                    {/* 原生 <img>：静态导出无 next/image 优化（规则已全局关闭）；
+                        自适应宽度（移动单列/桌面双列均不溢出），点按图片也可收起 */}
+                    <img
+                      src={platform.qrImage}
+                      alt={tr('donate.wechatQrAlt')}
+                      onClick={() => setOpenQrId(null)}
+                      className="mx-auto w-full max-w-64 rounded-lg"
+                    />
+                    <p className="mt-2 text-[10px] leading-4 text-gray-500 max-md:text-xs">
+                      {tr('donate.wechatQrHint')}
+                    </p>
+                  </div>
                 )}
               </li>
             ))}

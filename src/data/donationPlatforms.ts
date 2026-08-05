@@ -16,13 +16,21 @@ export interface DonationPlatform {
   id: DonationPlatformId;
   nameZh: string;
   nameEn: string;
-  /** 捐赠链接（null = 预留位·即将开通） */
+  /** 捐赠链接（null = 无跳转链接：有 qrImage 走二维码形态，否则为预留位） */
   url: string | null;
+  /** 收款二维码图片路径（微信赞赏码等无跳转链接的通道，卡片内展开展示） */
+  qrImage?: string;
 }
 
 export const DONATION_PLATFORMS: readonly DonationPlatform[] = [
   { id: 'afdian', nameZh: '爱发电', nameEn: 'Afdian', url: SPONSOR_AFDIAN_URL },
-  { id: 'wechat', nameZh: '微信赞赏码', nameEn: 'WeChat Tip Code', url: null },
+  {
+    id: 'wechat',
+    nameZh: '微信赞赏码',
+    nameEn: 'WeChat Tip Code',
+    url: null,
+    qrImage: '/donate/wechat-tip-code.jpg',
+  },
   {
     id: 'github-sponsors',
     nameZh: 'GitHub Sponsors',

@@ -9,6 +9,8 @@
 
 ### 新增
 
+- 新增微信赞赏码捐赠通道：站内捐赠页 `/donate` 的微信卡片由预留位转为二维码形态——点「查看赞赏码」卡片内展开赞赏码图（再点按钮或图片收起），附「微信内长按识别，或用手机微信扫码」双路径提示；桌面/移动双端适配（移动端按钮命中区 ≥44pt、二维码图自适应宽度无水平溢出、展开时不拉伸同排卡片）；平台注册表新增 `qrImage` 字段（无跳转链接通道的二维码形态），i18n 新增 `donate.platformShowQr/platformHideQr/wechatQrAlt/wechatQrHint` 四键（zh/en）；文案保持零回报承诺口径
+
 - 新增 Ko-fi 捐赠通道：站内捐赠页 `/donate` 的 Ko-fi 卡片由预留位转为可用链接（`ko-fi.com/howardzlh`，`SPONSOR_KOFI_URL` 同源常量登记于 `src/data/donationPlatforms.ts`）；README 中/英两版赞助节新增 Ko-fi 行；`.github/FUNDING.yml` 新增 `ko_fi` 原生字段（仓库页 Sponsor 按钮同时展示爱发电与 Ko-fi 入口）；文案保持零回报承诺口径
 
 - 新增贡献者宇宙页面移动端适配（C3，贡献者名单 3D 呈现升级第二批）：触屏交互等价——OrbitControls 显式单指旋转/双指捏合缩放手势映射，触屏（isTouch）下 tap 星星直达"聚焦飞行 + 详情卡"（无 hover 中间态），tap 命中阈值 ×2（恰为星最小间距，就近命中不串星），操作提示按触屏分流为「单指拖动环视 · 双指缩放 · 点按聚焦贡献者」（i18n zh/en 同步）；渲染档位——Canvas dpr/antialias 消费 M2 统一档位表 `utils/qualityTier.ts`（需求登记的对齐项已闭环），背景氛围星场点数按档位 3000/3000/1500（`contributorCanvasQuality` 纯函数三档单测锁死），闪烁 shader 三档恒开；移动布局——紧凑视口（isCompact）下详情卡从右上悬浮卡改为底部卡片（通栏 + 50dvh 限高 + safe-area 底部避让，关闭按钮 ≥44pt + 点画布空白可关闭），画布高度移动端用 dvh（规避 iOS Safari 地址栏塌缩），画布容器 touch-none/UI 层 touch-manipulation（M1-2 口径），横竖屏切换经 M1 matchMedia 订阅动态生效；判据全部消费 M1 产物（useViewportKind / store deviceTier，零新增检测代码）。测试：新增 16 例（档位三档取值/触屏阈值分流纯函数 5 例 + 页面 isTouch 文案分流/isCompact 布局分流/档位透传/touch-action 11 例），全量 3,405 用例/193 套件、覆盖率 gate ≥90% 保持（contributorUniverse.ts 四指标 ≥96.8%）、type-check/lint/build 全绿；无头 Chrome 目验（Metal，c3 系列截图登记）：375×667/390×844/430×932 触屏仿真 tap 聚焦流程完整、底部详情卡通栏 ≤50dvh、关闭路径可达、无水平溢出、控制台零错误，CPU 4x 节流 390×844 实测 60.2 FPS（≥30 达标），桌面 1280×800 回归与 C2 交付一致（桌面提示文案/右上悬浮详情卡/交互零变化）
