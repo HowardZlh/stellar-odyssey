@@ -7,6 +7,10 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
+  /* M1-2 触屏手势隔离：禁边界橡皮筋/下拉刷新；触点高亮透明（点按反馈由
+     组件自身 hover/active 态承担） */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 input[type='range'] {

@@ -1,7 +1,20 @@
 import type { JSX } from 'react';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import Script from 'next/script';
 import './globals.css';
+
+/**
+ * 移动端 viewport（M1-2）：锁定页面级缩放（双指捏合完全交给
+ * OrbitControls，配合 globals.css touch-action）；viewportFit cover
+ * 铺满刘海屏（safe-area inset 由 tailwind safe-* spacing 工具类避让）
+ */
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://stellar.guushu.com'),

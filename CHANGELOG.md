@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+### 新增
+
+- 新增手机端触屏基建（M1，移动端适配首批）：A) 设备能力检测纯函数 `src/utils/deviceCapability.ts`——`isTouchPrimary()`（matchMedia `(pointer: coarse)` 判据，禁止 userAgent 嗅探）、`isCompactViewport()`（max-width: 767px）、`getDeviceTier(gl?)` 三档判定（判定表：pointer fine 桌面恒 high；触屏命中低端信号（核数 ≤3 / MAX_TEXTURE_SIZE <4096 / 低端 GPU renderer 关键字）→ low、全高端信号（核数 ≥8 且纹理 ≥8192 且 dpr ≥2）→ high、其余含输入缺失保守 medium；低端优先于高端宁降勿超），SSR/jsdom 全部安全降级；B) 视口类型 hook `src/hooks/useViewportKind.ts`——matchMedia change 订阅（横竖屏切换/平板分屏/外接鼠标插拔动态生效，含 iOS ≤13 旧 addListener 回退），输出 `{ isTouch, isCompact, orientation }` 并同步写 store；store 新增 `deviceTier`/`isTouch`/`isCompact`（默认 'high'/false/false = 桌面现状，M2 渲染降档与 M3 移动布局消费），SolarSystemApp 启动经 probe WebGL 上下文一次性检测档位（用后 loseContext 释放）；C) viewport 与手势隔离——layout.tsx 新增 `export const viewport`（锁定页面级缩放 + viewportFit cover 铺满刘海屏），Canvas 容器 `touch-action: none`（双指捏合完全交给 OrbitControls），UI 悬浮层 `touch-action: manipulation`（消除 300ms 点按延迟）+ `user-select: none`（信息面板/太阳剖面卡片/黑子科普卡片科学文案经 select-text 豁免保持可复制），全局 `overscroll-behavior: none` 禁边界橡皮筋 + 触点高亮透明；D) tailwind 新增 safe-area 四向 spacing 工具类（`safe-t/b/l/r` = env(safe-area-inset-*)，供后续 M3 刘海屏避让）。测试：新增 61 例（classifyDeviceTier 判定表穷举含边界值与降级路径/matchMedia 判据/WebGL 信号收集异常降级/hook 订阅同步与卸载解绑/store 默认值与写入），deviceCapability.ts 语句覆盖 100%，全量 3,267 用例/180 套件、覆盖率 gate ≥90% 保持、type-check/lint/build 全绿；无头 Chrome 目验（Metal，m1 系列截图）：移动仿真 390×844/375×667 无水平溢出、isTouch/isCompact 动态生效、viewport meta 与 touch-action 计算样式逐项核对，桌面 1280×800 回归截图与改动前布局一致（deviceTier=high/isTouch=false/isCompact=false 即现状分支）
+
+### 修复
+
+- 修复顶部事件通知列小屏硬溢出（M1-3 热修）：通知列固定宽 `w-96`（384px）在 375px 视口横向溢出——改为 `w-[calc(100vw-2rem)] max-w-96`（小屏收窄为视口宽减 2rem、桌面维持 24rem 上限零变化）；375×667 仿真实测通知触发时列宽 343px 无溢出
+
 ### 改进
 
 - 内部需求文档（REQUIREMENTS.md + IMPROVEMENT_REQUIREMENTS 系列共 7 篇）移出公开仓库：`docs/internal/` 整目录加入 .gitignore 仅本地保留；README 与 docs/development.md（中英两版）、docs/attribution.md 中指向内部文档的链接同步清理为 CHANGELOG 入口，消除仓库死链

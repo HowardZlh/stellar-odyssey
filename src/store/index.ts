@@ -32,6 +32,7 @@ import {
   scopeForLevel,
 } from '@/utils/cycleScopes';
 import type { CycleScope } from '@/utils/cycleScopes';
+import type { DeviceTier } from '@/utils/deviceCapability';
 import { resolveFocusTarget } from '@/utils/cameraFocus';
 import {
   KIOSK_INACTIVE,
@@ -283,6 +284,23 @@ export interface SimulationState {
    * 监听、ControlPanel 启动按钮、KioskBadge 退出、?mode=kiosk 启动）
    */
   kiosk: KioskState;
+  /**
+   * 设备渲染档位（M1-1，utils/deviceCapability.ts 判定表）：SSR/桌面
+   * （pointer fine）恒 'high'——默认值即桌面现状，M2 渲染降档消费。
+   * SolarSystemApp 启动时经 useDeviceTierInit 一次性写入。
+   */
+  deviceTier: DeviceTier;
+  /**
+   * 触屏为主设备（matchMedia '(pointer: coarse)'，M1-1）：useViewportKind
+   * 启动写入并随 matchMedia change（外接鼠标插拔等）动态同步；默认 false。
+   */
+  isTouch: boolean;
+  /**
+   * 紧凑视口（matchMedia '(max-width: 767px)'，M1-1）：useViewportKind
+   * 同步（横竖屏切换/平板分屏动态生效）；默认 false——false 分支即桌面现状，
+   * M3 移动布局消费。
+   */
+  isCompact: boolean;
 
   // actions
   tick: (realDeltaSeconds: number) => void;
@@ -321,6 +339,12 @@ export interface SimulationState {
    * 全屏进入/退出属 DOM 层（ControlPanel/KioskBadge），本 action 不触达。
    */
   kioskEvent: (event: KioskEvent, nowSec: number) => void;
+  /** 写入设备渲染档位（M1：SolarSystemApp 启动一次性检测） */
+  setDeviceTier: (tier: DeviceTier) => void;
+  /** 写入触屏为主标记（M1：useViewportKind 同步） */
+  setIsTouch: (isTouch: boolean) => void;
+  /** 写入紧凑视口标记（M1：useViewportKind 同步） */
+  setIsCompact: (isCompact: boolean) => void;
   /** 相机缩放驱动的连续层级同步（不触发锚点过渡动画） */
   syncZoomLevel: (continuousLevel: number) => void;
   /**
@@ -667,8 +691,17 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   immersiveMode: false,
   immersiveRestoreBodyId: null,
   kiosk: KIOSK_INACTIVE,
+  deviceTier: 'high',
+  isTouch: false,
+  isCompact: false,
 
   setLaunchParams: (params) => set({ launch: params }),
+
+  setDeviceTier: (tier) => set({ deviceTier: tier }),
+
+  setIsTouch: (isTouch) => set({ isTouch }),
+
+  setIsCompact: (isCompact) => set({ isCompact }),
 
   setUiVisible: (visible) => set({ uiVisible: visible }),
 

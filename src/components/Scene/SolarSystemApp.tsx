@@ -10,6 +10,7 @@ import { useSimulationStore } from '@/store';
 import { useLaunchInit } from '@/hooks/useLaunchParams';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useKiosk } from '@/hooks/useKiosk';
+import { useDeviceTierInit, useViewportKind } from '@/hooks/useViewportKind';
 import { AudioController } from '@/components/Audio/AudioController';
 import { SpatialAudio } from '@/components/Audio/SpatialAudio';
 import { CameraController } from '@/components/Camera/CameraController';
@@ -46,6 +47,10 @@ export default function SolarSystemApp(): JSX.Element {
   // B5 展馆模式驱动（方案 K5）：须在 useLaunchInit 之后挂载——同批
   // effect 按 hook 声明序执行，?mode=kiosk 读取时 launch 已写入
   useKiosk();
+  // M1 触屏基建：设备档位一次性探测 + 视口类型（isTouch/isCompact）
+  // matchMedia 订阅写 store（M2 渲染降档 / M3 移动布局消费）
+  useDeviceTierInit();
+  useViewportKind();
 
   // 应用卸载时释放全部位图纹理与 glTF 模型（AGENTS.md 内存管理）
   useEffect(() => {
@@ -58,6 +63,9 @@ export default function SolarSystemApp(): JSX.Element {
   return (
     <div className="relative h-screen w-screen">
       <Canvas
+        // M1-2 手势隔离：Canvas 容器 touch-action none——双指捏合/单指拖动
+        // 完全交给 OrbitControls，杜绝页面级缩放与滚动
+        className="touch-none"
         // 对数深度缓冲：尺度管理方案的一部分，避免大尺度 z-fighting（需求 5.1）
         gl={{ logarithmicDepthBuffer: true, antialias: true }}
         camera={{
@@ -90,7 +98,10 @@ export default function SolarSystemApp(): JSX.Element {
           单点 hidden（display:none）覆盖全部受控组件并保留组件内部状态，
           各组件零改动）；LoadingProgress（加载期必须可见）与 LaunchLogo
           （B4 §4.1 登记）不受控，置于包裹外 */}
-      <div hidden={!uiVisible}>
+      {/* M1-2 UI 悬浮层：touch-manipulation 消除 300ms 点按延迟；
+          select-none 禁 UI 文本长按选中（信息面板科学文案经 select-text
+          豁免保持可复制，见 HudInfo） */}
+      <div hidden={!uiVisible} className="touch-manipulation select-none">
         <ControlPanel />
         <HudInfo />
         {/* 行星视角天体切换（P4，需求 3.2.4：仅 L1 语境显示） */}
@@ -101,13 +112,17 @@ export default function SolarSystemApp(): JSX.Element {
             B1 预留登记收口：经本包裹接入 uiVisible） */}
         <ContactBadge />
       </div>
-      <LoadingProgress />
-      {/* B5 展馆模式暂停角标（仅 paused 态显示；置于包裹外——作为退出
-          入口须不受 uiVisible 影响恒可达，登记） */}
-      <KioskBadge />
-      {/* B4 启动参数客户 logo（?logo=，右侧 top-64；B5 kiosk 隐藏 UI 时保持显示） */}
-      <LaunchLogo />
-      <AudioController />
+      {/* uiVisible 包裹外的常驻悬浮层（M1-2 触屏属性同上；静态 div 不改
+          定位/层叠语义，桌面零变化） */}
+      <div className="touch-manipulation select-none">
+        <LoadingProgress />
+        {/* B5 展馆模式暂停角标（仅 paused 态显示；置于包裹外——作为退出
+            入口须不受 uiVisible 影响恒可达，登记） */}
+        <KioskBadge />
+        {/* B4 启动参数客户 logo（?logo=，右侧 top-64；B5 kiosk 隐藏 UI 时保持显示） */}
+        <LaunchLogo />
+        <AudioController />
+      </div>
     </div>
   );
 }

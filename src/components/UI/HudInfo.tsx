@@ -258,8 +258,9 @@ export function HudInfo(): JSX.Element {
         )}
       </div>
 
-      {/* 事件通知列（超新星/耀斑/CME，需求 3.1.5 与 S2 §4.3） */}
-      <div className="absolute left-1/2 top-4 flex w-96 -translate-x-1/2 flex-col gap-2">
+      {/* 事件通知列（超新星/耀斑/CME，需求 3.1.5 与 S2 §4.3）；
+          M1-3 溢出热修：小屏收窄为视口宽减 2rem，桌面维持 24rem 上限 */}
+      <div className="absolute left-1/2 top-4 flex w-[calc(100vw-2rem)] max-w-96 -translate-x-1/2 flex-col gap-2">
         {/* R2-6 §6.1：首次切入 L3 的一次性 G 键引导 toast（12 秒自动收起） */}
         {galacticFrameTipVisible && viewLevel === 'L3' && (
           <div className="rounded-lg border border-emerald-400/40 bg-space-panel p-3 text-xs backdrop-blur">
@@ -507,7 +508,7 @@ export function HudInfo(): JSX.Element {
 
       {/* S3 §4.5：黑子群/日珥点选科普卡片（含"可容纳 N 个地球"动态换算） */}
       {selectedSolarFeature && (
-        <div className="absolute bottom-4 left-1/2 w-80 -translate-x-1/2 rounded-lg border border-orange-300/30 bg-space-panel p-4 text-xs backdrop-blur">
+        <div className="absolute bottom-4 left-1/2 w-80 -translate-x-1/2 select-text rounded-lg border border-orange-300/30 bg-space-panel p-4 text-xs backdrop-blur">
           {/* i18n：titleEn/descEn 数据驱动，按 locale 取用（缺失回退中文） */}
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-orange-300">
@@ -539,7 +540,7 @@ export function HudInfo(): JSX.Element {
 
       {/* 剖面分层科普卡片（S2 §4.1：各层可点选高亮并显示说明） */}
       {sunCutawayMode && sunCutawayLayer && (
-        <div className="absolute bottom-4 left-4 w-72 rounded-lg border border-orange-300/30 bg-space-panel p-4 text-xs backdrop-blur">
+        <div className="absolute bottom-4 left-4 w-72 select-text rounded-lg border border-orange-300/30 bg-space-panel p-4 text-xs backdrop-blur">
           {(() => {
             const layer = getSunLayerById(sunCutawayLayer);
             if (!layer) return null;
@@ -594,7 +595,7 @@ export function HudInfo(): JSX.Element {
       )}
 
       {selected && (
-        <div className="absolute bottom-4 right-4 flex max-h-[70vh] w-72 flex-col rounded-lg bg-space-panel p-4 text-xs backdrop-blur">
+        <div className="absolute bottom-4 right-4 flex max-h-[70vh] w-72 select-text flex-col rounded-lg bg-space-panel p-4 text-xs backdrop-blur">
           <div className="mb-2 flex items-center justify-between">
             {/* 标题：zh 中英并列、en 仅英文（hud.bodyTitle + displayBodyName 口径） */}
             <h3 className="text-sm font-semibold text-space-accent">
