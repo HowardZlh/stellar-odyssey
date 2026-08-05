@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { SUN } from '@/data/planets';
-import { detailTextureUrl, textureUrl } from '@/data/textures';
+import { detailTextureUrlForTier, textureUrl } from '@/data/textures';
 import { useSimulationStore } from '@/store';
 import { useBitmapTexture } from '@/hooks/useBitmapTexture';
 import { bodyDisplayRadius } from '@/utils/scale';
@@ -118,9 +118,14 @@ export function Sun(): JSX.Element {
   // 太阳为 L2 主发光体：2K 底图启动即加载（P3-2 优先级 1，仅次于聚焦天体）
   const sunTexture = useBitmapTexture(textureUrl('sun', 'surface'), 1, true);
   // S1 近观细节层：4K 底图仅近观门控激活时请求（优先级 0，2K 先显示防空窗）
+  // M2-4：medium/low 档禁 4K（URL 为 null 走既有"无 4K 源"降级路径）
   const [detailActive, setDetailActive] = useState(false);
   const detailActiveRef = useRef(false);
-  const detailUrl = detailTextureUrl('sun', 'surface');
+  const detailUrl = detailTextureUrlForTier(
+    'sun',
+    'surface',
+    useSimulationStore.getState().deviceTier,
+  );
   const detailTexture = useBitmapTexture(detailUrl, 0, detailActive);
   const surfaceTexture = (detailActive ? detailTexture : null) ?? sunTexture;
 

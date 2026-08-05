@@ -40,6 +40,7 @@ When the app loads you will see:
 | **Top right · HUD** | Current view level, simulation time, scale ruler, reference frame, follow status, galactic year progress (L3) |
 | **Bottom right · Info panel** | After selecting a body: name, type, real physical parameters and data sources, with "Fly to / Follow" buttons |
 | **Bottom · Onboarding guide** | First-visit shortcut hints and scientific-accuracy notes (dismissible) |
+| **Bottom left · Support & partnership** | "☄️ Fuel the Voyage" opens the donation page (all donation channels and the supporter roster, with a link to the ✨ Contributor Universe — the roster rendered as a 3D star cluster); "💼 Partnership" expands contact info. On mobile, reach it via the "♥ Donate" tab in the bottom tab bar |
 
 ## Your First Voyage: Recommended Route (about 5 minutes)
 
@@ -91,4 +92,4 @@ Volume rendering (nebulae / black holes / dust disks) has built-in adaptive qual
 Use the alternate scripts `npm run dev:3100` or `npm run dev:3200` (each uses its own build directory and can run alongside the port-3000 instance). Note that Next.js places a mutex lock on the build directory, so simply switching ports with `next dev -p <port>` will be refused.
 
 **Q: Does it work on phones/tablets?**
-Basic browsing works: one-finger rotate, two-finger pinch zoom, and tap-to-select are all available. However, the layout and performance target desktop browsers and large exhibition screens; it is not optimized for mobile.
+Yes, the whole site is mobile-ready: one-finger drag to rotate, two-finger pinch to zoom, and tap to select bodies. On small screens the interface automatically switches to a mobile layout (bottom tab bar + drawer panel), and rendering quality scales down to match device capability. See the "Touch Controls" section in [controls.md](controls.md) for the full reference.

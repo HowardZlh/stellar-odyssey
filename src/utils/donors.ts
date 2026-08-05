@@ -12,6 +12,7 @@ export type DonationPlatformId =
 
 /** 单条捐赠登记（跨平台金额统一折算为人民币元） */
 export interface DonorRecord {
+  id: string;
   /** 显示昵称（捐赠者公开昵称或其指定的展示名） */
   name: string;
   /** 累计捐赠金额（人民币元；外币按登记日汇率折算） */

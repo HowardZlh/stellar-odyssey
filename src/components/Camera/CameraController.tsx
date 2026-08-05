@@ -15,10 +15,12 @@ import { advanceTransitionProgress, interpolateCameraState } from '@/utils/anima
 import { resolveFocusTarget, supernovaFocusTarget } from '@/utils/cameraFocus';
 import type { FocusTarget } from '@/utils/cameraFocus';
 import { levelBlendWeights } from '@/utils/scale';
-
-/** 遨游模式缩放范围：行星表面 → 宇宙宏观（需求 3.2.2 跨层级连续缩放） */
-const ROAM_MIN_DISTANCE = 1.5;
-const ROAM_MAX_DISTANCE = 42000;
+import {
+  ROAM_MAX_DISTANCE,
+  ROAM_MIN_DISTANCE,
+  orbitDampingFactor,
+  touchDollyZoomSpeed,
+} from '@/utils/touchControls';
 
 /** 飞往运镜时长（秒，需求 3.2.3 平滑运镜） */
 const FLY_TO_SECONDS = 2.5;
@@ -60,6 +62,14 @@ export function CameraController(): JSX.Element {
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
   const scene = useThree((s) => s.scene);
+  // M4：触屏交互分档（isTouch 变化极少——设备类型级；非 locale，可订阅）
+  const isTouch = useSimulationStore((s) => s.isTouch);
+
+  // M4-2 点选命中放大：二选一登记取"透明拾取球 ×2"方案（SunActivity/
+  // Comet/SatelliteModel/PleiadesCluster 四处）。Points 射线阈值 ×2 方案
+  // 放弃——阈值为世界单位、跨 L1-L4 四个数量级尺度无法单值安全放大
+  // （2 units 在行星尺度过大），且 M4-2 全部精细点选目标均为 mesh 热区、
+  // Points 阈值对其无增益。
 
   const transitionRef = useRef<TransitionState | null>(null);
   /** 已处理的切换/飞往请求代次（在 useFrame 内捕获，避免与层级同步竞态） */
@@ -172,6 +182,13 @@ export function CameraController(): JSX.Element {
     const controls = controlsRef.current;
     const store = useSimulationStore.getState();
 
+    // M4-1 触屏捏合行程：dolly 速度按当前距离对数放大（3–4 次捏合跨
+    // 太阳→宇宙全景，曲线由 touchControls 单测锁定）；桌面不写入（现状
+    // zoomSpeed 默认 1 零变化）
+    if (store.isTouch && controls) {
+      controls.zoomSpeed = touchDollyZoomSpeed(camera.position.length());
+    }
+
     // 新的锚点切换/飞往请求：本帧内先捕获过渡，再做层级同步（防竞态）
     if (store.viewTransitionId !== handledViewTransitionIdRef.current) {
       handledViewTransitionIdRef.current = store.viewTransitionId;
@@ -277,7 +294,10 @@ export function CameraController(): JSX.Element {
       ref={controlsRef}
       makeDefault
       enableDamping
-      dampingFactor={0.08}
+      // M4-1：触屏阻尼 0.12（轻扫惯性顺滑）/ 桌面 0.08 = 现状
+      dampingFactor={orbitDampingFactor(isTouch)}
+      // M4-1：显式触屏手势语义——单指旋转 / 双指捏合缩放 + 拖动平移
+      touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }}
       minDistance={ROAM_MIN_DISTANCE}
       maxDistance={ROAM_MAX_DISTANCE}
     />

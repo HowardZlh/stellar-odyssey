@@ -128,9 +128,10 @@ npm run start
 Once open: **scroll to zoom**, press `1`–`4` to switch levels, and **click any celestial body** to inspect and fly to it. Full controls are documented in [docs/en/controls.md](docs/en/controls.md).
 
 > A modern browser with WebGL 2 is recommended (Chrome / Edge / Firefox / Safari).
-> The project is designed and tested for **desktop browsers and large exhibition screens**; on touch
-> devices you can rotate with one finger, pinch to zoom, and tap to select bodies for basic browsing,
-> but the layout and performance are not optimized for phones/tablets.
+> Phones and tablets are **fully supported**: rotate with one finger, pinch to zoom, and tap to
+> select bodies. On small screens the interface automatically switches to a mobile layout (bottom
+> tab bar + drawer panel), and rendering quality scales down to match device capability. See the
+> "Touch Controls" section in [docs/en/controls.md](docs/en/controls.md) for details.
 
 ## 📖 Documentation
 
@@ -174,7 +175,9 @@ Issues and PRs are welcome! Please read the [contributing guide](CONTRIBUTING.md
 If this universe ever made you pause your scroll wheel for a moment longer, consider supporting the project:
 
 - ⚡ Afdian: [afdian.com/a/stellar-odyssey](https://afdian.com/a/stellar-odyssey)
+- ☕ Ko-fi: [ko-fi.com/howardzlh](https://ko-fi.com/howardzlh)
 - ☄️ On-site donation page (all channels and the donor roster): [stellar.guushu.com/donate](https://stellar.guushu.com/donate)
+- ✨ Contributor Universe (the supporter roster rendered as a 3D star cluster — each star corresponds to one registered supporter, with size and brightness following the cumulative amount): [stellar.guushu.com/contributors](https://stellar.guushu.com/contributors)
 
 Sponsorship comes with no reward promises — every feature and every line of source code stays equally open to everyone. Your support funds continued development and domain upkeep, keeping the project **free, ad-free, and open source**.
 

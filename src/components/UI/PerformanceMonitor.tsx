@@ -65,8 +65,9 @@ export function PerformanceMonitor(): JSX.Element | null {
   const memoryText = memoryMb === null ? tr('perfMonitor.unavailable') : `${memoryMb} MB`;
 
   return (
-    // top-36 避开右上角 HUD 信息面板
-    <div className="absolute right-4 top-36 select-none rounded-lg bg-space-panel px-3 py-2 text-xs backdrop-blur">
+    // top-36 避开右上角 HUD 信息面板；M3-5：紧凑视口改挂左上（右上为
+    // 状态条展开详情区，左上因 ControlPanel 抽屉化空出），桌面原样
+    <div className="absolute right-4 top-36 select-none rounded-lg bg-space-panel px-3 py-2 text-xs backdrop-blur max-md:left-2 max-md:right-auto max-md:top-[calc(env(safe-area-inset-top)+3.25rem)]">
       <div className="mb-1 text-gray-400">{tr('perfMonitor.title')}</div>
       <div className="text-gray-100">{trf('perfMonitor.fpsLabel', { value: fpsText })}</div>
       <div className="text-gray-100">{trf('perfMonitor.memoryLabel', { value: memoryText })}</div>

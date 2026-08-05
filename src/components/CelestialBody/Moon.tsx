@@ -34,7 +34,7 @@ import {
   clearRenderedSatellitePhase,
   setRenderedSatellitePhase,
 } from '@/utils/satellitePhase';
-import { detailTextureUrl, normalMapUrl, textureUrl } from '@/data/textures';
+import { detailTextureUrlForTier, normalMapUrlForTier, textureUrl } from '@/data/textures';
 import { satelliteModelEntry } from '@/data/models';
 import { getMoonById } from '@/data/moons';
 import { useBitmapTexture } from '@/hooks/useBitmapTexture';
@@ -129,8 +129,13 @@ export function Moon({ data, parentRadiusKm }: MoonProps): JSX.Element {
   const [labelHidden, setLabelHidden] = useState(false);
   const labelHiddenRef = useRef(false);
   const parentRadiusUnits = bodyDisplayRadius(parentRadiusKm, realScaleMode);
-  const detailSurfaceUrl = detailTextureUrl(data.id, 'surface');
-  const detailNormalUrl = normalMapUrl(data.id);
+  // M2-4：medium/low 档禁 4K 细节层（null 走既有"无 4K 源"降级路径）
+  const detailSurfaceUrl = detailTextureUrlForTier(
+    data.id,
+    'surface',
+    useSimulationStore.getState().deviceTier,
+  );
+  const detailNormalUrl = normalMapUrlForTier(data.id, useSimulationStore.getState().deviceTier);
   const hasDetail = detailSurfaceUrl !== null || detailNormalUrl !== null;
   const detailSurfaceBitmap = useBitmapTexture(detailSurfaceUrl, 0, detailActive);
   const detailNormalBitmap = useBitmapTexture(detailNormalUrl, 0, detailActive);

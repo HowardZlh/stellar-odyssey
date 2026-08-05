@@ -35,6 +35,8 @@ export const zh = {
     /** 捐赠入口按钮文字（emoji ☄️ 由组件层持有；跳转 /donate 新页面） */
     donateLabel: '投喂燃料',
     donateAria: '打开捐赠页（新标签页）',
+    /** M3 移动弹层关闭按钮（居中弹层化，桌面不使用） */
+    closeAria: '关闭投喂与合作面板',
   },
   /** 捐赠页（/donate，零回报承诺口径——不承诺任何回报或更新义务） */
   donate: {
@@ -45,11 +47,44 @@ export const zh = {
     platformsSection: '捐赠通道',
     platformAvailable: '前往捐赠',
     platformComingSoon: '预留位 · 即将开通',
+    platformShowQr: '查看赞赏码',
+    platformHideQr: '收起赞赏码',
+    wechatQrAlt: '微信赞赏码',
+    wechatQrHint: '微信内长按识别，或用手机微信扫码',
     donorsSection: '燃料补给名单',
     donorsNote: '按累计捐赠金额降序排列（人工登记，可能存在延迟）',
     donorsEmpty: '虚位以待——成为第一颗点亮航程的星。',
     donorAmount: '¥{amount}',
+    /** 名单区贡献者宇宙入口（C4-1；emoji ✨ 由组件层持有；陈述口径，无回报承诺） */
+    contributorsEntry: '进入贡献者宇宙',
     backToApp: '返回星图',
+  },
+  /**
+   * 贡献者宇宙页（/contributors，C2）。文案红线（REQUIREMENTS_CONTRIBUTORS §0.5）：
+   * 一律陈述口径（"这里陈列了每一位支持者"），禁止"捐赠即点亮专属星"类承诺式表述。
+   */
+  contributors: {
+    title: '贡献者宇宙',
+    subtitle: '这里陈列了每一位支持者——每颗星对应一位已登记的燃料补给者',
+    intro:
+      '星的大小与亮度按累计捐赠金额的对数映射呈现，位置由昵称与平台确定性生成，与登记顺序无关。',
+    sortNote: '按累计捐赠金额降序排列（人工登记，可能存在延迟）',
+    empty: '虚位以待——成为第一颗点亮航程的星。',
+    goDonate: '前往捐赠页',
+    backToApp: '返回星图',
+    /** 桌面操作提示 */
+    hintDesktop: '拖动环视 · 滚轮缩放 · 点击星星查看详情',
+    /** 触屏操作提示（C3-1，isTouch 分流） */
+    hintTouch: '单指拖动环视 · 双指缩放 · 点按聚焦贡献者',
+    /** 画布下方常驻文字名单（兼作屏幕阅读器/降级形态，实现裁决登记于需求文档） */
+    listSection: '文字名单',
+    webglFallback: '当前环境不支持 3D 渲染，已切换为文字名单。',
+    preparing: '正在点亮星空…',
+    detailAmount: '金额',
+    detailDate: '登记日期',
+    detailPlatform: '平台',
+    detailMessage: '留言',
+    detailCloseAria: '关闭详情卡',
   },
   helpHint: {
     /**
@@ -67,9 +102,20 @@ export const zh = {
     /** B5 展馆模式与 H 键说明（新增行） */
     kioskNote:
       'H 隐藏/显示界面 · 展馆模式：左上角面板启动（全屏自动巡游，任意操作暂停、片刻无操作自动恢复）或以 ?mode=kiosk 链接启动',
+    /** M4-5 触屏版引导（isTouch 分流：替换键鼠口径首段；快捷键段落隐藏） */
+    controlsTouch: '单指拖动旋转 · 双指缩放/平移 · 点按选中天体',
     closeAria: '关闭引导',
     /** 关闭后底部中央"?"重开按钮（UI 布局优化：引导 5 秒自动关闭后可重开） */
     reopenAria: '重新打开操作引导',
+  },
+  /** M3 移动布局底部标签栏（仅 isCompact 渲染；emoji/符号由组件层持有） */
+  tabBar: {
+    help: '帮助',
+    helpAria: '打开操作引导',
+    controls: '控制',
+    controlsAria: '打开控制面板',
+    contact: '投喂',
+    contactAria: '打开投喂与合作面板',
   },
   /** 四视角锚点名（cameraViews.nameZh 迁移，ControlPanel 按钮 + HUD 标题共用） */
   viewLevel: {
@@ -162,6 +208,16 @@ export const zh = {
     /** 沉浸模式（页面最大化）按钮（emoji 由组件层持有） */
     immersiveEnter: '最大化（收起面板）',
     immersiveExit: '退出最大化',
+    /** M3-5：全屏 API 不可用（iPhone Safari）时的降级文案（仅收起 UI） */
+    immersiveEnterNoFullscreen: '收起面板（此浏览器不支持全屏）',
+    /** M4-3：H 键 UI 显隐的触屏等价入口（沉浸按钮旁"隐藏界面"+ 恢复角标） */
+    uiHide: '隐藏界面',
+    uiShow: '显示界面',
+    /** M3 移动版顶部状态条：tap 展开/收起详情 */
+    statusExpandAria: '展开状态详情',
+    statusCollapseAria: '收起状态详情',
+    /** M3 移动版信息面板底部半屏卡：顶部拖拽把手（下滑关闭） */
+    sheetDragAria: '下滑关闭面板',
     scale: '当前尺度：{value}',
     frameL1: '参考系：日心系（行星/卫星运动）',
     frameL2: '参考系：日心系（黄道坐标）',
@@ -247,6 +303,11 @@ export const zh = {
   loading: {
     textures: '加载纹理资源',
     scene: '正在加载星系场景…',
+  },
+  /** 音频提示（M5-1：AudioContext.resume 失败从静默改为用户可见） */
+  audioNotice: {
+    resumeFailed: '音效未能启动：浏览器拦截了音频播放，请再点一次「音效」开关重试。',
+    dismissAria: '关闭音效提示',
   },
   /** 404 页（app/not-found.tsx） */
   notFound: {

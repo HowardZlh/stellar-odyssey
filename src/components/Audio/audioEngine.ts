@@ -442,11 +442,20 @@ export class AudioEngine {
   }
 
   /**
-   * 恢复被浏览器挂起的 AudioContext
+   * 恢复被浏览器挂起的 AudioContext。
+   *
+   * M5-1：返回是否恢复成功（true = 无需恢复或已恢复；false = resume 被
+   * 拒绝或恢复后仍 suspended——多为自动播放策略拦截）。调用方
+   * （AudioController）据此向用户展示可见提示（i18n audioNotice.resumeFailed），
+   * 不再静默失败。
    */
-  resume(): void {
-    if (this.context && this.context.state === 'suspended') {
-      void this.context.resume().catch(() => undefined);
+  async resume(): Promise<boolean> {
+    if (!this.context || this.context.state !== 'suspended') return true;
+    try {
+      await this.context.resume();
+      return this.context.state !== 'suspended';
+    } catch {
+      return false;
     }
   }
 

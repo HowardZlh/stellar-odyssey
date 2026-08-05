@@ -259,6 +259,8 @@ export function Comet({ data }: CometProps): JSX.Element {
   const camera = useThree((s) => s.camera);
   const selectBody = useSimulationStore((s) => s.selectBody);
   const showLabels = useSimulationStore((s) => s.showLabels);
+  // M4-2：触屏下增设透明拾取球（彗核半径 ×2），桌面不渲染（命中区零变化）
+  const isTouch = useSimulationStore((s) => s.isTouch);
   // R3-4 §4.1-D：跟随/飞往本彗星时隐藏自身标签（与行星/L3 特殊天体机制对称）
   const focused = useSimulationStore(
     (s) => s.followBodyId === data.id || s.flyToBodyId === data.id,
@@ -588,6 +590,21 @@ export function Comet({ data }: CometProps): JSX.Element {
             selectBody(data.id);
           }}
         />
+      )}
+      {/* M4-2 触屏点选热区：彗核半径 ×2 的不可见拾取球（visible=false 不
+          渲染但仍参与射线检测——Raycaster 仅检查 layers，与 SunActivity
+          热区模式一致），远观/近观两分支均覆盖 */}
+      {isTouch && (
+        <mesh
+          visible={false}
+          onClick={(e) => {
+            e.stopPropagation();
+            selectBody(data.id);
+          }}
+        >
+          <sphereGeometry args={[NUCLEUS_RADIUS_UNITS * 2, 12, 12]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
       )}
 
       {/* 彗发（近日点附近出现）：外层彩色晕 + 内层亮白心 */}

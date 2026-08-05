@@ -4,20 +4,23 @@
  * 捐赠页（/donate，静态导出为 donate.html）
  *
  * 左下角「☄️ 投喂燃料」入口新标签页打开。内容：多平台捐赠通道卡片
- * （data/donationPlatforms.ts 注册表，预留位显示"即将开通"）+ 捐赠名单
- * （data/donors.ts 人工登记，渲染前按金额降序排列）+ 返回主站链接。
+ * （data/donationPlatforms.ts 注册表，链接型跳转 / 二维码型卡片内展开
+ * （微信赞赏码，桌面扫码与微信内长按识别双路径）/ 预留位显示"即将开通"）
+ * + 捐赠名单（data/donors.ts 人工登记，渲染前按金额降序排列）+ 返回主站链接。
  *
  * 文案口径（AGENTS.md 赞助红线）：零回报承诺——不承诺任何回报或更新
  * 义务；i18n 经 donate.* 键组双语化，页面右上角提供 zh/EN 切换。
  */
 
 import type { JSX } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { pickLocalized } from '@/i18n';
 import { useLocaleInit, useT, useTf } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
 import { DONATION_PLATFORMS } from '@/data/donationPlatforms';
 import { DONORS } from '@/data/donors';
+import { CONTRIBUTORS_PAGE_PATH } from '@/utils/contributorUniverse';
 import type { DonationPlatformId } from '@/utils/donors';
 import { sortDonorsByAmountDesc } from '@/utils/donors';
 
@@ -41,8 +44,17 @@ export default function DonatePage(): JSX.Element {
   // 名单按金额降序（数据文件无需保序，排序逻辑单测覆盖）
   const donors = sortDonorsByAmountDesc(DONORS);
 
+  // 二维码形态通道（微信赞赏码）：卡片内展开/收起，至多一张同时展开
+  const [openQrId, setOpenQrId] = useState<DonationPlatformId | null>(null);
+
   return (
-    <main className="min-h-screen bg-space-dark px-6 py-10 text-gray-200">
+    // 滚动修复：globals.css 对 html/body 全局 overflow:hidden（主 3D 场景
+    // 需要），min-h-screen 长内容会被裁切且整页不可滚——donate 页自身改为
+    // 滚动容器（fixed inset-0 + overflow-y-auto，触屏 pan-y 天然可用），
+    // 不动全局样式、主场景零影响。
+    // M5-1 safe-area：viewport-fit=cover 下四向避让刘海/Home Indicator
+    // （px/py 与 inset 取 max/求和，safe-area 为 0 时与原 px-6 py-10 逐像素一致）
+    <main className="hud-scroll fixed inset-0 overflow-y-auto bg-space-dark pb-[calc(2.5rem+env(safe-area-inset-bottom))] pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] pt-[max(2.5rem,env(safe-area-inset-top))] text-gray-200">
       {/* 深空氛围背景（纯 CSS 渐变，无 3D 负担） */}
       <div
         aria-hidden="true"
@@ -52,7 +64,11 @@ export default function DonatePage(): JSX.Element {
       <div className="relative mx-auto max-w-2xl">
         {/* 顶部：返回主站 + 语言切换 */}
         <div className="flex items-center justify-between text-xs">
-          <Link href="/" className="text-space-accent hover:underline">
+          {/* M5-1 触控目标：移动端（max-md）返回/语言切换命中区 ≥44pt，桌面原样 */}
+          <Link
+            href="/"
+            className="text-space-accent hover:underline max-md:-my-3 max-md:inline-flex max-md:min-h-11 max-md:items-center"
+          >
             ← {tr('donate.backToApp')}
           </Link>
           <div
@@ -64,7 +80,7 @@ export default function DonatePage(): JSX.Element {
               type="button"
               onClick={() => setLocale('zh')}
               aria-pressed={locale === 'zh'}
-              className={`px-1.5 py-1 ${
+              className={`px-1.5 py-1 max-md:px-4 max-md:py-3.5 max-md:text-xs ${
                 locale === 'zh'
                   ? 'bg-space-accent text-black'
                   : 'text-gray-400 hover:text-white'
@@ -76,7 +92,7 @@ export default function DonatePage(): JSX.Element {
               type="button"
               onClick={() => setLocale('en')}
               aria-pressed={locale === 'en'}
-              className={`px-1.5 py-1 ${
+              className={`px-1.5 py-1 max-md:px-4 max-md:py-3.5 max-md:text-xs ${
                 locale === 'en'
                   ? 'bg-space-accent text-black'
                   : 'text-gray-400 hover:text-white'
@@ -102,29 +118,64 @@ export default function DonatePage(): JSX.Element {
           <h2 className="mb-3 text-sm font-semibold text-gray-300">
             {tr('donate.platformsSection')}
           </h2>
-          <ul className="grid gap-3 sm:grid-cols-2">
+          {/* items-start：二维码卡展开时不拉伸同排卡片（收起态各卡等高无视觉差异） */}
+          <ul className="grid items-start gap-3 sm:grid-cols-2">
             {DONATION_PLATFORMS.map((platform) => (
               <li
                 key={platform.id}
-                className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur"
+                className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur"
               >
-                <span className="text-sm text-gray-200">
-                  {PLATFORM_EMOJI[platform.id]}{' '}
-                  {pickLocalized(locale, platform.nameZh, platform.nameEn)}
-                </span>
-                {platform.url ? (
-                  <a
-                    href={platform.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="shrink-0 rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent"
-                  >
-                    {tr('donate.platformAvailable')}
-                  </a>
-                ) : (
-                  <span className="shrink-0 rounded bg-white/5 px-3 py-1.5 text-xs text-gray-500">
-                    {tr('donate.platformComingSoon')}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-gray-200">
+                    {PLATFORM_EMOJI[platform.id]}{' '}
+                    {pickLocalized(locale, platform.nameZh, platform.nameEn)}
                   </span>
+                  {platform.url ? (
+                    <a
+                      href={platform.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="shrink-0 rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent max-md:px-4 max-md:py-3.5"
+                    >
+                      {tr('donate.platformAvailable')}
+                    </a>
+                  ) : platform.qrImage ? (
+                    <button
+                      type="button"
+                      aria-expanded={openQrId === platform.id}
+                      onClick={() =>
+                        setOpenQrId((current) =>
+                          current === platform.id ? null : platform.id,
+                        )
+                      }
+                      className="shrink-0 rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent max-md:px-4 max-md:py-3.5"
+                    >
+                      {tr(
+                        openQrId === platform.id
+                          ? 'donate.platformHideQr'
+                          : 'donate.platformShowQr',
+                      )}
+                    </button>
+                  ) : (
+                    <span className="shrink-0 rounded bg-white/5 px-3 py-1.5 text-xs text-gray-500">
+                      {tr('donate.platformComingSoon')}
+                    </span>
+                  )}
+                </div>
+                {platform.qrImage && openQrId === platform.id && (
+                  <div className="mt-3 text-center">
+                    {/* 原生 <img>：静态导出无 next/image 优化（规则已全局关闭）；
+                        自适应宽度（移动单列/桌面双列均不溢出），点按图片也可收起 */}
+                    <img
+                      src={platform.qrImage}
+                      alt={tr('donate.wechatQrAlt')}
+                      onClick={() => setOpenQrId(null)}
+                      className="mx-auto w-full max-w-64 rounded-lg"
+                    />
+                    <p className="mt-2 text-[10px] leading-4 text-gray-500 max-md:text-xs">
+                      {tr('donate.wechatQrHint')}
+                    </p>
+                  </div>
                 )}
               </li>
             ))}
@@ -139,6 +190,13 @@ export default function DonatePage(): JSX.Element {
           <p className="mb-3 text-[10px] text-gray-500">
             {tr('donate.donorsNote')}
           </p>
+          {/* 贡献者宇宙入口（C4-1）：空/非空名单两态常驻，命中区 ≥44pt（min-h-11） */}
+          <Link
+            href={CONTRIBUTORS_PAGE_PATH}
+            className="mb-3 flex min-h-11 items-center justify-center gap-2 rounded-lg border border-space-accent/30 bg-space-panel px-4 text-xs text-space-accent backdrop-blur transition-colors hover:border-space-accent/60 hover:text-white"
+          >
+            ✨ {tr('donate.contributorsEntry')}
+          </Link>
           {donors.length === 0 ? (
             <p className="rounded-lg border border-dashed border-white/15 bg-space-panel p-6 text-center text-xs text-gray-400 backdrop-blur">
               ✨ {tr('donate.donorsEmpty')}
@@ -147,7 +205,7 @@ export default function DonatePage(): JSX.Element {
             <ol className="space-y-2">
               {donors.map((donor, index) => (
                 <li
-                  key={`${donor.name}-${donor.platform}-${donor.date}`}
+                  key={`${donor.id}`}
                   className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-space-panel px-4 py-3 backdrop-blur"
                 >
                   <span className="flex min-w-0 items-center gap-3">
@@ -175,7 +233,10 @@ export default function DonatePage(): JSX.Element {
         </section>
 
         <footer className="mt-12 pb-6 text-center text-xs text-gray-500">
-          <Link href="/" className="text-space-accent hover:underline">
+          <Link
+            href="/"
+            className="text-space-accent hover:underline max-md:inline-flex max-md:min-h-11 max-md:items-center max-md:px-4"
+          >
             {tr('donate.backToApp')}
           </Link>
         </footer>

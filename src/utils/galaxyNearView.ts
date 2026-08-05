@@ -798,6 +798,13 @@ export interface GalaxyComponentQuota {
 export interface GalaxyCompositeOverrides {
   dustStrength?: number;
   hiiDensity?: number;
+  /**
+   * 粒子生成比例（M2-3 设备降档，(0,1] 域，缺省 1 = 现状）：quota 各
+   * 分量（基础层/尘埃/HII/年轻星团）逐项 floor 缩放——floor 保证
+   * scale=0.5 时总量 ≤ 全量一半（low 档上限 6,000 = 12,000×0.5 必满足）；
+   * scale=1 时 floor(x×1)=x 逐项与现状相等（高档零回退，单测断言）。
+   */
+  particleScale?: number;
 }
 
 /** 覆写值校验（[0,1] 域，undefined 透传登记值） */
@@ -831,19 +838,25 @@ export function galaxyComponentQuota(
   }
   const dustStrength = resolveOverride01(overrides?.dustStrength, morph.dustStrength, '尘埃带强度');
   const hiiDensity = resolveOverride01(overrides?.hiiDensity, morph.hiiDensity, 'HII 密度');
+  // M2-3 粒子降档比例（(0,1] 域校验；缺省 1 时 floor 恒等 = 现状零回退）
+  const scale = overrides?.particleScale ?? 1;
+  if (!Number.isFinite(scale) || scale <= 0 || scale > 1) {
+    throw new RangeError(`粒子生成比例必须在 (0,1] 内，收到 ${scale}`);
+  }
   const spiral = cfg.kind === 'spiral';
-  const dust = spiral ? Math.round(DUST_PARTICLES_PER_UNIT_STRENGTH * dustStrength) : 0;
-  const hii = spiral ? Math.round(HII_REGIONS_PER_UNIT_DENSITY * hiiDensity) : 0;
+  const base = Math.floor(cfg.particleCount * scale);
+  const dust = spiral ? Math.floor(Math.round(DUST_PARTICLES_PER_UNIT_STRENGTH * dustStrength) * scale) : 0;
+  const hii = spiral ? Math.floor(Math.round(HII_REGIONS_PER_UNIT_DENSITY * hiiDensity) * scale) : 0;
   const youngClusters = spiral
-    ? Math.round(YOUNG_CLUSTER_PARTICLES_PER_UNIT_DENSITY * hiiDensity)
+    ? Math.floor(Math.round(YOUNG_CLUSTER_PARTICLES_PER_UNIT_DENSITY * hiiDensity) * scale)
     : 0;
-  const total = cfg.particleCount + dust + hii + youngClusters;
+  const total = base + dust + hii + youngClusters;
   if (total > GALAXY_NEAR_VIEW_MAX_PARTICLES) {
     throw new RangeError(
       `星系 ${galaxyId} 分量配额合计 ${total} 超出单星系上限 ${GALAXY_NEAR_VIEW_MAX_PARTICLES}`,
     );
   }
-  return { base: cfg.particleCount, dust, hii, youngClusters, total };
+  return { base, dust, hii, youngClusters, total };
 }
 
 // ── 新分量生成器（确定性纯函数，输出光年坐标，坐标约定与基础层一致） ──

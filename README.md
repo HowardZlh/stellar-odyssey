@@ -122,7 +122,7 @@ npm run start
 打开浏览器后：**滚轮缩放**体验连续遨游，按 `1`–`4` 切换四大视角，**点击任意天体**查看信息并飞往观察。完整操作见 [docs/getting-started.md](docs/getting-started.md)。
 
 > 建议使用支持 WebGL 2 的现代浏览器（Chrome / Edge / Firefox / Safari）。
-> 本项目面向**桌面浏览器与大屏展陈**设计与测试；触屏设备上可单指旋转、双指捏合缩放、点按选取天体进行基本浏览，但界面布局与性能未针对手机/平板优化。
+> 手机/平板**已全站适配**：单指拖动旋转、双指捏合缩放、点按选中天体；小屏界面自动切换为移动布局（底部标签栏 + 抽屉面板），渲染质量按设备能力自动降档。移动端操作详见 [docs/controls.md](docs/controls.md) 的「触屏操作」一节。
 
 ## 📖 文档与教程
 
@@ -209,10 +209,12 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 
 ## 💖 赞助支持
 
-如果这个宇宙曾让你停下滚轮多看了一会儿，欢迎通过爱发电支持项目：
+如果这个宇宙曾让你停下滚轮多看了一会儿，欢迎支持项目：
 
 - ⚡ 爱发电：[afdian.com/a/stellar-odyssey](https://afdian.com/a/stellar-odyssey)
+- ☕ Ko-fi：[ko-fi.com/howardzlh](https://ko-fi.com/howardzlh)
 - ☄️ 站内捐赠页（汇总全部捐赠通道与捐赠名单）：[stellar.guushu.com/donate](https://stellar.guushu.com/donate)
+- ✨ 贡献者宇宙（支持者名单的 3D 星空陈列页——每颗星对应一位已登记的支持者，大小与亮度随累计金额呈现）：[stellar.guushu.com/contributors](https://stellar.guushu.com/contributors)
 
 赞助没有任何回报承诺——项目的全部功能与源代码对所有人平等开放。你的支持将用于持续开发与域名维护，让它保持**免费、无广告、开源**。
 

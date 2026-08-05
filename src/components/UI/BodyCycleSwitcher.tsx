@@ -5,36 +5,30 @@ import type { JSX } from 'react';
 import { SCOPE_NAME_KEYS, displayBodyName } from '@/i18n';
 import { useLocale, useT } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
+import type { CycleScope } from '@/utils/cycleScopes';
 import { getBodyInfoById } from '@/data/catalog';
 import { isScopeCycleBody, scopeCyclePositionLabel } from '@/utils/cycleScopes';
 import { planetSystemIdForBody } from '@/utils/bodyCycle';
 
 /**
- * 视角域天体切换控件（P4 行星序列，需求 3.2.4；R2-5 §5.1-B 泛化至多域；
- * R3 四域重构）：「← 上一个 | 当前天体名 序列位置 | 下一个 →」，按当前
- * 巡游域（store.cycleScope 显式状态）展示对应序列：
- * - L1 行星巡游：当前行星系统内循环（行星 + 其卫星）；无卫星的行星
- *   隐藏"上一个/下一个"按钮（R3 需求 1 确认项）
- * - L2 太阳系巡游：行星 + 矮行星 + 彗星（15 天体，按半长轴排序）
- * - L3 银河系巡游 14 站 / L4 宇宙巡游 8 站
- * 快捷键 [ / ] 按域路由；切换复用飞往运镜 2.5s 并自动跟随，
- * 巡游期间离散层级锁定为域主层级（R3 需求 2）。
+ * 当前巡游域展示天体（M3 提取共用 hook）：BodyCycleSwitcher（桌面
+ * 底部中央控件）与 BottomTabBar（移动底部标签栏巡游区）同源消费。
+ * 跟随域内天体时显示该天体，未跟随时显示域记忆天体（行星域=锚定
+ * 天体，solar 域锚定为卫星时映射到其所属行星；点击"下一个"即飞往）。
  */
-export function BodyCycleSwitcher(): JSX.Element | null {
-  const tr = useT();
+export function useCycleCurrentBody(): {
+  scope: CycleScope;
+  name: string;
+  position: string | null;
+  cycleEnabled: boolean;
+} {
   const locale = useLocale();
   const scope = useSimulationStore((s) => s.cycleScope);
   const followBodyId = useSimulationStore((s) => s.followBodyId);
   const anchorBodyId = useSimulationStore((s) => s.anchorBodyId);
   const galaxyAnchorBodyId = useSimulationStore((s) => s.galaxyAnchorBodyId);
   const universeAnchorBodyId = useSimulationStore((s) => s.universeAnchorBodyId);
-  const cycleScopeBody = useSimulationStore((s) => s.cycleScopeBody);
-  // 黑子群/日珥科普卡片（HudInfo，底部居中弹出）可见时上移让位，避免重叠
-  const selectedSolarFeature = useSimulationStore((s) => s.selectedSolarFeature);
 
-  // 当前展示天体：跟随域内天体时显示该天体，未跟随时显示域记忆天体
-  // （行星域=锚定天体，solar 域锚定为卫星时映射到其所属行星；
-  // 点击"下一个"即飞往）
   const fallbackId =
     scope === 'system'
       ? anchorBodyId
@@ -51,7 +45,34 @@ export function BodyCycleSwitcher(): JSX.Element | null {
   const position = scopeCyclePositionLabel(scope, currentId);
   // R3 需求 1：行星巡游域中无卫星的行星（单成员序列，position 为 null）
   // 隐藏"上一个/下一个"按钮
-  const cycleEnabled = position !== null;
+  return { scope, name, position, cycleEnabled: position !== null };
+}
+
+/**
+ * 视角域天体切换控件（P4 行星序列，需求 3.2.4；R2-5 §5.1-B 泛化至多域；
+ * R3 四域重构）：「← 上一个 | 当前天体名 序列位置 | 下一个 →」，按当前
+ * 巡游域（store.cycleScope 显式状态）展示对应序列：
+ * - L1 行星巡游：当前行星系统内循环（行星 + 其卫星）；无卫星的行星
+ *   隐藏"上一个/下一个"按钮（R3 需求 1 确认项）
+ * - L2 太阳系巡游：行星 + 矮行星 + 彗星（15 天体，按半长轴排序）
+ * - L3 银河系巡游 14 站 / L4 宇宙巡游 8 站
+ * 快捷键 [ / ] 按域路由；切换复用飞往运镜 2.5s 并自动跟随，
+ * 巡游期间离散层级锁定为域主层级（R3 需求 2）。
+ *
+ * M3-3：isCompact 下本控件不渲染——巡游入口并入底部标签栏
+ * （BottomTabBar 巡游区，同源 useCycleCurrentBody）。桌面
+ * bottom-28/bottom-64 定位逻辑不变。
+ */
+export function BodyCycleSwitcher(): JSX.Element | null {
+  const tr = useT();
+  const isCompact = useSimulationStore((s) => s.isCompact);
+  const cycleScopeBody = useSimulationStore((s) => s.cycleScopeBody);
+  // 黑子群/日珥科普卡片（HudInfo，底部居中弹出）可见时上移让位，避免重叠
+  const selectedSolarFeature = useSimulationStore((s) => s.selectedSolarFeature);
+  const { scope, name, position, cycleEnabled } = useCycleCurrentBody();
+
+  // M3-3：移动布局由底部标签栏承载巡游入口
+  if (isCompact) return null;
 
   return (
     <div

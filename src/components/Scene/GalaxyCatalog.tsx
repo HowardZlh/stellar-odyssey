@@ -25,6 +25,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { GalaxyCatalogData } from '@/utils/bakedData';
 import { buildCatalogLodAttributes } from '@/utils/galaxyCatalog';
+import { qualityTierSpec } from '@/utils/qualityTier';
 import { hubbleScaleFactor, universeFadeWeight } from '@/utils/universe';
 import { UNIVERSE_RENDER_ORDER } from '@/utils/universeRenderOrder';
 import { useSimulationStore } from '@/store';
@@ -102,7 +103,10 @@ export function GalaxyCatalog({ data }: GalaxyCatalogProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
 
   const { near, far } = useMemo(() => {
-    const lod = buildCatalogLodAttributes(data);
+    // M2-3：low 档均匀跨步抽稀 50%（qualityTier 档位表；high/medium 全量）；
+    // 点大小 dpr 补偿由既有 uPixelRatio 每帧回写机制天然承担（gl.getPixelRatio）
+    const keep = qualityTierSpec(useSimulationStore.getState().deviceTier).catalogKeepFraction;
+    const lod = buildCatalogLodAttributes(data, keep);
     return { near: buildPoints(lod.near), far: buildPoints(lod.far) };
   }, [data]);
 

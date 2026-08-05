@@ -49,12 +49,22 @@ export function AudioController(): null {
   const ambienceRef = useRef<PlanetAmbienceTransition>({ fromId: null, toId: null, progress: 1 });
   const lastFrameMsRef = useRef<number | null>(null);
 
-  // 音效开启时初始化引擎（开关点击即用户手势，满足自动播放策略）
+  // 音效开启时初始化引擎（开关点击即用户手势，满足自动播放策略）；
+  // M5-1：resume 失败（自动播放策略拦截）不再静默——写 audioResumeFailed
+  // 供 AudioResumeNotice 展示可见提示；关闭音效时清除提示
   useEffect(() => {
     const engine = getSharedAudioEngine();
     if (audioEnabled) {
       engine.init();
-      engine.resume();
+      void engine.resume().then((resumed) => {
+        const state = useSimulationStore.getState();
+        // 回调期间用户已关闭音效则不提示（提示仅对"开着却无声"有意义）
+        if (!state.audioEnabled) return;
+        if (state.audioResumeFailed !== !resumed) state.setAudioResumeFailed(!resumed);
+      });
+    } else {
+      const state = useSimulationStore.getState();
+      if (state.audioResumeFailed) state.setAudioResumeFailed(false);
     }
   }, [audioEnabled]);
 

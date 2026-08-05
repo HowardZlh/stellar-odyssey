@@ -19,6 +19,7 @@ export const en: I18nDict = {
     sponsor: 'Sponsor on Afdian',
     donateLabel: 'Fuel the Voyage',
     donateAria: 'Open the donation page (new tab)',
+    closeAria: 'Close the support & partnership panel',
   },
   donate: {
     title: 'Fuel the Voyage',
@@ -28,11 +29,39 @@ export const en: I18nDict = {
     platformsSection: 'Donation channels',
     platformAvailable: 'Donate',
     platformComingSoon: 'Reserved · coming soon',
+    platformShowQr: 'Show tip code',
+    platformHideQr: 'Hide tip code',
+    wechatQrAlt: 'WeChat tip code',
+    wechatQrHint: 'Long-press in WeChat to scan, or scan with your phone',
     donorsSection: 'Fuel supply roster',
     donorsNote: 'Sorted by cumulative donation amount, descending (manually registered; may lag)',
     donorsEmpty: 'This spot is waiting — be the first star to light the voyage.',
     donorAmount: '¥{amount}',
+    contributorsEntry: 'Enter the Contributor Universe',
     backToApp: 'Back to the star map',
+  },
+  contributors: {
+    title: 'Contributor Universe',
+    subtitle:
+      'Every supporter is on display here — each star corresponds to one registered donor',
+    intro:
+      'Star size and brightness follow a logarithmic mapping of cumulative donation amount; positions are derived deterministically from nickname and platform, independent of registration order.',
+    sortNote:
+      'Sorted by cumulative donation amount, descending (manually registered; may lag)',
+    empty: 'This spot is waiting — be the first star to light the voyage.',
+    goDonate: 'Go to the donation page',
+    backToApp: 'Back to the star map',
+    hintDesktop: 'Drag to look around · scroll to zoom · click a star for details',
+    hintTouch: 'Drag with one finger to look around · pinch to zoom · tap to focus on a contributor',
+    listSection: 'Text roster',
+    webglFallback:
+      '3D rendering is unavailable in this environment; showing the text roster instead.',
+    preparing: 'Lighting up the stars…',
+    detailAmount: 'Amount',
+    detailDate: 'Date',
+    detailPlatform: 'Platform',
+    detailMessage: 'Message',
+    detailCloseAria: 'Close details',
   },
   helpHint: {
     controls:
@@ -43,8 +72,18 @@ export const en: I18nDict = {
       'Language 语言: use the zh/EN buttons on the top-left panel to switch the UI language instantly (UI, body labels, and descriptions all switch; data-source attributions keep their original language)',
     kioskNote:
       'H hides/shows the UI · Kiosk mode: start from the top-left panel (fullscreen auto tour; any input pauses, and it resumes after a short idle) or launch via a ?mode=kiosk link',
+    /** M4-5 touch guide (isTouch branch: replaces the mouse/keyboard line) */
+    controlsTouch: 'Drag with one finger to rotate · pinch to zoom / two-finger pan · tap a body to select it',
     closeAria: 'Dismiss the guide',
     reopenAria: 'Reopen the controls guide',
+  },
+  tabBar: {
+    help: 'Help',
+    helpAria: 'Open the controls guide',
+    controls: 'Controls',
+    controlsAria: 'Open the control panel',
+    contact: 'Support',
+    contactAria: 'Open the support & partnership panel',
   },
   viewLevel: {
     L1: 'Planet View',
@@ -127,6 +166,13 @@ export const en: I18nDict = {
     simEpoch: '(epoch {value})',
     immersiveEnter: 'Maximize (collapse panels)',
     immersiveExit: 'Exit maximized view',
+    immersiveEnterNoFullscreen: 'Collapse panels (fullscreen unsupported in this browser)',
+    /** M4-3: touch-equivalent entry for the H shortcut (hide UI + restore badge) */
+    uiHide: 'Hide UI',
+    uiShow: 'Show UI',
+    statusExpandAria: 'Expand status details',
+    statusCollapseAria: 'Collapse status details',
+    sheetDragAria: 'Swipe down to close the panel',
     scale: 'Scale: {value}',
     frameL1: 'Frame: heliocentric (planet/moon motion)',
     frameL2: 'Frame: heliocentric (ecliptic coordinates)',
@@ -210,6 +256,11 @@ export const en: I18nDict = {
   loading: {
     textures: 'Loading textures',
     scene: 'Loading the galaxy scene…',
+  },
+  audioNotice: {
+    resumeFailed:
+      'Audio could not start: the browser blocked playback. Tap the "Sound" toggle again to retry.',
+    dismissAria: 'Dismiss audio notice',
   },
   notFound: {
     title: 'You have drifted beyond the known universe',

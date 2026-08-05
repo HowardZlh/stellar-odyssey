@@ -47,7 +47,9 @@ export function KioskBadge(): JSX.Element | null {
   };
 
   return (
-    <div className="absolute left-1/2 top-4 -translate-x-1/2 select-none rounded-lg bg-space-panel px-4 py-2 text-xs text-gray-200 backdrop-blur">
+    // M3-5：紧凑视口下移避让顶部状态条（safe-area + 状态条高 2.75rem +
+    // 间距；暂停态 uiVisible=true → 状态条可见）；桌面 md:top-4 原样
+    <div className="absolute left-1/2 top-[calc(env(safe-area-inset-top)+3.25rem)] -translate-x-1/2 select-none rounded-lg bg-space-panel px-4 py-2 text-xs text-gray-200 backdrop-blur md:top-4 max-md:text-sm">
       <span>🎪 {trf('kiosk.pausedBadge', { sec: remaining })}</span>
       <span className="mx-2 text-gray-500">·</span>
       <button

@@ -50,6 +50,7 @@ import {
 } from '@/utils/galaxyCatalogCore';
 import { cosmicDistanceToSceneUnits } from '@/utils/scale';
 import { srgbToLinear01 } from '@/utils/pleiadesCatalog';
+import { catalogSampleStride } from '@/utils/qualityTier';
 
 // ---------------------------------------------------------------------------
 // 超星系 → 场景旋转（三轴锚定：M87 精确 + M31 同面）
@@ -239,12 +240,21 @@ export interface CatalogLodAttributes {
 /**
  * 目录 → 两级 Points 属性（纯函数：旋转 + 对数距离压缩 + 亮度/形态映射；
  * 单次构建，渲染循环零遍历）
+ *
+ * M2-3 抽稀：keepFraction ∈ (0,1]（缺省 1 = 现状全量）按全局索引均匀
+ * 跨步采样（方式登记见 qualityTier.catalogSampleStride：烘焙 bin 按距离
+ * 排序，截断会砍掉远场，故取跨步）；near/far 两级按同一步长均匀变薄。
  */
-export function buildCatalogLodAttributes(data: GalaxyCatalogData): CatalogLodAttributes {
+export function buildCatalogLodAttributes(
+  data: GalaxyCatalogData,
+  keepFraction = 1,
+): CatalogLodAttributes {
+  const stride = catalogSampleStride(keepFraction);
   const nearIdx: number[] = [];
   const farIdx: number[] = [];
   const distances = new Float32Array(data.count);
   for (let i = 0; i < data.count; i += 1) {
+    if (i % stride !== 0) continue;
     const x = data.positionsMpc[i * 3];
     const y = data.positionsMpc[i * 3 + 1];
     const z = data.positionsMpc[i * 3 + 2];

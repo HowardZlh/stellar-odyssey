@@ -1,7 +1,7 @@
 'use client';
 
 
-import type { JSX } from 'react';
+import type { JSX, ReactNode } from 'react';
 import { VIEW_LEVELS } from '@/types';
 import { VIEW_LEVEL_NAME_KEYS, pickLocalized } from '@/i18n';
 import { useT, useTf } from '@/hooks/useI18n';
@@ -26,6 +26,42 @@ import { rollSupernovaParams } from '@/components/Scene/Supernova';
 import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunActivity';
 
 /**
+ * 显示开关行（M3-1）：桌面 = 原生 checkbox（原样），紧凑视口（max-md）
+ * = toggle switch 样式（checkbox 视觉隐藏保留语义，peer-checked 驱动
+ * 轨道/滑钮；行高 ≥44pt 触控目标）。
+ */
+function PanelToggle({
+  checked,
+  onChange,
+  label,
+  noMargin,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: ReactNode;
+  /** 桌面态末行无 mb-1（拆分前逐字符对齐） */
+  noMargin?: boolean;
+}): JSX.Element {
+  return (
+    <label
+      className={`${noMargin ? '' : 'mb-1 '}flex items-center gap-2 text-xs max-md:py-2 max-md:text-sm`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="peer max-md:absolute max-md:h-0 max-md:w-0 max-md:opacity-0"
+      />
+      <span
+        aria-hidden
+        className="relative hidden h-7 w-12 shrink-0 rounded-full bg-white/20 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-6 after:w-6 after:rounded-full after:bg-white after:transition-transform peer-checked:bg-space-accent peer-checked:after:translate-x-5 max-md:inline-block"
+      />
+      {label}
+    </label>
+  );
+}
+
+/**
  * 控制面板（需求 3.5.1）：视角锚点 / 模拟速度 / 音效 / 轨道线与标签开关 /
  * 真实比例模式（P2）/ 超新星手动演示（P2，需求 3.1.5 触发方式）/
  * 太阳耀斑与 CME 手动演示 + 太阳剖面模式开关（S2 §4.1/§4.3/§4.5）
@@ -39,13 +75,97 @@ import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunAc
  * 说明、真实比例说明、剖面说明）豁免解除——经字典键（catalogNote/
  * expandNote/realScaleNote/cutawayNote）与 `*_EN` 来源常量按 locale 取用。
  * 顶部 zh/EN 语言切换钮（B3-D，§0.5#5 位置微调登记：标题行右侧）。
+ *
+ * M3-1 移动布局：isCompact 下改为底部上滑抽屉（Bottom Sheet，标签栏
+ * ☰ 钮开合，store.mobilePanel 互斥位；默认收起，max-h-[60dvh] 内滚），
+ * 视角格/事件钮大触控化 + checkbox → toggle switch（max-md 断点承载，
+ * PanelToggle）+ 滑块 thumb 28px（globals.css 媒体查询）。桌面
+ * （md: 以上）为左侧列容器（LeftColumn）首子项：w-64 + 内容区超高
+ * 内滚 + 把手收起逻辑不变（左下角布局收口）。
  */
 export function ControlPanel(): JSX.Element {
+  const isCompact = useSimulationStore((s) => s.isCompact);
+  return isCompact ? <MobileControlDrawer /> : <DesktopControlPanel />;
+}
+
+/**
+ * 桌面布局：左侧列容器（LeftColumn）首子项 + 右缘收起把手。
+ * 左下角布局收口：根元素改为列内 flex 子项（min-h-0 可收缩），内容区
+ * overflow-y-auto——面板超高（视口矮/选项多）时内部滚动，不再向下溢出
+ * 挤占列底 SunLayerCard / ContactBadge；定位（left-4 top-4）由列容器
+ * 提供，收起把手平移逻辑不变。
+ */
+function DesktopControlPanel(): JSX.Element {
   const tr = useT();
-  const trf = useTf();
   // UI 布局优化：面板收起态（把手按钮切换；沉浸模式联动收起/展开）
   const collapsed = useSimulationStore((s) => s.controlPanelCollapsed);
   const toggleCollapsed = useSimulationStore((s) => s.toggleControlPanelCollapsed);
+
+  return (
+    // 收起时整体向左平移（面板宽 16rem + 列容器 left-4 的 1rem = 刚好
+    // 滑出屏幕），组件不卸载、内部状态保留；右缘把手随动留在屏幕左缘供展开
+    <div
+      className={`pointer-events-auto relative flex min-h-0 w-64 flex-col select-none text-sm transition-transform duration-300 ${
+        collapsed ? '-translate-x-[calc(100%+1rem)]' : ''
+      }`}
+    >
+      {/* 收起/展开把手（贴面板右缘外侧） */}
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        aria-expanded={!collapsed}
+        aria-label={tr(collapsed ? 'controlPanel.expandAria' : 'controlPanel.collapseAria')}
+        title={tr(collapsed ? 'controlPanel.expandAria' : 'controlPanel.collapseAria')}
+        className="absolute left-full top-0 ml-1 rounded-lg border border-white/10 bg-space-panel px-1.5 py-2.5 text-xs text-gray-400 backdrop-blur transition-colors hover:text-white"
+      >
+        {collapsed ? '▶' : '◀'}
+      </button>
+      <div
+        className="hud-scroll min-h-0 overflow-y-auto overscroll-contain rounded-lg bg-space-panel p-4 backdrop-blur"
+        aria-hidden={collapsed}
+      >
+        <ControlPanelSections />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 移动布局（M3-1）：底部上滑抽屉——标签栏 ☰ 钮开合（store.mobilePanel
+ * 互斥位），默认收起；关闭时平移出屏但不卸载（内部状态保留，与桌面
+ * 把手收起语义一致）；内容区 max-h-[60dvh] 独立滚动，底部避让标签栏。
+ */
+function MobileControlDrawer(): JSX.Element {
+  const tr = useT();
+  const open = useSimulationStore((s) => s.mobilePanel === 'controls');
+  const setMobilePanel = useSimulationStore((s) => s.setMobilePanel);
+
+  return (
+    <div
+      aria-hidden={!open}
+      className={`fixed inset-x-0 bottom-[calc(3rem+env(safe-area-inset-bottom))] z-10 select-none transition-transform duration-300 ${
+        open ? '' : 'pointer-events-none translate-y-[110%]'
+      }`}
+    >
+      <div className="relative max-h-[60dvh] overflow-y-auto overscroll-contain rounded-t-lg bg-space-panel p-4 pt-3 text-sm backdrop-blur hud-scroll">
+        <button
+          type="button"
+          onClick={() => setMobilePanel(null)}
+          aria-label={tr('controlPanel.collapseAria')}
+          className="absolute right-1 top-1 flex h-11 w-11 items-center justify-center rounded text-gray-400"
+        >
+          ✕
+        </button>
+        <ControlPanelSections />
+      </div>
+    </div>
+  );
+}
+
+/** 面板内容分区（桌面/移动抽屉共用；M3 机械搬移，桌面渲染结果不变） */
+function ControlPanelSections(): JSX.Element {
+  const tr = useT();
+  const trf = useTf();
   const locale = useSimulationStore((s) => s.locale);
   const setLocale = useSimulationStore((s) => s.setLocale);
   const viewLevel = useSimulationStore((s) => s.viewLevel);
@@ -139,29 +259,11 @@ export function ControlPanel(): JSX.Element {
   };
 
   return (
-    // 收起时整体向左平移（面板宽 16rem + left-4 的 1rem = 刚好滑出屏幕），
-    // 组件不卸载、内部状态保留；右缘把手随动留在屏幕左缘供展开
-    <div
-      className={`absolute left-4 top-4 w-64 select-none text-sm transition-transform duration-300 ${
-        collapsed ? '-translate-x-[calc(100%+1rem)]' : ''
-      }`}
-    >
-      {/* 收起/展开把手（贴面板右缘外侧） */}
-      <button
-        type="button"
-        onClick={toggleCollapsed}
-        aria-expanded={!collapsed}
-        aria-label={tr(collapsed ? 'controlPanel.expandAria' : 'controlPanel.collapseAria')}
-        title={tr(collapsed ? 'controlPanel.expandAria' : 'controlPanel.collapseAria')}
-        className="absolute left-full top-0 ml-1 rounded-lg border border-white/10 bg-space-panel px-1.5 py-2.5 text-xs text-gray-400 backdrop-blur transition-colors hover:text-white"
-      >
-        {collapsed ? '▶' : '◀'}
-      </button>
-      <div className="rounded-lg bg-space-panel p-4 backdrop-blur" aria-hidden={collapsed}>
+    <>
       <div className="mb-3 flex items-start justify-between gap-2">
         <h1 className="text-base font-semibold leading-tight text-space-accent">
           {tr('controlPanel.title')}
-          <span className="ml-1.5 whitespace-nowrap align-middle text-[10px] font-normal tracking-wide text-gray-400">
+          <span className="ml-1.5 whitespace-nowrap align-middle text-[10px] font-normal tracking-wide text-gray-400 max-md:text-xs">
             {tr('controlPanel.subtitle')}
           </span>
         </h1>
@@ -169,13 +271,13 @@ export function ControlPanel(): JSX.Element {
         <div
           role="group"
           aria-label={tr('controlPanel.langAria')}
-          className="flex shrink-0 overflow-hidden rounded border border-white/15 text-[10px] leading-none"
+          className="flex shrink-0 overflow-hidden rounded border border-white/15 text-[10px] leading-none max-md:mr-10 max-md:text-xs"
         >
           <button
             type="button"
             onClick={() => setLocale('zh')}
             aria-pressed={locale === 'zh'}
-            className={`px-1.5 py-1 ${
+            className={`px-1.5 py-1 max-md:px-4 max-md:py-3.5 ${
               locale === 'zh' ? 'bg-space-accent text-black' : 'text-gray-400 hover:text-white'
             }`}
           >
@@ -185,7 +287,7 @@ export function ControlPanel(): JSX.Element {
             type="button"
             onClick={() => setLocale('en')}
             aria-pressed={locale === 'en'}
-            className={`px-1.5 py-1 ${
+            className={`px-1.5 py-1 max-md:px-4 max-md:py-3.5 ${
               locale === 'en' ? 'bg-space-accent text-black' : 'text-gray-400 hover:text-white'
             }`}
           >
@@ -196,14 +298,16 @@ export function ControlPanel(): JSX.Element {
 
       {/* 视角锚点 */}
       <section className="mb-4">
-        <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.viewSection')}</h2>
+        <h2 className="mb-2 text-xs text-gray-400 max-md:text-sm">
+          {tr('controlPanel.viewSection')}
+        </h2>
         <div className="grid grid-cols-2 gap-2">
           {VIEW_LEVELS.map((level) => (
             <button
               key={level}
               type="button"
               onClick={() => setViewLevel(level)}
-              className={`rounded px-2 py-1.5 text-xs transition-colors ${
+              className={`rounded px-2 py-1.5 text-xs transition-colors max-md:py-3 max-md:text-sm ${
                 viewLevel === level
                   ? 'bg-space-accent text-black'
                   : 'bg-white/10 text-gray-200 hover:bg-white/20'
@@ -219,12 +323,14 @@ export function ControlPanel(): JSX.Element {
           R3-8：整个 section 仅 L3 渲染，域外隐藏） */}
       {visible('galacticFrame') && (
         <section className="mb-4">
-          <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.galacticFrameSection')}</h2>
+          <h2 className="mb-2 text-xs text-gray-400 max-md:text-sm">
+            {tr('controlPanel.galacticFrameSection')}
+          </h2>
           <button
             type="button"
             onClick={toggleGalacticFrameMode}
             title={tr('controlPanel.galacticFrameTitle')}
-            className={`w-full rounded px-2 py-1.5 text-xs ${
+            className={`w-full rounded px-2 py-1.5 text-xs max-md:py-3 max-md:text-sm ${
               galacticFrameMode === 'galactic-center'
                 ? 'bg-emerald-400/90 text-black hover:bg-emerald-300'
                 : 'bg-white/10 text-gray-200 hover:bg-white/20'
@@ -240,17 +346,21 @@ export function ControlPanel(): JSX.Element {
 
       {/* 时间控制 */}
       <section className="mb-4">
-        <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.speedSection')}</h2>
+        <h2 className="mb-2 text-xs text-gray-400 max-md:text-sm">
+          {tr('controlPanel.speedSection')}
+        </h2>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={togglePaused}
-            className="rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20"
+            className="rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/20 max-md:px-3 max-md:py-3 max-md:text-sm"
             aria-label={paused ? tr('controlPanel.resume') : tr('controlPanel.pause')}
           >
             {paused ? `▶ ${tr('controlPanel.resume')}` : `⏸ ${tr('controlPanel.pause')}`}
           </button>
-          <span className="text-xs text-gray-300">×{speedMultiplier.toFixed(1)}</span>
+          <span className="text-xs text-gray-300 max-md:text-sm">
+            ×{speedMultiplier.toFixed(1)}
+          </span>
         </div>
         <input
           type="range"
@@ -266,12 +376,14 @@ export function ControlPanel(): JSX.Element {
 
       {/* 音效控制 */}
       <section className="mb-4">
-        <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.audioSection')}</h2>
+        <h2 className="mb-2 text-xs text-gray-400 max-md:text-sm">
+          {tr('controlPanel.audioSection')}
+        </h2>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={toggleAudio}
-            className={`rounded px-2 py-1 text-xs ${
+            className={`rounded px-2 py-1 text-xs max-md:px-3 max-md:py-3 max-md:text-sm ${
               audioEnabled ? 'bg-space-accent text-black' : 'bg-white/10 hover:bg-white/20'
             }`}
           >
@@ -290,67 +402,48 @@ export function ControlPanel(): JSX.Element {
         </div>
       </section>
 
-      {/* 显示开关 */}
+      {/* 显示开关（M3-1：checkbox 行经 PanelToggle——桌面原生 checkbox
+          原样，紧凑视口 toggle switch） */}
       <section>
-        <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.displaySection')}</h2>
-        <label className="mb-1 flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={showOrbits}
-            onChange={(e) => setShowOrbits(e.target.checked)}
-          />
-          {tr('controlPanel.orbits')}
-        </label>
-        <label className="mb-1 flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={showLabels}
-            onChange={(e) => setShowLabels(e.target.checked)}
-          />
-          {tr('controlPanel.bodyLabels')}
-        </label>
+        <h2 className="mb-2 text-xs text-gray-400 max-md:text-sm">
+          {tr('controlPanel.displaySection')}
+        </h2>
+        <PanelToggle checked={showOrbits} onChange={setShowOrbits} label={tr('controlPanel.orbits')} />
+        <PanelToggle
+          checked={showLabels}
+          onChange={setShowLabels}
+          label={tr('controlPanel.bodyLabels')}
+        />
         {visible('satelliteOrbits') && (
-          <label className="mb-1 flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={showSatelliteOrbits}
-              onChange={(e) => setShowSatelliteOrbits(e.target.checked)}
-            />
-            {tr('controlPanel.satelliteOrbits')}
-          </label>
+          <PanelToggle
+            checked={showSatelliteOrbits}
+            onChange={setShowSatelliteOrbits}
+            label={tr('controlPanel.satelliteOrbits')}
+          />
         )}
         {visible('youAreHere') && (
-          <label className="mb-1 flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={showYouAreHere}
-              onChange={(e) => setShowYouAreHere(e.target.checked)}
-            />
-            {tr('controlPanel.youAreHere')}
-          </label>
+          <PanelToggle
+            checked={showYouAreHere}
+            onChange={setShowYouAreHere}
+            label={tr('controlPanel.youAreHere')}
+          />
         )}
         {visible('velocityVectors') && (
-          <label className="mb-1 flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={showVelocityVectors}
-              onChange={(e) => setShowVelocityVectors(e.target.checked)}
-            />
-            {tr('controlPanel.velocityVectors')}
-          </label>
+          <PanelToggle
+            checked={showVelocityVectors}
+            onChange={setShowVelocityVectors}
+            label={tr('controlPanel.velocityVectors')}
+          />
         )}
         {visible('galaxyCatalog') && (
           <>
-            <label className="mb-1 flex items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={showGalaxyCatalog}
-                onChange={(e) => setShowGalaxyCatalog(e.target.checked)}
-              />
-              {tr('controlPanel.galaxyCatalog')}
-            </label>
+            <PanelToggle
+              checked={showGalaxyCatalog}
+              onChange={setShowGalaxyCatalog}
+              label={tr('controlPanel.galaxyCatalog')}
+            />
             {/* i18n：来源说明段按 locale 取用（字典键 + *_EN 常量） */}
-            <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
+            <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500 max-md:text-xs max-md:leading-5">
               {trf('controlPanel.catalogNote', {
                 source: pickLocalized(
                   locale,
@@ -368,33 +461,27 @@ export function ControlPanel(): JSX.Element {
         )}
         {visible('fermiBubbles') && (
           <>
-            <label className="mb-1 flex items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={showFermiBubbles}
-                onChange={(e) => setShowFermiBubbles(e.target.checked)}
-              />
-              {tr('controlPanel.fermiBubbles')}
-            </label>
+            <PanelToggle
+              checked={showFermiBubbles}
+              onChange={setShowFermiBubbles}
+              label={tr('controlPanel.fermiBubbles')}
+            />
             {/* i18n：来源说明段按 locale 取用 */}
-            <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
+            <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500 max-md:text-xs max-md:leading-5">
               {pickLocalized(locale, FERMI_BUBBLES_SOURCE_ZH, FERMI_BUBBLES_SOURCE_EN)}
             </p>
           </>
         )}
         {visible('verticalExpand') && (
           <>
-            <label className="mb-1 flex items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={galaxyVerticalExpand}
-                onChange={(e) => setGalaxyVerticalExpand(e.target.checked)}
-              />
-              {tr('controlPanel.verticalExpand')}
-            </label>
+            <PanelToggle
+              checked={galaxyVerticalExpand}
+              onChange={setGalaxyVerticalExpand}
+              label={tr('controlPanel.verticalExpand')}
+            />
             {galaxyVerticalExpand && (
               <div className="mb-1 pl-5">
-                <label className="flex items-center gap-2 text-[10px] text-gray-400">
+                <label className="flex items-center gap-2 text-[10px] text-gray-400 max-md:text-xs">
                   {tr('controlPanel.expandGain')} ×{galaxyExpandGain.toFixed(1)}
                   <input
                     type="range"
@@ -408,75 +495,68 @@ export function ControlPanel(): JSX.Element {
                   />
                 </label>
                 {/* i18n：开关下方科学说明段按 locale 取用 */}
-                <p className="text-[10px] leading-4 text-gray-500">
+                <p className="text-[10px] leading-4 text-gray-500 max-md:text-xs max-md:leading-5">
                   {tr('controlPanel.expandNote')}
                 </p>
               </div>
             )}
           </>
         )}
-        <label className="mb-1 flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={realScaleMode}
-            onChange={(e) => setRealScaleMode(e.target.checked)}
-          />
-          {tr('controlPanel.realScale')}
-        </label>
+        <PanelToggle
+          checked={realScaleMode}
+          onChange={setRealScaleMode}
+          label={tr('controlPanel.realScale')}
+        />
         {realScaleMode && (
           /* i18n：开关下方科学说明段按 locale 取用 */
-          <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
+          <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500 max-md:text-xs max-md:leading-5">
             {tr('controlPanel.realScaleNote')}
           </p>
         )}
         {visible('sunCutaway') && (
           <>
-            <label className="mb-1 flex items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={sunCutawayMode}
-                onChange={(e) => setSunCutawayMode(e.target.checked)}
-              />
-              {tr('controlPanel.sunCutaway')}
-            </label>
+            <PanelToggle
+              checked={sunCutawayMode}
+              onChange={setSunCutawayMode}
+              label={tr('controlPanel.sunCutaway')}
+            />
             {sunCutawayMode && (
               /* i18n：开关下方科学说明段按 locale 取用 */
-              <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500">
+              <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500 max-md:text-xs max-md:leading-5">
                 {tr('controlPanel.cutawayNote')}
               </p>
             )}
           </>
         )}
-        <label className="mb-1 flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={bloomEnabled}
-            onChange={(e) => setBloomEnabled(e.target.checked)}
-          />
-          {tr('controlPanel.bloom')}
-        </label>
-        <label className="flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={showPerformance}
-            onChange={(e) => setShowPerformance(e.target.checked)}
-          />
-          {tr('controlPanel.performance')}
-        </label>
+        <PanelToggle
+          checked={bloomEnabled}
+          onChange={setBloomEnabled}
+          label={tr('controlPanel.bloom')}
+        />
+        <PanelToggle
+          checked={showPerformance}
+          onChange={setShowPerformance}
+          label={tr('controlPanel.performance')}
+          noMargin
+        />
       </section>
 
       {/* 展馆模式（B5 §5.1-D：启动即隐 UI 自动巡游，任意输入暂停；
           暂停角标 KioskBadge 提供退出入口） */}
       <section className="mt-4">
-        <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.kioskSection')}</h2>
+        <h2 className="mb-2 text-xs text-gray-400 max-md:text-sm">
+          {tr('controlPanel.kioskSection')}
+        </h2>
         <button
           type="button"
           onClick={handleKioskStart}
-          className="w-full rounded bg-space-accent/20 px-2 py-1.5 text-xs text-space-accent hover:bg-space-accent/30"
+          className="w-full rounded bg-space-accent/20 px-2 py-1.5 text-xs text-space-accent hover:bg-space-accent/30 max-md:py-3 max-md:text-sm"
         >
           🎪 {tr('controlPanel.kioskStart')}
         </button>
-        <p className="mt-1 text-[10px] leading-4 text-gray-500">{tr('controlPanel.kioskNote')}</p>
+        <p className="mt-1 text-[10px] leading-4 text-gray-500 max-md:text-xs max-md:leading-5">
+          {tr('controlPanel.kioskNote')}
+        </p>
       </section>
 
       {/* 特殊天体演示（需求 3.1.5：支持用户在设置中手动触发超新星）
@@ -485,13 +565,15 @@ export function ControlPanel(): JSX.Element {
           R5-8 判定源为离散 viewLevel）保留——可见性与可用性双层 */}
       {anyDemoVisible && (
         <section className="mt-4">
-          <h2 className="mb-2 text-xs text-gray-400">{tr('controlPanel.demoSection')}</h2>
+          <h2 className="mb-2 text-xs text-gray-400 max-md:text-sm">
+            {tr('controlPanel.demoSection')}
+          </h2>
           {visible('supernovaDemo') && (
             <button
               type="button"
               onClick={handleSupernovaDemo}
               disabled={activeSupernova !== null || !supernovaDemoInScope}
-              className={`w-full rounded px-2 py-1.5 text-xs ${
+              className={`w-full rounded px-2 py-1.5 text-xs max-md:py-3 max-md:text-sm ${
                 activeSupernova || !supernovaDemoInScope
                   ? 'cursor-not-allowed bg-white/5 text-gray-500'
                   : 'bg-amber-400/20 text-amber-200 hover:bg-amber-400/30'
@@ -509,7 +591,7 @@ export function ControlPanel(): JSX.Element {
               type="button"
               onClick={handleFlareDemo}
               disabled={activeSolarFlare !== null || sunCutawayMode || !solarDemoInScope}
-              className={`w-full rounded px-2 py-1.5 text-xs ${
+              className={`w-full rounded px-2 py-1.5 text-xs max-md:py-3 max-md:text-sm ${
                 activeSolarFlare || sunCutawayMode || !solarDemoInScope
                   ? 'cursor-not-allowed bg-white/5 text-gray-500'
                   : 'bg-orange-400/20 text-orange-200 hover:bg-orange-400/30'
@@ -531,7 +613,7 @@ export function ControlPanel(): JSX.Element {
               type="button"
               onClick={handleCmeDemo}
               disabled={activeCme !== null || sunCutawayMode || !solarDemoInScope}
-              className={`mt-2 w-full rounded px-2 py-1.5 text-xs ${
+              className={`mt-2 w-full rounded px-2 py-1.5 text-xs max-md:py-3 max-md:text-sm ${
                 activeCme || sunCutawayMode || !solarDemoInScope
                   ? 'cursor-not-allowed bg-white/5 text-gray-500'
                   : 'bg-rose-400/20 text-rose-200 hover:bg-rose-400/30'
@@ -552,7 +634,7 @@ export function ControlPanel(): JSX.Element {
                 type="button"
                 onClick={startMergePreview}
                 disabled={mergePreviewActive || !mergerDemoInScope}
-                className={`w-full rounded px-2 py-1.5 text-xs ${
+                className={`w-full rounded px-2 py-1.5 text-xs max-md:py-3 max-md:text-sm ${
                   mergePreviewActive || !mergerDemoInScope
                     ? 'cursor-not-allowed bg-white/5 text-gray-500'
                     : 'bg-sky-400/20 text-sky-200 hover:bg-sky-400/30'
@@ -567,7 +649,7 @@ export function ControlPanel(): JSX.Element {
                 <button
                   type="button"
                   onClick={restoreFromMergePreview}
-                  className="mt-2 w-full rounded bg-white/10 px-2 py-1.5 text-xs text-gray-200 hover:bg-white/20"
+                  className="mt-2 w-full rounded bg-white/10 px-2 py-1.5 text-xs text-gray-200 hover:bg-white/20 max-md:py-3 max-md:text-sm"
                 >
                   ⏪ {tr('controlPanel.mergerRestore')}
                 </button>
@@ -576,7 +658,6 @@ export function ControlPanel(): JSX.Element {
           )}
         </section>
       )}
-      </div>
-    </div>
+    </>
   );
 }

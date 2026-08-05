@@ -1,22 +1,22 @@
 /**
  * 捐赠名单排序与平台注册表单测（捐赠页 /donate）：
  * - sortDonorsByAmountDesc 金额降序、同额昵称字典序、纯函数不改入参
- * - DONATION_PLATFORMS：爱发电链接同源（ContactBadge 常量）、预留位登记
+ * - DONATION_PLATFORMS：爱发电/Ko-fi 链接同源常量、预留位登记
  * - DONORS 登记数据完整性（当前空名单上线）
  */
 
 import { SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
-import { DONATION_PLATFORMS } from '@/data/donationPlatforms';
+import { DONATION_PLATFORMS, SPONSOR_KOFI_URL } from '@/data/donationPlatforms';
 import { DONORS } from '@/data/donors';
 import type { DonorRecord } from '@/utils/donors';
 import { sortDonorsByAmountDesc } from '@/utils/donors';
 
 describe('sortDonorsByAmountDesc', () => {
   const donors: readonly DonorRecord[] = [
-    { name: '小行星', amountCny: 20, platform: 'afdian', date: '2026-07-01' },
-    { name: '彗星', amountCny: 200, platform: 'wechat', date: '2026-07-02', message: '加油' },
-    { name: '流星', amountCny: 66, platform: 'kofi', date: '2026-07-03' },
-    { name: 'B星', amountCny: 66, platform: 'afdian', date: '2026-07-04' },
+    { id: 'd1', name: '小行星', amountCny: 20, platform: 'afdian', date: '2026-07-01' },
+    { id: 'd2', name: '彗星', amountCny: 200, platform: 'wechat', date: '2026-07-02', message: '加油' },
+    { id: 'd3', name: '流星', amountCny: 66, platform: 'kofi', date: '2026-07-03' },
+    { id: 'd4', name: 'B星', amountCny: 66, platform: 'afdian', date: '2026-07-04' },
   ];
 
   it('按金额降序排列', () => {
@@ -48,7 +48,18 @@ describe('DONATION_PLATFORMS 注册表', () => {
     expect(afdian?.url).toBe(SPONSOR_AFDIAN_URL);
   });
 
-  it('包含五个平台（微信/GitHub Sponsors/Ko-fi/Buy Me a Coffee 为预留位）', () => {
+  it('Ko-fi 链接复用同源常量且可用', () => {
+    const kofi = DONATION_PLATFORMS.find((p) => p.id === 'kofi');
+    expect(kofi?.url).toBe(SPONSOR_KOFI_URL);
+  });
+
+  it('微信赞赏码为二维码形态（无跳转链接、qrImage 指向站内资产）', () => {
+    const wechat = DONATION_PLATFORMS.find((p) => p.id === 'wechat');
+    expect(wechat?.url).toBeNull();
+    expect(wechat?.qrImage).toBe('/donate/wechat-tip-code.jpg');
+  });
+
+  it('包含五个平台（GitHub Sponsors/Buy Me a Coffee 为预留位）', () => {
     expect(DONATION_PLATFORMS.map((p) => p.id)).toEqual([
       'afdian',
       'wechat',
@@ -56,11 +67,11 @@ describe('DONATION_PLATFORMS 注册表', () => {
       'kofi',
       'buymeacoffee',
     ]);
-    const reserved = DONATION_PLATFORMS.filter((p) => p.url === null);
+    const reserved = DONATION_PLATFORMS.filter(
+      (p) => p.url === null && !p.qrImage,
+    );
     expect(reserved.map((p) => p.id)).toEqual([
-      'wechat',
       'github-sponsors',
-      'kofi',
       'buymeacoffee',
     ]);
   });

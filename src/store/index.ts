@@ -32,6 +32,7 @@ import {
   scopeForLevel,
 } from '@/utils/cycleScopes';
 import type { CycleScope } from '@/utils/cycleScopes';
+import type { DeviceTier } from '@/utils/deviceCapability';
 import { resolveFocusTarget } from '@/utils/cameraFocus';
 import {
   KIOSK_INACTIVE,
@@ -58,6 +59,9 @@ import type { SunCutawayLayerId } from '@/utils/sunCutaway';
 import { SN_MAX_REMNANTS, clampSupernovaDuration } from '@/utils/supernova';
 import { advanceSimTimeContinuous, clampSpeedMultiplier } from '@/utils/time';
 import { MERGE_PREVIEW_DURATION_SEC, mergePreviewSimDays } from '@/utils/universe';
+
+/** 移动布局底部面板标识（M3：底部标签栏三入口，互斥打开） */
+export type MobilePanel = 'help' | 'controls' | 'contact';
 
 export interface SimulationState {
   /** 模拟时间：J2000 历元起天数（初始为真实当前日期，需求 3.1.1 真实日期模式） */
@@ -92,6 +96,12 @@ export interface SimulationState {
   audioEnabled: boolean;
   /** 音量（0-1） */
   audioVolume: number;
+  /**
+   * 音频恢复失败提示（M5-1）：AudioContext.resume() 被自动播放策略拦截
+   * （或恢复后仍 suspended）时置 true，UI 展示可见提示（AudioResumeNotice）；
+   * 关闭音效开关或用户手动关闭提示时清除。默认 false。
+   */
+  audioResumeFailed: boolean;
   /** 选中天体 id（null 为未选中） */
   selectedBodyId: string | null;
   /** 速率钳制提示（快周期卫星"运动已减速显示"，需求 3.3） */
@@ -283,6 +293,38 @@ export interface SimulationState {
    * 监听、ControlPanel 启动按钮、KioskBadge 退出、?mode=kiosk 启动）
    */
   kiosk: KioskState;
+  /**
+   * 设备渲染档位（M1-1，utils/deviceCapability.ts 判定表）：SSR/桌面
+   * （pointer fine）恒 'high'——默认值即桌面现状，M2 渲染降档消费。
+   * SolarSystemApp 启动时经 useDeviceTierInit 一次性写入。
+   */
+  deviceTier: DeviceTier;
+  /**
+   * 触屏为主设备（matchMedia '(pointer: coarse)'，M1-1）：useViewportKind
+   * 启动写入并随 matchMedia change（外接鼠标插拔等）动态同步；默认 false。
+   */
+  isTouch: boolean;
+  /**
+   * 紧凑视口（matchMedia '(max-width: 767px)'，M1-1）：useViewportKind
+   * 同步（横竖屏切换/平板分屏动态生效）；默认 false——false 分支即桌面现状，
+   * M3 移动布局消费。
+   */
+  isCompact: boolean;
+  /**
+   * 自适应质量 bloom 门（M2-2，默认 true）：AdaptiveQualityDriver 在
+   * 全局质量档跌至 low 时置 false（PostEffects 生效 bloom =
+   * bloomEnabled && adaptiveBloomGate），恢复升档回 true。桌面（high
+   * 设备）不挂载驱动，恒 true = 现状。用户 bloomEnabled 开关不受改写。
+   */
+  adaptiveBloomGate: boolean;
+  /**
+   * 移动布局当前打开的底部面板（M3，仅 isCompact 消费；默认 null=全关）：
+   * 'help' 操作引导弹层 / 'controls' 控制抽屉 / 'contact' 投喂与合作弹层。
+   * 单值互斥——同一时间至多一个面板打开（底部标签栏三钮共用本状态）。
+   * 桌面布局不读取本字段（HelpHint/ContactBadge/ControlPanel 桌面分支
+   * 沿用各自既有状态，零变化）。
+   */
+  mobilePanel: MobilePanel | null;
 
   // actions
   tick: (realDeltaSeconds: number) => void;
@@ -321,6 +363,18 @@ export interface SimulationState {
    * 全屏进入/退出属 DOM 层（ControlPanel/KioskBadge），本 action 不触达。
    */
   kioskEvent: (event: KioskEvent, nowSec: number) => void;
+  /** 写入设备渲染档位（M1：SolarSystemApp 启动一次性检测） */
+  setDeviceTier: (tier: DeviceTier) => void;
+  /** 写入触屏为主标记（M1：useViewportKind 同步） */
+  setIsTouch: (isTouch: boolean) => void;
+  /** 写入紧凑视口标记（M1：useViewportKind 同步） */
+  setIsCompact: (isCompact: boolean) => void;
+  /** 写入自适应 bloom 门（M2：AdaptiveQualityDriver 换档联动） */
+  setAdaptiveBloomGate: (gate: boolean) => void;
+  /** 设置移动布局底部面板（M3：null 关闭全部） */
+  setMobilePanel: (panel: MobilePanel | null) => void;
+  /** 切换移动布局底部面板（M3：同面板再点关闭，异面板互斥切换） */
+  toggleMobilePanel: (panel: MobilePanel) => void;
   /** 相机缩放驱动的连续层级同步（不触发锚点过渡动画） */
   syncZoomLevel: (continuousLevel: number) => void;
   /**
@@ -340,6 +394,8 @@ export interface SimulationState {
   setAudioEnabled: (enabled: boolean) => void;
   toggleAudio: () => void;
   setAudioVolume: (volume: number) => void;
+  /** 写入音频恢复失败标记（M5-1：AudioController resume 结果 / 提示关闭钮清除） */
+  setAudioResumeFailed: (failed: boolean) => void;
   selectBody: (id: string | null) => void;
   setRateClampNotice: (active: boolean) => void;
   setPlanetRateClampNotice: (active: boolean) => void;
@@ -612,6 +668,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   showFermiBubbles: true,
   audioEnabled: false,
   audioVolume: 0.8,
+  audioResumeFailed: false,
   selectedBodyId: null,
   rateClampNotice: false,
   planetRateClampNotice: false,
@@ -667,8 +724,26 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   immersiveMode: false,
   immersiveRestoreBodyId: null,
   kiosk: KIOSK_INACTIVE,
+  deviceTier: 'high',
+  isTouch: false,
+  isCompact: false,
+  adaptiveBloomGate: true,
+  mobilePanel: null,
 
   setLaunchParams: (params) => set({ launch: params }),
+
+  setDeviceTier: (tier) => set({ deviceTier: tier }),
+
+  setIsTouch: (isTouch) => set({ isTouch }),
+
+  setIsCompact: (isCompact) => set({ isCompact }),
+
+  setAdaptiveBloomGate: (gate) => set({ adaptiveBloomGate: gate }),
+
+  setMobilePanel: (panel) => set({ mobilePanel: panel }),
+
+  toggleMobilePanel: (panel) =>
+    set((state) => ({ mobilePanel: state.mobilePanel === panel ? null : panel })),
 
   setUiVisible: (visible) => set({ uiVisible: visible }),
 
@@ -886,6 +961,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   toggleAudio: () => set((state) => ({ audioEnabled: !state.audioEnabled })),
 
   setAudioVolume: (volume) => set({ audioVolume: Math.min(1, Math.max(0, volume)) }),
+  setAudioResumeFailed: (failed) => set({ audioResumeFailed: failed }),
 
   selectBody: (id) => set({ selectedBodyId: id }),
 

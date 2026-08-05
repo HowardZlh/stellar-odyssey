@@ -87,14 +87,16 @@ import {
   createBulgeGlowCanvas,
   createGlowSpriteCanvas,
 } from "@/components/CelestialBody/proceduralTextures";
+import { qualityTierSpec } from "@/utils/qualityTier";
 import { SpecialBodies } from "@/components/Scene/SpecialBodies";
 import { FermiBubbles } from "@/components/Scene/FermiBubbles";
 import { Supernova } from "@/components/Scene/Supernova";
 
 /**
- * 银盘粒子数（附录A：30,000–50,000）。
+ * 银盘粒子数（附录A：30,000–50,000）——M2-3 起按设备档取值
+ * （qualityTier.ts 档位表：high 40,000 / medium 24,000 / low 12,000）。
  *
- * R2-9 粒子预算登记（L4 银河系）：
+ * R2-9 粒子预算登记（L4 银河系，high 档 = 现状）：
  * - 银盘 40,000（内含核球 3,200 [8%] + 棒 4,000 [10%]，总数不变）；
  * - 3D 恒星银晕 +3,000（HALO_PARTICLE_COUNT）；
  * - 球状星团 +29×21 = 609（GLOBULAR_CLUSTER_COUNT × GLOBULAR_CLUSTER_STARS）；
@@ -103,7 +105,6 @@ import { Supernova } from "@/components/Scene/Supernova";
  * - R2-11 合并演化：零新增粒子（潮汐扭曲/椭球终态/星暴均为既有银盘
  *   粒子的顶点着色器 uniforms 调制，CPU 零逐粒子分配）。
  */
-const DISK_PARTICLE_COUNT = 40000;
 /** 3D 恒星银晕粒子数（R2-9 §9.1：2,000–4,000 区间） */
 const HALO_PARTICLE_COUNT = 3000;
 /** 核球粒子占比（R2-9：原 0.18 拆分为核球 0.08 + 棒 0.10） */
@@ -154,7 +155,9 @@ export function Galaxy(): JSX.Element {
   // ---------- 银盘粒子（确定性生成 + 较差自转着色器） ----------
   const { diskGeometry, diskMaterial } = useMemo(() => {
     const particles = generateGalaxyDiskParticles({
-      count: DISK_PARTICLE_COUNT,
+      // M2-3 按设备档降档（40,000 / 24,000 / 12,000；qualityTier.ts 唯一
+      // 事实源；deviceTier 启动同步写入，mount 期读取即终值）
+      count: qualityTierSpec(useSimulationStore.getState().deviceTier).diskParticleCount,
       seed: 20260722,
       armCount: MILKY_WAY.armNames.length,
       diskRadiusLy: GALACTIC_DISK_RADIUS_LY,

@@ -22,6 +22,8 @@ import {
   recordQualityFrame,
 } from '@/utils/adaptiveQuality';
 import { DETAIL_LAYER_TRANSITION_SECONDS } from '@/utils/detailLayer';
+import { qualityTierSpec } from '@/utils/qualityTier';
+import { useSimulationStore } from '@/store';
 import { createNebulaVolumeMaterial } from '@/components/Scene/volumetric/NebulaVolumeMaterial';
 import {
   disposeVolumeMaterial,
@@ -103,8 +105,11 @@ export function NebulaVolumeLayer({
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
 
-  const adaptiveRef = useRef(createAdaptiveQuality(0));
-  const blendRef = useRef(createQualityBlend('high'));
+  // M2-2 体积档设备起点（qualityTier.ts）：medium 起 mid；low 设备恒锁
+  // low（32 步 + RT 0.5）；high 桌面起 high = 现状
+  const deviceVolume = qualityTierSpec(useSimulationStore.getState().deviceTier);
+  const adaptiveRef = useRef(createAdaptiveQuality(0, deviceVolume.volumeInitialTier));
+  const blendRef = useRef(createQualityBlend(deviceVolume.volumeInitialTier));
   const nowMsRef = useRef(0);
   const timeRef = useRef(0);
   const buildWallStartRef = useRef<number | null>(null);
@@ -225,8 +230,11 @@ export function NebulaVolumeLayer({
       resources.material = volumeMaterial;
     }
 
-    // 自适应质量状态机（主场景生效，无强制档滑杆）
-    const state = recordQualityFrame(adaptiveRef.current, nowMsRef.current);
+    // 自适应质量状态机（主场景生效，无强制档滑杆；M2-2：low 设备锁定
+    // 起始档不推进——恒 32 步 + RT 0.5）
+    const state = deviceVolume.volumeTierLocked
+      ? adaptiveRef.current
+      : recordQualityFrame(adaptiveRef.current, nowMsRef.current);
     const blend = advanceQualityBlend(blendRef.current, state.tier, delta);
     const u = volumeMaterial.uniforms;
     u.uSteps.value = clampVolumeSteps(config.params.baseSteps * blend.stepScale);

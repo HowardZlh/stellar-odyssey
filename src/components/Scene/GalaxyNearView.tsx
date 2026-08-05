@@ -37,6 +37,8 @@ import {
 import { galaxyPlaneSizeUnits } from '@/utils/universe';
 import { UNIVERSE_RENDER_ORDER } from '@/utils/universeRenderOrder';
 import { LmcTarantulaOverlay } from '@/components/Scene/LmcTarantula';
+import { qualityTierSpec } from '@/utils/qualityTier';
+import { useSimulationStore } from '@/store';
 
 /** 尘埃暗纹层 renderOrder（晚于加性星光层与远观贴图平面——"吸光"语义
  * 保持；取值迁入 L4 透明层注册表 utils/universeRenderOrder，频闪修复） */
@@ -182,7 +184,16 @@ export function GalaxyNearViewLayer({
   const layers = useMemo(() => {
     // R5-1：影像权重图就绪 → 影像驱动采样；否则参数化降级（登记）
     const activeMaps = maps && isImageDrivenGalaxy(galaxy.id) ? maps : null;
-    const composite = generateGalaxyNearViewCompositeAuto(galaxy.id, activeMaps, overrides);
+    // M2-3：low 设备粒子生成比例 0.5（quota 各分量 floor 缩放 → 单星系
+    // ≤6,000）；调用方显式 particleScale 覆写优先（预览页），高档比例 1 恒等
+    const tierScale = qualityTierSpec(
+      useSimulationStore.getState().deviceTier,
+    ).galaxyNearViewParticleScale;
+    const effectiveOverrides =
+      tierScale < 1 && overrides?.particleScale === undefined
+        ? { ...overrides, particleScale: tierScale }
+        : overrides;
+    const composite = generateGalaxyNearViewCompositeAuto(galaxy.id, activeMaps, effectiveOverrides);
     // 光年 → 场景单位：粒子参考半径对齐贴图平面半边长（同源公式，
     // 交叉淡出时 3D 结构与贴图平面尺寸一致无跳变）；影像驱动路径的
     // 参考半径 = 产物 meta 图半径（贴图平面 = 同源影像裁剪域，对应）

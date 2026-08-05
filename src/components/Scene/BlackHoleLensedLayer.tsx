@@ -21,6 +21,8 @@ import {
   createQualityBlend,
   recordQualityFrame,
 } from '@/utils/adaptiveQuality';
+import { qualityTierSpec } from '@/utils/qualityTier';
+import { useSimulationStore } from '@/store';
 
 /**
  * 黑洞引力透镜主场景细节层（R4-13，IMPROVEMENT_REQUIREMENTS_4 §R4-13）
@@ -60,8 +62,11 @@ export function BlackHoleLensedLayer({
   getWeight,
   getGate01,
 }: BlackHoleLensedLayerProps): JSX.Element {
-  const adaptiveRef = useRef(createAdaptiveQuality(0));
-  const blendRef = useRef(createQualityBlend('high'));
+  // M2-2 体积档设备起点（qualityTier.ts）：medium 起 mid；low 设备恒锁
+  // low（32 步；本层无 RT 管线，仅步数）；high 桌面起 high = 现状
+  const deviceVolume = qualityTierSpec(useSimulationStore.getState().deviceTier);
+  const adaptiveRef = useRef(createAdaptiveQuality(0, deviceVolume.volumeInitialTier));
+  const blendRef = useRef(createQualityBlend(deviceVolume.volumeInitialTier));
   const nowMsRef = useRef(0);
   const timeRef = useRef(0);
 
@@ -99,7 +104,10 @@ export function BlackHoleLensedLayer({
   useFrame((_, delta) => {
     nowMsRef.current += delta * 1000;
     timeRef.current += delta;
-    const state = recordQualityFrame(adaptiveRef.current, nowMsRef.current);
+    // M2-2：low 设备锁定起始档不推进（恒 32 步）
+    const state = deviceVolume.volumeTierLocked
+      ? adaptiveRef.current
+      : recordQualityFrame(adaptiveRef.current, nowMsRef.current);
     const blend = advanceQualityBlend(blendRef.current, state.tier, delta);
     const u = material.uniforms;
     u.uSteps.value = clampLensingSteps(BLACK_HOLE_LENSED_BASE_STEPS * blend.stepScale);

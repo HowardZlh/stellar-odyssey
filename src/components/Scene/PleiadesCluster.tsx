@@ -23,6 +23,8 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ClampedHtmlLabel } from '@/components/Scene/ClampedHtmlLabel';
 import { useLocale } from '@/hooks/useI18n';
+import { useSimulationStore } from '@/store';
+import { pickRadiusScale } from '@/utils/touchControls';
 import { createDiffractionSpikeCanvas } from '@/components/CelestialBody/proceduralTextures';
 import { getNebulaTexture } from '@/components/CelestialBody/nebulaTextures';
 import { blueGiantFlicker } from '@/utils/specialBodies';
@@ -178,6 +180,10 @@ export function PleiadesNamedStars({
 }: PleiadesNamedStarsProps): JSX.Element {
   const spritesRef = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState<number | null>(null);
+  // M4-2/M4-4：触屏下热区半径 ×2 + tap 切换星名（桌面 hover 行为不变；
+  // isTouch 为设备类型级状态、非 locale——不违反场景组件订阅纪律）
+  const isTouch = useSimulationStore((s) => s.isTouch);
+  const hotspotScale = pickRadiusScale(isTouch);
   const spikeTexture = useMemo(
     () => new THREE.CanvasTexture(createDiffractionSpikeCanvas('#dbe8ff', 128)),
     [],
@@ -218,15 +224,42 @@ export function PleiadesNamedStars({
           <mesh
             key={p.name}
             position={[p.x, p.y, p.z]}
-            onPointerOver={(e) => {
-              e.stopPropagation();
-              setHovered(i);
-            }}
-            onPointerOut={() => {
-              setHovered((prev) => (prev === i ? null : prev));
-            }}
+            // M4-4 触屏 tap 切换（桌面 hover 分支原样）：tap 同星收起 /
+            // tap 他星切换；点空白或其他对象关闭经 onPointerMissed（未命中
+            // 本星的 click 均触发，函数式更新仅清本星——与他星 onClick 写
+            // 入互不竞态，两种触发顺序结果一致）
+            onPointerOver={
+              isTouch
+                ? undefined
+                : (e) => {
+                    e.stopPropagation();
+                    setHovered(i);
+                  }
+            }
+            onPointerOut={
+              isTouch
+                ? undefined
+                : () => {
+                    setHovered((prev) => (prev === i ? null : prev));
+                  }
+            }
+            onClick={
+              isTouch
+                ? (e) => {
+                    e.stopPropagation();
+                    setHovered((prev) => (prev === i ? null : i));
+                  }
+                : undefined
+            }
+            onPointerMissed={
+              isTouch
+                ? () => {
+                    setHovered((prev) => (prev === i ? null : prev));
+                  }
+                : undefined
+            }
           >
-            <sphereGeometry args={[p.spikeScaleUnits * 0.28, 8, 8]} />
+            <sphereGeometry args={[p.spikeScaleUnits * 0.28 * hotspotScale, 8, 8]} />
             <meshBasicMaterial transparent opacity={0} depthWrite={false} />
           </mesh>
         ))}

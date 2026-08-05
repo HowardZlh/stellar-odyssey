@@ -10,20 +10,29 @@ import { useSimulationStore } from '@/store';
 import { useLaunchInit } from '@/hooks/useLaunchParams';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useKiosk } from '@/hooks/useKiosk';
+import { useDeviceTierInit, useViewportKind } from '@/hooks/useViewportKind';
+import {
+  detailLruCapacityForBudgetMB,
+  qualityTierSpec,
+  textureConcurrency,
+} from '@/utils/qualityTier';
+import { AdaptiveQualityDriver } from '@/components/Scene/AdaptiveQualityDriver';
 import { AudioController } from '@/components/Audio/AudioController';
+import { AudioResumeNotice } from '@/components/UI/AudioResumeNotice';
 import { SpatialAudio } from '@/components/Audio/SpatialAudio';
 import { CameraController } from '@/components/Camera/CameraController';
 import { getTextureManager } from '@/components/CelestialBody/textureManager';
 import { getSatelliteModelManager } from '@/components/CelestialBody/modelManager';
 import { BodyCycleSwitcher } from '@/components/UI/BodyCycleSwitcher';
-import { ContactBadge } from '@/components/UI/ContactBadge';
-import { ControlPanel } from '@/components/UI/ControlPanel';
+import { BottomTabBar } from '@/components/UI/BottomTabBar';
 import { HudInfo } from '@/components/UI/HudInfo';
+import { LeftColumn } from '@/components/UI/LeftColumn';
 import { KioskBadge } from '@/components/UI/KioskBadge';
 import { LaunchLogo } from '@/components/UI/LaunchLogo';
 import { LoadingProgress } from '@/components/UI/LoadingProgress';
 import { PerformanceMonitor } from '@/components/UI/PerformanceMonitor';
 import { HelpHint } from '@/components/UI/HelpHint';
+import { UiRestoreButton } from '@/components/UI/UiVisibilityToggle';
 import { Galaxy } from '@/components/Scene/Galaxy';
 import { PostEffects } from '@/components/Scene/PostEffects';
 import { SimulationClock } from '@/components/Scene/SimulationClock';
@@ -46,6 +55,29 @@ export default function SolarSystemApp(): JSX.Element {
   // B5 展馆模式驱动（方案 K5）：须在 useLaunchInit 之后挂载——同批
   // effect 按 hook 声明序执行，?mode=kiosk 读取时 launch 已写入
   useKiosk();
+  // M1 触屏基建：设备档位一次性探测（M2 修订：首渲染同步写入——Canvas
+  // gl/dpr 与场景 mount 期消费点须在渲染器创建前读到档位）+ 视口类型
+  // （isTouch/isCompact）matchMedia 订阅写 store
+  useDeviceTierInit();
+  useViewportKind();
+  // M2 渲染降档：Canvas gl/dpr 按档位表取值（qualityTierSpec 唯一事实源；
+  // gl 参数仅渲染器创建时生效，无需响应式订阅）
+  const deviceTier = useSimulationStore((s) => s.deviceTier);
+  const quality = qualityTierSpec(deviceTier);
+
+  // M2 启动一次性配置：low 档 bloom 默认关（用户仍可手动开启）+
+  // 纹理管线降档（LRU 容量/anisotropy/触屏并发；isTouch 由 useViewportKind
+  // 的先序 effect 写入，本 effect 声明在后故读到已同步值）
+  useEffect(() => {
+    const s = useSimulationStore.getState();
+    const spec = qualityTierSpec(s.deviceTier);
+    if (!spec.bloomDefault) s.setBloomEnabled(false);
+    getTextureManager().configureQuality({
+      detailLruCapacity: detailLruCapacityForBudgetMB(spec.textureLruBudgetMB),
+      anisotropy: spec.anisotropy,
+      maxConcurrentLoads: textureConcurrency(s.isTouch),
+    });
+  }, []);
 
   // 应用卸载时释放全部位图纹理与 glTF 模型（AGENTS.md 内存管理）
   useEffect(() => {
@@ -58,8 +90,16 @@ export default function SolarSystemApp(): JSX.Element {
   return (
     <div className="relative h-screen w-screen">
       <Canvas
-        // 对数深度缓冲：尺度管理方案的一部分，避免大尺度 z-fighting（需求 5.1）
-        gl={{ logarithmicDepthBuffer: true, antialias: true }}
+        // M1-2 手势隔离：Canvas 容器 touch-action none——双指捏合/单指拖动
+        // 完全交给 OrbitControls，杜绝页面级缩放与滚动
+        className="touch-none"
+        // M2 档位化（qualityTier.ts 唯一事实源；high 档 = 现状：对数深度
+        // 缓冲避免大尺度 z-fighting（需求 5.1）+ antialias + dpr [1,2]）
+        gl={{
+          logarithmicDepthBuffer: quality.logarithmicDepthBuffer,
+          antialias: quality.antialias,
+        }}
+        dpr={quality.dpr as number | [number, number]}
         camera={{
           position: [
             CAMERA_VIEWS.L2.position.x,
@@ -84,30 +124,49 @@ export default function SolarSystemApp(): JSX.Element {
         <SpatialAudio />
         {/* Bloom 泛光后处理（P3-3，需求 4.6）：选择性发光 + 层级适配强度 */}
         <PostEffects />
+        {/* M2-2 全局自适应质量驱动：仅 medium 设备挂载（挂载策略登记见
+            AdaptiveQualityDriver 文件头；high 桌面零变化 / low 恒锁无可调） */}
+        {deviceTier === 'medium' && <AdaptiveQualityDriver />}
       </Canvas>
 
       {/* B5 §5.1-A UI 显隐受控组件（受控方式登记 = 顶层包裹二选一取此：
           单点 hidden（display:none）覆盖全部受控组件并保留组件内部状态，
           各组件零改动）；LoadingProgress（加载期必须可见）与 LaunchLogo
           （B4 §4.1 登记）不受控，置于包裹外 */}
-      <div hidden={!uiVisible}>
-        <ControlPanel />
+      {/* M1-2 UI 悬浮层：touch-manipulation 消除 300ms 点按延迟；
+          select-none 禁 UI 文本长按选中（信息面板科学文案经 select-text
+          豁免保持可复制，见 HudInfo） */}
+      <div hidden={!uiVisible} className="touch-manipulation select-none">
+        {/* 左侧列容器（左下角布局收口）：ControlPanel + SunLayerCard +
+            ContactBadge 同列排布互不重叠（角标常驻可见，原事件避让隐藏
+            逻辑删除；B1 预留登记收口：经本包裹接入 uiVisible） */}
+        <LeftColumn />
         <HudInfo />
         {/* 行星视角天体切换（P4，需求 3.2.4：仅 L1 语境显示） */}
         <BodyCycleSwitcher />
         <PerformanceMonitor />
         <HelpHint />
-        {/* 商业合作角标（左下角常驻，事件通知/剖面卡片占位时避让隐藏；
-            B1 预留登记收口：经本包裹接入 uiVisible） */}
-        <ContactBadge />
+        {/* M3-3 移动底部标签栏（仅 isCompact 渲染；帮助/巡游/控制/投喂
+            四入口合并，桌面零变化） */}
+        <BottomTabBar />
       </div>
-      <LoadingProgress />
-      {/* B5 展馆模式暂停角标（仅 paused 态显示；置于包裹外——作为退出
-          入口须不受 uiVisible 影响恒可达，登记） */}
-      <KioskBadge />
-      {/* B4 启动参数客户 logo（?logo=，右侧 top-64；B5 kiosk 隐藏 UI 时保持显示） */}
-      <LaunchLogo />
-      <AudioController />
+      {/* uiVisible 包裹外的常驻悬浮层（M1-2 触屏属性同上；静态 div 不改
+          定位/层叠语义，桌面零变化） */}
+      <div className="touch-manipulation select-none">
+        <LoadingProgress />
+        {/* M5-1：AudioContext.resume 失败可见提示（置于包裹外——音效开着
+            却无声的矛盾态提示不应随 UI 隐藏消失，登记见组件头） */}
+        <AudioResumeNotice />
+        {/* M4-3：uiVisible=false 时的半透明恢复按钮（仅 isTouch；置于包裹
+            外——触屏用户不可永久失去 UI；kiosk 激活态不渲染，登记见组件头） */}
+        <UiRestoreButton />
+        {/* B5 展馆模式暂停角标（仅 paused 态显示；置于包裹外——作为退出
+            入口须不受 uiVisible 影响恒可达，登记） */}
+        <KioskBadge />
+        {/* B4 启动参数客户 logo（?logo=，右侧 top-64；B5 kiosk 隐藏 UI 时保持显示） */}
+        <LaunchLogo />
+        <AudioController />
+      </div>
     </div>
   );
 }

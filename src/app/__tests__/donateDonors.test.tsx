@@ -36,4 +36,10 @@ describe('DonatePage 捐赠名单', () => {
     expect(screen.getByText(/加油/)).toBeInTheDocument();
     expect(screen.queryByText(/虚位以待/)).not.toBeInTheDocument();
   });
+
+  it('非空名单同样显示贡献者宇宙入口（C4-1，指向 /contributors）', () => {
+    render(<DonatePage />);
+    const entry = screen.getByRole('link', { name: /进入贡献者宇宙/ });
+    expect(entry).toHaveAttribute('href', '/contributors');
+  });
 });

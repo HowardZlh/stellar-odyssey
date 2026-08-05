@@ -7,10 +7,56 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
+  /* M1-2 触屏手势隔离：禁边界橡皮筋/下拉刷新；触点高亮透明（点按反馈由
+     组件自身 hover/active 态承担） */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 input[type='range'] {
   accent-color: #4d9fff;
+}
+
+/* M3-4 紧凑视口（isCompact 同口径 max-width:767px）：滑块 thumb 加大至
+   28px、输入条命中区 44px 满足触控目标，自绘轨道/滑块（appearance:none
+   后原生样式失效）；桌面（≥768px）保持原生外观零变化 */
+@media (max-width: 767px) {
+  input[type='range'] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 44px;
+    background: transparent;
+  }
+
+  input[type='range']::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    margin-top: -12px;
+    border-radius: 9999px;
+    background: #4d9fff;
+  }
+
+  input[type='range']::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  input[type='range']::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 9999px;
+    background: #4d9fff;
+  }
 }
 
 /* HUD 信息面板滚动区：细窄深色滚动条，匹配半透明科幻面板风格 */

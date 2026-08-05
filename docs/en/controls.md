@@ -34,6 +34,34 @@
 
 > Shortcuts are ignored while an input field is focused. While kiosk mode is active, any keypress is treated uniformly as "visitor input" (pauses the tour and shows the UI); `H` does not additionally toggle.
 
+## Touch Controls (phones / tablets)
+
+The whole site is touch-ready; every desktop feature has an equivalent touch entry point.
+
+### Gestures
+
+| Gesture | Function |
+|---|---|
+| One-finger drag | Rotate the view |
+| Two-finger pinch | Continuous zoom (zoom speed scales with the current distance, so a few pinches carry you from a planet to the whole universe) |
+| Two-finger drag | Pan |
+| Tap a body | Select it and open the bottom info card (hit areas of small targets are enlarged -- sunspots, comets, and satellites can all be tapped directly) |
+
+### Mobile Layout
+
+On small screens (width ≤767px) the interface automatically switches to a mobile layout:
+
+- **Top status bar**: pause button + view level + simulation time; tap `▾` to expand details (reference frame, follow state, immersive / hide-UI buttons, etc.).
+- **Bottom tab bar**: four entries -- `[? Help] [← Tour →] [☰ Controls] [♥ Donate]`; the controls drawer contains every option of the desktop control panel (view switching, display toggles, event demos, sound, ...); the "♥ Donate" popup gathers the donation entry and partnership contacts (the donation page links to the Contributor Universe page).
+- **Bottom info card**: slides up after selecting a body, with "Fly to / Follow" buttons; swipe down or tap the handle to close.
+- **Hide UI**: the "Hide UI" button in the status-bar details is equivalent to the desktop `H` key; after hiding, a translucent "Show UI" badge stays in the top-right corner to restore at any time.
+
+### Touch Notes
+
+- Sound must be enabled manually via the controls drawer (browser autoplay policies require a user gesture); if you see "Audio could not start", just tap the sound toggle again.
+- iOS Safari does not support web fullscreen; the immersive button falls back to "collapse panels".
+- Rendering quality scales automatically with device capability (resolution / particle counts / texture detail); low-end devices and browsers with "data saver" enabled use the lowest tier to stay smooth.
+
 ## Control Panel in Detail
 
 The control panel sits in the top-left corner. **Options show or hide intelligently based on the current view level**: global options are always visible across all four views, while view-specific options only appear in their respective view (hidden outside it, but any enabled state and scene effects are preserved).
