@@ -13,6 +13,12 @@
  * - 可访问性：画布容器 aria-hidden，语义化文字名单常驻画布下方
  *   （屏幕阅读器/SEO 同受益；形态裁决登记于需求文档 §C2-5）。
  *
+ * 移动端适配（C3）：判据全部消费 M1 产物（useViewportKind / store
+ * deviceTier，禁止自建检测）——isTouch 分流操作提示与 tap 命中阈值；
+ * isCompact 下详情卡改底部卡片（max-h-[50dvh] + safe-b）；渲染档位经
+ * contributorCanvasQuality（dpr/antialias 消费 M2 qualityTier 事实源）；
+ * 画布容器 touch-none / UI 层 touch-manipulation（M1-2 口径）。
+ *
  * 文案红线（REQUIREMENTS_CONTRIBUTORS §0.5）：全部陈述口径，无回报承诺。
  */
 
@@ -22,12 +28,16 @@ import Link from 'next/link';
 import type { Locale } from '@/types';
 import { pickLocalized } from '@/i18n';
 import { useLocaleInit, useT, useTf } from '@/hooks/useI18n';
+import { useDeviceTierInit, useViewportKind } from '@/hooks/useViewportKind';
 import { useSimulationStore } from '@/store';
 import { DONATION_PLATFORMS } from '@/data/donationPlatforms';
 import { DONORS } from '@/data/donors';
 import type { DonationPlatformId, DonorRecord } from '@/utils/donors';
 import { sortDonorsByAmountDesc } from '@/utils/donors';
-import { layoutContributorStars } from '@/utils/contributorUniverse';
+import {
+  contributorCanvasQuality,
+  layoutContributorStars,
+} from '@/utils/contributorUniverse';
 import {
   ContributorUniverseCanvas,
   detectWebglSupport,
@@ -60,6 +70,13 @@ export default function ContributorsPage(): JSX.Element {
   const locale = useSimulationStore((s) => s.locale);
   const setLocale = useSimulationStore((s) => s.setLocale);
 
+  // C3：设备判据全部消费 M1 产物（触屏/紧凑视口 matchMedia 订阅 + 档位
+  // 一次性探测写 store；横竖屏切换经 matchMedia change 自动生效）
+  useDeviceTierInit();
+  const { isTouch, isCompact } = useViewportKind();
+  const deviceTier = useSimulationStore((s) => s.deviceTier);
+  const quality = useMemo(() => contributorCanvasQuality(deviceTier), [deviceTier]);
+
   // 名单排序 + C1 布点全部一次完成（渲染循环零重算）
   const donors = useMemo(() => sortDonorsByAmountDesc(DONORS), []);
   const stars = useMemo(() => layoutContributorStars(donors), [donors]);
@@ -83,7 +100,8 @@ export default function ContributorsPage(): JSX.Element {
         className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_50%_35%,rgba(36,58,107,0.45),rgba(10,10,20,0)_65%)]"
       />
 
-      <div className="relative mx-auto max-w-4xl">
+      {/* UI 层 touch-manipulation：消除触屏 300ms 点按延迟（M1-2 口径） */}
+      <div className="relative mx-auto max-w-4xl touch-manipulation">
         {/* 顶部：返回主站 + 语言切换（donate 页同款布局） */}
         <div className="flex items-center justify-between text-xs">
           <Link
@@ -134,22 +152,26 @@ export default function ContributorsPage(): JSX.Element {
           </p>
         </header>
 
-        {/* 3D 画布区（画布 aria-hidden；详情卡/占位层为可达兄弟节点） */}
-        <section className="relative mt-8 h-[70vh] min-h-[420px] overflow-hidden rounded-xl border border-white/10 bg-black/40">
+        {/* 3D 画布区（画布 aria-hidden；详情卡/占位层为可达兄弟节点）；
+            移动端高度用 dvh（C3-3，规避 iOS Safari 地址栏塌缩） */}
+        <section className="relative mt-8 h-[70vh] min-h-[420px] overflow-hidden rounded-xl border border-white/10 bg-black/40 max-md:h-[70dvh]">
           {webglSupported === true ? (
             <>
-              <div aria-hidden="true" className="absolute inset-0">
+              {/* 画布容器 touch-none：手势全交 OrbitControls（M1-2 口径） */}
+              <div aria-hidden="true" className="absolute inset-0 touch-none">
                 <ContributorUniverseCanvas
                   stars={stars}
                   selectedIndex={selectedIndex}
                   onSelectStar={setSelectedIndex}
                   onWebglFail={() => setWebglSupported(false)}
+                  isTouch={isTouch}
+                  quality={quality}
                 />
               </div>
 
-              {/* 桌面操作提示 */}
-              <p className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-black/40 px-3 py-1 text-[10px] text-gray-400 backdrop-blur">
-                {tr('contributors.hintDesktop')}
+              {/* 操作提示（isTouch 分流触屏文案，C3-1） */}
+              <p className="pointer-events-none absolute bottom-3 left-1/2 max-w-[calc(100%-1.5rem)] -translate-x-1/2 truncate whitespace-nowrap rounded bg-black/40 px-3 py-1 text-[10px] text-gray-400 backdrop-blur">
+                {tr(isTouch ? 'contributors.hintTouch' : 'contributors.hintDesktop')}
               </p>
 
               {/* 空名单态：背景星场保留氛围 + 中央占位 + 捐赠入口 */}
@@ -167,9 +189,17 @@ export default function ContributorsPage(): JSX.Element {
                 </div>
               )}
 
-              {/* 详情卡（点击星聚焦后展示；关闭按钮 ≥44×44pt） */}
+              {/* 详情卡（点击星聚焦后展示；关闭按钮 ≥44×44pt）——isCompact
+                  改底部卡片（fixed inset-x-0 bottom-0 + 50dvh 限高 + safe-b，
+                  与 M3-2 信息面板同口径；点画布空白同样可关闭，C3-3） */}
               {selected && (
-                <aside className="absolute right-4 top-4 w-72 max-w-[calc(100%-2rem)] rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
+                <aside
+                  className={
+                    isCompact
+                      ? 'fixed inset-x-0 bottom-0 z-20 max-h-[50dvh] overflow-y-auto overscroll-contain rounded-t-lg border-t border-white/10 bg-space-panel p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] backdrop-blur'
+                      : 'absolute right-4 top-4 w-72 max-w-[calc(100%-2rem)] rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur'
+                  }
+                >
                   <button
                     type="button"
                     onClick={() => setSelectedIndex(null)}

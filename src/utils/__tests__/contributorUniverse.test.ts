@@ -20,9 +20,11 @@ import {
   STAR_SCALE_MAX,
   STAR_SCALE_MIN,
   amountToVisual,
+  contributorCanvasQuality,
   donorSeedKey,
   hashStringFnv1a,
   layoutContributorStars,
+  raycastPointsThreshold,
   resolveRefMaxCny,
 } from '@/utils/contributorUniverse';
 import {
@@ -250,5 +252,42 @@ describe('layoutContributorStars：碰撞微扰', () => {
     for (const star of a) {
       expect(star.position.every((v) => Number.isFinite(v))).toBe(true);
     }
+  });
+});
+
+describe('raycastPointsThreshold（C3-1 触屏命中阈值分流）', () => {
+  it('桌面阈值 2', () => {
+    expect(raycastPointsThreshold(false)).toBe(2);
+  });
+
+  it('触屏阈值 ×2 = 4（恰为星最小间距，不串星）', () => {
+    expect(raycastPointsThreshold(true)).toBe(4);
+    expect(raycastPointsThreshold(true)).toBe(MIN_STAR_DISTANCE);
+  });
+});
+
+describe('contributorCanvasQuality（C3-2 渲染档位表，逐档锁死）', () => {
+  it('high：dpr [1,2] / antialias true / 背景星场 3000', () => {
+    expect(contributorCanvasQuality('high')).toEqual({
+      dpr: [1, 2],
+      antialias: true,
+      backgroundStarCount: 3000,
+    });
+  });
+
+  it('medium：dpr [1,1.5] / antialias false / 背景星场 3000', () => {
+    expect(contributorCanvasQuality('medium')).toEqual({
+      dpr: [1, 1.5],
+      antialias: false,
+      backgroundStarCount: 3000,
+    });
+  });
+
+  it('low：dpr 1 / antialias false / 背景星场 1500', () => {
+    expect(contributorCanvasQuality('low')).toEqual({
+      dpr: 1,
+      antialias: false,
+      backgroundStarCount: 1500,
+    });
   });
 });

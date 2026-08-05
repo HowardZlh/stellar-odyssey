@@ -47,6 +47,7 @@ export const en: I18nDict = {
     goDonate: 'Go to the donation page',
     backToApp: 'Back to the star map',
     hintDesktop: 'Drag to look around · scroll to zoom · click a star for details',
+    hintTouch: 'Drag with one finger to look around · pinch to zoom · tap to focus on a contributor',
     listSection: 'Text roster',
     webglFallback:
       '3D rendering is unavailable in this environment; showing the text roster instead.',

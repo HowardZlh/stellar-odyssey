@@ -8,10 +8,14 @@
  *   工厂见 contributorUniverseResources.ts）；
  * - 背景氛围星场：≤3000 点、无交互（raycast 置空）、更小更暗；
  * - 相机：drei OrbitControls（旋转 + 缩放，平移关闭——裁决登记于需求
- *   文档 §C2-3）+ 入场缓推运镜 + 点击星聚焦飞行（prefers-reduced-motion
- *   一律直达）；状态全为组件内 React state/ref，不接主应用 store 视角体系；
- * - 交互：hover 显示昵称 tooltip（桌面；触屏等价留给 C3）、点击星回调
- *   页面层打开详情卡、点击空白清除选中；
+ *   文档 §C2-3；触屏显式 ONE=ROTATE / TWO=DOLLY_PAN，C3-1）+ 入场缓推
+ *   运镜 + 点击星聚焦飞行（prefers-reduced-motion 一律直达）；状态全为
+ *   组件内 React state/ref，不接主应用 store 视角体系；
+ * - 交互：hover 显示昵称 tooltip（仅桌面；isTouch 下 tap 直达"聚焦 +
+ *   详情卡"，无 hover 中间态，命中阈值 ×2——C3-1）、点击星回调页面层
+ *   打开详情卡、点击空白清除选中；
+ * - 档位（C3-2）：dpr/antialias/背景星场点数按 deviceTier 三档取值
+ *   （contributorCanvasQuality 纯函数，页面层传入）；
  * - 降级：WebGL 检测 + Canvas 错误边界，失败经 onWebglFail 通知页面层
  *   切换文字名单（C2-5）。
  */
@@ -23,7 +27,11 @@ import type { ThreeEvent } from '@react-three/fiber';
 import { Html, OrbitControls } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import * as THREE from 'three';
-import type { ContributorStar } from '@/utils/contributorUniverse';
+import type {
+  ContributorCanvasQuality,
+  ContributorStar,
+} from '@/utils/contributorUniverse';
+import { raycastPointsThreshold } from '@/utils/contributorUniverse';
 import {
   buildBackgroundStarBuffers,
   buildContributorStarBuffers,
@@ -36,9 +44,6 @@ const CONTRIBUTOR_BASE_SIZE = 3;
 
 /** 背景星场基准粒径（更小更暗，视觉区分贡献者星） */
 const BACKGROUND_BASE_SIZE = 1.6;
-
-/** Points raycast 阈值（世界单位；星最小间距 4，C3 触屏 ×2） */
-export const RAYCAST_POINTS_THRESHOLD = 2;
 
 /** 入场运镜起点/默认观察位（星团 3σ=90，全景留边） */
 const INTRO_FROM: [number, number, number] = [0, 110, 330];
@@ -167,6 +172,9 @@ function CameraRig({ stars, focusIndex }: CameraRigProps): JSX.Element {
       enablePan={false}
       minDistance={CONTROLS_MIN_DISTANCE}
       maxDistance={CONTROLS_MAX_DISTANCE}
+      // C3-1：触屏显式手势映射（单指旋转 / 双指捏合缩放；pan 已全局关闭，
+      // DOLLY_PAN 中 pan 分量无效——与主场景 M4-1 同口径，各自独立配置）
+      touches={{ ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }}
     />
   );
 }
@@ -178,7 +186,8 @@ function CameraRig({ stars, focusIndex }: CameraRigProps): JSX.Element {
 interface ContributorStarsPointsProps {
   stars: readonly ContributorStar[];
   onSelect: (index: number) => void;
-  onHover: (index: number | null) => void;
+  /** hover 回调（isTouch 下不传 = 不挂 hover 事件，tap 直达聚焦——C3-1） */
+  onHover?: (index: number | null) => void;
 }
 
 /** 贡献者星 Points（C1 产物直灌；hover/click 经 raycast 命中 e.index） */
@@ -206,13 +215,21 @@ function ContributorStarsPoints({
         e.stopPropagation();
         if (e.index !== undefined) onSelect(e.index);
       }}
-      onPointerOver={(e: ThreeEvent<PointerEvent>) => {
-        if (e.index !== undefined) onHover(e.index);
-      }}
-      onPointerMove={(e: ThreeEvent<PointerEvent>) => {
-        if (e.index !== undefined) onHover(e.index);
-      }}
-      onPointerOut={() => onHover(null)}
+      onPointerOver={
+        onHover
+          ? (e: ThreeEvent<PointerEvent>) => {
+              if (e.index !== undefined) onHover(e.index);
+            }
+          : undefined
+      }
+      onPointerMove={
+        onHover
+          ? (e: ThreeEvent<PointerEvent>) => {
+              if (e.index !== undefined) onHover(e.index);
+            }
+          : undefined
+      }
+      onPointerOut={onHover ? () => onHover(null) : undefined}
     />
   );
 }
@@ -283,6 +300,10 @@ export interface ContributorUniverseCanvasProps {
   onSelectStar: (index: number | null) => void;
   /** WebGL 初始化/运行期失败回调（页面层切文字名单） */
   onWebglFail: () => void;
+  /** 触屏为主设备（M1 store 判据，页面层传入；tap 直达聚焦 + 命中阈值 ×2） */
+  isTouch: boolean;
+  /** 渲染档位参数（contributorCanvasQuality(deviceTier) 产物，C3-2） */
+  quality: ContributorCanvasQuality;
 }
 
 /** 贡献者宇宙 Canvas（独立轻量 R3F 场景，两组 Points 合计 2 次 draw call） */
@@ -291,15 +312,20 @@ export function ContributorUniverseCanvas({
   selectedIndex,
   onSelectStar,
   onWebglFail,
+  isTouch,
+  quality,
 }: ContributorUniverseCanvasProps): JSX.Element {
+  // DprSpec 为 readonly 元组，R3F Dpr 要求可变元组——拷贝转换
+  const dpr: number | [number, number] =
+    typeof quality.dpr === 'number' ? quality.dpr : [quality.dpr[0], quality.dpr[1]];
   return (
     <CanvasErrorBoundary onError={onWebglFail}>
       <Canvas
-        dpr={[1, 2]}
-        gl={{ antialias: true, alpha: false }}
+        dpr={dpr}
+        gl={{ antialias: quality.antialias, alpha: false }}
         camera={{ fov: 55, near: 0.5, far: 4000, position: INTRO_FROM }}
         onCreated={(state) => {
-          state.raycaster.params.Points.threshold = RAYCAST_POINTS_THRESHOLD;
+          state.raycaster.params.Points.threshold = raycastPointsThreshold(isTouch);
         }}
         onPointerMissed={() => onSelectStar(null)}
       >
@@ -308,6 +334,8 @@ export function ContributorUniverseCanvas({
           stars={stars}
           selectedIndex={selectedIndex}
           onSelectStar={onSelectStar}
+          isTouch={isTouch}
+          backgroundStarCount={quality.backgroundStarCount}
         />
       </Canvas>
     </CanvasErrorBoundary>
@@ -318,6 +346,8 @@ interface SceneWithFocusProps {
   stars: readonly ContributorStar[];
   selectedIndex: number | null;
   onSelectStar: (index: number | null) => void;
+  isTouch: boolean;
+  backgroundStarCount: number;
 }
 
 /** 场景 + 相机聚焦组合（CameraRig 需在 Canvas 内消费 useThree） */
@@ -325,27 +355,31 @@ function SceneWithFocus({
   stars,
   selectedIndex,
   onSelectStar,
+  isTouch,
+  backgroundStarCount,
 }: SceneWithFocusProps): JSX.Element {
   const [hovered, setHovered] = useState<number | null>(null);
   const gl = useThree((state) => state.gl);
 
   useEffect(() => {
+    if (isTouch) return undefined;
     gl.domElement.style.cursor = hovered !== null ? 'pointer' : 'auto';
     return () => {
       gl.domElement.style.cursor = 'auto';
     };
-  }, [hovered, gl]);
+  }, [hovered, gl, isTouch]);
 
-  const hoveredStar = hovered !== null ? stars[hovered] : undefined;
+  // isTouch：无 hover 中间态（tap 直达聚焦 + 详情卡，C3-1）
+  const hoveredStar = !isTouch && hovered !== null ? stars[hovered] : undefined;
 
   return (
     <>
-      <BackgroundStars />
+      <BackgroundStars count={backgroundStarCount} />
       {stars.length > 0 && (
         <ContributorStarsPoints
           stars={stars}
           onSelect={(index) => onSelectStar(index)}
-          onHover={setHovered}
+          onHover={isTouch ? undefined : setHovered}
         />
       )}
       {hoveredStar && (

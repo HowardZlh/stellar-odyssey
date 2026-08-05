@@ -12,7 +12,10 @@
  * 全部为纯函数：无 Math.random / Date.now 等非确定性来源。
  */
 
+import type { DeviceTier } from '@/utils/deviceCapability';
 import type { DonorRecord } from '@/utils/donors';
+import type { DprSpec } from '@/utils/qualityTier';
+import { qualityTierSpec } from '@/utils/qualityTier';
 import { createSeededRandom } from '@/utils/random';
 import { twinkleAmplitude, twinkleFrequencyHz } from '@/utils/starTwinkle';
 
@@ -221,4 +224,56 @@ export function layoutContributorStars(donors: readonly DonorRecord[]): Contribu
   }
 
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// C3：移动端渲染档位与触屏命中阈值（REQUIREMENTS_CONTRIBUTORS §C3-1/§C3-2）
+// ---------------------------------------------------------------------------
+
+/** Points raycast 基准阈值（世界单位；星最小间距 4 的一半） */
+export const RAYCAST_POINTS_THRESHOLD_BASE = 2;
+
+/** 触屏命中阈值放大倍数（手指命中精度低于鼠标，§C3-1） */
+export const RAYCAST_TOUCH_MULTIPLIER = 2;
+
+/**
+ * Points raycast 命中阈值（isTouch 分流）：桌面 2 / 触屏 ×2 = 4。
+ * 触屏阈值恰为星最小间距（MIN_STAR_DISTANCE=4），tap 就近命中不串星。
+ */
+export function raycastPointsThreshold(isTouch: boolean): number {
+  return isTouch
+    ? RAYCAST_POINTS_THRESHOLD_BASE * RAYCAST_TOUCH_MULTIPLIER
+    : RAYCAST_POINTS_THRESHOLD_BASE;
+}
+
+/** 背景氛围星场点数按档位（§C3-2 表：high/medium 3000，low 1500） */
+export const BACKGROUND_STAR_COUNT_BY_TIER: Readonly<Record<DeviceTier, number>> = {
+  high: 3000,
+  medium: 3000,
+  low: 1500,
+};
+
+/** 贡献者宇宙 Canvas 档位参数（§C3-2 表格三档） */
+export interface ContributorCanvasQuality {
+  /** R3F Canvas dpr（high [1,2] / medium [1,1.5] / low 1） */
+  dpr: DprSpec;
+  /** WebGL antialias（high true / medium·low false） */
+  antialias: boolean;
+  /** 背景氛围星场点数（high·medium 3000 / low 1500） */
+  backgroundStarCount: number;
+}
+
+/**
+ * 贡献者宇宙渲染档位取值（§C3-2）：dpr/antialias 消费 M2 统一档位表
+ * `utils/qualityTier.ts`（唯一事实源，M2 已落地——需求文档登记的对齐项
+ * 已闭环）；背景星场点数为本页专属项，按上表取值。
+ * 闪烁 shader 三档恒开（顶点属性驱动、开销恒定，不降）。
+ */
+export function contributorCanvasQuality(tier: DeviceTier): ContributorCanvasQuality {
+  const spec = qualityTierSpec(tier);
+  return {
+    dpr: spec.dpr,
+    antialias: spec.antialias,
+    backgroundStarCount: BACKGROUND_STAR_COUNT_BY_TIER[tier],
+  };
 }
