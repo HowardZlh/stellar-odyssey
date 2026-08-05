@@ -13,7 +13,11 @@
  */
 
 import * as THREE from 'three';
-import type { ContributorStar } from '@/utils/contributorUniverse';
+import type { BoundarySphereSpec, ContributorStar } from '@/utils/contributorUniverse';
+import {
+  BOUNDARY_SPHERE_COLOR,
+  BOUNDARY_SPHERE_OPACITY,
+} from '@/utils/contributorUniverse';
 import { createSeededRandom } from '@/utils/random';
 import { twinkleAmplitude, twinkleFrequencyHz } from '@/utils/starTwinkle';
 
@@ -162,8 +166,10 @@ export function buildBackgroundStarBuffers(
     colors[i * 3 + 1] = color.g;
     colors[i * 3 + 2] = color.b;
 
-    scales[i] = 0.4 + rand() * 0.5;
-    const b = 0.2 + rand() * 0.3;
+    // C5-2 适度提亮：粒径 0.4–0.9 → 0.5–1.0、亮度 0.2–0.5 → 0.3–0.55
+    // （仍显著小/暗于贡献者星 scale ≥1×基准 3 / brightness ≥0.4，可辨区分）
+    scales[i] = 0.5 + rand() * 0.5;
+    const b = 0.3 + rand() * 0.25;
     brightness[i] = b;
     phases[i] = rand();
     freqs[i] = twinkleFrequencyHz(rand());
@@ -219,6 +225,94 @@ export function createStarPointsResources(
 
 /** 释放星点资源（组件 useEffect 卸载回调；Starfield dispose 范式） */
 export function disposeStarPointsResources(resources: StarPointsResources): void {
+  resources.geometry.dispose();
+  resources.material.dispose();
+}
+
+// ---------------------------------------------------------------------------
+// C5-1：网格球体宇宙边界（经纬网格 LineSegments）
+// ---------------------------------------------------------------------------
+
+/** 边界球线段资源（几何 + 线材质；组件 useMemo 创建、卸载 dispose） */
+export interface BoundarySphereResources {
+  geometry: THREE.BufferGeometry;
+  material: THREE.LineBasicMaterial;
+}
+
+/**
+ * 边界球经纬网格线段顶点（LineSegments 顶点对布局）：
+ * - 纬线：latitudeLines 条闭合圆环，纬度均匀分布于 (-90°, 90°)（含赤道，
+ *   不含两极退化点），每环 arcSegments 段；
+ * - 经线：longitudeLines 条极到极半圆（方位角均匀分布 [0, 2π)），
+ *   每条 arcSegments 段。
+ * 全部顶点严格落在半径 spec.radius 球面上（单测断言）；确定性纯函数。
+ */
+export function buildBoundarySphereBuffers(spec: BoundarySphereSpec): Float32Array {
+  const { radius, latitudeLines, longitudeLines, arcSegments } = spec;
+  const totalSegments = (latitudeLines + longitudeLines) * arcSegments;
+  const positions = new Float32Array(totalSegments * 2 * 3);
+  let offset = 0;
+
+  const push = (x: number, y: number, z: number): void => {
+    positions[offset] = x;
+    positions[offset + 1] = y;
+    positions[offset + 2] = z;
+    offset += 3;
+  };
+
+  // 纬线圆环（y = R·sinφ 平面上半径 R·cosφ 的闭合圆）
+  for (let i = 0; i < latitudeLines; i += 1) {
+    const lat = (-Math.PI / 2) + (Math.PI * (i + 1)) / (latitudeLines + 1);
+    const y = radius * Math.sin(lat);
+    const ringRadius = radius * Math.cos(lat);
+    for (let s = 0; s < arcSegments; s += 1) {
+      const a0 = (2 * Math.PI * s) / arcSegments;
+      const a1 = (2 * Math.PI * (s + 1)) / arcSegments;
+      push(ringRadius * Math.cos(a0), y, ringRadius * Math.sin(a0));
+      push(ringRadius * Math.cos(a1), y, ringRadius * Math.sin(a1));
+    }
+  }
+
+  // 经线半圆（北极 → 南极，方位角均匀分布）
+  for (let j = 0; j < longitudeLines; j += 1) {
+    const azimuth = (2 * Math.PI * j) / longitudeLines;
+    const cosA = Math.cos(azimuth);
+    const sinA = Math.sin(azimuth);
+    for (let s = 0; s < arcSegments; s += 1) {
+      const t0 = (Math.PI * s) / arcSegments;
+      const t1 = (Math.PI * (s + 1)) / arcSegments;
+      push(radius * Math.sin(t0) * cosA, radius * Math.cos(t0), radius * Math.sin(t0) * sinA);
+      push(radius * Math.sin(t1) * cosA, radius * Math.cos(t1), radius * Math.sin(t1) * sinA);
+    }
+  }
+
+  return positions;
+}
+
+/**
+ * 组装边界球资源：LineSegments 几何 + 加性混合半透明线材质
+ * （科幻蓝低透明度发光观感；depthWrite 关闭防遮挡星点）。
+ */
+export function createBoundarySphereResources(
+  spec: BoundarySphereSpec,
+): BoundarySphereResources {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    'position',
+    new THREE.BufferAttribute(buildBoundarySphereBuffers(spec), 3),
+  );
+  const material = new THREE.LineBasicMaterial({
+    color: BOUNDARY_SPHERE_COLOR,
+    transparent: true,
+    opacity: BOUNDARY_SPHERE_OPACITY,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  return { geometry, material };
+}
+
+/** 释放边界球资源（组件 useEffect 卸载回调） */
+export function disposeBoundarySphereResources(resources: BoundarySphereResources): void {
   resources.geometry.dispose();
   resources.material.dispose();
 }

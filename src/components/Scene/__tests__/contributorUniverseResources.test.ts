@@ -9,17 +9,20 @@ import {
   BACKGROUND_INNER_RADIUS,
   BACKGROUND_OUTER_RADIUS,
   buildBackgroundStarBuffers,
+  buildBoundarySphereBuffers,
   buildContributorStarBuffers,
+  createBoundarySphereResources,
   createStarPointsGeometry,
   createStarPointsMaterial,
   createStarPointsResources,
+  disposeBoundarySphereResources,
   disposeStarPointsResources,
 } from '@/components/Scene/contributorUniverseResources';
 
 const MOCK_DONORS: readonly DonorRecord[] = [
-  { name: '彗星', amountCny: 10000, platform: 'wechat', date: '2026-07-02', message: '加油' },
-  { name: '流星', amountCny: 520, platform: 'kofi', date: '2026-07-03' },
-  { name: '小行星', amountCny: 5, platform: 'afdian', date: '2026-07-01' },
+  { id: 'r1', name: '彗星', amountCny: 10000, platform: 'wechat', date: '2026-07-02', message: '加油' },
+  { id: 'r2', name: '流星', amountCny: 520, platform: 'kofi', date: '2026-07-03' },
+  { id: 'r3', name: '小行星', amountCny: 5, platform: 'afdian', date: '2026-07-01' },
 ];
 
 describe('buildContributorStarBuffers（C1 产物直灌）', () => {
@@ -77,10 +80,46 @@ describe('buildBackgroundStarBuffers（背景氛围星场）', () => {
       );
       expect(r).toBeGreaterThanOrEqual(BACKGROUND_INNER_RADIUS - 1e-6);
       expect(r).toBeLessThanOrEqual(BACKGROUND_OUTER_RADIUS + 1e-6);
-      // 贡献者星 scale ≥1 / brightness ≥0.4；背景星严格更小更暗
-      expect(buffers.scales[i]).toBeLessThan(1);
-      expect(buffers.brightness[i]).toBeLessThanOrEqual(0.5);
+      // C5-2 提亮档：scale ∈ [0.5, 1.0]、brightness ∈ [0.3, 0.55]
+      // （贡献者星 scale ≥1（×基准粒径 3 倍差）/ brightness ≥0.4，区分度保持）
+      expect(buffers.scales[i]).toBeGreaterThanOrEqual(0.5);
+      expect(buffers.scales[i]).toBeLessThanOrEqual(1);
+      expect(buffers.brightness[i]).toBeGreaterThanOrEqual(0.3);
+      expect(buffers.brightness[i]).toBeLessThanOrEqual(0.55);
     }
+  });
+});
+
+describe('边界球经纬网格（C5-1）', () => {
+  const SPEC = { radius: 110, latitudeLines: 11, longitudeLines: 12, arcSegments: 96 };
+
+  it('顶点数 = (纬线+经线)×分段×2×3；确定性纯函数', () => {
+    const positions = buildBoundarySphereBuffers(SPEC);
+    expect(positions).toHaveLength((11 + 12) * 96 * 2 * 3);
+    expect(Array.from(buildBoundarySphereBuffers(SPEC))).toEqual(Array.from(positions));
+  });
+
+  it('全部顶点严格落在球面半径上', () => {
+    const positions = buildBoundarySphereBuffers(SPEC);
+    for (let i = 0; i < positions.length; i += 3) {
+      const r = Math.hypot(positions[i], positions[i + 1], positions[i + 2]);
+      // Float32Array 单精度：相对误差 ~1.2e-7 × 110 ≈ 1.3e-5，精度取 3 位
+      expect(r).toBeCloseTo(SPEC.radius, 3);
+    }
+  });
+
+  it('资源工厂：加性混合半透明线材质 + dispose 释放断言', () => {
+    const resources = createBoundarySphereResources(SPEC);
+    expect(resources.geometry.getAttribute('position').itemSize).toBe(3);
+    expect(resources.material.transparent).toBe(true);
+    expect(resources.material.depthWrite).toBe(false);
+    expect(resources.material.opacity).toBeGreaterThan(0);
+    expect(resources.material.opacity).toBeLessThan(1);
+    const geometryDispose = jest.spyOn(resources.geometry, 'dispose');
+    const materialDispose = jest.spyOn(resources.material, 'dispose');
+    disposeBoundarySphereResources(resources);
+    expect(geometryDispose).toHaveBeenCalledTimes(1);
+    expect(materialDispose).toHaveBeenCalledTimes(1);
   });
 });
 

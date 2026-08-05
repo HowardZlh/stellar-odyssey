@@ -13,10 +13,10 @@ import { sortDonorsByAmountDesc } from '@/utils/donors';
 
 describe('sortDonorsByAmountDesc', () => {
   const donors: readonly DonorRecord[] = [
-    { name: '小行星', amountCny: 20, platform: 'afdian', date: '2026-07-01' },
-    { name: '彗星', amountCny: 200, platform: 'wechat', date: '2026-07-02', message: '加油' },
-    { name: '流星', amountCny: 66, platform: 'kofi', date: '2026-07-03' },
-    { name: 'B星', amountCny: 66, platform: 'afdian', date: '2026-07-04' },
+    { id: 'd1', name: '小行星', amountCny: 20, platform: 'afdian', date: '2026-07-01' },
+    { id: 'd2', name: '彗星', amountCny: 200, platform: 'wechat', date: '2026-07-02', message: '加油' },
+    { id: 'd3', name: '流星', amountCny: 66, platform: 'kofi', date: '2026-07-03' },
+    { id: 'd4', name: 'B星', amountCny: 66, platform: 'afdian', date: '2026-07-04' },
   ];
 
   it('按金额降序排列', () => {

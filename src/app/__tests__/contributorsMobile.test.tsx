@@ -102,33 +102,36 @@ describe('C3-1 isTouch 交互分流', () => {
 });
 
 describe('C3-2 渲染档位透传（deviceTier → quality props）', () => {
-  it('high：dpr [1,2] / antialias true / 背景星场 3000', () => {
+  it('high：dpr [1,2] / antialias true / 背景星场 3000 / 全密度边界球', () => {
     useSimulationStore.setState({ deviceTier: 'high' });
     render(<ContributorsPage />);
     expect(lastCanvasProps?.quality).toEqual({
       dpr: [1, 2],
       antialias: true,
       backgroundStarCount: 3000,
+      boundarySphere: { radius: 110, latitudeLines: 11, longitudeLines: 12, arcSegments: 96 },
     });
   });
 
-  it('medium：dpr [1,1.5] / antialias false / 背景星场 3000', () => {
+  it('medium：dpr [1,1.5] / antialias false / 背景星场 3000 / 全密度边界球', () => {
     useSimulationStore.setState({ deviceTier: 'medium' });
     render(<ContributorsPage />);
     expect(lastCanvasProps?.quality).toEqual({
       dpr: [1, 1.5],
       antialias: false,
       backgroundStarCount: 3000,
+      boundarySphere: { radius: 110, latitudeLines: 11, longitudeLines: 12, arcSegments: 96 },
     });
   });
 
-  it('low：dpr 1 / antialias false / 背景星场 1500', () => {
+  it('low：dpr 1 / antialias false / 背景星场 1500 / 经纬密度减半边界球', () => {
     useSimulationStore.setState({ deviceTier: 'low' });
     render(<ContributorsPage />);
     expect(lastCanvasProps?.quality).toEqual({
       dpr: 1,
       antialias: false,
       backgroundStarCount: 1500,
+      boundarySphere: { radius: 110, latitudeLines: 5, longitudeLines: 6, arcSegments: 48 },
     });
   });
 });

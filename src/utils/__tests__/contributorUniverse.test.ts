@@ -12,6 +12,7 @@ import {
   CLUSTER_RADIUS_MAX,
   CLUSTER_RADIUS_SIGMA,
   CONTRIBUTOR_STAR_COLORS,
+  BOUNDARY_SPHERE_RADIUS,
   MAX_PERTURB_ATTEMPTS,
   MIN_STAR_DISTANCE,
   REF_MAX_CNY_FLOOR,
@@ -20,6 +21,8 @@ import {
   STAR_SCALE_MAX,
   STAR_SCALE_MIN,
   amountToVisual,
+  boundaryHomeDistance,
+  boundarySphereSpec,
   contributorCanvasQuality,
   donorSeedKey,
   hashStringFnv1a,
@@ -36,6 +39,7 @@ import {
 
 function makeDonor(overrides: Partial<DonorRecord> & { name: string }): DonorRecord {
   return {
+    id: `id-${overrides.name}`,
     amountCny: 50,
     platform: 'afdian',
     date: '2026-08-01',
@@ -267,27 +271,71 @@ describe('raycastPointsThreshold（C3-1 触屏命中阈值分流）', () => {
 });
 
 describe('contributorCanvasQuality（C3-2 渲染档位表，逐档锁死）', () => {
-  it('high：dpr [1,2] / antialias true / 背景星场 3000', () => {
+  it('high：dpr [1,2] / antialias true / 背景星场 3000 / 全密度边界球', () => {
     expect(contributorCanvasQuality('high')).toEqual({
       dpr: [1, 2],
       antialias: true,
       backgroundStarCount: 3000,
+      boundarySphere: { radius: 110, latitudeLines: 11, longitudeLines: 12, arcSegments: 96 },
     });
   });
 
-  it('medium：dpr [1,1.5] / antialias false / 背景星场 3000', () => {
+  it('medium：dpr [1,1.5] / antialias false / 背景星场 3000 / 全密度边界球', () => {
     expect(contributorCanvasQuality('medium')).toEqual({
       dpr: [1, 1.5],
       antialias: false,
       backgroundStarCount: 3000,
+      boundarySphere: { radius: 110, latitudeLines: 11, longitudeLines: 12, arcSegments: 96 },
     });
   });
 
-  it('low：dpr 1 / antialias false / 背景星场 1500', () => {
+  it('low：dpr 1 / antialias false / 背景星场 1500 / 经纬密度减半', () => {
     expect(contributorCanvasQuality('low')).toEqual({
       dpr: 1,
       antialias: false,
       backgroundStarCount: 1500,
+      boundarySphere: { radius: 110, latitudeLines: 5, longitudeLines: 6, arcSegments: 48 },
     });
+  });
+});
+
+describe('boundarySphereSpec（C5-1 网格球体宇宙边界）', () => {
+  it('半径 110 > 星团 3σ 截断 90——全部贡献者星必然在球内部（布点零改动）', () => {
+    expect(BOUNDARY_SPHERE_RADIUS).toBe(110);
+    expect(BOUNDARY_SPHERE_RADIUS).toBeGreaterThan(CLUSTER_RADIUS_MAX);
+    for (const tier of ['high', 'medium', 'low'] as const) {
+      expect(boundarySphereSpec(tier).radius).toBe(BOUNDARY_SPHERE_RADIUS);
+    }
+  });
+
+  it('low 档经纬线密度约减半、圆弧分段减半（§C5-1 档位降档）', () => {
+    const high = boundarySphereSpec('high');
+    const low = boundarySphereSpec('low');
+    expect(low.latitudeLines).toBeLessThanOrEqual(Math.ceil(high.latitudeLines / 2));
+    expect(low.longitudeLines).toBe(high.longitudeLines / 2);
+    expect(low.arcSegments).toBe(high.arcSegments / 2);
+    expect(boundarySphereSpec('medium')).toEqual(high);
+  });
+});
+
+describe('boundaryHomeDistance（C5-1 取景距离按画布宽高比补偿）', () => {
+  it('横幅画布（aspect ≥1）取基准下限 255（桌面现状距离）', () => {
+    expect(boundaryHomeDistance(16 / 9)).toBe(255);
+    expect(boundaryHomeDistance(1.47)).toBe(255);
+  });
+
+  it('竖屏画布（aspect <1）水平视场窄 → 距离外移且随 aspect 变窄单调增', () => {
+    const portrait = boundaryHomeDistance(0.66);
+    expect(portrait).toBeGreaterThan(255);
+    expect(boundaryHomeDistance(0.5)).toBeGreaterThan(portrait);
+    // 外移后球完整入框：asin(R/dist) ≤ 水平半视场角
+    const halfH = Math.atan(Math.tan((55 / 2) * (Math.PI / 180)) * 0.66);
+    expect(Math.asin(110 / portrait)).toBeLessThanOrEqual(halfH + 1e-9);
+  });
+
+  it('非法 aspect（0/负/NaN）按 1 处理 → 基准下限', () => {
+    expect(boundaryHomeDistance(0)).toBe(255);
+    expect(boundaryHomeDistance(-2)).toBe(255);
+    expect(boundaryHomeDistance(Number.NaN)).toBe(255);
   });
 });

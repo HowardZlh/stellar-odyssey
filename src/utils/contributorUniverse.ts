@@ -260,6 +260,70 @@ export const BACKGROUND_STAR_COUNT_BY_TIER: Readonly<Record<DeviceTier, number>>
   low: 1500,
 };
 
+// ---------------------------------------------------------------------------
+// C5-1：网格球体宇宙边界（REQUIREMENTS_CONTRIBUTORS §C5）
+// ---------------------------------------------------------------------------
+
+/**
+ * 边界球半径：> 星团 3σ 截断（CLUSTER_RADIUS_MAX=90），全部贡献者星
+ * 必然落在球内部（布点算法零改动即满足"球面上或内部"，用户确认口径②）。
+ */
+export const BOUNDARY_SPHERE_RADIUS = 110;
+
+/** 边界球自转周期（秒/圈；prefers-reduced-motion 时组件层静止） */
+export const BOUNDARY_ROTATION_SEC_PER_TURN = 75;
+
+/** 边界球网格线颜色/透明度（科幻蓝低透明度，加性混合发光观感） */
+export const BOUNDARY_SPHERE_COLOR = '#3d6fb8';
+export const BOUNDARY_SPHERE_OPACITY = 0.28;
+
+/** 边界球几何规格（经纬网格线密度 + 单线圆弧分段数） */
+export interface BoundarySphereSpec {
+  /** 球半径（场景单位） */
+  radius: number;
+  /** 纬线条数（不含两极退化点；含赤道，均匀分布于 (-90°, 90°)） */
+  latitudeLines: number;
+  /** 经线条数（完整大圆的一半为一条，均匀分布方位角） */
+  longitudeLines: number;
+  /** 每条线的圆弧分段数（LineSegments 顶点对数） */
+  arcSegments: number;
+}
+
+/** 边界球规格按档位（§C5-1：low 档经纬线密度减半，圆弧分段同步降） */
+export function boundarySphereSpec(tier: DeviceTier): BoundarySphereSpec {
+  const low = tier === 'low';
+  return {
+    radius: BOUNDARY_SPHERE_RADIUS,
+    latitudeLines: low ? 5 : 11,
+    longitudeLines: low ? 6 : 12,
+    arcSegments: low ? 48 : 96,
+  };
+}
+
+/** 贡献者宇宙 Canvas 垂直视场角（度；组件 Canvas camera 与取景计算同源） */
+export const CONTRIBUTOR_CANVAS_FOV_DEG = 55;
+
+/** 默认观察距离下限（桌面横幅画布下边界球垂直恰入框的基准距离） */
+export const BOUNDARY_HOME_DISTANCE_MIN = 255;
+
+/** 边界球取景余量系数（球面网格线不贴画布边缘） */
+const BOUNDARY_FIT_MARGIN = 1.06;
+
+/**
+ * 默认观察距离按画布宽高比补偿（C5-1）：竖屏画布（aspect < 1）水平
+ * 视场角更窄，按 min(垂直, 水平) 半视场角求边界球完整入框的最小距离，
+ * 下钳 BOUNDARY_HOME_DISTANCE_MIN（桌面横幅画布 = 现状距离）。
+ * 非法 aspect（≤0/NaN）按 1 处理。
+ */
+export function boundaryHomeDistance(aspectRatio: number): number {
+  const aspect = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 1;
+  const halfVertical = (CONTRIBUTOR_CANVAS_FOV_DEG / 2) * (Math.PI / 180);
+  const halfHorizontal = Math.atan(Math.tan(halfVertical) * aspect);
+  const halfMin = Math.min(halfVertical, halfHorizontal);
+  const fit = (BOUNDARY_SPHERE_RADIUS * BOUNDARY_FIT_MARGIN) / Math.sin(halfMin);
+  return Math.max(BOUNDARY_HOME_DISTANCE_MIN, fit);
+}
+
 /** 贡献者宇宙 Canvas 档位参数（§C3-2 表格三档） */
 export interface ContributorCanvasQuality {
   /** R3F Canvas dpr（high [1,2] / medium [1,1.5] / low 1） */
@@ -268,6 +332,8 @@ export interface ContributorCanvasQuality {
   antialias: boolean;
   /** 背景氛围星场点数（high·medium 3000 / low 1500） */
   backgroundStarCount: number;
+  /** 边界球几何规格（C5-1：low 档经纬线密度减半） */
+  boundarySphere: BoundarySphereSpec;
 }
 
 /**
@@ -282,5 +348,6 @@ export function contributorCanvasQuality(tier: DeviceTier): ContributorCanvasQua
     dpr: spec.dpr,
     antialias: spec.antialias,
     backgroundStarCount: BACKGROUND_STAR_COUNT_BY_TIER[tier],
+    boundarySphere: boundarySphereSpec(tier),
   };
 }

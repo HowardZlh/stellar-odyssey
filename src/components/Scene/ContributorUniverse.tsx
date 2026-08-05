@@ -28,26 +28,38 @@ import { Html, OrbitControls } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import * as THREE from 'three';
 import type {
+  BoundarySphereSpec,
   ContributorCanvasQuality,
   ContributorStar,
 } from '@/utils/contributorUniverse';
-import { raycastPointsThreshold } from '@/utils/contributorUniverse';
+import {
+  BOUNDARY_ROTATION_SEC_PER_TURN,
+  CONTRIBUTOR_CANVAS_FOV_DEG,
+  boundaryHomeDistance,
+  raycastPointsThreshold,
+} from '@/utils/contributorUniverse';
 import {
   buildBackgroundStarBuffers,
   buildContributorStarBuffers,
+  createBoundarySphereResources,
   createStarPointsResources,
+  disposeBoundarySphereResources,
   disposeStarPointsResources,
 } from '@/components/Scene/contributorUniverseResources';
 
-/** 贡献者星基准粒径（× C1 aScale ∈ [1, 3.2]） */
-const CONTRIBUTOR_BASE_SIZE = 3;
+/** 贡献者星基准粒径（× C1 aScale ∈ [1, 3.2]）。
+ *  C5-1 登记：3 → 4 补偿默认观察距离外移（179 → ≈255，×1.4）——
+ *  屏上视觉尺寸与 C4 交付基本持平，金额映射的相对大小语义零改动 */
+const CONTRIBUTOR_BASE_SIZE = 4;
 
 /** 背景星场基准粒径（更小更暗，视觉区分贡献者星） */
 const BACKGROUND_BASE_SIZE = 1.6;
 
-/** 入场运镜起点/默认观察位（星团 3σ=90，全景留边） */
-const INTRO_FROM: [number, number, number] = [0, 110, 330];
-const HOME_POS: [number, number, number] = [0, 38, 175];
+/** 默认观察方向（单位向量；C5-1 修订：实际观察位 = 方向 × 按画布宽高比
+ *  补偿的取景距离 boundaryHomeDistance(aspect)——边界球完整入框，
+ *  竖屏画布水平视场更窄自动外移）；入场起点 = 观察位 × INTRO_FROM_FACTOR */
+const HOME_DIRECTION: [number, number, number] = [0, 0.2036, 0.9791];
+const INTRO_FROM_FACTOR = 1.5;
 
 /** 入场/聚焦飞行时长（秒） */
 const INTRO_DURATION = 2.2;
@@ -57,9 +69,13 @@ const FOCUS_DURATION = 1.4;
 const FOCUS_BASE_DISTANCE = 12;
 const FOCUS_DISTANCE_PER_SCALE = 4;
 
-/** OrbitControls 缩放限位（禁止穿透星团中心/缩到不可见） */
+/** OrbitControls 缩放限位（禁止穿透星团中心/缩到不可见）；
+ *  C5-1：上限 480 → 380（边界球半径 110 的全景取景框收紧） */
 const CONTROLS_MIN_DISTANCE = 25;
-const CONTROLS_MAX_DISTANCE = 480;
+const CONTROLS_MAX_DISTANCE = 380;
+
+/** Canvas 底色（C5-2：#05060f → 略亮深蓝，配合星场提亮增加可见度） */
+const CANVAS_CLEAR_COLOR = '#0a0e1e';
 
 /** WebGL 可用性检测（C2-5 降级判据；jsdom 下 getContext 返回 null → false） */
 export function detectWebglSupport(): boolean {
@@ -108,16 +124,23 @@ function CameraRig({ stars, focusIndex }: CameraRigProps): JSX.Element {
   const camera = useThree((state) => state.camera);
   const reducedMotion = useMemo(() => prefersReducedMotion(), []);
 
-  // 入场运镜：远处缓推至默认观察位（reduced-motion 直达）
+  // 入场运镜：远处缓推至默认观察位（reduced-motion 直达）。
+  // C5-1：观察距离按画布宽高比补偿（竖屏水平视场窄 → 自动外移使边界球
+  // 完整入框），上钳缩放上限防超出 OrbitControls 限位。
   useEffect(() => {
-    camera.position.set(...INTRO_FROM);
+    const aspect =
+      camera instanceof THREE.PerspectiveCamera ? camera.aspect : 1;
+    const distance = Math.min(boundaryHomeDistance(aspect), CONTROLS_MAX_DISTANCE);
+    const home = new THREE.Vector3(...HOME_DIRECTION).multiplyScalar(distance);
+    const from = home.clone().multiplyScalar(INTRO_FROM_FACTOR);
+    camera.position.copy(from);
     if (reducedMotion) {
-      camera.position.set(...HOME_POS);
+      camera.position.copy(home);
       return;
     }
     flightRef.current = {
-      fromPos: new THREE.Vector3(...INTRO_FROM),
-      toPos: new THREE.Vector3(...HOME_POS),
+      fromPos: from,
+      toPos: home,
       fromTarget: new THREE.Vector3(0, 0, 0),
       toTarget: new THREE.Vector3(0, 0, 0),
       elapsed: 0,
@@ -238,6 +261,37 @@ interface BackgroundStarsProps {
   count?: number;
 }
 
+interface BoundarySphereProps {
+  spec: BoundarySphereSpec;
+}
+
+/**
+ * 网格球体宇宙边界（C5-1）：经纬网格 LineSegments 常驻渲染（有/无贡献者
+ * 均显示，用户确认口径①）；缓慢自转（75s/圈，prefers-reduced-motion
+ * 静止）；不参与 raycast（不干扰点星交互）；卸载 dispose。
+ */
+function BoundarySphere({ spec }: BoundarySphereProps): JSX.Element {
+  const resources = useMemo(() => createBoundarySphereResources(spec), [spec]);
+  useEffect(() => () => disposeBoundarySphereResources(resources), [resources]);
+  const reducedMotion = useMemo(() => prefersReducedMotion(), []);
+  const groupRef = useRef<THREE.Group>(null);
+
+  useFrame((_, delta) => {
+    if (reducedMotion || !groupRef.current) return;
+    groupRef.current.rotation.y += (delta * 2 * Math.PI) / BOUNDARY_ROTATION_SEC_PER_TURN;
+  });
+
+  return (
+    <group ref={groupRef}>
+      <lineSegments
+        geometry={resources.geometry}
+        material={resources.material}
+        raycast={() => null}
+      />
+    </group>
+  );
+}
+
 /** 背景氛围星场（无交互，raycast 置空） */
 function BackgroundStars({ count }: BackgroundStarsProps): JSX.Element {
   const resources = useMemo(
@@ -323,19 +377,27 @@ export function ContributorUniverseCanvas({
       <Canvas
         dpr={dpr}
         gl={{ antialias: quality.antialias, alpha: false }}
-        camera={{ fov: 55, near: 0.5, far: 4000, position: INTRO_FROM }}
+        // 初始位取桌面基准入场起点近似值；挂载后 CameraRig 按实际画布
+        // 宽高比重算（boundaryHomeDistance），首帧偏差不可感知
+        camera={{
+          fov: CONTRIBUTOR_CANVAS_FOV_DEG,
+          near: 0.5,
+          far: 4000,
+          position: [0, 78, 375],
+        }}
         onCreated={(state) => {
           state.raycaster.params.Points.threshold = raycastPointsThreshold(isTouch);
         }}
         onPointerMissed={() => onSelectStar(null)}
       >
-        <color attach="background" args={['#05060f']} />
+        <color attach="background" args={[CANVAS_CLEAR_COLOR]} />
         <SceneWithFocus
           stars={stars}
           selectedIndex={selectedIndex}
           onSelectStar={onSelectStar}
           isTouch={isTouch}
           backgroundStarCount={quality.backgroundStarCount}
+          boundarySphere={quality.boundarySphere}
         />
       </Canvas>
     </CanvasErrorBoundary>
@@ -348,6 +410,7 @@ interface SceneWithFocusProps {
   onSelectStar: (index: number | null) => void;
   isTouch: boolean;
   backgroundStarCount: number;
+  boundarySphere: BoundarySphereSpec;
 }
 
 /** 场景 + 相机聚焦组合（CameraRig 需在 Canvas 内消费 useThree） */
@@ -357,6 +420,7 @@ function SceneWithFocus({
   onSelectStar,
   isTouch,
   backgroundStarCount,
+  boundarySphere,
 }: SceneWithFocusProps): JSX.Element {
   const [hovered, setHovered] = useState<number | null>(null);
   const gl = useThree((state) => state.gl);
@@ -375,6 +439,7 @@ function SceneWithFocus({
   return (
     <>
       <BackgroundStars count={backgroundStarCount} />
+      <BoundarySphere spec={boundarySphere} />
       {stars.length > 0 && (
         <ContributorStarsPoints
           stars={stars}

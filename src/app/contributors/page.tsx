@@ -172,6 +172,14 @@ export default function ContributorsPage(): JSX.Element {
                 />
               </div>
 
+              {/* C5-2 径向星云辉光叠加（画布 alpha:false 遮蔽页面级渐变，
+                  在画布上方叠加提升中央可见度；pointer-events-none 零交互
+                  影响；drei Html tooltip z 序更高不被覆盖） */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_45%,rgba(56,88,160,0.16),rgba(10,14,30,0)_65%)]"
+              />
+
               {/* 操作提示（isTouch 分流触屏文案，C3-1） */}
               <p className="pointer-events-none absolute bottom-3 left-1/2 max-w-[calc(100%-1.5rem)] -translate-x-1/2 truncate whitespace-nowrap rounded bg-black/40 px-3 py-1 text-[10px] text-gray-400 backdrop-blur">
                 {tr(isTouch ? 'contributors.hintTouch' : 'contributors.hintDesktop')}
@@ -285,7 +293,7 @@ export default function ContributorsPage(): JSX.Element {
             <ol className="space-y-2">
               {donors.map((donor, index) => (
                 <li
-                  key={`${donor.name}-${donor.platform}-${donor.date}`}
+                  key={`${donor.id}`}
                   className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-space-panel px-4 py-3 backdrop-blur"
                 >
                   <span className="flex min-w-0 items-center gap-3">

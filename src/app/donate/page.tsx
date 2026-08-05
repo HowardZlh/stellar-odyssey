@@ -205,7 +205,7 @@ export default function DonatePage(): JSX.Element {
             <ol className="space-y-2">
               {donors.map((donor, index) => (
                 <li
-                  key={`${donor.name}-${donor.platform}-${donor.date}`}
+                  key={`${donor.id}`}
                   className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-space-panel px-4 py-3 backdrop-blur"
                 >
                   <span className="flex min-w-0 items-center gap-3">
