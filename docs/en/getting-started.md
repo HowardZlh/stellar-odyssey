@@ -40,6 +40,7 @@ When the app loads you will see:
 | **Top right · HUD** | Current view level, simulation time, scale ruler, reference frame, follow status, galactic year progress (L3) |
 | **Bottom right · Info panel** | After selecting a body: name, type, real physical parameters and data sources, with "Fly to / Follow" buttons |
 | **Bottom · Onboarding guide** | First-visit shortcut hints and scientific-accuracy notes (dismissible) |
+| **Bottom left · Support & partnership** | "☄️ Fuel the Voyage" opens the donation page (all donation channels and the supporter roster, with a link to the ✨ Contributor Universe — the roster rendered as a 3D star cluster); "💼 Partnership" expands contact info. On mobile, reach it via the "♥ Donate" tab in the bottom tab bar |
 
 ## Your First Voyage: Recommended Route (about 5 minutes)
 

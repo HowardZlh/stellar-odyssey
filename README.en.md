@@ -177,6 +177,7 @@ If this universe ever made you pause your scroll wheel for a moment longer, cons
 - ⚡ Afdian: [afdian.com/a/stellar-odyssey](https://afdian.com/a/stellar-odyssey)
 - ☕ Ko-fi: [ko-fi.com/howardzlh](https://ko-fi.com/howardzlh)
 - ☄️ On-site donation page (all channels and the donor roster): [stellar.guushu.com/donate](https://stellar.guushu.com/donate)
+- ✨ Contributor Universe (the supporter roster rendered as a 3D star cluster — each star corresponds to one registered supporter, with size and brightness following the cumulative amount): [stellar.guushu.com/contributors](https://stellar.guushu.com/contributors)
 
 Sponsorship comes with no reward promises — every feature and every line of source code stays equally open to everyone. Your support funds continued development and domain upkeep, keeping the project **free, ad-free, and open source**.
 

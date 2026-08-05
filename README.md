@@ -214,6 +214,7 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 - ⚡ 爱发电：[afdian.com/a/stellar-odyssey](https://afdian.com/a/stellar-odyssey)
 - ☕ Ko-fi：[ko-fi.com/howardzlh](https://ko-fi.com/howardzlh)
 - ☄️ 站内捐赠页（汇总全部捐赠通道与捐赠名单）：[stellar.guushu.com/donate](https://stellar.guushu.com/donate)
+- ✨ 贡献者宇宙（支持者名单的 3D 星空陈列页——每颗星对应一位已登记的支持者，大小与亮度随累计金额呈现）：[stellar.guushu.com/contributors](https://stellar.guushu.com/contributors)
 
 赞助没有任何回报承诺——项目的全部功能与源代码对所有人平等开放。你的支持将用于持续开发与域名维护，让它保持**免费、无广告、开源**。
 
