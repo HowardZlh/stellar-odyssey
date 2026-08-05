@@ -84,9 +84,17 @@ export function useViewportKind(): ViewportKind {
  * 临时 probe canvas 取 WebGL 能力信号（MAX_TEXTURE_SIZE / renderer），
  * getDeviceTier 判定后写 store，随即 loseContext 释放探测上下文
  * （AGENTS.md 内存管理：不留悬挂 GL 上下文）。
+ *
+ * M2 修订登记：探测由 useEffect 改为 useState 惰性初始化器——**首次渲染
+ * 期同步写入 store**。Canvas gl/dpr 档位参数仅在渲染器创建时生效，且
+ * Canvas 子树（Galaxy 粒子等）在父 effect 之前渲染/求值，effect 时序写入
+ * 会使全部 mount 期消费点读到默认 'high'。zustand 为外部 store，首渲染
+ * 尚无订阅者，初始化器内写入无重渲染副作用（一次性，StrictMode 双调用
+ * 幂等）。SSR 下不触达（typeof window 判空保持默认 'high'）。
  */
 export function useDeviceTierInit(): void {
-  useEffect(() => {
+  useState(() => {
+    if (typeof window === 'undefined') return null;
     let gl: WebGLRenderingContext | WebGL2RenderingContext | undefined;
     try {
       const probe = document.createElement('canvas');
@@ -98,5 +106,6 @@ export function useDeviceTierInit(): void {
     const store = useSimulationStore.getState();
     if (tier !== store.deviceTier) store.setDeviceTier(tier);
     gl?.getExtension('WEBGL_lose_context')?.loseContext();
-  }, []);
+    return null;
+  });
 }

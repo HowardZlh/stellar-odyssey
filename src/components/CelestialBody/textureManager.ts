@@ -28,8 +28,21 @@ import {
 import { DETAIL_LRU_CAPACITY } from '@/utils/planetDetail';
 import { lruRemove, lruRetain } from '@/utils/textureBudget';
 
-/** 最大并发加载数（保证高优先级纹理先到） */
+/** 最大并发加载数（保证高优先级纹理先到；M2-4 触屏降 2 经 configureQuality） */
 const MAX_CONCURRENT_LOADS = 3;
+
+/** 纹理各向异性过滤默认值（M2-4 medium/low 降 2 经 configureQuality） */
+const DEFAULT_ANISOTROPY = 4;
+
+/** 质量档配置项（M2-4，SolarSystemApp 启动时按 qualityTier 档位表写入一次） */
+export interface TextureQualityOptions {
+  /** 细节层 LRU 天体容量（qualityTier.detailLruCapacityForBudgetMB 换算） */
+  detailLruCapacity: number;
+  /** 各向异性过滤（4 / 2 / 2） */
+  anisotropy: number;
+  /** 并发加载数（桌面 3 / 触屏 2） */
+  maxConcurrentLoads: number;
+}
 
 type Listener = () => void;
 
@@ -46,6 +59,29 @@ class TextureManager {
   private detailOrder: string[] = [];
 
   private detailUrls = new Map<string, string[]>();
+
+  /** M2-4 质量档参数（默认 = 现状 high 档；启动时可经 configureQuality 降档） */
+  private detailCapacity = DETAIL_LRU_CAPACITY;
+
+  private anisotropy = DEFAULT_ANISOTROPY;
+
+  private maxConcurrent = MAX_CONCURRENT_LOADS;
+
+  /** 应用质量档配置（M2-4：启动一次性调用；已加载纹理不回溯改写） */
+  configureQuality(options: TextureQualityOptions): void {
+    if (!Number.isInteger(options.detailLruCapacity) || options.detailLruCapacity < 1) {
+      throw new RangeError(`LRU 容量必须为正整数，收到 ${options.detailLruCapacity}`);
+    }
+    if (!Number.isInteger(options.maxConcurrentLoads) || options.maxConcurrentLoads < 1) {
+      throw new RangeError(`并发加载数必须为正整数，收到 ${options.maxConcurrentLoads}`);
+    }
+    if (!(options.anisotropy >= 1)) {
+      throw new RangeError(`anisotropy 必须 ≥1，收到 ${options.anisotropy}`);
+    }
+    this.detailCapacity = options.detailLruCapacity;
+    this.anisotropy = options.anisotropy;
+    this.maxConcurrent = options.maxConcurrentLoads;
+  }
 
   /**
    * 请求加载纹理（幂等）：已缓存/已在队列时仅可能提升优先级
@@ -79,7 +115,7 @@ class TextureManager {
    */
   retainDetail(bodyId: string, urls: readonly string[]): void {
     this.detailUrls.set(bodyId, [...urls]);
-    const { order, evicted } = lruRetain(this.detailOrder, bodyId, DETAIL_LRU_CAPACITY);
+    const { order, evicted } = lruRetain(this.detailOrder, bodyId, this.detailCapacity);
     this.detailOrder = order;
     for (const evictedBody of evicted) {
       this.releaseUrls(this.detailUrls.get(evictedBody) ?? []);
@@ -130,7 +166,7 @@ class TextureManager {
     if (!this.loader) {
       this.loader = new THREE.TextureLoader();
     }
-    const startIds = nextToStart(this.items, MAX_CONCURRENT_LOADS);
+    const startIds = nextToStart(this.items, this.maxConcurrent);
     if (startIds.length === 0) return;
     for (const url of startIds) {
       this.items = markLoadStatus(this.items, url, 'loading');
@@ -147,7 +183,7 @@ class TextureManager {
           texture.colorSpace = url.includes('_normal')
             ? THREE.NoColorSpace
             : THREE.SRGBColorSpace;
-          texture.anisotropy = 4;
+          texture.anisotropy = this.anisotropy;
           this.textures.set(url, texture);
           this.items = markLoadStatus(this.items, url, 'loaded');
           this.notify();

@@ -44,6 +44,9 @@
  * - 加载失败静默降级到程序化纹理（proceduralTextures.ts 保留为降级路径）
  */
 
+import type { DeviceTier } from '@/utils/deviceCapability';
+import { qualityTierSpec } from '@/utils/qualityTier';
+
 /** 纹理种类：表面 / 夜灯 / 云层 / 行星环 */
 export type BodyTextureKind = 'surface' | 'night' | 'clouds' | 'ring';
 
@@ -126,6 +129,19 @@ export function detailTextureUrl(bodyId: string, kind: BodyTextureKind): string 
 }
 
 /**
+ * 4K 近观细节层按设备档过滤（M2-4）：medium/low 禁用 4K（返回 null =
+ * 近观维持 2K 基础层 + 程序化细节增强，与"无 4K 源"降级同路径）；
+ * high 档与 detailTextureUrl 逐项一致（现状零变化）。
+ */
+export function detailTextureUrlForTier(
+  bodyId: string,
+  kind: BodyTextureKind,
+  tier: DeviceTier,
+): string | null {
+  return qualityTierSpec(tier).allow4kDetail ? detailTextureUrl(bodyId, kind) : null;
+}
+
+/**
  * 法线贴图清单（P4 §4.7 近观立体细节）：
  * 地球（GEBCO 地形）、月球（LOLA LDEM）、火星（色彩亮度推导降级）。
  * URL 含 "_normal" 的纹理由 textureManager 按线性色彩空间加载（法线数据非 sRGB）。
@@ -143,4 +159,9 @@ export const BODY_NORMAL_MAPS: readonly { bodyId: string; url: string }[] = [
 export function normalMapUrl(bodyId: string): string | null {
   const entry = BODY_NORMAL_MAPS.find((t) => t.bodyId === bodyId);
   return entry ? entry.url : null;
+}
+
+/** 法线贴图按设备档过滤（M2-4：法线同属 4K 细节层，medium/low 禁用） */
+export function normalMapUrlForTier(bodyId: string, tier: DeviceTier): string | null {
+  return qualityTierSpec(tier).allow4kDetail ? normalMapUrl(bodyId) : null;
 }

@@ -11,6 +11,12 @@ import { useLaunchInit } from '@/hooks/useLaunchParams';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useKiosk } from '@/hooks/useKiosk';
 import { useDeviceTierInit, useViewportKind } from '@/hooks/useViewportKind';
+import {
+  detailLruCapacityForBudgetMB,
+  qualityTierSpec,
+  textureConcurrency,
+} from '@/utils/qualityTier';
+import { AdaptiveQualityDriver } from '@/components/Scene/AdaptiveQualityDriver';
 import { AudioController } from '@/components/Audio/AudioController';
 import { SpatialAudio } from '@/components/Audio/SpatialAudio';
 import { CameraController } from '@/components/Camera/CameraController';
@@ -47,10 +53,29 @@ export default function SolarSystemApp(): JSX.Element {
   // B5 展馆模式驱动（方案 K5）：须在 useLaunchInit 之后挂载——同批
   // effect 按 hook 声明序执行，?mode=kiosk 读取时 launch 已写入
   useKiosk();
-  // M1 触屏基建：设备档位一次性探测 + 视口类型（isTouch/isCompact）
-  // matchMedia 订阅写 store（M2 渲染降档 / M3 移动布局消费）
+  // M1 触屏基建：设备档位一次性探测（M2 修订：首渲染同步写入——Canvas
+  // gl/dpr 与场景 mount 期消费点须在渲染器创建前读到档位）+ 视口类型
+  // （isTouch/isCompact）matchMedia 订阅写 store
   useDeviceTierInit();
   useViewportKind();
+  // M2 渲染降档：Canvas gl/dpr 按档位表取值（qualityTierSpec 唯一事实源；
+  // gl 参数仅渲染器创建时生效，无需响应式订阅）
+  const deviceTier = useSimulationStore((s) => s.deviceTier);
+  const quality = qualityTierSpec(deviceTier);
+
+  // M2 启动一次性配置：low 档 bloom 默认关（用户仍可手动开启）+
+  // 纹理管线降档（LRU 容量/anisotropy/触屏并发；isTouch 由 useViewportKind
+  // 的先序 effect 写入，本 effect 声明在后故读到已同步值）
+  useEffect(() => {
+    const s = useSimulationStore.getState();
+    const spec = qualityTierSpec(s.deviceTier);
+    if (!spec.bloomDefault) s.setBloomEnabled(false);
+    getTextureManager().configureQuality({
+      detailLruCapacity: detailLruCapacityForBudgetMB(spec.textureLruBudgetMB),
+      anisotropy: spec.anisotropy,
+      maxConcurrentLoads: textureConcurrency(s.isTouch),
+    });
+  }, []);
 
   // 应用卸载时释放全部位图纹理与 glTF 模型（AGENTS.md 内存管理）
   useEffect(() => {
@@ -66,8 +91,13 @@ export default function SolarSystemApp(): JSX.Element {
         // M1-2 手势隔离：Canvas 容器 touch-action none——双指捏合/单指拖动
         // 完全交给 OrbitControls，杜绝页面级缩放与滚动
         className="touch-none"
-        // 对数深度缓冲：尺度管理方案的一部分，避免大尺度 z-fighting（需求 5.1）
-        gl={{ logarithmicDepthBuffer: true, antialias: true }}
+        // M2 档位化（qualityTier.ts 唯一事实源；high 档 = 现状：对数深度
+        // 缓冲避免大尺度 z-fighting（需求 5.1）+ antialias + dpr [1,2]）
+        gl={{
+          logarithmicDepthBuffer: quality.logarithmicDepthBuffer,
+          antialias: quality.antialias,
+        }}
+        dpr={quality.dpr as number | [number, number]}
         camera={{
           position: [
             CAMERA_VIEWS.L2.position.x,
@@ -92,6 +122,9 @@ export default function SolarSystemApp(): JSX.Element {
         <SpatialAudio />
         {/* Bloom 泛光后处理（P3-3，需求 4.6）：选择性发光 + 层级适配强度 */}
         <PostEffects />
+        {/* M2-2 全局自适应质量驱动：仅 medium 设备挂载（挂载策略登记见
+            AdaptiveQualityDriver 文件头；high 桌面零变化 / low 恒锁无可调） */}
+        {deviceTier === 'medium' && <AdaptiveQualityDriver />}
       </Canvas>
 
       {/* B5 §5.1-A UI 显隐受控组件（受控方式登记 = 顶层包裹二选一取此：

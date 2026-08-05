@@ -9,6 +9,7 @@ import { useSimulationStore } from '@/store';
 import type { Vec3 } from '@/types';
 import { getPlanetById } from '@/data/planets';
 import { eventAutoTriggerAllowed } from '@/utils/eventScopes';
+import { qualityTierSpec } from '@/utils/qualityTier';
 import { heliocentricPosition } from '@/utils/physics';
 import { createSeededRandom } from '@/utils/random';
 import { eclipticToScene, trapezoidWeight } from '@/utils/scale';
@@ -205,16 +206,23 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
   const windStartRadius = radius * 1.15;
   const windCycle = useMemo(() => windCycleDays(windStartRadius), [windStartRadius]);
 
+  // M2-3 太阳活动粒子按设备档缩放（qualityTier.ts：1 / 1 / 0.5——low 档
+  // 风 3,000 + CME 4,500 = 峰值 7,500，近观预算 10,000 内；floor 缩放，
+  // 比例 1 恒等 = 现状零回退；确定性种子序列不变，前 N 粒子一致）
+  const solarScale = qualityTierSpec(useSimulationStore.getState().deviceTier).solarParticleScale;
+  const windCount = Math.floor(WIND_PARTICLE_COUNT * solarScale);
+  const cmeCount = Math.floor(CME_PARTICLE_COUNT * solarScale);
+
   // ---- 太阳风常驻粒子（§4.3-4 + S4 D1 帕克螺旋 / D2 CIR）----
   const wind = useMemo(() => {
     const rand = createSeededRandom(WIND_SEED);
-    const dirs = new Float32Array(WIND_PARTICLE_COUNT * 3);
-    const seeds = new Float32Array(WIND_PARTICLE_COUNT);
+    const dirs = new Float32Array(windCount * 3);
+    const seeds = new Float32Array(windCount);
     // S3 日冕洞快风：粒子方向落在冕洞锥内时速度增益（快风源）
-    const speedFac = new Float32Array(WIND_PARTICLE_COUNT);
+    const speedFac = new Float32Array(windCount);
     // S4 D2 CIR：快慢风交界带密度/亮度增强（方向静态，烘进 attribute）
-    const cirFac = new Float32Array(WIND_PARTICLE_COUNT);
-    for (let i = 0; i < WIND_PARTICLE_COUNT; i += 1) {
+    const cirFac = new Float32Array(windCount);
+    for (let i = 0; i < windCount; i += 1) {
       // 均匀球面方向（全方向外流）
       const cosPolar = rand() * 2 - 1;
       const sinPolar = Math.sqrt(Math.max(0, 1 - cosPolar * cosPolar));
@@ -232,7 +240,7 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
       cirFac[i] = cirBrightnessFactor(cosHole);
     }
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(WIND_PARTICLE_COUNT * 3), 3));
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(windCount * 3), 3));
     geometry.setAttribute('aDir', new THREE.BufferAttribute(dirs, 3));
     geometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
     geometry.setAttribute('aSpeedFac', new THREE.BufferAttribute(speedFac, 1));
@@ -303,18 +311,18 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
       `,
     });
     return { geometry, material };
-  }, [windCycle, windStartRadius]);
+  }, [windCycle, windStartRadius, windCount]);
 
   // ---- CME 粒子壳层（§4.3-3 + S4 C1 三分量 / C2 加速段）----
   const cme = useMemo(() => {
     const rand = createSeededRandom(CME_SEED);
-    const dirs = cmeConeDirections(CME_PARTICLE_COUNT, rand);
-    const jitter = new Float32Array(CME_PARTICLE_COUNT);
-    const seeds = new Float32Array(CME_PARTICLE_COUNT);
+    const dirs = cmeConeDirections(cmeCount, rand);
+    const jitter = new Float32Array(cmeCount);
+    const seeds = new Float32Array(cmeCount);
     // S4 C1 三分量：每粒子径向位置因子（亮核/暗腔/亮前沿）+ 分层亮度
-    const radFactor = new Float32Array(CME_PARTICLE_COUNT);
-    const layerBright = new Float32Array(CME_PARTICLE_COUNT);
-    for (let i = 0; i < CME_PARTICLE_COUNT; i += 1) {
+    const radFactor = new Float32Array(cmeCount);
+    const layerBright = new Float32Array(cmeCount);
+    for (let i = 0; i < cmeCount; i += 1) {
       // 壳层厚度：径向速度抖动 ±15%（壳层随扩张增厚，真实 CME 形态）
       jitter[i] = 0.85 + 0.3 * rand();
       seeds[i] = rand();
@@ -323,7 +331,7 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
       layerBright[i] = cmeLayerBrightness(layer);
     }
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(CME_PARTICLE_COUNT * 3), 3));
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(cmeCount * 3), 3));
     geometry.setAttribute('aDir', new THREE.BufferAttribute(dirs, 3));
     geometry.setAttribute('aJitter', new THREE.BufferAttribute(jitter, 1));
     geometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
@@ -384,7 +392,7 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
       `,
     });
     return { geometry, material };
-  }, [radius]);
+  }, [radius, cmeCount]);
 
   // ---- 耀斑辉光广告牌（局部增亮的体积感补充，Bloom 联动） ----
   const flareGlow = useMemo(() => {

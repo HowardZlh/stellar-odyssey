@@ -31,6 +31,8 @@ import {
   slidingWindowFps,
 } from '@/utils/adaptiveQuality';
 import { DETAIL_LAYER_TRANSITION_SECONDS } from '@/utils/detailLayer';
+import { qualityTierSpec } from '@/utils/qualityTier';
+import { useSimulationStore } from '@/store';
 import { useDetailLayer } from '@/hooks/useDetailLayer';
 import {
   createVolumeMaterial,
@@ -148,8 +150,11 @@ export function GalaxyDustVolumeLayer({
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
 
-  const adaptiveRef = useRef(createAdaptiveQuality(0));
-  const blendRef = useRef(createQualityBlend('high'));
+  // M2-2 体积档设备起点（qualityTier.ts）：medium 起 mid；low 设备恒锁
+  // low（32 步 + RT 0.5）；high 桌面起 high = 现状
+  const deviceVolume = qualityTierSpec(useSimulationStore.getState().deviceTier);
+  const adaptiveRef = useRef(createAdaptiveQuality(0, deviceVolume.volumeInitialTier));
+  const blendRef = useRef(createQualityBlend(deviceVolume.volumeInitialTier));
   const nowMsRef = useRef(0);
   const qualityTextRef = useRef('');
 
@@ -234,7 +239,10 @@ export function GalaxyDustVolumeLayer({
   // ① 自适应质量 + 淡入权重（默认优先级，晚于组定位）
   useFrame((_, delta) => {
     nowMsRef.current += delta * 1000;
-    const state = recordQualityFrame(adaptiveRef.current, nowMsRef.current);
+    // M2-2：low 设备锁定起始档不推进（恒 32 步 + RT 0.5）
+    const state = deviceVolume.volumeTierLocked
+      ? adaptiveRef.current
+      : recordQualityFrame(adaptiveRef.current, nowMsRef.current);
     const blend = advanceQualityBlend(blendRef.current, state.tier, delta);
     const u = resources.material.uniforms;
     const steps = clampVolumeSteps(resources.baseSigmaSteps * blend.stepScale);

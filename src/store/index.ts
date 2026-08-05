@@ -301,6 +301,13 @@ export interface SimulationState {
    * M3 移动布局消费。
    */
   isCompact: boolean;
+  /**
+   * 自适应质量 bloom 门（M2-2，默认 true）：AdaptiveQualityDriver 在
+   * 全局质量档跌至 low 时置 false（PostEffects 生效 bloom =
+   * bloomEnabled && adaptiveBloomGate），恢复升档回 true。桌面（high
+   * 设备）不挂载驱动，恒 true = 现状。用户 bloomEnabled 开关不受改写。
+   */
+  adaptiveBloomGate: boolean;
 
   // actions
   tick: (realDeltaSeconds: number) => void;
@@ -345,6 +352,8 @@ export interface SimulationState {
   setIsTouch: (isTouch: boolean) => void;
   /** 写入紧凑视口标记（M1：useViewportKind 同步） */
   setIsCompact: (isCompact: boolean) => void;
+  /** 写入自适应 bloom 门（M2：AdaptiveQualityDriver 换档联动） */
+  setAdaptiveBloomGate: (gate: boolean) => void;
   /** 相机缩放驱动的连续层级同步（不触发锚点过渡动画） */
   syncZoomLevel: (continuousLevel: number) => void;
   /**
@@ -694,6 +703,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   deviceTier: 'high',
   isTouch: false,
   isCompact: false,
+  adaptiveBloomGate: true,
 
   setLaunchParams: (params) => set({ launch: params }),
 
@@ -702,6 +712,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   setIsTouch: (isTouch) => set({ isTouch }),
 
   setIsCompact: (isCompact) => set({ isCompact }),
+
+  setAdaptiveBloomGate: (gate) => set({ adaptiveBloomGate: gate }),
 
   setUiVisible: (visible) => set({ uiVisible: visible }),
 

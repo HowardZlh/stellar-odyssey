@@ -18,6 +18,7 @@ import {
   writeClusterLensingEffectStrength,
 } from '@/utils/clusterLensing';
 import { advanceFrameTransition } from '@/utils/galacticFrame';
+import { qualityTierSpec } from '@/utils/qualityTier';
 import { ClusterLensingPass } from '@/components/Scene/ClusterLensingEffect';
 
 /**
@@ -42,7 +43,13 @@ import { ClusterLensingPass } from '@/components/Scene/ClusterLensingEffect';
  * multisampling=4 补偿离屏渲染目标失去的默认 MSAA。
  */
 export function PostEffects(): JSX.Element | null {
-  const bloomEnabled = useSimulationStore((s) => s.bloomEnabled);
+  // M2-2 生效 bloom = 用户开关 && 自适应门（桌面门恒 true = 现状；
+  // medium 设备全局档跌 low 时 AdaptiveQualityDriver 关门省 Bloom 开销）
+  const bloomEnabled = useSimulationStore((s) => s.bloomEnabled && s.adaptiveBloomGate);
+  // M2-1 multisampling 按设备档（4 / 2 / 0；启动一次性写入，会话内不变）
+  const multisampling = useSimulationStore(
+    (s) => qualityTierSpec(s.deviceTier).multisampling,
+  );
   // R4-23 域判据（复用 LensingArcs 现状：跟随/飞往 cluster-lensing）
   const lensFocused = useSimulationStore(
     (s) =>
@@ -101,7 +108,7 @@ export function PostEffects(): JSX.Element | null {
   if (!bloomEnabled && !lensMounted) return null;
 
   return (
-    <EffectComposer multisampling={4}>
+    <EffectComposer multisampling={multisampling}>
       {/* R4-23 透镜 Effect（非跟随不挂载零开销；置于 Bloom 之前） */}
       {lensMounted || lensFocused ? (
         <ClusterLensingPass getStrength={getLensStrength} />

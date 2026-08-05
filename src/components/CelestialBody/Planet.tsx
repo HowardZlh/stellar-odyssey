@@ -7,7 +7,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { PlanetData } from '@/types';
 import { getMoonsByParent } from '@/data/moons';
-import { detailTextureUrl, normalMapUrl, textureUrl } from '@/data/textures';
+import { detailTextureUrlForTier, normalMapUrlForTier, textureUrl } from '@/data/textures';
 import { useSimulationStore } from '@/store';
 import { useBitmapTexture } from '@/hooks/useBitmapTexture';
 import {
@@ -384,15 +384,16 @@ export function Planet({ data }: PlanetProps): JSX.Element {
 
   // P4 近观细节层（需求 4.7）：4K 底图 + 法线贴图，仅门控激活时请求
   // （优先级 0/1 最高；2K 底图先显示防空窗，textureManager LRU 管显存）
-  const detailUrls = useMemo(
-    () => ({
-      surface: detailTextureUrl(data.id, 'surface'),
-      night: detailTextureUrl(data.id, 'night'),
-      clouds: detailTextureUrl(data.id, 'clouds'),
-      normal: normalMapUrl(data.id),
-    }),
-    [data.id],
-  );
+  // M2-4：medium/low 档禁 4K/法线（null 走既有"无 4K 源"降级路径）
+  const detailUrls = useMemo(() => {
+    const tier = useSimulationStore.getState().deviceTier;
+    return {
+      surface: detailTextureUrlForTier(data.id, 'surface', tier),
+      night: detailTextureUrlForTier(data.id, 'night', tier),
+      clouds: detailTextureUrlForTier(data.id, 'clouds', tier),
+      normal: normalMapUrlForTier(data.id, tier),
+    };
+  }, [data.id]);
   const detailSurfaceBitmap = useBitmapTexture(detailUrls.surface, 0, detailActive);
   const detailNightBitmap = useBitmapTexture(detailUrls.night, 1, detailActive);
   const detailCloudsBitmap = useBitmapTexture(detailUrls.clouds, 1, detailActive);
