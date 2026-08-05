@@ -15,7 +15,6 @@ import { formatSimDateParts } from '@/utils/time';
 import { HudStatusPanel } from '@/components/UI/hud/HudStatusPanel';
 import { EventNoticeColumn } from '@/components/UI/hud/EventNoticeColumn';
 import { SolarFeatureCard } from '@/components/UI/hud/SolarFeatureCard';
-import { SunLayerCard } from '@/components/UI/hud/SunLayerCard';
 import { BodyInfoPanel } from '@/components/UI/hud/BodyInfoPanel';
 
 /**
@@ -31,9 +30,10 @@ import { BodyInfoPanel } from '@/components/UI/hud/BodyInfoPanel';
  * 双目录；黑子/日珥卡片与剖面分层经数据层 `*En` 字段；dataSource 署名
  * 同随 locale（含中文的署名补 `dataSourceEn`/`*_SOURCE_EN`，纯英文原样）。
  *
- * M3-2 拆分：五个悬浮区机械搬移至 hud/ 子组件（右上 HUD 状态区 /
- * 事件通知列 / 太阳特征卡 / 剖面分层卡 / 信息面板），桌面渲染结果
- * 不变；本组件保留低频（0.25s）刷新循环并向下透传计算结果。
+ * M3-2 拆分：悬浮区机械搬移至 hud/ 子组件（右上 HUD 状态区 /
+ * 事件通知列 / 太阳特征卡 / 信息面板），桌面渲染结果不变；本组件
+ * 保留低频（0.25s）刷新循环并向下透传计算结果。剖面分层卡
+ * （SunLayerCard）左下角布局收口后迁至左侧列容器（LeftColumn）挂载。
  * isCompact 移动布局分流见各子组件文件头。
  */
 export function HudInfo(): JSX.Element {
@@ -91,7 +91,6 @@ export function HudInfo(): JSX.Element {
       <HudStatusPanel simDate={simDate} scaleText={scaleText} galacticText={galacticText} />
       <EventNoticeColumn mergerCard={mergerCard} />
       <SolarFeatureCard />
-      <SunLayerCard />
       <BodyInfoPanel cycleLine={cycleLine} />
     </>
   );

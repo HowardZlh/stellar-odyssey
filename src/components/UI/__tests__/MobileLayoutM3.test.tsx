@@ -20,6 +20,8 @@ import { ContactBadge, CONTACT_EMAIL } from '../ContactBadge';
 import { ControlPanel } from '../ControlPanel';
 import { HelpHint } from '../HelpHint';
 import { HudInfo } from '../HudInfo';
+import { LeftColumn } from '../LeftColumn';
+import { SunLayerCard } from '../hud/SunLayerCard';
 
 const initialState = useSimulationStore.getState();
 
@@ -96,9 +98,10 @@ describe('ControlPanel 抽屉化（M3-1）', () => {
     expect(useSimulationStore.getState().showOrbits).toBe(false);
   });
 
-  it('桌面保持左上面板 + 把手（回归）', () => {
-    const { container } = render(<ControlPanel />);
-    expect(container.querySelector('.left-4.top-4.w-64')).not.toBeNull();
+  it('桌面保持左上面板 + 把手（回归，左下角布局收口：定位由 LeftColumn 提供）', () => {
+    const { container } = render(<LeftColumn />);
+    expect(container.querySelector('.bottom-4.left-4.top-4')).not.toBeNull();
+    expect(container.querySelector('.w-64')).not.toBeNull();
     expect(screen.getByRole('button', { name: '收起控制面板' })).toBeInTheDocument();
   });
 });
@@ -172,6 +175,8 @@ describe('底部卡区互斥（M3-2：特征卡 > 剖面卡 > 信息面板）', 
     earthCount: 10,
   };
 
+  // 左下角布局收口：SunLayerCard 挂载点迁至 LeftColumn，互斥逻辑仍在
+  // 卡片组件内部——测试同挂 HudInfo + SunLayerCard 还原运行时组合
   it('三者同时触发：仅太阳特征卡可见', () => {
     setCompact();
     useSimulationStore.setState({
@@ -180,7 +185,12 @@ describe('底部卡区互斥（M3-2：特征卡 > 剖面卡 > 信息面板）', 
       sunCutawayLayer: 'core',
       selectedSolarFeature: feature,
     });
-    render(<HudInfo />);
+    render(
+      <>
+        <HudInfo />
+        <SunLayerCard />
+      </>,
+    );
     expect(screen.getByText('黑子群测试')).toBeInTheDocument();
     // 剖面卡与信息面板让位（范围行/飞往按钮不出现）
     expect(screen.queryByText('范围')).not.toBeInTheDocument();
@@ -195,7 +205,12 @@ describe('底部卡区互斥（M3-2：特征卡 > 剖面卡 > 信息面板）', 
       sunCutawayLayer: 'core',
       selectedSolarFeature: feature,
     });
-    render(<HudInfo />);
+    render(
+      <>
+        <HudInfo />
+        <SunLayerCard />
+      </>,
+    );
     act(() => {
       useSimulationStore.getState().setSelectedSolarFeature(null);
     });
@@ -214,7 +229,12 @@ describe('底部卡区互斥（M3-2：特征卡 > 剖面卡 > 信息面板）', 
       sunCutawayLayer: 'core',
       selectedSolarFeature: feature,
     });
-    render(<HudInfo />);
+    render(
+      <>
+        <HudInfo />
+        <SunLayerCard />
+      </>,
+    );
     expect(screen.getByText('黑子群测试')).toBeInTheDocument();
     expect(screen.getByText('范围')).toBeInTheDocument();
     expect(screen.getByText(/飞往（F）/)).toBeInTheDocument();

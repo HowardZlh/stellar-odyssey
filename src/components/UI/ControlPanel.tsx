@@ -80,14 +80,21 @@ function PanelToggle({
  * ☰ 钮开合，store.mobilePanel 互斥位；默认收起，max-h-[60dvh] 内滚），
  * 视角格/事件钮大触控化 + checkbox → toggle switch（max-md 断点承载，
  * PanelToggle）+ 滑块 thumb 28px（globals.css 媒体查询）。桌面
- * （md: 以上）保持 absolute left-4 top-4 w-64 + 把手收起逻辑不变。
+ * （md: 以上）为左侧列容器（LeftColumn）首子项：w-64 + 内容区超高
+ * 内滚 + 把手收起逻辑不变（左下角布局收口）。
  */
 export function ControlPanel(): JSX.Element {
   const isCompact = useSimulationStore((s) => s.isCompact);
   return isCompact ? <MobileControlDrawer /> : <DesktopControlPanel />;
 }
 
-/** 桌面布局（拆分前原样）：左上固定面板 + 右缘收起把手 */
+/**
+ * 桌面布局：左侧列容器（LeftColumn）首子项 + 右缘收起把手。
+ * 左下角布局收口：根元素改为列内 flex 子项（min-h-0 可收缩），内容区
+ * overflow-y-auto——面板超高（视口矮/选项多）时内部滚动，不再向下溢出
+ * 挤占列底 SunLayerCard / ContactBadge；定位（left-4 top-4）由列容器
+ * 提供，收起把手平移逻辑不变。
+ */
 function DesktopControlPanel(): JSX.Element {
   const tr = useT();
   // UI 布局优化：面板收起态（把手按钮切换；沉浸模式联动收起/展开）
@@ -95,10 +102,10 @@ function DesktopControlPanel(): JSX.Element {
   const toggleCollapsed = useSimulationStore((s) => s.toggleControlPanelCollapsed);
 
   return (
-    // 收起时整体向左平移（面板宽 16rem + left-4 的 1rem = 刚好滑出屏幕），
-    // 组件不卸载、内部状态保留；右缘把手随动留在屏幕左缘供展开
+    // 收起时整体向左平移（面板宽 16rem + 列容器 left-4 的 1rem = 刚好
+    // 滑出屏幕），组件不卸载、内部状态保留；右缘把手随动留在屏幕左缘供展开
     <div
-      className={`absolute left-4 top-4 w-64 select-none text-sm transition-transform duration-300 ${
+      className={`pointer-events-auto relative flex min-h-0 w-64 flex-col select-none text-sm transition-transform duration-300 ${
         collapsed ? '-translate-x-[calc(100%+1rem)]' : ''
       }`}
     >
@@ -113,7 +120,10 @@ function DesktopControlPanel(): JSX.Element {
       >
         {collapsed ? '▶' : '◀'}
       </button>
-      <div className="rounded-lg bg-space-panel p-4 backdrop-blur" aria-hidden={collapsed}>
+      <div
+        className="hud-scroll min-h-0 overflow-y-auto overscroll-contain rounded-lg bg-space-panel p-4 backdrop-blur"
+        aria-hidden={collapsed}
+      >
         <ControlPanelSections />
       </div>
     </div>

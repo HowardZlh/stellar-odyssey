@@ -12,11 +12,14 @@ import { useSimulationStore } from '@/store';
 
 /**
  * 剖面分层科普卡片（S2 §4.1：各层可点选高亮并显示说明）。
- * M3-2 自 HudInfo 机械拆分，桌面渲染结果不变。
+ * M3-2 自 HudInfo 机械拆分；左下角布局收口后挂载点迁至左侧列容器
+ * （LeftColumn）——桌面态为列内 flex 子项（shrink-0 + max-h 封顶，
+ * 超高时内部滚动），位于列底 ContactBadge 上方，视觉仍在左下角；
+ * 显隐判定逻辑（剖面模式 + 选中分层）零改动。
  *
  * M3 移动布局（isCompact）：并入底部卡区（与太阳特征卡同一插槽），
  * 互斥规则——太阳特征卡（SolarFeatureCard）可见时本卡让位隐藏，
- * 特征卡关闭即恢复（桌面两卡各占左下/底部中央，互不影响照旧）。
+ * 特征卡关闭即恢复（桌面/移动布局分流不变）。
  */
 export function SunLayerCard(): JSX.Element | null {
   const tr = useT();
@@ -40,7 +43,7 @@ export function SunLayerCard(): JSX.Element | null {
       className={
         isCompact
           ? 'fixed inset-x-0 bottom-[calc(3rem+env(safe-area-inset-bottom))] z-10 max-h-[40dvh] select-text overflow-y-auto rounded-t-lg border-t border-orange-300/30 bg-space-panel p-4 text-sm backdrop-blur hud-scroll'
-          : 'absolute bottom-4 left-4 w-72 select-text rounded-lg border border-orange-300/30 bg-space-panel p-4 text-xs backdrop-blur'
+          : 'hud-scroll pointer-events-auto max-h-[40vh] w-72 shrink-0 select-text overflow-y-auto overscroll-contain rounded-lg border border-orange-300/30 bg-space-panel p-4 text-xs backdrop-blur'
       }
     >
       <div className="mb-2 flex items-center justify-between">

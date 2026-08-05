@@ -19,12 +19,17 @@ export const DONATE_PAGE_PATH = '/donate';
  * 商业合作角标（左下角常驻）：点击展开小卡片（邮箱 + GitHub Issues +
  * 爱发电赞助链接 + 一句话说明），再次点击或点击卡片外任意位置收起。
  *
- * 布局与避让登记：
- * - 左下角冲突处理取「临时隐藏」方案（隐藏/上移二选一）：任一事件通知
- *   可见（耀斑/CME/CME 抵达/超新星）或太阳剖面分层卡片占用左下角
- *   （sunCutawayMode 且已选分层）时整体隐藏，条件解除即恢复；
- * - 不遮挡 3D 交互：根元素为左下角小尺寸 fixed 定位，角标外区域无覆盖层，
- *   点击外部收起经 window pointerdown 被动监听实现（不拦截、不 preventDefault），
+ * 布局登记（左下角布局收口，取代原「临时隐藏」避让方案）：
+ * - 桌面态为左侧列容器（LeftColumn）footer 子项（shrink-0 永不压缩）：
+ *   事件通知（顶部中央渲染，物理无重叠）不再触发隐藏；剖面分层卡
+ *   （SunLayerCard）同列排布在本角标上方，由 flex 布局保证互不重叠——
+ *   原四个 `*NoticeVisible` + sunCutawayMode 的 avoided 判定整段删除；
+ * - 「常驻」边界：uiVisible=false（H 键/展馆模式）经顶层包裹整体隐藏；
+ *   模态弹层（z-30+）正常覆盖本角标（不抬 z-index）；
+ * - 展开卡 max-h 封顶超高内滚（矮视口兜底）；
+ * - 不遮挡 3D 交互：根元素为小尺寸子项（列容器 pointer-events-none、
+ *   本组件 pointer-events-auto），角标外区域无覆盖层，点击外部收起经
+ *   window pointerdown 被动监听实现（不拦截、不 preventDefault），
  *   canvas 拖拽/滚轮不受影响；
  * - 样式口径与 ControlPanel 一致（bg-space-panel 深色半透明 + backdrop-blur）；
  * - kiosk 接入收口（B5 §5.1-A）：store `uiVisible` 已交付，本组件经
@@ -46,21 +51,6 @@ export function ContactBadge(): JSX.Element | null {
   const isCompact = useSimulationStore((s) => s.isCompact);
   const mobileOpen = useSimulationStore((s) => s.mobilePanel === 'contact');
   const setMobilePanel = useSimulationStore((s) => s.setMobilePanel);
-
-  // 避让判定：事件通知可见标志 + 左下角剖面分层卡片（实际占位者）
-  const avoided = useSimulationStore(
-    (s) =>
-      s.solarFlareNoticeVisible ||
-      s.cmeNoticeVisible ||
-      s.cmeArrivalNoticeVisible ||
-      s.supernovaNoticeVisible ||
-      (s.sunCutawayMode && s.sunCutawayLayer !== null),
-  );
-
-  // 隐藏期间收起卡片（恢复显示时回到未展开的初始态）
-  useEffect(() => {
-    if (avoided) setExpanded(false);
-  }, [avoided]);
 
   // 展开时点击卡片外任意位置收起（被动监听，不拦截场景交互）
   useEffect(() => {
@@ -117,7 +107,7 @@ export function ContactBadge(): JSX.Element | null {
         <div
           role="dialog"
           aria-label={tr('contactBadge.dialogAriaLabel')}
-          className="relative w-full max-w-80 rounded-lg border border-space-accent/30 bg-space-panel p-4 backdrop-blur"
+          className="hud-scroll relative max-h-[85dvh] w-full max-w-80 overflow-y-auto overscroll-contain rounded-lg border border-space-accent/30 bg-space-panel p-4 backdrop-blur"
         >
           <div className="flex items-start justify-between gap-2">
             <h3 className="text-base font-semibold text-space-accent">
@@ -149,15 +139,13 @@ export function ContactBadge(): JSX.Element | null {
     );
   }
 
-  if (avoided) return null;
-
   return (
-    <div ref={rootRef} className="fixed bottom-4 left-4 text-xs">
+    <div ref={rootRef} className="pointer-events-auto shrink-0 text-xs">
       {expanded && (
         <div
           role="dialog"
           aria-label={tr('contactBadge.dialogAriaLabel')}
-          className="mb-2 w-64 rounded-lg border border-space-accent/30 bg-space-panel p-4 backdrop-blur"
+          className="hud-scroll mb-2 max-h-[50vh] w-64 overflow-y-auto overscroll-contain rounded-lg border border-space-accent/30 bg-space-panel p-4 backdrop-blur"
         >
           <h3 className="text-sm font-semibold text-space-accent">
             {tr('contactBadge.title')}

@@ -25,9 +25,8 @@ import { getTextureManager } from '@/components/CelestialBody/textureManager';
 import { getSatelliteModelManager } from '@/components/CelestialBody/modelManager';
 import { BodyCycleSwitcher } from '@/components/UI/BodyCycleSwitcher';
 import { BottomTabBar } from '@/components/UI/BottomTabBar';
-import { ContactBadge } from '@/components/UI/ContactBadge';
-import { ControlPanel } from '@/components/UI/ControlPanel';
 import { HudInfo } from '@/components/UI/HudInfo';
+import { LeftColumn } from '@/components/UI/LeftColumn';
 import { KioskBadge } from '@/components/UI/KioskBadge';
 import { LaunchLogo } from '@/components/UI/LaunchLogo';
 import { LoadingProgress } from '@/components/UI/LoadingProgress';
@@ -138,15 +137,15 @@ export default function SolarSystemApp(): JSX.Element {
           select-none 禁 UI 文本长按选中（信息面板科学文案经 select-text
           豁免保持可复制，见 HudInfo） */}
       <div hidden={!uiVisible} className="touch-manipulation select-none">
-        <ControlPanel />
+        {/* 左侧列容器（左下角布局收口）：ControlPanel + SunLayerCard +
+            ContactBadge 同列排布互不重叠（角标常驻可见，原事件避让隐藏
+            逻辑删除；B1 预留登记收口：经本包裹接入 uiVisible） */}
+        <LeftColumn />
         <HudInfo />
         {/* 行星视角天体切换（P4，需求 3.2.4：仅 L1 语境显示） */}
         <BodyCycleSwitcher />
         <PerformanceMonitor />
         <HelpHint />
-        {/* 商业合作角标（左下角常驻，事件通知/剖面卡片占位时避让隐藏；
-            B1 预留登记收口：经本包裹接入 uiVisible） */}
-        <ContactBadge />
         {/* M3-3 移动底部标签栏（仅 isCompact 渲染；帮助/巡游/控制/投喂
             四入口合并，桌面零变化） */}
         <BottomTabBar />

@@ -1,7 +1,8 @@
 /**
- * 商业合作角标单测（B1）：渲染 / 展开收起（按钮切换、点击外部收起、
- * 卡片内点击不收起）/ 避让分支（四类事件通知 + 剖面分层卡片逐一触发
- * 隐藏与恢复、隐藏期间展开态重置）/ 卸载清理外部点击监听。
+ * 商业合作角标单测（B1，左下角布局收口修订）：渲染 / 展开收起（按钮
+ * 切换、点击外部收起、卡片内点击不收起）/ 常驻可见（事件通知与剖面
+ * 分层卡触发时不再避让隐藏——原「临时隐藏」方案已由 LeftColumn 列
+ * 布局取代）/ 卸载清理外部点击监听。
  */
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -16,8 +17,8 @@ import {
   SPONSOR_AFDIAN_URL,
 } from '../ContactBadge';
 
-/** 避让相关标志复位（其余 store 字段不动，沿用既有 store 测试口径） */
-function resetAvoidanceFlags(): void {
+/** 事件/剖面相关标志复位（其余 store 字段不动，沿用既有 store 测试口径） */
+function resetEventFlags(): void {
   useSimulationStore.setState({
     solarFlareNoticeVisible: false,
     cmeNoticeVisible: false,
@@ -29,7 +30,7 @@ function resetAvoidanceFlags(): void {
 }
 
 beforeEach(() => {
-  resetAvoidanceFlags();
+  resetEventFlags();
 });
 
 /** 展开卡片的公共操作 */
@@ -57,16 +58,6 @@ describe('ContactBadge 渲染', () => {
     expect(
       donate.compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-  });
-
-  it('事件避让时捐赠入口随角标一并隐藏', () => {
-    render(<ContactBadge />);
-    act(() => {
-      useSimulationStore.setState({ supernovaNoticeVisible: true });
-    });
-    expect(
-      screen.queryByRole('link', { name: '打开捐赠页（新标签页）' }),
-    ).not.toBeInTheDocument();
   });
 
   it('展开后卡片包含邮箱 mailto 链接、GitHub Issues 链接与爱发电赞助链接', () => {
@@ -124,7 +115,7 @@ describe('ContactBadge 展开/收起', () => {
   });
 });
 
-describe('ContactBadge 事件避让（隐藏方案）', () => {
+describe('ContactBadge 常驻可见（左下角布局收口：避让隐藏逻辑已删除）', () => {
   it.each([
     ['solarFlareNoticeVisible', { solarFlareNoticeVisible: true }],
     ['cmeNoticeVisible', { cmeNoticeVisible: true }],
@@ -134,38 +125,22 @@ describe('ContactBadge 事件避让（隐藏方案）', () => {
       'sunCutawayMode + sunCutawayLayer',
       { sunCutawayMode: true, sunCutawayLayer: 'core' as const },
     ],
-  ])('%s 为真时角标隐藏，复位后恢复', (_label, patch) => {
+  ])('%s 为真时角标与捐赠入口保持可见', (_label, patch) => {
     render(<ContactBadge />);
     act(() => {
       useSimulationStore.setState(patch);
     });
-    expect(screen.queryByRole('button', { name: /商业合作/ })).not.toBeInTheDocument();
-    act(() => {
-      resetAvoidanceFlags();
-    });
     expect(screen.getByRole('button', { name: /商业合作/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '打开捐赠页（新标签页）' })).toBeInTheDocument();
   });
 
-  it('剖面模式开启但未选分层时不避让', () => {
-    render(<ContactBadge />);
-    act(() => {
-      useSimulationStore.setState({ sunCutawayMode: true, sunCutawayLayer: null });
-    });
-    expect(screen.getByRole('button', { name: /商业合作/ })).toBeInTheDocument();
-  });
-
-  it('展开状态下触发避让，解除后回到收起初始态', () => {
+  it('事件通知期间展开态保持（不再强制收起）', () => {
     render(<ContactBadge />);
     expandBadge();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     act(() => {
       useSimulationStore.setState({ supernovaNoticeVisible: true });
     });
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    act(() => {
-      resetAvoidanceFlags();
-    });
-    expect(screen.getByRole('button', { name: /商业合作/ })).toBeInTheDocument();
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
