@@ -218,6 +218,47 @@ export function validateM13Profile(raw: unknown): M13ProfileData | null {
 }
 
 /**
+ * M2 耶鲁亮星（yale_bright_stars.json，契约 C3）：裸数组 `{ra,dec,mag,bv}[]`，
+ * ra/dec 单位为度。来源：Yale Bright Star Catalog, 5th Revised Ed.
+ * (Hoffleit & Warren 1991)，烘焙登记见 scripts/bake-data/。
+ */
+export interface YaleBrightStar {
+  /** 赤经（度，J2000，[0, 360)） */
+  ra: number;
+  /** 赤纬（度，J2000，[-90, 90]） */
+  dec: number;
+  /** 视星等（≤ 6.5，契约 C3 口径） */
+  mag: number;
+  /** B−V 色指数（缺失值烘焙期按 0.5 兜底；极红碳星可达 ~3.9） */
+  bv: number;
+}
+
+/** 亮星条数域（M1 烘焙自校验同判据：mag ≤ 6.5 实际 8404 条，差异登记 §M1-1） */
+const YALE_STAR_COUNT_MIN = 8300;
+const YALE_STAR_COUNT_MAX = 9200;
+
+/**
+ * 校验耶鲁亮星产物（契约 C3）：裸数组、条数域 [8300, 9200]、
+ * ra ∈ [0, 360)、dec ∈ [-90, 90]、mag ∈ [-2, 6.5]、bv ∈ [-1.5, 6]（M1 域断言同源）。
+ * 失败返回 null（消费方显示降级提示，星穹不渲染）。
+ */
+export function validateYaleBrightStars(raw: unknown): YaleBrightStar[] | null {
+  if (!Array.isArray(raw)) return null;
+  if (raw.length < YALE_STAR_COUNT_MIN || raw.length > YALE_STAR_COUNT_MAX) return null;
+  const validated: YaleBrightStar[] = [];
+  for (const item of raw) {
+    if (!isRecord(item)) return null;
+    const { ra, dec, mag, bv } = item;
+    if (!isFiniteNumber(ra) || ra < 0 || ra >= 360) return null;
+    if (!isFiniteNumber(dec) || dec < -90 || dec > 90) return null;
+    if (!isFiniteNumber(mag) || mag < -2 || mag > 6.5) return null;
+    if (!isFiniteNumber(bv) || bv < -1.5 || bv > 6) return null;
+    validated.push({ ra, dec, mag, bv });
+  }
+  return validated;
+}
+
+/**
  * R5-1 星系影像权重图 meta（public/data/galaxy-maps/<id>-meta.json；
  * 来源/授权/反投影方法与残差/失真登记随产物分发，附录 A §2/§3）。
  */
@@ -485,6 +526,11 @@ export async function loadGalaxyCatalog(baseUrl = '/data'): Promise<GalaxyCatalo
   const data = validateGalaxyCatalog(await fetchArrayBuffer(url));
   if (data !== null) cache.set(url, data);
   return data;
+}
+
+/** 加载耶鲁亮星目录（M2 星穹；失败返回 null，消费方显示降级提示） */
+export async function loadYaleBrightStars(baseUrl = '/data'): Promise<YaleBrightStar[] | null> {
+  return loadValidated(`${baseUrl}/yale_bright_stars.json`, validateYaleBrightStars);
 }
 
 /** 加载星系影像权重图 meta（R5-1；失败返回 null，消费方降级参数化） */

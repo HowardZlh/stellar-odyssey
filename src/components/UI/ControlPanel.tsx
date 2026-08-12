@@ -23,6 +23,7 @@ import {
 import { FERMI_BUBBLES_SOURCE_EN, FERMI_BUBBLES_SOURCE_ZH } from '@/utils/fermiBubbles';
 import { SN_DEFAULT_DURATION_SEC } from '@/utils/supernova';
 import { UNLOCK_PAGE_PATH } from '@/utils/unlockPage';
+import { LAB_PAGE_PATH } from '@/utils/lab';
 import { rollSupernovaParams } from '@/components/Scene/Supernova';
 import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunActivity';
 
@@ -716,6 +717,21 @@ function ControlPanelSections(): JSX.Element {
           )}
         </section>
       )}
+
+      {/* M2：天文实验室入口（i18n 双语；新标签页打开独立实验室页，
+          不干扰主场景交互，场景 chunk 零进入主页首屏 bundle） */}
+      <section className="mt-4">
+        <h2 className="mb-2 text-xs text-gray-400 max-md:text-sm">{tr('lab.entrySection')}</h2>
+        <a
+          href={LAB_PAGE_PATH}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={tr('lab.entryAria')}
+          className="block w-full rounded bg-sky-400/20 px-2 py-1.5 text-center text-xs text-sky-200 hover:bg-sky-400/30 max-md:py-3 max-md:text-sm"
+        >
+          🔭 {tr('lab.entryLabel')}
+        </a>
+      </section>
 
       {/* U2-4：支持者解锁入口（权益状态 + 跳转 /unlock；对价口径文案，
           与 ContactBadge / donate 页零交叉——同源纪律登记） */}

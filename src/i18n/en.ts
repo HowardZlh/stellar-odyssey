@@ -169,6 +169,25 @@ export const en: I18nDict = {
     demoQuotaExhausted: "Today's free demos are used up — unlock for unlimited",
     cycleLockedTooltip: 'Galaxy/Universe tours are supporter-only',
   },
+  lab: {
+    entrySection: 'Astronomy Lab',
+    entryLabel: 'Enter the Astronomy Lab',
+    entryAria: 'Open the Astronomy Lab (new tab)',
+    title: 'Astronomy Lab',
+    subtitle: 'Interactive sky experiments built on real catalogs and physical models',
+    backToApp: 'Back to the star map',
+    backToLab: 'Back to the lab',
+    open: 'Enter experiment',
+    dataSourceLabel: 'Data sources',
+    loadingScene: 'Loading lab scene…',
+    loadingStars: 'Loading bright star catalog…',
+    starsFailed: 'Failed to load the bright star catalog — the star dome is unavailable. Please refresh and retry.',
+    unknownEntry: 'Unregistered lab experiment',
+    hintLookAround: 'Drag to look around the night sky · Scroll to nudge the view distance',
+    meteorShowerTitle: 'Midsummer Twin Meteor Showers',
+    meteorShowerDescription:
+      'A physics-driven observing field for the Perseids and κ-Cygnids: a real star dome from the Yale Bright Star Catalog (8,404 stars, mag ≤ 6.5) projected in horizontal coordinates — a mid-northern night sky you can look around.',
+  },
   helpHint: {
     controls:
       '🖱 Drag to rotate · Scroll to zoom · Right-drag to pan \u00a0|\u00a0 ⌨ 1-4 switch views · [ / ] tour previous/next body (per view domain: planet system / Solar System / galaxy / universe sequences) · G galactic-center view (in the galaxy view, look down on the Solar System riding its wavy orbit around the Galactic Center; press again to re-follow the Solar System) · V vertical expansion (galaxy view only; the whole galaxy morphs into an oblate spheroid: disk / supernovae / special objects spread out with gain, with height indicator lines) · Space pause · M audio · O orbit lines \u00a0|\u00a0 Click a planet for details',

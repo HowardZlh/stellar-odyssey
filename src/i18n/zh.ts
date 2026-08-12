@@ -198,6 +198,35 @@ export const zh = {
     demoQuotaExhausted: '今日免费演示次数已用完，解锁后不限次',
     cycleLockedTooltip: '银河系/宇宙巡游为支持者专属',
   },
+  /**
+   * 天文实验室（M2 骨架：/lab 首页 + /lab/meteor-shower 场景页 + 主界面入口）。
+   * 条目标题/描述键由 utils/lab.ts 注册表以 MessageKey 类型引用（契约 C4）。
+   */
+  lab: {
+    /** 主界面控制面板入口（emoji 🔭 由组件层持有） */
+    entrySection: '天文实验室',
+    entryLabel: '进入天文实验室',
+    entryAria: '打开天文实验室（新标签页）',
+    /** /lab 首页 */
+    title: '天文实验室',
+    subtitle: '基于真实星表与物理模型的可交互天象实验',
+    backToApp: '返回星图',
+    backToLab: '返回实验室',
+    open: '进入实验',
+    dataSourceLabel: '数据来源',
+    /** 场景页加载态（next/dynamic 场景 chunk + 亮星 JSON 两级提示） */
+    loadingScene: '正在加载实验室场景…',
+    loadingStars: '正在加载亮星星表…',
+    starsFailed: '亮星星表加载失败，星穹暂不可用——请刷新页面重试',
+    /** 未注册条目占位（/lab/<id> 直达无效 id 时） */
+    unknownEntry: '未注册的实验条目',
+    /** 场景操作提示 */
+    hintLookAround: '拖动环顾夜空 · 滚轮微调视距',
+    /** 流星雨条目（utils/lab.ts 注册表引用） */
+    meteorShowerTitle: '盛夏双重流星雨',
+    meteorShowerDescription:
+      '英仙座与天鹅座κ双流星雨的物理仿真观测场：耶鲁亮星目录真实星穹（8,404 颗，视星等 ≤ 6.5）按地平坐标投影，可环顾仰望的北纬夜空。',
+  },
   helpHint: {
     /**
      * 操作引导正文（迁移自 HelpHint JSX：空格/\u00a0 与原 JSX 空白折叠
