@@ -1,36 +1,31 @@
 'use client';
 
 /**
- * 盛夏双重流星雨实验室场景（M2 骨架阶段：真实星穹 + 地面剪影 + 环顾相机；
- * 流星条痕/余迹/控件面板随 M3、音频/移动端降级随 M4 递进）
+ * 盛夏双重流星雨实验室场景（M3：星穹 + 流星条痕 + 余迹 + 辐射点标注 +
+ * 控件面板；音频/移动端降级随 M4 递进）
  *
  * 比例尺登记（契约 C5）：1 场景单位 = 1 km（独立比例尺，与主场景
  * SCENE_UNITS_PER_AU 无关）；星穹半径 3000；相机漫游半径 0.1–1.5。
  * 轴向约定（契约 C5，防东西镜像）：+Y = 天顶、−Z = 正北、+X = 正东；
- * 方位角 Az 北起经东（N=0°，E=90°）。星穹投影与相机初始朝向一律经 M1
- * 纯函数（utils/meteorShower.ts 坐标族），组件内不内联球面公式（契约 C1
- * 只消费不改）。
+ * 方位角 Az 北起经东（N=0°，E=90°）。星穹投影/辐射点/流量链一律经 M1
+ * 纯函数（utils/meteorShower.ts），组件内不内联球面公式（契约 C1 只消费）。
  *
- * 星穹渲染（M2-4，1 draw call THREE.Points）：
- * - position attribute 存赤道系单位向量（equatorialUnitVector，初始化一次）；
- * - 顶点 shader 乘 uEquatorialToHorizontal（CPU 每帧 equatorialToHorizontalMatrix
- *   求得——本阶段硬编码英仙座历元 LST₀=353.5°（2026-08-13 02:00）+ 纬度 40°N，
- *   恒星时随真实流逝缓慢推进；timeScale/hourOffset 控件接入归 M3）；
- * - `aMag > uLimitingMag` 移出裁剪域剔除；B−V → bvToTeffK（Ballesteros 2012，
- *   R4-17 复用）→ blackbodyRGB 黑体色；星等 → 尺寸/亮度简单幂律（M3 目验再调）。
- * - 渲染循环零 attribute 上传、零 GC（契约 C2.1 红线同口径），仅更新 uniforms。
+ * 渲染架构（§4.1 draw call 预算）：星场 1 + 流星 1 + 余迹 1 = 3 个粒子系统
+ * draw call，禁止合并；渲染循环零 attribute 上传、零 buffer 重建——唯一
+ * 例外是页签切换流星雨（契约 C2.1：入速不同拟合系数必换，slots useMemo
+ * 一次性重建，uTime 同步归零对齐新历元）。
  *
- * 地面剪影登记：暗色圆盘置于 y = −1.7（视觉上与需求 y=0 等价——地平线角偏差
- * atan(1.7/3000) ≈ 0.03°）；下沉理由：环顾相机为 OrbitControls 反转轨道范式
- * （target 固定原点、相机绕至 target 下方仰望天顶，最低点 y = −1.5），圆盘若
- * 严格置于 y=0 会遮挡整个天空。圆盘同时遮蔽地平线以下的星（深度测试）。
+ * 状态流：控件面板（DOM）写 React state → 渲染期同步进 settingsRef →
+ * Canvas 子树 useFrame 逐帧读 ref 更新 uniforms（滑杆拖动零场景重渲染）；
+ * HUD 由 500 ms interval 经 M1 纯函数读 ref 计算（地方时/辐射点高度角）。
  *
- * 临时 debug（M2-CP 目验用）：URL `?lm=<mag>` 覆写极限星等（默认 6.5 全量
- * 显示；调低即暗星批量消失检查点）。M3 接入正式 limitingMag 控件后收编。
+ * 地面剪影登记：暗色圆盘置于 y = −1.7（视觉上与需求 y=0 等价——地平线角
+ * 偏差 atan(1.7/3000) ≈ 0.03°）；下沉理由：环顾相机为反转轨道范式（target
+ * 固定原点、最低点 y = −1.5），圆盘严格置 y=0 会遮挡整个天空。
  */
 
 import type { JSX } from 'react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
@@ -44,16 +39,32 @@ import { labEntryForId, LAB_PAGE_PATH } from '@/utils/lab';
 import {
   CAMERA_RADIUS_MAX_UNITS,
   CAMERA_RADIUS_MIN_UNITS,
-  DEFAULT_OBSERVER_LAT_DEG,
+  EPOCH_LOCAL_HOURS,
+  KAPPA_CYGNIDS,
+  METEOR_SLOT_COUNT,
   PERSEIDS,
   STAR_DOME_RADIUS_UNITS,
   equatorialToHorizontalMatrix,
   equatorialUnitVector,
+  formatClockHHMM,
+  horizontalFromEquatorial,
+  localClockHours,
   localSiderealTime,
+  makeMeteorSlots,
   sceneDirFromAltAz,
 } from '@/utils/meteorShower';
 import { bvToTeffK, srgbToLinear01 } from '@/utils/pleiadesCatalog';
 import { blackbodyRGB } from '@/utils/starPhysics';
+import type { MessageKey } from '@/i18n';
+import { MeteorField } from '@/components/Lab/MeteorField';
+import { AfterglowField } from '@/components/Lab/AfterglowField';
+import { RadiantMarker } from '@/components/Lab/RadiantMarker';
+import {
+  LabControlPanel,
+  type LabHudState,
+  type MeteorShowerId,
+} from '@/components/Lab/LabControlPanel';
+import { DEFAULT_LAB_CONTROLS, type LabControlState, type LabFrameRefs } from '@/components/Lab/labTypes';
 
 /** 度 → 弧度（单位换算，非球面公式） */
 const DEG = Math.PI / 180;
@@ -61,8 +72,8 @@ const DEG = Math.PI / 180;
 /** 地面剪影圆盘 y（≈0 视觉等价，实现性下沉登记见文件头） */
 const GROUND_DISK_Y_UNITS = -1.7;
 
-/** 极限星等默认值（M2 全量显示；M3 控件默认 6.0 届时接管） */
-const LIMITING_MAG_DEFAULT = 6.5;
+/** 流星槽位烘焙种子（确定性，跨会话一致） */
+const METEOR_SLOT_SEED = 20260813;
 
 /** 相机初始视线：北偏东 25°、高度角 40°（北极星/仙后座/北斗均在视野可及） */
 const INITIAL_VIEW_DIR = sceneDirFromAltAz({ altRad: 40 * DEG, azRad: 25 * DEG });
@@ -76,6 +87,12 @@ const INITIAL_CAMERA_POSITION: [number, number, number] = [
   -INITIAL_VIEW_DIR[1] * INITIAL_CAMERA_RADIUS,
   -INITIAL_VIEW_DIR[2] * INITIAL_CAMERA_RADIUS,
 ];
+
+/** 辐射点星座名标签键（DOM 层按页签选择；场景组件不订阅 locale） */
+const RADIANT_LABEL_KEYS: Record<MeteorShowerId, MessageKey> = {
+  perseids: 'lab.radiantLabelPerseids',
+  kappaCygnids: 'lab.radiantLabelKappaCygnids',
+};
 
 const STAR_DOME_VERTEX_SHADER = /* glsl */ `
   attribute float aMag;
@@ -96,7 +113,7 @@ const STAR_DOME_VERTEX_SHADER = /* glsl */ `
     // 赤道系单位向量 → 地平系（CPU 每帧求矩阵，M1 equatorialToHorizontalMatrix）
     vec3 dir = uEqToHor * position;
     vec4 mvPosition = modelViewMatrix * vec4(dir * uDomeRadius, 1.0);
-    // 星等 → 尺寸：简单幂律（mag 0 为 uSize 基准；M3 目验再调）
+    // 星等 → 尺寸：简单幂律（mag 0 为 uSize 基准）
     float size = uSize * pow(1.32, -aMag);
     gl_PointSize = clamp(size * (uScale / -mvPosition.z), 1.0, 24.0);
     // 星等 → 亮度：半对数压缩 10^(−0.2·mag)，亮星微超 1 供 Bloom 拾取
@@ -117,17 +134,26 @@ const STAR_DOME_FRAGMENT_SHADER = /* glsl */ `
   }
 `;
 
+/** 场景推进时钟：uTime += delta × timeScale（页签切换由父级归零） */
+function LabTimeDriver({ refs }: { refs: LabFrameRefs }): null {
+  useFrame((_, delta) => {
+    // 钳制 delta 防页签切回时跳帧（uTime 突进 = 流星集体跳相位）
+    refs.timeSecRef.current += Math.min(delta, 0.1) * refs.settingsRef.current.timeScale;
+  });
+  return null;
+}
+
 interface StarDomeProps {
   stars: readonly YaleBrightStar[];
-  /** 极限星等（暗于此值的星被剔除；M2 经 ?lm= 临时覆写） */
-  limitingMag: number;
+  refs: LabFrameRefs;
 }
 
 /**
  * 真实星穹（1 draw call）：8,404 颗耶鲁亮星，attribute 初始化一次，
- * 每帧仅更新旋转矩阵/像素尺度 uniforms。
+ * 每帧仅更新旋转矩阵/极限星等/像素尺度 uniforms（M3：limitingMag /
+ * observerLat / hourOffset / timeScale 控件经 refs 接管，历元随页签切换）。
  */
-function StarDome({ stars, limitingMag }: StarDomeProps): JSX.Element {
+function StarDome({ stars, refs }: StarDomeProps): JSX.Element {
   const { geometry, material } = useMemo(() => {
     const n = stars.length;
     const positions = new Float32Array(n * 3);
@@ -154,7 +180,7 @@ function StarDome({ stars, limitingMag }: StarDomeProps): JSX.Element {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uEqToHor: { value: new THREE.Matrix3() },
-        uLimitingMag: { value: LIMITING_MAG_DEFAULT },
+        uLimitingMag: { value: DEFAULT_LAB_CONTROLS.limitingMag },
         uSize: { value: 30 },
         uScale: { value: 400 },
         uDomeRadius: { value: STAR_DOME_RADIUS_UNITS },
@@ -176,17 +202,16 @@ function StarDome({ stars, limitingMag }: StarDomeProps): JSX.Element {
     };
   }, [geometry, material]);
 
-  useEffect(() => {
-    material.uniforms.uLimitingMag.value = limitingMag;
-  }, [material, limitingMag]);
-
   useFrame((state) => {
+    const s = refs.settingsRef.current;
+    const shower = refs.showerRef.current;
     // 点大小随屏幕像素高度衰减（Starfield 同口径）
     material.uniforms.uScale.value = state.gl.domElement.height * 0.5;
-    // 恒星时演化：M2 硬编码英仙座历元 + 纬度 40°N（timeScale/hourOffset 归 M3）
-    const elapsedHours = state.clock.elapsedTime / 3600;
-    const lst = localSiderealTime(PERSEIDS.epochLst0Deg, 0, elapsedHours);
-    const m = equatorialToHorizontalMatrix(DEFAULT_OBSERVER_LAT_DEG, lst);
+    // limitingMag 同时驱动恒星剔除与流量压低（§1.4 自洽联动）
+    material.uniforms.uLimitingMag.value = s.limitingMag;
+    // 恒星时演化：历元随页签、时长随 timeScale 放大后的共享 uTime
+    const lst = localSiderealTime(shower.epochLst0Deg, s.hourOffset, refs.timeSecRef.current / 3600);
+    const m = equatorialToHorizontalMatrix(s.observerLat, lst);
     (material.uniforms.uEqToHor.value as THREE.Matrix3).set(...m);
   });
 
@@ -205,30 +230,70 @@ function GroundDisk(): JSX.Element {
   );
 }
 
-/** 从 URL 读取临时 debug 极限星等（?lm=，钳制 [1, 6.5]；无参数取默认） */
-function readLimitingMagOverride(): number {
-  if (typeof window === 'undefined') return LIMITING_MAG_DEFAULT;
-  const raw = new URLSearchParams(window.location.search).get('lm');
-  if (raw === null) return LIMITING_MAG_DEFAULT;
-  const parsed = Number.parseFloat(raw);
-  if (!Number.isFinite(parsed)) return LIMITING_MAG_DEFAULT;
-  return Math.max(1, Math.min(6.5, parsed));
-}
-
 /**
  * 实验室场景主组件（`/lab/meteor-shower` 经 next/dynamic ssr:false 挂载）。
- * DOM 覆盖层（返回链接/加载态/操作提示）订阅 locale；Canvas 子树不订阅
- * （3D 场景 locale 纪律）。
+ * DOM 覆盖层（返回链接/控件面板/HUD/加载态）订阅 locale；Canvas 子树不订阅
+ * （3D 场景 locale 纪律，辐射点星座名走 LabelText 叶组件）。
  */
 export function MeteorShowerLab(): JSX.Element {
   const tr = useT();
   const { stars, status } = useYaleBrightStars();
   const entry = labEntryForId('meteor-shower');
-  // ?lm= 只在挂载时读取一次（目验时刷新生效即可）
-  const limitingMagRef = useRef<number | null>(null);
-  if (limitingMagRef.current === null) {
-    limitingMagRef.current = readLimitingMagOverride();
-  }
+
+  const [showerId, setShowerId] = useState<MeteorShowerId>('perseids');
+  const [settings, setSettings] = useState<LabControlState>(DEFAULT_LAB_CONTROLS);
+  const [hud, setHud] = useState<LabHudState>({ clockText: '--:--', radiantAltDeg: 0 });
+
+  const shower = showerId === 'perseids' ? PERSEIDS : KAPPA_CYGNIDS;
+
+  // 帧循环共享 refs（渲染期同步赋值：useFrame 读到的永远是最新控件值）
+  const timeSecRef = useRef(0);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const showerRef = useRef(shower);
+  showerRef.current = shower;
+  const refs: LabFrameRefs = useMemo(
+    () => ({ timeSecRef, settingsRef, showerRef }),
+    []
+  );
+
+  // 槽位烘焙：RK4 + 拟合一次性完成；页签切换重建（契约 C2.1 唯一例外路径）
+  const slots = useMemo(() => makeMeteorSlots(METEOR_SLOT_SEED, METEOR_SLOT_COUNT, shower), [shower]);
+
+  const handleShowerChange = (id: MeteorShowerId): void => {
+    if (id === showerId) return;
+    // 换历元：uTime 归零对齐新历元起点（交互事件路径，非每帧）
+    timeSecRef.current = 0;
+    setShowerId(id);
+  };
+
+  // HUD：500 ms 间隔经 M1 纯函数计算（DOM 层，不进 useFrame）
+  useEffect(() => {
+    const tick = (): void => {
+      const s = settingsRef.current;
+      const sh = showerRef.current;
+      const elapsedHours = timeSecRef.current / 3600;
+      const lst = localSiderealTime(sh.epochLst0Deg, s.hourOffset, elapsedHours);
+      const radiant = horizontalFromEquatorial(
+        sh.radiantRaDeg,
+        sh.radiantDecDeg,
+        s.observerLat,
+        lst
+      );
+      const clockText = formatClockHHMM(
+        localClockHours(EPOCH_LOCAL_HOURS[sh.id], s.hourOffset, elapsedHours)
+      );
+      const radiantAltDeg = Math.round(radiant.altRad / DEG);
+      setHud((prev) =>
+        prev.clockText === clockText && prev.radiantAltDeg === radiantAltDeg
+          ? prev
+          : { clockText, radiantAltDeg }
+      );
+    };
+    tick();
+    const id = window.setInterval(tick, 500);
+    return () => window.clearInterval(id);
+  }, []);
 
   return (
     <div className="relative h-screen w-screen bg-black">
@@ -243,7 +308,14 @@ export function MeteorShowerLab(): JSX.Element {
         }}
       >
         <color attach="background" args={['#000004']} />
-        {stars && <StarDome stars={stars} limitingMag={limitingMagRef.current} />}
+        <LabTimeDriver refs={refs} />
+        {stars && <StarDome stars={stars} refs={refs} />}
+        {/* 流星 + 余迹：与星场共 3 个粒子系统 draw call（§4.1，禁止合并） */}
+        <MeteorField slots={slots} refs={refs} />
+        <AfterglowField slots={slots} refs={refs} />
+        {settings.showRadiant && hud.radiantAltDeg > 0 && (
+          <RadiantMarker refs={refs} labelKey={RADIANT_LABEL_KEYS[showerId]} />
+        )}
         <GroundDisk />
         {/* 环顾式仰视（§2）：target 固定原点、半径钳制 0.1–1.5、禁平移；
             polar 域 [π/2 − 0.35, π − 0.02]——视线俯角 ≤20°（不看穿地面）、
@@ -261,7 +333,7 @@ export function MeteorShowerLab(): JSX.Element {
           dampingFactor={0.12}
         />
         {/* 后期：Bloom + ACES ToneMapping（DevPreviewHarness 同配置；
-            M3 火流星 HDR 闪爆复用本管线） */}
+            火流星末端闪爆 HDR ×15 由 Bloom 拾取，§4.4） */}
         <EffectComposer multisampling={4}>
           <Bloom intensity={0.6} luminanceThreshold={0.6} luminanceSmoothing={0.2} mipmapBlur />
           <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
@@ -277,6 +349,15 @@ export function MeteorShowerLab(): JSX.Element {
           <div className="mt-1 font-semibold text-sky-300">{tr(entry.titleKey)}</div>
         )}
       </div>
+
+      {/* 右上：控件面板（§3） */}
+      <LabControlPanel
+        showerId={showerId}
+        onShowerChange={handleShowerChange}
+        settings={settings}
+        onSettingsChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
+        hud={hud}
+      />
 
       {/* 底部：操作提示 */}
       <p className="pointer-events-none absolute bottom-3 left-1/2 max-w-[calc(100%-1.5rem)] -translate-x-1/2 truncate whitespace-nowrap rounded bg-black/40 px-3 py-1 text-[10px] text-gray-400 backdrop-blur">

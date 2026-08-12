@@ -220,12 +220,36 @@ export const zh = {
     starsFailed: '亮星星表加载失败，星穹暂不可用——请刷新页面重试',
     /** 未注册条目占位（/lab/<id> 直达无效 id 时） */
     unknownEntry: '未注册的实验条目',
-    /** 场景操作提示 */
-    hintLookAround: '拖动环顾夜空 · 滚轮微调视距',
+    /** 场景操作提示（方案 A：双指滚动环顾 / 捏合缩放视野） */
+    hintLookAround: '拖动或双指滚动环顾夜空 · 双指捏合缩放视野',
     /** 流星雨条目（utils/lab.ts 注册表引用） */
     meteorShowerTitle: '盛夏双重流星雨',
     meteorShowerDescription:
       '英仙座与天鹅座κ双流星雨的物理仿真观测场：耶鲁亮星目录真实星穹（8,404 颗，视星等 ≤ 6.5）按地平坐标投影，可环顾仰望的北纬夜空。',
+    /** M3 控件面板/科普卡片/HUD/辐射点标注（单位记号 ×/h/°/m/s/mag 由组件层持有） */
+    panelTitle: '观测控制台',
+    showerTabAria: '切换流星雨',
+    showerPerseids: '英仙座',
+    showerKappaCygnids: '天鹅座κ',
+    cardRadiant: '辐射点',
+    cardSpeed: '入速',
+    cardZhr: 'ZHR',
+    cardParent: '母体',
+    parentPerseids: '109P/Swift–Tuttle 彗星',
+    parentKappaCygnids: '未确定（候选体尚存争议）',
+    ctrlTimeScale: '时间流速',
+    ctrlHourOffset: '地方时偏移',
+    ctrlLimitingMag: '光害（极限星等）',
+    ctrlObserverLat: '观测纬度',
+    ctrlAdvanced: '高级控件',
+    ctrlFireballRate: '火流星概率增益',
+    ctrlWindSpeed: '高空风速',
+    ctrlRadiantMarker: '辐射点标注',
+    hudLocalTime: '地方时',
+    hudRadiantAlt: '辐射点高度角',
+    /** 辐射点标注星座名（3D 场景经 LabelText 叶组件消费） */
+    radiantLabelPerseids: '英仙座',
+    radiantLabelKappaCygnids: '天鹅座',
   },
   helpHint: {
     /**

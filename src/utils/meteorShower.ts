@@ -86,6 +86,16 @@ export interface MeteorShowerParams {
   epochLst0Deg: number;
   /** 火流星槽位基础比例（天鹅座κ以慢速火流星著称 → 基数更高，§3 控件 6） */
   fireballSlotFraction: number;
+  /**
+   * 槽位循环周期（秒，契约 C2 默认 60 s 的按雨覆写——M3 登记差异）。
+   *
+   * 量化陷阱：门控激活槽位数 = HR×T/3600（期望值）。T=60 时英仙座 ≈0.88、
+   * 天鹅座κ ≈0.026——固定 aGateRank 下激活集被量化为整数槽位，低流量雨
+   * 将**恒为零颗可见**（与 §1.4 流量模型矛盾）。按雨取 T 使默认观测条件
+   * （历元 + 纬度 40° + lm 6.0）下期望激活槽位 ≥ 1；单颗流星出现率
+   * = 激活槽位数/T 恒等于 HR/3600，物理速率不受 T 影响。
+   */
+  cyclePeriodSec: number;
 }
 
 /**
@@ -101,6 +111,8 @@ export const PERSEIDS: MeteorShowerParams = {
   populationIndex: 2.2,
   epochLst0Deg: 353.5,
   fireballSlotFraction: 0.1,
+  // 默认条件 HR≈53/h → 期望激活槽位 ≈53（多样性充足；见接口注释量化说明）
+  cyclePeriodSec: 3600,
 };
 
 /**
@@ -116,6 +128,60 @@ export const KAPPA_CYGNIDS: MeteorShowerParams = {
   populationIndex: 3.0,
   epochLst0Deg: 310,
   fireballSlotFraction: 0.25,
+  // 默认条件 HR≈1.58/h → T=4800 s 期望激活 ≈2.1 槽（≥1 普通 + ≥1 火流星候选）
+  cyclePeriodSec: 4800,
+};
+
+// ---------------------------------------------------------------------------
+// 常量：M3 渲染/控件（需求 §3 / §4）
+// ---------------------------------------------------------------------------
+
+/** 流星槽位数（§4 全量档；reduced 减半归 M4） */
+export const METEOR_SLOT_COUNT = 200;
+
+/** 条痕顶点数 K（§4.3 域 [16, 32]） */
+export const METEOR_TRAIL_VERTICES = 24;
+
+/** 火流星碎片组数（§1.5：2–3 组独立子顶点） */
+export const METEOR_FRAGMENT_GROUPS = 3;
+
+/** 每碎片组子顶点数（mini 条痕） */
+export const METEOR_FRAGMENT_VERTICES = 6;
+
+/** 碎裂锥角半角（§1.5：≲2°） */
+export const FRAGMENT_CONE_HALF_ANGLE_RAD = (2 * Math.PI) / 180;
+
+/** 碎片横向位移上限（场景单位 km，§1.5：数百 m 至 1 km） */
+export const FRAGMENT_MAX_LATERAL_KM = 1;
+
+/** 碎裂时刻（生命周期进度，§1.5：t≈0.8 处崩溃） */
+export const FRAGMENT_BREAKUP_PROGRESS = 0.8;
+
+/** 余迹粒子预算（§4：500+ 档） */
+export const AFTERGLOW_PARTICLE_BUDGET = 500;
+
+/** 余迹绑定槽位上限（亮流星/火流星子集） */
+export const AFTERGLOW_MAX_SLOTS = 50;
+
+/** 普通流星余迹渐隐时长域（秒，§1.5：1–3 s） */
+export const AFTERGLOW_FADE_ORDINARY_SEC: [number, number] = [1, 3];
+
+/** 火流星余迹渐隐时长（秒，§1.5：~10 s） */
+export const AFTERGLOW_FADE_FIREBALL_SEC = 10;
+
+/** limitingMag 控件默认值（§3 控件 4） */
+export const DEFAULT_LIMITING_MAG = 6.0;
+
+/** fireballRate 控件默认值（§3 控件 6；uFireballFraction 直接取控件值） */
+export const DEFAULT_FIREBALL_RATE = 0.3;
+
+/** windSpeed 控件默认值（m/s，§3 控件 7） */
+export const DEFAULT_WIND_SPEED_M_PER_SEC = 30;
+
+/** 各雨历元当地时刻（小时，§1.3：英仙座 8/13 02:00 / 天鹅座κ 8/17 23:00） */
+export const EPOCH_LOCAL_HOURS: Record<MeteorShowerParams['id'], number> = {
+  perseids: 2,
+  kappaCygnids: 23,
 };
 
 // ---------------------------------------------------------------------------
@@ -562,6 +628,18 @@ export interface MeteorSlot {
  * 若复用同一随机数，门控分数小时被激活槽位的相位会集中在 [0, frac) 区间，
  * 流星将每周期挤成一团爆发（已识别设计陷阱，单测锁定独立性）。
  *
+ * M3 登记差异（采样分布调整，shader 门控公式不变）：
+ * - aGateRank 分层采样：rank = (随机置换名次 + 抖动)/count——边缘分布仍为
+ *   均匀 [0,1) 且与 aSeed 独立（契约 C2 本义完整保留），但消除 iid 采样的
+ *   激活槽位数量化方差（iid 下 uFluxFraction≈0.004 时有 ~40% 概率零槽激活，
+ *   天空恒空；分层后激活数 = ⌊flux×count⌋ ± 1 确定性成立）。
+ * - 火流星身份按门控名次 Bresenham 均匀铺开（份额 = fireballSlotFraction 精确
+ *   命中，且任意低名次前缀含比例份额）——保证低流量下激活集内有火流星候选。
+ * - 火流星槽位的 aFireballRank 按其门控名次序分层递增——fireballRate 控件
+ *   单调响应（调高逐个点亮门控名次靠前的火流星），且最低名次火流星在默认
+ *   fireballRate 下即激活（目验可达性）。普通槽位 aFireballRank 保持 iid
+ *   （shader 不消费）。
+ *
  * @param seed 确定性种子（createSeededRandom，全项目粒子系统统一）
  * @param count 槽位数（M3 全量 200+，reduced 档减半）
  * @param shower 流星雨参数（入速决定拟合系数——页签切换必须重建）
@@ -575,13 +653,37 @@ export function makeMeteorSlots(
     throw new RangeError(`槽位数必须为正整数，收到 ${count}`);
   }
   const rand = createSeededRandom(seed);
+
+  // 门控名次置换（Fisher–Yates；与后续每槽位随机数相互独立）
+  const gateOrder = new Array<number>(count);
+  for (let i = 0; i < count; i++) gateOrder[i] = i;
+  for (let i = count - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [gateOrder[i], gateOrder[j]] = [gateOrder[j], gateOrder[i]];
+  }
+
+  // 火流星身份按名次 Bresenham 铺开（k 名次是否为火流星 + 火流星序号）
+  const f = shower.fireballSlotFraction;
+  const isFireballAtRank = new Array<boolean>(count);
+  const fireballOrdinalAtRank = new Array<number>(count);
+  let fireballCount = 0;
+  for (let k = 0; k < count; k++) {
+    const fb = Math.floor((k + 1) * f + 0.5) > Math.floor(k * f + 0.5);
+    isFireballAtRank[k] = fb;
+    fireballOrdinalAtRank[k] = fireballCount;
+    if (fb) fireballCount++;
+  }
+
   const slots: MeteorSlot[] = [];
   for (let i = 0; i < count; i++) {
-    // 三个独立随机数（契约 C2：禁止复用）
+    const gateRankIndex = gateOrder[i];
+    // 相位/门控/火流星门控：三个独立随机量（契约 C2：禁止复用）
     const aSeed = rand();
-    const aGateRank = rand();
-    const aFireballRank = rand();
-    const isFireball = rand() < shower.fireballSlotFraction;
+    const aGateRank = (gateRankIndex + rand()) / count;
+    const isFireball = isFireballAtRank[gateRankIndex];
+    const aFireballRank = isFireball
+      ? (fireballOrdinalAtRank[gateRankIndex] + rand()) / Math.max(fireballCount, 1)
+      : rand();
 
     // 质量对数均匀采样（§1.1）
     const [massLo, massHi] = isFireball ? MASS_RANGE_FIREBALL_KG : MASS_RANGE_ORDINARY_KG;
@@ -667,6 +769,84 @@ export function ignitedSlots(
 export function slotPhase(aSeed: number, timeSec: number, cyclePeriodSec: number): number {
   const x = aSeed + timeSec / cyclePeriodSec;
   return x - Math.floor(x);
+}
+
+// ---------------------------------------------------------------------------
+// M3 渲染/控件联动纯函数（§1.5 / §3 / §4.3）
+// ---------------------------------------------------------------------------
+
+/**
+ * 火流星碎片横向位移量级（场景单位 km，§1.5）
+ *
+ * 碎片速度矢量偏离主体 ≤ FRAGMENT_CONE_HALF_ANGLE_RAD（半角 2°）：
+ * 横向位移 = tan(半角) × 崩溃后剩余路径长（位移多项式在 [0.8T, T] 段增量），
+ * 上限钳制 FRAGMENT_MAX_LATERAL_KM（数百 m 至 1 km 量级）。
+ * 供 aFragDir attribute 烘焙（方向随机单位向量 × 本量级）。
+ */
+export function fragmentLateralMagnitudeKm(
+  dispCoefs: readonly [number, number, number],
+  lifetimeSec: number
+): number {
+  if (!(lifetimeSec > 0)) {
+    throw new RangeError(`寿命必须为正，收到 ${lifetimeSec}`);
+  }
+  const sEnd = evalCubic(dispCoefs, lifetimeSec);
+  const sBreak = evalCubic(dispCoefs, FRAGMENT_BREAKUP_PROGRESS * lifetimeSec);
+  const lateral = Math.tan(FRAGMENT_CONE_HALF_ANGLE_RAD) * Math.max(sEnd - sBreak, 0);
+  return Math.min(FRAGMENT_MAX_LATERAL_KM, lateral);
+}
+
+/**
+ * 场景当地时钟（小时，[0, 24)；HUD 显示用，§3 控件 3）
+ *
+ * 当地时 = 历元时刻 + hourOffset + 场景推进时长（timeScale 放大后），
+ * 与 LST 简化模型共用同一 (hourOffset + elapsedHours) 输入——时钟与
+ * 星穹旋转自洽联动。
+ */
+export function localClockHours(
+  epochLocalHour: number,
+  hourOffset: number,
+  elapsedHours: number
+): number {
+  const h = (epochLocalHour + hourOffset + elapsedHours) % 24;
+  return h < 0 ? h + 24 : h;
+}
+
+/** 小时数 → "HH:MM"（HUD 地方时展示；输入任意实数小时，先归一到 [0,24)） */
+export function formatClockHHMM(hours: number): string {
+  if (!Number.isFinite(hours)) {
+    throw new RangeError(`小时数必须有限，收到 ${hours}`);
+  }
+  const normalized = ((hours % 24) + 24) % 24;
+  const totalMinutes = Math.floor(normalized * 60) % (24 * 60);
+  const hh = Math.floor(totalMinutes / 60);
+  const mm = totalMinutes % 60;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+/**
+ * 余迹绑定槽位选择（§1.5：电离余迹只挂"亮流星/火流星"）
+ *
+ * 排序规则（确定性）：火流星优先（质量降序），其后普通槽位按质量降序
+ * （质量 → 峰值光度的单调映射，§1.1 强度归一登记），截取前 maxSlots 个。
+ *
+ * @returns 入选槽位在 slots 中的下标数组
+ */
+export function selectAfterglowSlots(
+  slots: readonly MeteorSlot[],
+  maxSlots: number
+): number[] {
+  if (!Number.isInteger(maxSlots) || maxSlots < 1) {
+    throw new RangeError(`余迹槽位上限必须为正整数，收到 ${maxSlots}`);
+  }
+  const indices = slots.map((_, i) => i);
+  indices.sort((a, b) => {
+    const sa = slots[a];
+    const sb = slots[b];
+    if (sa.isFireball !== sb.isFireball) return sa.isFireball ? -1 : 1;
+    return sb.massKg - sa.massKg;
+  });
+  return indices.slice(0, Math.min(maxSlots, slots.length));
 }
 
 // ---------------------------------------------------------------------------

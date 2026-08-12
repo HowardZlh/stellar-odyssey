@@ -11,9 +11,15 @@ import {
   AIR_DENSITY_SEA_LEVEL,
   ATMOSPHERE_SCALE_HEIGHT_KM,
   BURN_LAYER_TOP_KM,
+  DEFAULT_FIREBALL_RATE,
+  DEFAULT_LIMITING_MAG,
   DEFAULT_OBSERVER_LAT_DEG,
+  EPOCH_LOCAL_HOURS,
+  FRAGMENT_CONE_HALF_ANGLE_RAD,
+  FRAGMENT_MAX_LATERAL_KM,
   KAPPA_CYGNIDS,
   METEOR_CYCLE_PERIOD_SEC,
+  METEOR_SLOT_COUNT,
   PERSEIDS,
   airDensityAtKm,
   equatorialToHorizontalMatrix,
@@ -21,12 +27,16 @@ import {
   evalCubic,
   fitCubicThroughOrigin,
   fluxFraction,
+  formatClockHHMM,
+  fragmentLateralMagnitudeKm,
   horizontalFromEquatorial,
   ignitedSlots,
   labQualityTier,
+  localClockHours,
   localSiderealTime,
   makeMeteorSlots,
   sceneDirFromAltAz,
+  selectAfterglowSlots,
   slotPhase,
   solveAblationRK4,
   truncateAblationCurves,
@@ -482,5 +492,135 @@ describe('常量登记（§1.2 / 契约 C5）', () => {
     });
     // 天鹅座κ以慢速火流星著称 → 火流星基数更高
     expect(KAPPA_CYGNIDS.fireballSlotFraction).toBeGreaterThan(PERSEIDS.fireballSlotFraction);
+  });
+
+  test('M3 周期覆写与历元时刻登记（量化差异见 MeteorShowerParams 注释）', () => {
+    expect(PERSEIDS.cyclePeriodSec).toBe(3600);
+    expect(KAPPA_CYGNIDS.cyclePeriodSec).toBe(4800);
+    expect(EPOCH_LOCAL_HOURS.perseids).toBe(2);
+    expect(EPOCH_LOCAL_HOURS.kappaCygnids).toBe(23);
+  });
+});
+
+describe('M3 渲染/控件联动纯函数（§1.5 / §3 / §4）', () => {
+  test('fragmentLateralMagnitudeKm：锥角几何 + 上限钳制', () => {
+    // 线性位移 59 km/s、寿命 1 s：崩溃后剩余路径 = 59×0.2 km
+    const linear: [number, number, number] = [59, 0, 0];
+    const expected = Math.tan(FRAGMENT_CONE_HALF_ANGLE_RAD) * 59 * 0.2;
+    expect(fragmentLateralMagnitudeKm(linear, 1)).toBeCloseTo(expected, 10);
+    expect(fragmentLateralMagnitudeKm(linear, 1)).toBeLessThan(FRAGMENT_MAX_LATERAL_KM);
+    // 超长剩余路径 → 钳到 1 km 上限（§1.5：位移 ≤1 场景单位）
+    expect(fragmentLateralMagnitudeKm([500, 0, 0], 1)).toBe(FRAGMENT_MAX_LATERAL_KM);
+    // 零位移 → 0（负增量同样钳到 0）
+    expect(fragmentLateralMagnitudeKm([0, 0, 0], 1)).toBe(0);
+    expect(() => fragmentLateralMagnitudeKm(linear, 0)).toThrow(RangeError);
+  });
+
+  test('localClockHours：回绕 [0, 24)', () => {
+    expect(localClockHours(2, 0, 0)).toBe(2);
+    expect(localClockHours(23, 2, 0)).toBe(1);
+    expect(localClockHours(2, -6, 0)).toBe(20);
+    expect(localClockHours(23, 0, 1.5)).toBeCloseTo(0.5, 12);
+    expect(localClockHours(2, 0, 48)).toBe(2);
+  });
+
+  test('formatClockHHMM：HH:MM 格式与归一', () => {
+    expect(formatClockHHMM(0)).toBe('00:00');
+    expect(formatClockHHMM(1.25)).toBe('01:15');
+    expect(formatClockHHMM(23 + 59.9 / 60)).toBe('23:59');
+    expect(formatClockHHMM(24.5)).toBe('00:30');
+    expect(formatClockHHMM(-0.5)).toBe('23:30');
+    expect(() => formatClockHHMM(Number.NaN)).toThrow(RangeError);
+  });
+
+  test('selectAfterglowSlots：火流星优先 + 质量降序 + 上限截取', () => {
+    const slots = makeMeteorSlots(7, 64, PERSEIDS);
+    const picked = selectAfterglowSlots(slots, 20);
+    expect(picked).toHaveLength(20);
+    const kinds = picked.map((i) => slots[i].isFireball);
+    // 分界：火流星段在前、普通段在后（不得交错）
+    const firstOrdinary = kinds.indexOf(false);
+    expect(firstOrdinary).toBeGreaterThan(0);
+    expect(kinds.slice(0, firstOrdinary).every(Boolean)).toBe(true);
+    expect(kinds.slice(firstOrdinary).some(Boolean)).toBe(false);
+    // 各段内质量降序（亮流星优先，§1.5）
+    for (let i = 1; i < picked.length; i++) {
+      if (kinds[i] === kinds[i - 1]) {
+        expect(slots[picked[i]].massKg).toBeLessThanOrEqual(slots[picked[i - 1]].massKg);
+      }
+    }
+    // 上限超过槽位数 → 全量；确定性；非法上限抛错
+    expect(selectAfterglowSlots(slots, 999)).toHaveLength(64);
+    expect(selectAfterglowSlots(slots, 20)).toEqual(picked);
+    expect(() => selectAfterglowSlots(slots, 0)).toThrow(RangeError);
+  });
+
+  test('aGateRank 分层采样：排序后逐名次落在各自 1/N 条带（量化方差消除，登记）', () => {
+    const slots = makeMeteorSlots(42, 128, PERSEIDS);
+    const ranks = slots.map((s) => s.aGateRank).sort((a, b) => a - b);
+    for (let k = 0; k < ranks.length; k++) {
+      expect(ranks[k]).toBeGreaterThanOrEqual(k / 128);
+      expect(ranks[k]).toBeLessThan((k + 1) / 128);
+    }
+  });
+
+  test('火流星身份 Bresenham 精确份额 + aFireballRank 随门控名次单调（fireballRate 单调响应）', () => {
+    const slots = makeMeteorSlots(42, 200, PERSEIDS);
+    expect(slots.filter((s) => s.isFireball)).toHaveLength(200 * PERSEIDS.fireballSlotFraction);
+    const fireballs = slots
+      .filter((s) => s.isFireball)
+      .sort((a, b) => a.aGateRank - b.aGateRank);
+    for (let i = 1; i < fireballs.length; i++) {
+      expect(fireballs[i].aFireballRank).toBeGreaterThan(fireballs[i - 1].aFireballRank);
+    }
+  });
+
+  test('默认观测条件下双雨激活槽位 ≥1 且数量与 HR×T/3600 一致（周期覆写锁定）', () => {
+    for (const shower of [PERSEIDS, KAPPA_CYGNIDS]) {
+      const lst = localSiderealTime(shower.epochLst0Deg, 0, 0);
+      const radiant = horizontalFromEquatorial(
+        shower.radiantRaDeg,
+        shower.radiantDecDeg,
+        DEFAULT_OBSERVER_LAT_DEG,
+        lst
+      );
+      const hr = visibleHourlyRate(
+        shower.zhr,
+        shower.populationIndex,
+        radiant.altRad,
+        DEFAULT_LIMITING_MAG
+      );
+      const flux = fluxFraction(hr, METEOR_SLOT_COUNT, shower.cyclePeriodSec);
+      const slots = makeMeteorSlots(1, METEOR_SLOT_COUNT, shower);
+      const active = slots.filter((s) => s.aGateRank < flux);
+      // 低流量雨不得量化归零（T=60 时天鹅座κ期望 0.026 槽 → 恒空，登记差异动机）
+      expect(active.length).toBeGreaterThanOrEqual(1);
+      // 分层门控下激活数 = 期望值 ±1（速率恒等于 HR/3600，物理速率不受 T 影响）
+      expect(Math.abs(active.length - (hr * shower.cyclePeriodSec) / 3600)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test('天鹅座κ默认条件：激活集含火流星候选且默认 fireballRate 即激活（目验可达性）', () => {
+    const lst = localSiderealTime(KAPPA_CYGNIDS.epochLst0Deg, 0, 0);
+    const radiant = horizontalFromEquatorial(
+      KAPPA_CYGNIDS.radiantRaDeg,
+      KAPPA_CYGNIDS.radiantDecDeg,
+      DEFAULT_OBSERVER_LAT_DEG,
+      lst
+    );
+    const hr = visibleHourlyRate(
+      KAPPA_CYGNIDS.zhr,
+      KAPPA_CYGNIDS.populationIndex,
+      radiant.altRad,
+      DEFAULT_LIMITING_MAG
+    );
+    const flux = fluxFraction(hr, METEOR_SLOT_COUNT, KAPPA_CYGNIDS.cyclePeriodSec);
+    const slots = makeMeteorSlots(1, METEOR_SLOT_COUNT, KAPPA_CYGNIDS);
+    const visibleFireballs = slots.filter(
+      (s) => s.aGateRank < flux && s.isFireball && s.aFireballRank < DEFAULT_FIREBALL_RATE
+    );
+    expect(visibleFireballs.length).toBeGreaterThanOrEqual(1);
+    // 普通流星同样在激活集内（默认体验非"全火流星"）
+    expect(slots.some((s) => s.aGateRank < flux && !s.isFireball)).toBe(true);
   });
 });
