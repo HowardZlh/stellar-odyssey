@@ -15,6 +15,10 @@
  *                                 R5-3 2MRS 真实巡天目录（Float32 超星系笛卡尔
  *                                 坐标 + 形态/亮度档；来源/失真/去重登记见
  *                                 galaxyCatalog.ts 文件头；--fetch-2mrs 重拉快照）
+ *   public/data/yale_bright_stars.json
+ *                                 M1-1 耶鲁亮星目录 mag ≤ 6.5（契约 C3 纯数组
+ *                                 { ra, dec, mag, bv }[]；来源/列位/防御式解析
+ *                                 登记见 brightStars.ts 文件头；--fetch-bsc 重拉快照）
  *
  * 数据来源登记（IMPROVEMENT_REQUIREMENTS_4.md §0.4）：
  * - 昴星团：Gaia DR3 TAP 查询（ADQL 语句与选星判据见 snapshots/pleiades-gaia-dr3.meta.json）。
@@ -34,6 +38,7 @@ import { fileURLToPath } from 'node:url';
 import { bakeAntennae } from './antennae.ts';
 import { bakeGalaxyMaps } from './galaxyMaps.ts';
 import { bakeGalaxyCatalog, refetch2mrsSnapshot } from './galaxyCatalog.ts';
+import { bakeBrightStars, refetchBsc5Snapshot } from './brightStars.ts';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SNAPSHOT_DIR = join(SCRIPT_DIR, 'snapshots');
@@ -452,6 +457,9 @@ async function main(): Promise<void> {
   if (process.argv.includes('--fetch-2mrs')) {
     await refetch2mrsSnapshot(SNAPSHOT_DIR);
   }
+  if (process.argv.includes('--fetch-bsc')) {
+    await refetchBsc5Snapshot(SNAPSHOT_DIR);
+  }
 
   mkdirSync(OUT_DIR, { recursive: true });
 
@@ -485,6 +493,11 @@ async function main(): Promise<void> {
     [
       'galaxy-catalog-meta.json',
       writeProduct('galaxy-catalog-meta.json', galaxyCatalog.metaProduct, true),
+    ],
+    // M1-1：耶鲁亮星目录（契约 C3 纯数组，自校验在 bakeBrightStars 内）
+    [
+      'yale_bright_stars.json',
+      writeProduct('yale_bright_stars.json', bakeBrightStars(SNAPSHOT_DIR), false),
     ],
     ...galaxyMaps.sizes,
   ];
