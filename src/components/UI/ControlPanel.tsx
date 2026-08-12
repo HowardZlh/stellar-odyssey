@@ -22,6 +22,7 @@ import {
 } from '@/utils/galaxyCatalog';
 import { FERMI_BUBBLES_SOURCE_EN, FERMI_BUBBLES_SOURCE_ZH } from '@/utils/fermiBubbles';
 import { SN_DEFAULT_DURATION_SEC } from '@/utils/supernova';
+import { UNLOCK_PAGE_PATH } from '@/utils/unlockPage';
 import { rollSupernovaParams } from '@/components/Scene/Supernova';
 import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunActivity';
 
@@ -230,6 +231,19 @@ function ControlPanelSections(): JSX.Element {
     eventDemoEnabled('supernova', s.viewLevel),
   );
   const mergerDemoInScope = useSimulationStore((s) => eventDemoEnabled('merger', s.viewLevel));
+  // U2-3 演示限次 gate（叠加条件，eventDemoEnabled 域校验零改动）：
+  // 无权益时四类手动演示共用每日配额。配额尽 → 按钮锁态样式（🔒 + 置灰
+  // 视觉）但保持可点击——点击经 requestDemoEvent gate 弹配额版锁定提示
+  // （含「前往解锁」），与巡游控件锁态同形态（U5 用户反馈：静默置灰
+  // 断掉解锁引导链路）；配额行同步改为「已用完 + 查看解锁方案」链接。
+  // 渲染纯度纪律：剩余次数/剩余天数读 store 派生字段，渲染期零时钟调用
+  const entitlement = useSimulationStore((s) => s.entitlement);
+  const requestDemoEvent = useSimulationStore((s) => s.requestDemoEvent);
+  const demoRemaining = useSimulationStore((s) => s.demoRemainingToday);
+  const entitlementDays = useSimulationStore((s) => s.entitlementRemainingDays);
+  const demoQuotaExhausted = entitlement === null && demoRemaining === 0;
+  // 配额锁态 tooltip（复用配额版锁定提示正文，BodyCycleSwitcher 同形态）
+  const demoLockedTooltip = demoQuotaExhausted ? tr('unlock.lockedQuotaBody') : undefined;
 
   // R3-8：视角专属选项可见性判定（单一事实来源 panelScopes 注册表）
   const visible = (id: PanelOptionId): boolean => panelOptionVisible(id, viewLevel);
@@ -238,17 +252,27 @@ function ControlPanelSections(): JSX.Element {
   const anyDemoVisible =
     visible('supernovaDemo') || visible('flareDemo') || visible('cmeDemo') || visible('mergerDemo');
 
+  // U2-3：四类手动演示统一先过配额申请（有权益直通；自动触发路径
+  // 不经这些 handler，零改动零计次）
   const handleSupernovaDemo = (): void => {
+    if (!requestDemoEvent()) return;
     const params = rollSupernovaParams();
     triggerSupernova(params.positionLy, params.massSun, SN_DEFAULT_DURATION_SEC);
   };
 
   const handleFlareDemo = (): void => {
+    if (!requestDemoEvent()) return;
     triggerSolarFlare(rollFlareParams(useSimulationStore.getState().simDays));
   };
 
   const handleCmeDemo = (): void => {
+    if (!requestDemoEvent()) return;
     triggerCme(rollCmeParams(useSimulationStore.getState().simDays));
+  };
+
+  const handleMergerDemo = (): void => {
+    if (!requestDemoEvent()) return;
+    startMergePreview();
   };
 
   // B5 §5.1-D 入口 1：展馆模式按钮——用户手势内请求全屏（被拒/不支持
@@ -568,18 +592,43 @@ function ControlPanelSections(): JSX.Element {
           <h2 className="mb-2 text-xs text-gray-400 max-md:text-sm">
             {tr('controlPanel.demoSection')}
           </h2>
+          {/* U2-3：免费态显示当日剩余演示次数（有权益不限次不显示）；
+              配额尽改为解锁引导行（文案 + /unlock 链接） */}
+          {entitlement === null && (
+            <p className="mb-2 text-[10px] text-gray-500 max-md:text-xs">
+              {demoQuotaExhausted ? (
+                <>
+                  {tr('unlock.demoQuotaExhausted')}{' '}
+                  <a
+                    href={UNLOCK_PAGE_PATH}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={tr('unlock.panelGoAria')}
+                    className="text-violet-300 underline hover:text-violet-200"
+                  >
+                    {tr('unlock.panelGo')}
+                  </a>
+                </>
+              ) : (
+                trf('unlock.demoQuotaRemaining', { count: demoRemaining })
+              )}
+            </p>
+          )}
           {visible('supernovaDemo') && (
             <button
               type="button"
               onClick={handleSupernovaDemo}
               disabled={activeSupernova !== null || !supernovaDemoInScope}
+              title={demoLockedTooltip}
               className={`w-full rounded px-2 py-1.5 text-xs max-md:py-3 max-md:text-sm ${
                 activeSupernova || !supernovaDemoInScope
                   ? 'cursor-not-allowed bg-white/5 text-gray-500'
-                  : 'bg-amber-400/20 text-amber-200 hover:bg-amber-400/30'
+                  : demoQuotaExhausted
+                    ? 'bg-white/5 text-gray-500 hover:bg-white/10'
+                    : 'bg-amber-400/20 text-amber-200 hover:bg-amber-400/30'
               }`}
             >
-              💥{' '}
+              {demoQuotaExhausted ? '🔒' : '💥'}{' '}
               {activeSupernova
                 ? tr('controlPanel.supernovaActive')
                 : tr('controlPanel.supernovaTrigger')}
@@ -591,13 +640,16 @@ function ControlPanelSections(): JSX.Element {
               type="button"
               onClick={handleFlareDemo}
               disabled={activeSolarFlare !== null || sunCutawayMode || !solarDemoInScope}
+              title={demoLockedTooltip}
               className={`w-full rounded px-2 py-1.5 text-xs max-md:py-3 max-md:text-sm ${
                 activeSolarFlare || sunCutawayMode || !solarDemoInScope
                   ? 'cursor-not-allowed bg-white/5 text-gray-500'
-                  : 'bg-orange-400/20 text-orange-200 hover:bg-orange-400/30'
+                  : demoQuotaExhausted
+                    ? 'bg-white/5 text-gray-500 hover:bg-white/10'
+                    : 'bg-orange-400/20 text-orange-200 hover:bg-orange-400/30'
               }`}
             >
-              ☀️{' '}
+              {demoQuotaExhausted ? '🔒' : '☀️'}{' '}
               {activeSolarFlare
                 ? trf('controlPanel.flareActive', {
                     cls: activeSolarFlare.flareClass,
@@ -613,13 +665,16 @@ function ControlPanelSections(): JSX.Element {
               type="button"
               onClick={handleCmeDemo}
               disabled={activeCme !== null || sunCutawayMode || !solarDemoInScope}
+              title={demoLockedTooltip}
               className={`mt-2 w-full rounded px-2 py-1.5 text-xs max-md:py-3 max-md:text-sm ${
                 activeCme || sunCutawayMode || !solarDemoInScope
                   ? 'cursor-not-allowed bg-white/5 text-gray-500'
-                  : 'bg-rose-400/20 text-rose-200 hover:bg-rose-400/30'
+                  : demoQuotaExhausted
+                    ? 'bg-white/5 text-gray-500 hover:bg-white/10'
+                    : 'bg-rose-400/20 text-rose-200 hover:bg-rose-400/30'
               }`}
             >
-              🌊{' '}
+              {demoQuotaExhausted ? '🔒' : '🌊'}{' '}
               {activeCme
                 ? trf('controlPanel.cmeActive', { speed: Math.round(activeCme.speedKmS) })
                 : sunCutawayMode
@@ -632,15 +687,18 @@ function ControlPanelSections(): JSX.Element {
             <>
               <button
                 type="button"
-                onClick={startMergePreview}
+                onClick={handleMergerDemo}
                 disabled={mergePreviewActive || !mergerDemoInScope}
+                title={demoLockedTooltip}
                 className={`w-full rounded px-2 py-1.5 text-xs max-md:py-3 max-md:text-sm ${
                   mergePreviewActive || !mergerDemoInScope
                     ? 'cursor-not-allowed bg-white/5 text-gray-500'
-                    : 'bg-sky-400/20 text-sky-200 hover:bg-sky-400/30'
+                    : demoQuotaExhausted
+                      ? 'bg-white/5 text-gray-500 hover:bg-white/10'
+                      : 'bg-sky-400/20 text-sky-200 hover:bg-sky-400/30'
                 }`}
               >
-                ⏩{' '}
+                {demoQuotaExhausted ? '🔒' : '⏩'}{' '}
                 {mergePreviewActive
                   ? tr('controlPanel.mergerActive')
                   : tr('controlPanel.mergerTrigger')}
@@ -658,6 +716,35 @@ function ControlPanelSections(): JSX.Element {
           )}
         </section>
       )}
+
+      {/* U2-4：支持者解锁入口（权益状态 + 跳转 /unlock；对价口径文案，
+          与 ContactBadge / donate 页零交叉——同源纪律登记） */}
+      <section className="mt-4">
+        <h2 className="mb-2 text-xs text-gray-400 max-md:text-sm">{tr('unlock.panelSection')}</h2>
+        <p className="mb-2 text-[10px] text-gray-500 max-md:text-xs">
+          {entitlement === null
+            ? tr('unlock.panelStatusFree')
+            : trf('unlock.panelStatusActive', {
+                tier: tr(
+                  entitlement.tier === 'week'
+                    ? 'unlock.tierWeek'
+                    : entitlement.tier === 'month'
+                      ? 'unlock.tierMonth'
+                      : 'unlock.tierYear',
+                ),
+                days: entitlementDays ?? 0,
+              })}
+        </p>
+        <a
+          href={UNLOCK_PAGE_PATH}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={tr('unlock.panelGoAria')}
+          className="block w-full rounded bg-violet-400/20 px-2 py-1.5 text-center text-xs text-violet-200 hover:bg-violet-400/30 max-md:py-3 max-md:text-sm"
+        >
+          ✨ {tr('unlock.panelGo')}
+        </a>
+      </section>
     </>
   );
 }

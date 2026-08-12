@@ -35,6 +35,12 @@ export interface LaunchParams {
   logo: string | null;
   /** 语言（统一解析入口；null = 沿用 B2 优先级链 localStorage > zh） */
   lang: Locale | null;
+  /**
+   * 解锁 token 注入（U2-1，`?token=SO1.…`）：启动时验签通过即激活权益
+   * 并持久化（B2B/人工发 token 一键激活路径）；验签失败静默忽略 +
+   * console.warn。仅接受 `SO1.` 前缀且长度 ≤2048（防御口径同 logo）。
+   */
+  token: string | null;
 }
 
 /** 三维向量（与 three.js 解耦，便于纯函数测试） */

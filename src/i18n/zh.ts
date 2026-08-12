@@ -86,6 +86,118 @@ export const zh = {
     detailMessage: '留言',
     detailCloseAria: '关闭详情卡',
   },
+  /**
+   * 解锁页（/unlock，U3）。口径红线（REQUIREMENTS_UNLOCK §0.4）：
+   * 本页为明码标价对价口径（允许"支付 ¥X 解锁 Y 天"承诺式表述），
+   * 与 /donate 赞助（零回报）双轨隔离——禁止出现"捐赠/赞助即解锁"表述。
+   */
+  unlock: {
+    title: '支持者解锁',
+    subtitle: '解锁近观细节层与巡游序列的限时访问',
+    intro:
+      '以下为明码标价的限时访问对价：按档位金额支付后凭凭证兑换，到期自动恢复免费体验。本页与"投喂燃料"自愿赞助相互独立，互不构成条件。项目源代码保持开源。',
+    backToApp: '返回星图',
+    /** 权益状态区 */
+    statusSection: '我的权益',
+    statusFree: '当前为免费体验——近观细节层、L3/L4 巡游与不限次演示未解锁。',
+    statusActive: '权益已激活',
+    statusTierLabel: '档位',
+    statusExpiryLabel: '到期日',
+    statusRemainingLabel: '剩余',
+    statusRemainingDays: '{days} 天',
+    tierWeek: '周卡',
+    tierMonth: '月卡',
+    tierYear: '年卡',
+    copyToken: '复制我的 token',
+    copyTokenDone: '已复制到剪贴板',
+    copyTokenFail: '自动复制失败，请手动选择下方文本复制',
+    copyTokenAria: '复制解锁 token（换设备时粘贴激活）',
+    clearEntitlement: '清除权益',
+    clearConfirmHint: '清除后需重新粘贴 token 才能恢复，请先妥存 token。',
+    clearConfirmYes: '确认清除',
+    clearConfirmNo: '取消',
+    /** 档位价格表 */
+    tiersSection: '解锁档位',
+    tierColumnTier: '档位',
+    tierColumnPriceCny: '价格（¥）',
+    tierColumnPriceUsd: '参考价（$）',
+    tierColumnDays: '时长',
+    tierPriceCny: '¥{price}',
+    tierPriceUsd: '${price}',
+    tierDays: '{days} 天',
+    benefitsTitle: '解锁内容（三档相同，仅时长不同）',
+    benefitDetail:
+      '全部近观细节层：恒星表面、体积星云、黑洞引力透镜、星团/星系与河外天体近观（共 24 处）',
+    benefitTour: 'L3/L4 巡游序列：银河系与宇宙视角下的天体巡游切换',
+    benefitDemo: '事件演示不限次：耀斑 / CME / 超新星 / 星系合并预览',
+    refundTitle: '退款与说明',
+    refundPolicy:
+      '未兑换订单可发邮件申请原路退回；已兑换不退；不提供发票。到期后不自动续费。',
+    /** 三通道兑换区 */
+    channelsSection: '购买与兑换',
+    afdianTitle: '爱发电（自动兑换）',
+    afdianGuide:
+      '前往爱发电按档位金额购买（周卡/年卡为商品，月卡为订阅方案），支付完成后在下方粘贴订单号即可自动兑换。',
+    afdianLink: '前往爱发电购买',
+    orderInputLabel: '爱发电订单号',
+    orderInputPlaceholder: '粘贴订单号（14-40 位数字）',
+    orderInvalid: '订单号应为 14-40 位数字，请在爱发电「我的订单」中复制',
+    redeemButton: '兑换',
+    redeemPending: '兑换中…',
+    redeemSuccess: '兑换成功，权益已激活！',
+    errInvalidOrder: '订单号无效，请核对后重试',
+    errOrderNotPaid: '订单未完成支付，请支付后再兑换',
+    errAmountTooLow: '订单金额不足最低档位（¥6），无法兑换',
+    errAlreadyRedeemed: '该订单已被兑换过（如系本人换设备，请用原 token 激活）',
+    errUpstream: '订单查询服务暂时不可用，请稍后重试',
+    errNotConfigured: '兑换服务尚未开通，请稍后再来或邮件联系',
+    errUnknown: '兑换失败（未知错误），请稍后重试或邮件联系',
+    errNetwork: '网络请求失败，请检查网络后重试',
+    wechatTitle: '微信赞赏码（人工兑换）',
+    wechatGuide:
+      '按所选档位金额通过微信赞赏码支付，然后发送兑换邮件至 {email}，附支付截图与交易时间，我们将回信发送解锁 token（通常 48 小时内）。',
+    wechatShowQr: '展开赞赏码',
+    wechatHideQr: '收起赞赏码',
+    wechatQrAlt: '微信赞赏码',
+    wechatQrHint: '微信内长按识别，或用手机微信扫码；金额请按档位价格支付',
+    kofiTitle: 'Ko-fi（人工兑换）',
+    kofiGuide:
+      '按档位对应的 $ 金额通过 Ko-fi 支付，然后发送兑换邮件至 {email}，附支付凭证与交易时间，我们将回信发送解锁 token（通常 48 小时内）。',
+    kofiLink: '前往 Ko-fi 支付',
+    emailCta: '发送兑换邮件',
+    emailSubject: '星海奥德赛解锁兑换',
+    /** token 粘贴区 */
+    tokenSection: '已有 token？在此激活',
+    tokenIntro:
+      '人工通道回信、换设备迁移或 B2B 交付的 token 都在这里粘贴激活。',
+    tokenInputLabel: '解锁 token',
+    tokenInputPlaceholder: '粘贴 SO1. 开头的完整 token',
+    tokenActivate: '激活',
+    tokenErrFormat: 'token 格式不正确，请确认完整复制（SO1. 开头共三段）',
+    tokenErrSignature: 'token 签名校验失败，请勿改动 token 内容后重试',
+    tokenErrExpired: 'token 已过期，可重新购买任意档位续期',
+    tokenActivated: '权益已激活！',
+    /**
+     * U2 主应用门控（锁定提示 HUD / ControlPanel 入口 / 巡游控件）。
+     * panelStatusFree/panelStatusActive 为面板紧凑态状态行（与上方
+     * 解锁页 statusFree/statusActive 语义不同，勿合并）。
+     */
+    lockedTitle: '支持者专属内容',
+    lockedDetailBody: '该近观细节为支持者专属，解锁后即可贴近观赏。',
+    lockedCycleBody: '银河系/宇宙巡游序列为支持者专属，解锁后可逐站巡游。',
+    lockedQuotaBody: '今日免费演示次数已用完，解锁后不限次，或明天再来。',
+    lockedGoUnlock: '前往解锁',
+    lockedGoUnlockAria: '打开解锁页（新标签页）',
+    lockedCloseAria: '关闭锁定提示',
+    panelSection: '支持者解锁',
+    panelStatusFree: '免费体验中',
+    panelStatusActive: '{tier} · 剩余 {days} 天',
+    panelGo: '查看解锁方案',
+    panelGoAria: '打开解锁页（新标签页）',
+    demoQuotaRemaining: '今日免费演示剩余 {count} 次',
+    demoQuotaExhausted: '今日免费演示次数已用完，解锁后不限次',
+    cycleLockedTooltip: '银河系/宇宙巡游为支持者专属',
+  },
   helpHint: {
     /**
      * 操作引导正文（迁移自 HelpHint JSX：空格/\u00a0 与原 JSX 空白折叠

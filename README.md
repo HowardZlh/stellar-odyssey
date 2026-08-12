@@ -14,7 +14,7 @@
 
 [![live](https://img.shields.io/badge/在线体验-stellar.guushu.com-4d9fff)](https://stellar.guushu.com) [![CI](https://github.com/HowardZlh/stellar-odyssey/actions/workflows/pr-gate.yml/badge.svg)](https://github.com/HowardZlh/stellar-odyssey/actions/workflows/pr-gate.yml) ![tech](https://img.shields.io/badge/Next.js-16-black) ![tech](https://img.shields.io/badge/React-19-61dafb) ![tech](https://img.shields.io/badge/Three.js-R3F-049ef4) ![tech](https://img.shields.io/badge/TypeScript-strict-3178c6) ![coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0-blue)
 
-**目录**：[效果演示](#-效果演示) · [亮点特性](#-亮点特性) · [快速开始](#-快速开始) · [文档与教程](#-文档与教程) · [技术栈](#-技术栈) · [科学性承诺](#-科学性承诺) · [参与贡献](#-参与贡献) · [赞助支持](#-赞助支持) · [商业合作](#-商业合作) · [开源协议](#️-开源协议)
+**目录**：[效果演示](#-效果演示) · [亮点特性](#-亮点特性) · [快速开始](#-快速开始) · [文档与教程](#-文档与教程) · [技术栈](#-技术栈) · [科学性承诺](#-科学性承诺) · [参与贡献](#-参与贡献) · [支持者解锁](#-支持者解锁) · [赞助支持](#-赞助支持) · [商业合作](#-商业合作) · [开源协议](#️-开源协议)
 
 ---
 
@@ -134,6 +134,7 @@ npm run start
 | [docs/launch-params.md](docs/launch-params.md) | 启动 URL 参数：深链直达、展馆模式部署、logo/语言注入 |
 | [docs/events-guide.md](docs/events-guide.md) | 动态事件演示：耀斑 / CME / 超新星 / 星系合并预览 |
 | [docs/science-notes.md](docs/science-notes.md) | 科学性说明：真实数据来源与艺术化处理登记 |
+| [docs/unlock-guide.md](docs/unlock-guide.md) | 支持者解锁：档位价格、三通道兑换步骤、token 使用与常见问题 |
 | [docs/how-it-works.md](docs/how-it-works.md) | 技术揭秘：跨 10+ 量级尺度渲染、体积渲染、引力透镜、离线烘焙管线 |
 | [docs/attribution.md](docs/attribution.md) | 素材许可与数据来源完整登记 |
 | [docs/development.md](docs/development.md) | 开发指南：架构、测试、代码规范 |
@@ -206,6 +207,10 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 ## 🤝 参与贡献
 
 欢迎 issue 与 PR！请先阅读 [贡献指南](CONTRIBUTING.md)——代码贡献需签署 [CLA](CLA.md)（许可授予型，你保留自己贡献的版权），以维持本项目 AGPL-3.0 + 商业授权的双许可模式。
+
+## 🔓 支持者解锁
+
+部分高级内容（近观细节层 / 银河系与宇宙视角巡游序列 / 事件演示不限次）为**支持者限时解锁**，免费体验保持完整（L1/L2 全部功能与全部远观科普不受影响）。档位：**周卡 ¥6 / 月卡 ¥15 / 年卡 ¥88**（Ko-fi 参考价 $1 / $2.5 / $13）。购买与兑换见 [stellar.guushu.com/unlock](https://stellar.guushu.com/unlock)，详细说明见 [docs/unlock-guide.md](docs/unlock-guide.md)。解锁与下方赞助（零回报）相互独立。
 
 ## 💖 赞助支持
 

@@ -23,6 +23,7 @@ describe('parseLaunchParams 空/默认路径', () => {
       body: null,
       logo: null,
       lang: null,
+      token: null,
     });
   });
 
@@ -175,6 +176,7 @@ describe('组合与健壮性', () => {
       body: 'jupiter',
       logo: 'https://example.com/l.svg',
       lang: 'en',
+      token: null,
     });
   });
 

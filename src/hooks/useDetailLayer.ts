@@ -28,6 +28,7 @@ import {
   type DetailLayerSpec,
 } from '@/utils/detailLayer';
 import { advanceFrameTransition } from '@/utils/galacticFrame';
+import { premiumDetailGateUpdate } from '@/utils/premiumGate';
 import { useSimulationStore } from '@/store';
 
 /** 保留策略（R2-7 退出即释放 / R2-8 LRU 保留） */
@@ -62,6 +63,9 @@ export function useDetailLayer(
   const mountedRef = useRef(false);
   const gateActiveRef = useRef(false);
   const opacityRef = useRef(0);
+  // U2-2：锁定命中上报的本地帧级防抖（store 侧另有会话级同天体节流，
+  // 本 ref 避免被拦期间逐帧调用 store action）
+  const lockedReportedRef = useRef(false);
   const opacity01 = useCallback(() => opacityRef.current, []);
 
   // 卸载兜底：释放注册表持有权（幂等；组件树 dispose 由 React 卸载承担）
@@ -90,14 +94,32 @@ export function useDetailLayer(
       spec.enterDistanceUnits,
       spec.exitDistanceUnits,
     );
-    gateActiveRef.current = gate.active;
+    // U2-2 权益叠加判定（纯函数）：免费天体/有效权益原样透传（现状零
+    // 差异，detailGateUpdate 本体零改动）；付费天体无权益 → 强制
+    // inactive（沿用下方既有淡出路径）+ 锁定命中上报（帧级防抖 +
+    // store 会话级同天体节流）
+    const premiumGate = premiumDetailGateUpdate(
+      gate.active,
+      state.entitlement,
+      spec.bodyId,
+      Date.now() / 1000,
+    );
+    if (premiumGate.lockedHit) {
+      if (!lockedReportedRef.current) {
+        lockedReportedRef.current = true;
+        state.reportLockedHint('detail', spec.bodyId);
+      }
+    } else {
+      lockedReportedRef.current = false;
+    }
+    gateActiveRef.current = premiumGate.active;
     // 激活即声明持有权（已是本池最新持有者时跳过，渲染循环零分配）
-    if (gate.active && detailLayerHolderIds(spec.kind)[0] !== spec.bodyId) {
+    if (premiumGate.active && detailLayerHolderIds(spec.kind)[0] !== spec.bodyId) {
       claimDetailLayer(spec);
     }
     opacityRef.current = advanceFrameTransition(
       opacityRef.current,
-      gate.active ? 1 : 0,
+      premiumGate.active ? 1 : 0,
       delta,
       DETAIL_LAYER_TRANSITION_SECONDS,
     );
@@ -107,7 +129,7 @@ export function useDetailLayer(
     const shouldMount =
       retention === 'lru-retain'
         ? detailLayerHolderIds(spec.kind).includes(spec.bodyId)
-        : gate.active || opacityRef.current > 0.001;
+        : premiumGate.active || opacityRef.current > 0.001;
     if (retention === 'release-on-exit' && !shouldMount && mountedRef.current) {
       // 淡出完成：释放持有权（资源随卸载 dispose，注册表同步出账）
       releaseDetailLayer(spec.bodyId, spec.kind);

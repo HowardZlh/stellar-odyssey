@@ -20,6 +20,7 @@ describe('launch 状态（B4 启动 URL 参数）', () => {
       body: null,
       logo: null,
       lang: null,
+      token: null,
     });
   });
 
@@ -31,6 +32,7 @@ describe('launch 状态（B4 启动 URL 参数）', () => {
       body: 'jupiter',
       logo: 'https://example.com/logo.png',
       lang: 'en',
+      token: null,
     };
     useSimulationStore.getState().setLaunchParams(params);
     expect(useSimulationStore.getState().launch).toEqual(params);

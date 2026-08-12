@@ -26,12 +26,20 @@
 .DS_Store
 *.pem
 
+# wrangler 本地 dev 缓存与本地联调凭据（workers/unlock；.dev.vars 含爱发电
+# token/签发私钥，不匹配 .env* 规则须单列）
+.wrangler/
+.dev.vars
+
 # 内部提示词与商业文档（不公开）
 *_PROMPT.md
 BUSINESS_*.md
 
 # 内部文档目录整体不入库（需求/提示词/商业文档均仅本地保留）
 /docs/internal/
+
+# 解锁签发私钥等密钥材料（U 迭代，仅本地签发环境与 CF Worker secret 持有）
+/secrets/
 
 # IDE
 /.idea/

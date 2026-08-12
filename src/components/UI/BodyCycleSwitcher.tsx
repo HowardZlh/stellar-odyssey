@@ -69,10 +69,20 @@ export function BodyCycleSwitcher(): JSX.Element | null {
   const cycleScopeBody = useSimulationStore((s) => s.cycleScopeBody);
   // 黑子群/日珥科普卡片（HudInfo，底部居中弹出）可见时上移让位，避免重叠
   const selectedSolarFeature = useSimulationStore((s) => s.selectedSolarFeature);
+  // U2-3：L3/L4 巡游为支持者专属——无权益时按钮置灰 + 锁标 + tooltip；
+  // 保持可点击（点击经 cycleScopeBody gate 弹锁定提示，非静默禁用）
+  const cycleLocked = useSimulationStore(
+    (s) => (s.cycleScope === 'galaxy' || s.cycleScope === 'universe') && s.entitlement === null,
+  );
   const { scope, name, position, cycleEnabled } = useCycleCurrentBody();
 
   // M3-3：移动布局由底部标签栏承载巡游入口
   if (isCompact) return null;
+
+  const cycleButtonClass = cycleLocked
+    ? 'rounded bg-white/5 px-2 py-1 text-gray-500 hover:bg-white/10'
+    : 'rounded bg-white/10 px-2 py-1 hover:bg-white/20';
+  const lockedTooltip = cycleLocked ? tr('unlock.cycleLockedTooltip') : undefined;
 
   return (
     <div
@@ -84,10 +94,11 @@ export function BodyCycleSwitcher(): JSX.Element | null {
         <button
           type="button"
           onClick={() => cycleScopeBody(-1)}
-          className="rounded bg-white/10 px-2 py-1 hover:bg-white/20"
+          className={cycleButtonClass}
+          title={lockedTooltip}
           aria-label={tr('bodyCycle.prevAria')}
         >
-          ← {tr('bodyCycle.prev')}
+          {cycleLocked ? '🔒' : '←'} {tr('bodyCycle.prev')}
         </button>
       )}
       <span className="min-w-24 text-center text-sm text-space-accent">
@@ -99,10 +110,11 @@ export function BodyCycleSwitcher(): JSX.Element | null {
         <button
           type="button"
           onClick={() => cycleScopeBody(1)}
-          className="rounded bg-white/10 px-2 py-1 hover:bg-white/20"
+          className={cycleButtonClass}
+          title={lockedTooltip}
           aria-label={tr('bodyCycle.nextAria')}
         >
-          {tr('bodyCycle.next')} →
+          {tr('bodyCycle.next')} {cycleLocked ? '🔒' : '→'}
         </button>
       )}
     </div>

@@ -5,7 +5,9 @@ const baseConfig = {
   // 静态导出：项目为纯前端（无 API 路由/服务端功能），导出到 out/ 供 GitHub Pages 托管
   output: 'export',
   reactStrictMode: true,
-  transpilePackages: ['three'],
+  // @noble/* 为纯 ESM 包：经 transpilePackages 让 next/jest 的
+  // transformIgnorePatterns 放行（jest CJS 环境直跑），构建侧行为不变
+  transpilePackages: ['three', '@noble/ed25519', '@noble/hashes'],
   // 关闭开发模式左下角的 Next.js "N" 指示器：与站内左下角「商业合作」角标位置冲突
   devIndicators: false,
 };

@@ -10,6 +10,11 @@ L1 Planet ──scroll──> L2 Solar System ──scroll──> L3 Milky Way �
    ~planet scale         ~50 AU                     ~100k light-years        ~hundreds of Mly
 ```
 
+> Note: the L3/L4 tour sequences (`[` / `]`) and close-view detail layers (photon rings, volumetric
+> nebula interiors, galaxy close-up particles, etc.) are time-limited supporter unlocks — the free
+> experience still shows every object from afar with full info-panel science notes, and L1/L2 remain
+> fully unrestricted. See [Supporter Unlock](unlock-guide.md) for scope, tiers, and redemption.
+
 ---
 
 ## L1 · Planet View 🌍

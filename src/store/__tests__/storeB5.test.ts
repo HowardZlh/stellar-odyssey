@@ -25,6 +25,10 @@ afterEach(() => {
     anchorBodyId: 'earth',
     galaxyAnchorBodyId: 'sgr-a-star',
     universeAnchorBodyId: 'm31',
+    // U2 巡游 gate 回归 setup：kiosk 不豁免（裁决 §0.4，B2B 交付随附
+    // 年卡 token 为预期用法）——注入远期权益态保持既有 kiosk 语义断言
+    entitlement: { tier: 'year', expSec: Number.MAX_SAFE_INTEGER },
+    lockedHint: null,
   });
 });
 

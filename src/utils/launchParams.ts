@@ -39,6 +39,9 @@ const TOUR_VALUES: ReadonlySet<string> = new Set<LaunchTour>([
   'all',
 ]);
 
+/** token 参数长度上限（U2-1 防御口径同 logo） */
+export const TOKEN_PARAM_MAX_LENGTH = 2048;
+
 /** 无参数启动的默认解析结果（store `launch` 字段初始值） */
 export const DEFAULT_LAUNCH_PARAMS: Readonly<LaunchParams> = Object.freeze({
   mode: null,
@@ -47,6 +50,7 @@ export const DEFAULT_LAUNCH_PARAMS: Readonly<LaunchParams> = Object.freeze({
   body: null,
   logo: null,
   lang: null,
+  token: null,
 });
 
 /** `?mode=kiosk`（大小写不敏感）；其余值回退 null */
@@ -98,6 +102,17 @@ function parseLang(value: string | null): Locale | null {
 }
 
 /**
+ * `?token=SO1.…`（U2-1 解锁 token 注入）：仅做形态过滤（`SO1.` 前缀 +
+ * 长度 ≤2048），验签/过期判定由 store `applyUnlockToken` 承担；
+ * 非法形态静默回退 null（控制台零错误口径）。
+ */
+function parseToken(value: string | null): string | null {
+  const trimmed = value?.trim() ?? '';
+  if (trimmed === '' || trimmed.length > TOKEN_PARAM_MAX_LENGTH) return null;
+  return trimmed.startsWith('SO1.') ? trimmed : null;
+}
+
+/**
  * 解析启动 URL 参数（纯函数）
  *
  * @param search `window.location.search`（含 `?` 前缀或裸查询串均可，空串安全）
@@ -111,5 +126,6 @@ export function parseLaunchParams(search: string): LaunchParams {
     body: parseBody(params.get('body')),
     logo: parseLogo(params.get('logo')),
     lang: parseLang(params.get('lang')),
+    token: parseToken(params.get('token')),
   };
 }

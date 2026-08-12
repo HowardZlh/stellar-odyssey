@@ -14,6 +14,7 @@ import type { SimDateParts } from '@/utils/time';
 import { formatSimDateParts } from '@/utils/time';
 import { HudStatusPanel } from '@/components/UI/hud/HudStatusPanel';
 import { EventNoticeColumn } from '@/components/UI/hud/EventNoticeColumn';
+import { LockedHintCard } from '@/components/UI/hud/LockedHintCard';
 import { SolarFeatureCard } from '@/components/UI/hud/SolarFeatureCard';
 import { BodyInfoPanel } from '@/components/UI/hud/BodyInfoPanel';
 
@@ -90,6 +91,8 @@ export function HudInfo(): JSX.Element {
     <>
       <HudStatusPanel simDate={simDate} scaleText={scaleText} galacticText={galacticText} />
       <EventNoticeColumn mergerCard={mergerCard} />
+      {/* U2-4 锁定提示：独立组件，不混入事件通知流（需求登记） */}
+      <LockedHintCard />
       <SolarFeatureCard />
       <BodyInfoPanel cycleLine={cycleLine} />
     </>

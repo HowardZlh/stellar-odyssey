@@ -23,6 +23,10 @@ function resetStore(): void {
     activeSupernova: null,
     supernovaRemnants: [],
     realScaleMode: false,
+    // U2 巡游 gate 回归 setup：注入远期权益态，保证 L3/L4 巡游语义
+    // 断言与 gate 引入前逐项一致（免费态 gate 行为由 storeU2.test.ts 覆盖）
+    entitlement: { tier: 'year', expSec: Number.MAX_SAFE_INTEGER },
+    lockedHint: null,
   });
 }
 
