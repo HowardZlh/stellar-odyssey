@@ -195,6 +195,7 @@ export const zh = {
     panelGo: '查看解锁方案',
     panelGoAria: '打开解锁页（新标签页）',
     demoQuotaRemaining: '今日免费演示剩余 {count} 次',
+    demoQuotaExhausted: '今日免费演示次数已用完，解锁后不限次',
     cycleLockedTooltip: '银河系/宇宙巡游为支持者专属',
   },
   helpHint: {

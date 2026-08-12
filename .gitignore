@@ -26,8 +26,10 @@
 .DS_Store
 *.pem
 
-# wrangler 本地 dev 缓存（workers/unlock）
+# wrangler 本地 dev 缓存与本地联调凭据（workers/unlock；.dev.vars 含爱发电
+# token/签发私钥，不匹配 .env* 规则须单列）
 .wrangler/
+.dev.vars
 
 # 内部提示词与商业文档（不公开）
 *_PROMPT.md

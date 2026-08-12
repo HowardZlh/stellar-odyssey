@@ -20,7 +20,7 @@
 > toggle** at the top of the control panel at any time — the interface, 3D body labels, and science
 > notes all switch instantly.
 
-**Contents**: [Demos](#-demos) · [Highlights](#-highlights) · [Quick Start](#-quick-start) · [Docs](#-documentation) · [Tech Stack](#-tech-stack) · [Scientific Integrity](#-scientific-integrity) · [Contributing](#-contributing) · [Sponsor](#-sponsor) · [Commercial](#-commercial-partnership) · [License](#️-license)
+**Contents**: [Demos](#-demos) · [Highlights](#-highlights) · [Quick Start](#-quick-start) · [Docs](#-documentation) · [Tech Stack](#-tech-stack) · [Scientific Integrity](#-scientific-integrity) · [Contributing](#-contributing) · [Supporter Unlock](#-supporter-unlock) · [Sponsor](#-sponsor) · [Commercial](#-commercial-partnership) · [License](#️-license)
 
 ---
 
@@ -143,6 +143,7 @@ Once open: **scroll to zoom**, press `1`–`4` to switch levels, and **click any
 | [docs/en/launch-params.md](docs/en/launch-params.md) | Launch URL parameters: deep links, kiosk deployment, logo/language |
 | [docs/en/events-guide.md](docs/en/events-guide.md) | Dynamic events: flares / CMEs / supernovae / galaxy merger preview |
 | [docs/en/science-notes.md](docs/en/science-notes.md) | Scientific integrity: real data sources & registered artistic liberties |
+| [docs/en/unlock-guide.md](docs/en/unlock-guide.md) | Supporter Unlock: tiers & pricing, redemption channels, token usage, FAQ |
 | [docs/en/how-it-works.md](docs/en/how-it-works.md) | Under the hood: multi-scale rendering, volumetrics, lensing, data baking |
 | [docs/en/development.md](docs/en/development.md) | Development guide: architecture, testing, conventions |
 
@@ -169,6 +170,10 @@ Full per-asset details, licenses, and registration notes: [docs/attribution.md](
 ## 🤝 Contributing
 
 Issues and PRs are welcome! Please read the [contributing guide](CONTRIBUTING.md) first — code contributions require signing the [CLA](CLA.md) (license-grant type; you keep the copyright of your contribution) to sustain the project's AGPL-3.0 + commercial dual-licensing model.
+
+## 🔓 Supporter Unlock
+
+Some advanced content (close-view detail layers / galaxy & universe tour sequences / unlimited event demos) is available as a **time-limited supporter unlock**, while the free experience stays intact (all L1/L2 features and every far-view science note are unaffected). Tiers: **Week Pass ¥6 / Month Pass ¥15 / Year Pass ¥88** (Ko-fi reference: $1 / $2.5 / $13). Purchase and redeem at [stellar.guushu.com/unlock](https://stellar.guushu.com/unlock); full guide in [docs/en/unlock-guide.md](docs/en/unlock-guide.md). Unlocking is entirely independent of the sponsorship below (which comes with no rewards).
 
 ## 💖 Sponsor
 

@@ -166,6 +166,7 @@ export const en: I18nDict = {
     panelGo: 'View unlock plans',
     panelGoAria: 'Open unlock page (new tab)',
     demoQuotaRemaining: '{count} free demos left today',
+    demoQuotaExhausted: "Today's free demos are used up — unlock for unlimited",
     cycleLockedTooltip: 'Galaxy/Universe tours are supporter-only',
   },
   helpHint: {

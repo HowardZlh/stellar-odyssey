@@ -61,10 +61,12 @@
 | 爱发电赞助链接 `https://afdian.com/a/stellar-odyssey` | README.md「赞助支持」节 · README.en.md「Sponsor」节 · `.github/FUNDING.yml` · `ContactBadge.tsx` 的 `SPONSOR_AFDIAN_URL` |
 | Ko-fi 链接 `https://ko-fi.com/howardzlh` | README.md「赞助支持」节 · README.en.md「Sponsor」节 · `.github/FUNDING.yml`（`ko_fi` 字段） · `src/data/donationPlatforms.ts` 的 `SPONSOR_KOFI_URL` |
 | GitHub Issues 链接 | README 两版 · `ContactBadge.tsx` 的 `CONTACT_GITHUB_ISSUES_URL` |
+| 解锁档位价格 周卡 ¥6 / 月卡 ¥15 / 年卡 ¥88（$1/$2.5/$13） | `src/data/unlockPricing.ts`（代码单一事实源：前端档位表/Worker 判定/CLI 共享，改代码只改这一处） · 爱发电商品页（站外，人工同步） · `docs/internal/UNLOCK_OPS.md` §2/§3/§5 · `docs/unlock-guide.md` 与 `docs/en/unlock-guide.md` · README.md 与 README.en.md「支持者解锁」节 |
 
 - **README 双语同步**：`README.md` 的对外内容（章节增删、入口链接、商标声明等）变更时必须同步 `README.en.md`，反之亦然
 - **对外文案口径**：商业相关表述一律使用中性口径（"欢迎联系合作"），不写价格、不写内部策略；商标声明（名称与标识不在开源许可范围内）保留在两版 README 的协议节
 - **赞助文案红线**：赞助入口保持"零回报承诺"口径，不得添加任何回报/更新义务类表述；捐赠相关的一切对外文案（页面、入口按钮、README、CHANGELOG、docs/）**禁止"捐赠即点亮专属星"类承诺式表述**——对捐赠者的展示（如名单、贡献者宇宙）只能以陈述口径描述既有事实（"这里陈列了每一位支持者"），不得表述为捐赠可换取的回报或权益
+- **解锁/赞助双轨口径（U 迭代）**：支持者解锁（对外入口：`/unlock` 页 + 站内锁定提示/控制面板入口 + README「支持者解锁」节 + `docs/unlock-guide.md`）为明码标价对价，允许"付 ¥X 得 Y 天"承诺式表述；赞助保持零回报口径——**两轨文案与入口不得交叉**（禁止"捐赠/赞助即解锁"表述；解锁入口不进 /donate 页、ContactBadge、README 赞助节与 FUNDING.yml，赞助入口不以回报口径出现在解锁页）
 
 ## 内部文档（不入库）
 

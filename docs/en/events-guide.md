@@ -5,6 +5,10 @@
 Stellar Odyssey ships with four kinds of dynamic astronomical events: **solar flares, coronal mass ejections (CMEs), supernova explosions, and galaxy collision/merger**.
 Events fire automatically according to physically motivated probabilities, and can also be demoed manually from the control panel.
 
+> Note: manual demos are limited to 5 per day on the free experience (resets each calendar day;
+> ambient auto-triggered events don't count and are unrestricted). Supporters get unlimited demos —
+> see [Supporter Unlock](unlock-guide.md) for tiers and redemption.
+
 ## Events and View Domains
 
 Each event type belongs to a specific view domain — it only auto-triggers, shows notifications, and exposes its demo button inside that domain;
