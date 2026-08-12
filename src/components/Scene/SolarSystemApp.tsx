@@ -8,6 +8,7 @@ import { CAMERA_VIEWS } from '@/data/cameraViews';
 import { useLocaleInit } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
 import { useLaunchInit } from '@/hooks/useLaunchParams';
+import { useUnlockInit } from '@/hooks/useUnlockInit';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useKiosk } from '@/hooks/useKiosk';
 import { useDeviceTierInit, useViewportKind } from '@/hooks/useViewportKind';
@@ -52,6 +53,8 @@ export default function SolarSystemApp(): JSX.Element {
   useLocaleInit();
   // B4 启动 URL 参数：挂载后解析写入 store + body 就绪飞往（方案 K4）
   useLaunchInit();
+  // U2 支持者权益：localStorage 恢复 + ?token= 注入 + 30s 到期检查
+  useUnlockInit();
   // B5 展馆模式驱动（方案 K5）：须在 useLaunchInit 之后挂载——同批
   // effect 按 hook 声明序执行，?mode=kiosk 读取时 launch 已写入
   useKiosk();

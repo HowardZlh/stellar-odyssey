@@ -44,6 +44,19 @@ function sanitizeUsed(used: number): number {
 }
 
 /**
+ * 只读查询当日剩余次数（U2 UI 展示/按钮置灰用，不消耗额度）：
+ * dateKey 与当日不符（含 null 状态）视为满额；`nowMs` 非有限数沿用
+ * 现状态 dateKey（与 demoQuotaUpdate 同口径）。
+ */
+export function demoQuotaRemaining(state: DemoQuotaState | null, nowMs: number): number {
+  const today = Number.isFinite(nowMs)
+    ? localDateKey(nowMs)
+    : (state?.dateKey ?? localDateKey(0));
+  const carried = state !== null && state.dateKey === today ? sanitizeUsed(state.used) : 0;
+  return Math.max(0, FREE_DEMO_DAILY_LIMIT - carried);
+}
+
+/**
  * 消费一次演示额度（纯函数）：
  * - 状态为 null / dateKey 与当日不符 → 计数重置后再判定（自然日切换重置）；
  * - 当日已用 < 限次 → 放行并计数 +1；否则拒绝（计数不再增长）；

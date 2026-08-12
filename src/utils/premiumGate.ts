@@ -87,3 +87,30 @@ export function premiumGateAllows(
   if (entitlement === null) return false;
   return Number.isFinite(entitlement.expSec) && entitlement.expSec > nowSec;
 }
+
+/** premiumDetailGateUpdate 判定结果 */
+export interface PremiumDetailGateResult {
+  /** 叠加权益判定后的门控激活态（无权益的付费天体强制 false） */
+  readonly active: boolean;
+  /** 本帧命中锁定（原门控已激活但被权益拦截）——调用方据此上报 lockedHint */
+  readonly lockedHit: boolean;
+}
+
+/**
+ * 细节层权益叠加判定（U2-2 纯函数本体，useDetailLayer 在
+ * `detailGateUpdate` 之后串接）：
+ * - 免费天体 / 有效权益：原判定结果原样透传（现状零差异）；
+ * - 付费天体且无有效权益：强制 inactive，原判定为激活时报告 lockedHit
+ *   （细节层不挂载，沿用既有淡出路径）。
+ */
+export function premiumDetailGateUpdate(
+  gateActive: boolean,
+  entitlement: UnlockEntitlement | null,
+  bodyId: string,
+  nowSec: number,
+): PremiumDetailGateResult {
+  if (!gateActive || premiumGateAllows(entitlement, bodyId, nowSec)) {
+    return { active: gateActive, lockedHit: false };
+  }
+  return { active: false, lockedHit: true };
+}

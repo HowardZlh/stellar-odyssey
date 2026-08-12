@@ -18,6 +18,10 @@ const config = {
     'src/store/**/*.ts',
     'src/data/**/*.ts',
     'src/i18n/**/*.ts',
+    // U4：Worker 纯逻辑与签发 CLI 纯逻辑同受 ≥90% gate（index.ts 薄壳/
+    // CLI 入口为 IO 壳层，不计覆盖，见 REQUIREMENTS_UNLOCK.md §U4 登记）
+    'workers/unlock/lib/**/*.ts',
+    'scripts/unlock/issueTokenLib.mjs',
     '!src/**/*.d.ts',
   ],
   coverageThreshold: {

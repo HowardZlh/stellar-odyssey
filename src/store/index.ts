@@ -59,9 +59,31 @@ import type { SunCutawayLayerId } from '@/utils/sunCutaway';
 import { SN_MAX_REMNANTS, clampSupernovaDuration } from '@/utils/supernova';
 import { advanceSimTimeContinuous, clampSpeedMultiplier } from '@/utils/time';
 import { MERGE_PREVIEW_DURATION_SEC, mergePreviewSimDays } from '@/utils/universe';
+import { UNLOCK_PUBLIC_KEY_HEX } from '@/data/unlockPublicKey';
+import { FREE_DEMO_DAILY_LIMIT, demoQuotaRemaining, demoQuotaUpdate } from '@/utils/demoQuota';
+import type { DemoQuotaState } from '@/utils/demoQuota';
+import type { UnlockEntitlement } from '@/utils/premiumGate';
+import { tokenRemainingDays, verifyToken } from '@/utils/unlockToken';
+import type { VerifyTokenResult } from '@/utils/unlockToken';
+import {
+  persistDemoQuota,
+  persistUnlockToken,
+  readStoredDemoQuota,
+  readStoredUnlockToken,
+} from '@/utils/unlockStorage';
 
 /** 移动布局底部面板标识（M3：底部标签栏三入口，互斥打开） */
 export type MobilePanel = 'help' | 'controls' | 'contact';
+
+/** 锁定提示场景（U2-4）：细节层命中 / 巡游被拦 / 演示配额用尽 */
+export type LockedHintContext = 'detail' | 'cycle' | 'quota';
+
+/** 锁定提示卡片状态（U2-4 非阻断 HUD；null=隐藏） */
+export interface LockedHint {
+  context: LockedHintContext;
+  /** 命中天体 id（detail 场景；cycle/quota 为 null） */
+  bodyId: string | null;
+}
 
 export interface SimulationState {
   /** 模拟时间：J2000 历元起天数（初始为真实当前日期，需求 3.1.1 真实日期模式） */
@@ -325,6 +347,26 @@ export interface SimulationState {
    * 沿用各自既有状态，零变化）。
    */
   mobilePanel: MobilePanel | null;
+  /**
+   * 支持者权益（U2-1；null=免费态）。到期降级由 entitlementTick 承担
+   * （useUnlockInit 30 秒轻量 interval 驱动，登记：各 gate 直接信任本
+   * 字段非空即有效，到期最长 30 秒宽限——弱门口径内可接受）。
+   */
+  entitlement: UnlockEntitlement | null;
+  /** 免费演示每日配额（U2-3；null=当日未消耗，跨自然日由纯函数重置） */
+  demoQuota: DemoQuotaState | null;
+  /** 锁定提示卡片（U2-4 非阻断 HUD；null=隐藏） */
+  lockedHint: LockedHint | null;
+  /** 细节层锁定提示已上报过的 bodyId（会话内节流：同天体仅提示一次） */
+  lockedHintSeenBodyIds: readonly string[];
+  /**
+   * 今日剩余演示次数（派生字段，渲染纯度纪律：组件渲染期不读时钟，
+   * 由 requestDemoEvent / restoreUnlockState / entitlementTick 维护；
+   * 跨自然日刷新由 30s tick 兜底）
+   */
+  demoRemainingToday: number;
+  /** 权益剩余天数（派生字段，null=免费态；天粒度，30s tick 低频刷新） */
+  entitlementRemainingDays: number | null;
 
   // actions
   tick: (realDeltaSeconds: number) => void;
@@ -339,6 +381,34 @@ export interface SimulationState {
   setLocale: (locale: Locale) => void;
   /** 写入启动 URL 参数解析结果（B4：挂载后一次性调用） */
   setLaunchParams: (params: LaunchParams) => void;
+  /**
+   * 应用解锁 token（U2-1）：本地验签（签名 + exp 双验）通过 → 写入
+   * entitlement + persist；返回验签结果供 UI 报错（U3 粘贴框消费）。
+   * nowSec 缺省取当前时钟（测试注入用参数）。
+   */
+  applyUnlockToken: (token: string, nowSec?: number) => VerifyTokenResult;
+  /** 清除权益（U3 清除按钮/到期降级共用）：置空 + 清 persist */
+  clearEntitlement: () => void;
+  /**
+   * 启动恢复（U2-1，useUnlockInit 挂载时一次）：localStorage 读 token
+   * 验签通过注入 entitlement（过期/非法即清除存值）+ 恢复演示配额。
+   */
+  restoreUnlockState: (nowSec?: number) => void;
+  /** 权益到期检查（30s 轻量 interval）：exp ≤ now → 降级免费态 + 清 persist */
+  entitlementTick: (nowSec?: number) => void;
+  /**
+   * 手动演示配额申请（U2-3，四类手动演示共用）：有权益直通 true；
+   * 无权益消耗当日配额（跨自然日重置 + persist），配额尽 → false +
+   * 弹配额版锁定提示。自动触发路径不经此入口（零改动零计次）。
+   */
+  requestDemoEvent: (nowMs?: number) => boolean;
+  /**
+   * 上报锁定命中（U2-2/U2-3）：detail 场景同会话同天体节流一次；
+   * cycle/quota 场景为显式操作反馈，不节流。
+   */
+  reportLockedHint: (context: LockedHintContext, bodyId: string | null) => void;
+  /** 关闭锁定提示卡片 */
+  dismissLockedHint: () => void;
   /** 设置 UI 显隐（B5：kiosk 巡游隐藏 / 暂停恢复显示） */
   setUiVisible: (visible: boolean) => void;
   /** 切换 UI 显隐（B5：H 快捷键） */
@@ -729,8 +799,104 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   isCompact: false,
   adaptiveBloomGate: true,
   mobilePanel: null,
+  entitlement: null,
+  demoQuota: null,
+  lockedHint: null,
+  lockedHintSeenBodyIds: [],
+  demoRemainingToday: FREE_DEMO_DAILY_LIMIT,
+  entitlementRemainingDays: null,
 
   setLaunchParams: (params) => set({ launch: params }),
+
+  applyUnlockToken: (token, nowSec = Date.now() / 1000) => {
+    const result = verifyToken(token, UNLOCK_PUBLIC_KEY_HEX, nowSec);
+    if (result.ok) {
+      persistUnlockToken(token);
+      set({
+        entitlement: { tier: result.payload.tier, expSec: result.payload.exp },
+        entitlementRemainingDays: tokenRemainingDays(result.payload.exp, nowSec),
+      });
+    }
+    return result;
+  },
+
+  clearEntitlement: () => {
+    persistUnlockToken(null);
+    set({ entitlement: null, entitlementRemainingDays: null });
+  },
+
+  restoreUnlockState: (nowSec = Date.now() / 1000) => {
+    const quota = readStoredDemoQuota();
+    if (quota !== null) {
+      set({ demoQuota: quota, demoRemainingToday: demoQuotaRemaining(quota, nowSec * 1000) });
+    }
+    const token = readStoredUnlockToken();
+    if (token === null) return;
+    const result = verifyToken(token, UNLOCK_PUBLIC_KEY_HEX, nowSec);
+    if (result.ok) {
+      set({
+        entitlement: { tier: result.payload.tier, expSec: result.payload.exp },
+        entitlementRemainingDays: tokenRemainingDays(result.payload.exp, nowSec),
+      });
+    } else {
+      // 过期/非法存值即清除（下次启动零验签开销）
+      persistUnlockToken(null);
+    }
+  },
+
+  entitlementTick: (nowSec = Date.now() / 1000) => {
+    const state = get();
+    const updates: Partial<
+      Pick<SimulationState, 'entitlement' | 'entitlementRemainingDays' | 'demoRemainingToday'>
+    > = {};
+    // 派生字段低频刷新（跨自然日配额恢复 / 剩余天数天粒度递减）
+    const remaining = demoQuotaRemaining(state.demoQuota, nowSec * 1000);
+    if (remaining !== state.demoRemainingToday) updates.demoRemainingToday = remaining;
+    if (state.entitlement !== null) {
+      if (state.entitlement.expSec <= nowSec) {
+        // 到期降级免费态 + 清 persist
+        persistUnlockToken(null);
+        updates.entitlement = null;
+        updates.entitlementRemainingDays = null;
+      } else {
+        const days = tokenRemainingDays(state.entitlement.expSec, nowSec);
+        if (days !== state.entitlementRemainingDays) updates.entitlementRemainingDays = days;
+      }
+    }
+    if (Object.keys(updates).length > 0) set(updates);
+  },
+
+  requestDemoEvent: (nowMs = Date.now()) => {
+    const state = get();
+    // 有权益不限次（entitlementTick 维护 entitlement 时效，见字段登记）
+    if (state.entitlement !== null) return true;
+    const result = demoQuotaUpdate(state.demoQuota, nowMs);
+    persistDemoQuota(result.state);
+    if (result.allowed) {
+      set({ demoQuota: result.state, demoRemainingToday: result.remaining });
+      return true;
+    }
+    set({
+      demoQuota: result.state,
+      demoRemainingToday: 0,
+      lockedHint: { context: 'quota', bodyId: null },
+    });
+    return false;
+  },
+
+  reportLockedHint: (context, bodyId) =>
+    set((state) => {
+      if (context === 'detail') {
+        if (bodyId === null || state.lockedHintSeenBodyIds.includes(bodyId)) return state;
+        return {
+          lockedHint: { context, bodyId },
+          lockedHintSeenBodyIds: [...state.lockedHintSeenBodyIds, bodyId],
+        };
+      }
+      return { lockedHint: { context, bodyId } };
+    }),
+
+  dismissLockedHint: () => set({ lockedHint: null }),
 
   setDeviceTier: (tier) => set({ deviceTier: tier }),
 
@@ -1015,6 +1181,12 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   cycleScopeBody: (direction) =>
     set((state) => {
       const scope = state.cycleScope;
+      // U2-3 巡游 gate：L3/L4 域为支持者专属（kiosk 复用本 action 同受限，
+      // 裁决 §0.4 不豁免）；无权益 → 不切换 + 巡游版锁定提示（不节流——
+      // 显式操作反馈）。L1/L2 域零变化。
+      if ((scope === 'galaxy' || scope === 'universe') && state.entitlement === null) {
+        return { lockedHint: { context: 'cycle' as const, bodyId: null } };
+      }
       const followingInScope =
         state.followBodyId !== null && isScopeCycleBody(scope, state.followBodyId);
       // 跟随域内天体时沿序列切换；未跟随时点击即飞往域记忆天体

@@ -1,0 +1,22 @@
+# Cloudflare Worker：解锁兑换 API（REQUIREMENTS_UNLOCK.md §U4-1）
+#
+# 部署由用户执行（Agent 只交付配置），逐命令 checklist 见
+# docs/internal/UNLOCK_OPS.md（内部文档，不入库）。
+#
+# Secrets（wrangler secret put，严禁写入本文件）：
+#   AFDIAN_USER_ID / AFDIAN_TOKEN / ED25519_PRIVATE_KEY
+
+name = "stellar-unlock"
+main = "index.ts"
+compatibility_date = "2026-08-01"
+
+# `npx wrangler kv namespace create UNLOCK_KV` 执行后，把输出的 id 替换下方占位。
+# 本地 `wrangler dev` 走内置 KV 模拟器，占位 id 不影响冒烟。
+kv_namespaces = [
+  { binding = "UNLOCK_KV", id = "REPLACE_WITH_UNLOCK_KV_NAMESPACE_ID" }
+]
+
+# 静态站留 GitHub Pages，Worker 只挂 API 路由（需求文档裁决 ④）
+routes = [
+  { pattern = "stellar.guushu.com/api/*", zone_name = "guushu.com" }
+]
