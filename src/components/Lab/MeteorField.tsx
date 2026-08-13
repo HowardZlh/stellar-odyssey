@@ -41,6 +41,7 @@ import {
   type MeteorSlot,
 } from '@/utils/meteorShower';
 import { createSeededRandom } from '@/utils/random';
+import { fovPointScaleFactor } from '@/utils/labGestures';
 import type { LabFrameRefs } from '@/components/Lab/labTypes';
 
 /** 碎片 mini 条痕的 aLag 上限（主体条痕 aLag ∈ [0,1]，碎片更短） */
@@ -277,7 +278,11 @@ export function MeteorField({ slots, refs }: MeteorFieldProps): JSX.Element {
     u.uFireballFraction.value = s.fireballRate;
     (u.uVelocityDir.value as THREE.Vector3).set(-dir[0], -dir[1], -dir[2]);
     u.uPhenomenon.value = shower.id === 'perseids' ? 0 : 1;
-    u.uScale.value = state.gl.domElement.height * 0.5;
+    // 像素尺度 + FOV 缩放补偿（触控板捏合缩放时与星穹同步等比，方案 A）
+    u.uScale.value =
+      state.gl.domElement.height *
+      0.5 *
+      fovPointScaleFactor((state.camera as THREE.PerspectiveCamera).fov);
   });
 
   // attribute 为占位零点（真实位置由 shader 求得），必须关视锥剔除

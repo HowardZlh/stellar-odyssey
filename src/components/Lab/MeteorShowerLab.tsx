@@ -22,12 +22,22 @@
  * 地面剪影登记：暗色圆盘置于 y = −1.7（视觉上与需求 y=0 等价——地平线角
  * 偏差 atan(1.7/3000) ≈ 0.03°）；下沉理由：环顾相机为反转轨道范式（target
  * 固定原点、最低点 y = −1.5），圆盘严格置 y=0 会遮挡整个天空。
+ *
+ * 触控板手势（方案 A，M2 追加）：双指滚动 = 环顾（wheel deltaX/deltaY 双轴）、
+ * 捏合 = FOV 缩放（Chrome/Firefox：wheel+ctrlKey；Safari：gesture* 事件）——
+ * 换算/钳制全部下沉 utils/labGestures 纯函数；OrbitControls enableZoom 关闭
+ * （视距 dolly 物理上无意义，缩放语义由 FOV 承载）；星穹/流星/余迹三个粒子
+ * 系统的像素尺度均乘 fovPointScaleFactor 随 FOV 补偿（默认 FOV 时因子恒 1，
+ * 与既有观感逐像素一致）。鼠标滚轮与双指滚动浏览器层不可区分，鼠标 FOV
+ * 入口由控件面板滑杆/快捷键补位（M3-5 登记）；三指手势被 macOS 系统占用、
+ * 网页层无事件（系统开启「三指拖移」时等效拖拽已生效）。M4 触屏捏合复用
+ * 同一 FOV 钳制函数。
  */
 
 import type { JSX } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { Bloom, EffectComposer, ToneMapping } from '@react-three/postprocessing';
 import { ToneMappingMode } from 'postprocessing';
@@ -53,6 +63,16 @@ import {
   makeMeteorSlots,
   sceneDirFromAltAz,
 } from '@/utils/meteorShower';
+import {
+  LAB_FOV_DEFAULT_DEG,
+  LAB_POLAR_MAX_RAD,
+  LAB_POLAR_MIN_RAD,
+  clampLabPolar,
+  fovPointScaleFactor,
+  pinchFovDeg,
+  safariGestureFovDeg,
+  wheelLookDelta,
+} from '@/utils/labGestures';
 import { bvToTeffK, srgbToLinear01 } from '@/utils/pleiadesCatalog';
 import { blackbodyRGB } from '@/utils/starPhysics';
 import type { MessageKey } from '@/i18n';
@@ -205,8 +225,12 @@ function StarDome({ stars, refs }: StarDomeProps): JSX.Element {
   useFrame((state) => {
     const s = refs.settingsRef.current;
     const shower = refs.showerRef.current;
-    // 点大小随屏幕像素高度衰减（Starfield 同口径）
-    material.uniforms.uScale.value = state.gl.domElement.height * 0.5;
+    // 点大小随屏幕像素高度衰减（Starfield 同口径）+ FOV 缩放补偿
+    // （默认 FOV 时因子恒 1，捏合放大时星点按透视投影因子等比变大）
+    material.uniforms.uScale.value =
+      state.gl.domElement.height *
+      0.5 *
+      fovPointScaleFactor((state.camera as THREE.PerspectiveCamera).fov);
     // limitingMag 同时驱动恒星剔除与流量压低（§1.4 自洽联动）
     material.uniforms.uLimitingMag.value = s.limitingMag;
     // 恒星时演化：历元随页签、时长随 timeScale 放大后的共享 uTime
@@ -218,6 +242,90 @@ function StarDome({ stars, refs }: StarDomeProps): JSX.Element {
   // 几何包围球是单位球（attribute 为单位向量，真实位置由 shader 放到半径
   // 3000 处），必须关 frustum culling 防止整批被误剔除
   return <points geometry={geometry} material={material} frustumCulled={false} />;
+}
+
+/** Safari 专有捏合手势事件（lib.dom 无类型声明，最小结构接口） */
+interface SafariGestureEvent extends Event {
+  readonly scale?: number;
+}
+
+/**
+ * 触控板手势接线（方案 A）：双指滚动 → 环顾、捏合 → FOV 缩放。
+ * 换算/钳制走 utils/labGestures 纯函数（组件内零可测业务逻辑）；
+ * 监听挂画布元素、非被动（preventDefault 阻止页面缩放/回弹）。
+ */
+function TrackpadLookControls(): null {
+  const camera = useThree((s) => s.camera);
+  const gl = useThree((s) => s.gl);
+
+  useEffect(() => {
+    const el = gl.domElement;
+    const cam = camera as THREE.PerspectiveCamera;
+    const spherical = new THREE.Spherical();
+    // Safari 捏合走 gesture*（激活期间忽略 ctrl+wheel 分支防双重缩放）
+    let gestureActive = false;
+    let gestureStartFovDeg = cam.fov;
+
+    const applyFov = (fovDeg: number): void => {
+      cam.fov = fovDeg;
+      cam.updateProjectionMatrix();
+    };
+
+    const onWheel = (e: WheelEvent): void => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        // 触控板捏合（Chrome/Firefox/Edge 映射为 wheel+ctrlKey）→ FOV
+        if (!gestureActive) applyFov(pinchFovDeg(cam.fov, e.deltaY));
+        return;
+      }
+      // 双指滚动 → 环顾（deltaMode 换行/换页按近似像素预乘）
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? el.clientHeight : 1;
+      const { dThetaRad, dPhiRad } = wheelLookDelta(
+        e.deltaX * unit,
+        e.deltaY * unit,
+        el.clientHeight,
+        cam.fov
+      );
+      if (dThetaRad === 0 && dPhiRad === 0) return;
+      // 相机球坐标绕 target（原点）旋转，半径不变；polar 钳制与
+      // OrbitControls props 同一事实源（labGestures 常量）
+      spherical.setFromVector3(cam.position);
+      spherical.theta += dThetaRad;
+      spherical.phi = clampLabPolar(spherical.phi + dPhiRad);
+      cam.position.setFromSpherical(spherical);
+      cam.lookAt(0, 0, 0);
+    };
+
+    const onGestureStart = (e: Event): void => {
+      e.preventDefault();
+      gestureActive = true;
+      gestureStartFovDeg = cam.fov;
+    };
+    const onGestureChange = (e: Event): void => {
+      e.preventDefault();
+      const scale = (e as SafariGestureEvent).scale;
+      if (typeof scale === 'number') {
+        applyFov(safariGestureFovDeg(gestureStartFovDeg, scale));
+      }
+    };
+    const onGestureEnd = (e: Event): void => {
+      e.preventDefault();
+      gestureActive = false;
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('gesturestart', onGestureStart, { passive: false });
+    el.addEventListener('gesturechange', onGestureChange, { passive: false });
+    el.addEventListener('gestureend', onGestureEnd, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('gesturestart', onGestureStart);
+      el.removeEventListener('gesturechange', onGestureChange);
+      el.removeEventListener('gestureend', onGestureEnd);
+    };
+  }, [camera, gl]);
+
+  return null;
 }
 
 /** 地面剪影圆盘（暗色、不透明——遮蔽地平线以下的星，禁止地景细节工作量） */
@@ -302,7 +410,7 @@ export function MeteorShowerLab(): JSX.Element {
         gl={{ antialias: true }}
         camera={{
           position: INITIAL_CAMERA_POSITION,
-          fov: 65,
+          fov: LAB_FOV_DEFAULT_DEG,
           near: 0.05,
           far: STAR_DOME_RADIUS_UNITS * 2.5,
         }}
@@ -318,20 +426,23 @@ export function MeteorShowerLab(): JSX.Element {
         )}
         <GroundDisk />
         {/* 环顾式仰视（§2）：target 固定原点、半径钳制 0.1–1.5、禁平移；
-            polar 域 [π/2 − 0.35, π − 0.02]——视线俯角 ≤20°（不看穿地面）、
-            仰角上限 ≈88°（避开天顶极点奇异） */}
+            polar 域取 labGestures 常量（与 wheel 环顾钳制同一事实源）——
+            视线俯角 ≤20°（不看穿地面）、仰角上限 ≈88°（避开天顶极点奇异）。
+            enableZoom 关闭：视距 dolly 无意义（视差 <0.05%），滚轮/捏合语义
+            由 TrackpadLookControls 承载（方案 A） */}
         <OrbitControls
           target={[0, 0, 0]}
           minDistance={CAMERA_RADIUS_MIN_UNITS}
           maxDistance={CAMERA_RADIUS_MAX_UNITS}
           enablePan={false}
-          minPolarAngle={Math.PI / 2 - 0.35}
-          maxPolarAngle={Math.PI - 0.02}
+          enableZoom={false}
+          minPolarAngle={LAB_POLAR_MIN_RAD}
+          maxPolarAngle={LAB_POLAR_MAX_RAD}
           rotateSpeed={0.45}
-          zoomSpeed={0.5}
           enableDamping
           dampingFactor={0.12}
         />
+        <TrackpadLookControls />
         {/* 后期：Bloom + ACES ToneMapping（DevPreviewHarness 同配置；
             火流星末端闪爆 HDR ×15 由 Bloom 拾取，§4.4） */}
         <EffectComposer multisampling={4}>
