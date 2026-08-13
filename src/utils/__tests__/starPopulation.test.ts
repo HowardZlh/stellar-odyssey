@@ -9,14 +9,24 @@
 import {
   STAR_POPULATION_BUCKETS,
   STAR_BRIGHTNESS_JITTER_MIN,
+  BULGE_CENTER_BRIGHTEN,
+  BULGE_CENTER_WHITEN,
+  BULGE_CENTER_WHITE,
+  BULGE_EDGE_WARM_TINT,
+  OUTER_DISK_DIM_MAX,
+  OUTER_DISK_COOL_TINT,
+  OUTER_DISK_GRADIENT_START,
+  applyBulgeRadialGradient,
+  applyOuterDiskGradient,
   sampleStarColor,
   srgbToLinear01,
+  type LinearRgb,
   type StarPopulation,
 } from '../starPopulation';
 import { srgbToLinear01 as pleiadesSrgbToLinear01 } from '../pleiadesCatalog';
 import { BLACKBODY_TEFF_MIN_K, BLACKBODY_TEFF_MAX_K } from '../starPhysics';
 import { createSeededRandom } from '../random';
-import { generateGalaxyDiskParticles } from '../galaxy';
+import { ARM_OLD_DISK_BASE_FRACTION, generateGalaxyDiskParticles } from '../galaxy';
 
 const POPULATIONS: readonly StarPopulation[] = ['youngDisk', 'oldDisk', 'bulge', 'halo'];
 
@@ -207,6 +217,174 @@ describe('SC1 srgbToLinear01（循环 import 规避的本地实现，登记同�
     expect(() => srgbToLinear01(-0.01)).toThrow(RangeError);
     expect(() => srgbToLinear01(1.01)).toThrow(RangeError);
     expect(() => srgbToLinear01(Number.NaN)).toThrow(RangeError);
+  });
+});
+
+describe('SC2-1 applyBulgeRadialGradient（核球径向渐变）', () => {
+  const WARM: LinearRgb = { r: 0.6, g: 0.4, b: 0.2 };
+
+  it('半径 0（中心）：亮度提升 + 向暖白靠拢（解析值断言）', () => {
+    const out = applyBulgeRadialGradient(WARM, 0);
+    const gain = 1 + BULGE_CENTER_BRIGHTEN;
+    const expected = (c: number, w: number): number =>
+      Math.min(1, (c * (1 - BULGE_CENTER_WHITEN) + w * BULGE_CENTER_WHITEN) * gain);
+    expect(out.r).toBeCloseTo(expected(WARM.r, BULGE_CENTER_WHITE.r), 12);
+    expect(out.g).toBeCloseTo(expected(WARM.g, BULGE_CENTER_WHITE.g), 12);
+    expect(out.b).toBeCloseTo(expected(WARM.b, BULGE_CENTER_WHITE.b), 12);
+    // 中心亮黄白：各通道均不低于原色（提亮），且蓝通道相对占比上升（去饱和向白）
+    expect(out.r).toBeGreaterThan(WARM.r);
+    expect(out.b / out.r).toBeGreaterThan(WARM.b / WARM.r);
+  });
+
+  it('半径 1（边界）：无提亮，仅乘暖橙色调（解析值断言）', () => {
+    const out = applyBulgeRadialGradient(WARM, 1);
+    expect(out.r).toBeCloseTo(WARM.r * BULGE_EDGE_WARM_TINT.r, 12);
+    expect(out.g).toBeCloseTo(WARM.g * BULGE_EDGE_WARM_TINT.g, 12);
+    expect(out.b).toBeCloseTo(WARM.b * BULGE_EDGE_WARM_TINT.b, 12);
+    // 暖橙：蓝通道相对占比下降
+    expect(out.b / out.r).toBeLessThan(WARM.b / WARM.r);
+  });
+
+  it('超界半径钳制到 [0,1] 边界值；非有限半径抛 RangeError', () => {
+    expect(applyBulgeRadialGradient(WARM, 5)).toEqual(applyBulgeRadialGradient(WARM, 1));
+    expect(applyBulgeRadialGradient(WARM, -2)).toEqual(applyBulgeRadialGradient(WARM, 0));
+    expect(() => applyBulgeRadialGradient(WARM, Number.NaN)).toThrow(RangeError);
+    expect(() => applyBulgeRadialGradient(WARM, Number.POSITIVE_INFINITY)).toThrow(RangeError);
+  });
+
+  it('输出恒在 [0,1]（亮色输入提亮后钳制不越界）', () => {
+    const bright: LinearRgb = { r: 1, g: 0.95, b: 0.9 };
+    for (const rn of [0, 0.25, 0.5, 0.75, 1]) {
+      const out = applyBulgeRadialGradient(bright, rn);
+      for (const v of [out.r, out.g, out.b]) {
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+});
+
+describe('SC2-4 applyOuterDiskGradient（外盘渐冷渐暗，de Jong 1996）', () => {
+  const DISK: LinearRgb = { r: 0.7, g: 0.6, b: 0.5 };
+
+  it('半径 0 与梯度起始半径内恒等返回（内盘零影响）', () => {
+    expect(applyOuterDiskGradient(DISK, 0)).toEqual(DISK);
+    expect(applyOuterDiskGradient(DISK, OUTER_DISK_GRADIENT_START)).toEqual(DISK);
+  });
+
+  it('半径 1（盘缘）：满额暗化 + 冷色调（解析值断言，渐冷渐暗）', () => {
+    const out = applyOuterDiskGradient(DISK, 1);
+    const gain = 1 - OUTER_DISK_DIM_MAX;
+    expect(out.r).toBeCloseTo(DISK.r * gain * OUTER_DISK_COOL_TINT.r, 12);
+    expect(out.g).toBeCloseTo(DISK.g * gain * OUTER_DISK_COOL_TINT.g, 12);
+    expect(out.b).toBeCloseTo(DISK.b * gain * OUTER_DISK_COOL_TINT.b, 12);
+    // 渐暗 + 渐冷：总亮度下降、蓝通道相对占比上升
+    expect(out.r + out.g + out.b).toBeLessThan(DISK.r + DISK.g + DISK.b);
+    expect(out.b / out.r).toBeGreaterThan(DISK.b / DISK.r);
+  });
+
+  it('smoothstep 过渡无硬边（起始半径附近增量趋零、径向单调渐暗）', () => {
+    const nearStart = applyOuterDiskGradient(DISK, OUTER_DISK_GRADIENT_START + 0.01);
+    expect(Math.abs(nearStart.r - DISK.r)).toBeLessThan(0.005);
+    let prev = Number.POSITIVE_INFINITY;
+    for (const rn of [0.5, 0.6, 0.7, 0.8, 0.9, 1]) {
+      const out = applyOuterDiskGradient(DISK, rn);
+      const lum = out.r + out.g + out.b;
+      expect(lum).toBeLessThan(prev);
+      prev = lum;
+    }
+  });
+
+  it('超界半径钳制到 [0,1] 边界值；非有限半径抛 RangeError', () => {
+    expect(applyOuterDiskGradient(DISK, 3)).toEqual(applyOuterDiskGradient(DISK, 1));
+    expect(applyOuterDiskGradient(DISK, -1)).toEqual(DISK);
+    expect(() => applyOuterDiskGradient(DISK, Number.NaN)).toThrow(RangeError);
+  });
+});
+
+describe('SC2 生成期集成（核球渐变 / 旋臂黄底 / 外盘梯度）', () => {
+  const PARAMS = {
+    count: 30000,
+    seed: 20260813,
+    armCount: 4,
+    diskRadiusLy: 50000,
+    thicknessLy: 1000,
+    bulgeRadiusLy: 8000,
+    bulgeFraction: 0.2,
+    spiralTightness: 1.2,
+    armSpreadRad: 0.28,
+    barFraction: 0.08,
+  } as const;
+
+  it('旋臂 oldDisk 混入比例常量在 (0,1) 内（登记：0.55）', () => {
+    expect(ARM_OLD_DISK_BASE_FRACTION).toBeGreaterThan(0);
+    expect(ARM_OLD_DISK_BASE_FRACTION).toBeLessThan(1);
+  });
+
+  it('核球粒子内圈均亮度 > 外圈（径向渐变生效）', () => {
+    const p = generateGalaxyDiskParticles(PARAMS);
+    const bulgeCount = Math.round(PARAMS.count * PARAMS.bulgeFraction);
+    let innerLum = 0;
+    let innerN = 0;
+    let outerLum = 0;
+    let outerN = 0;
+    for (let i = 0; i < bulgeCount; i += 1) {
+      const rn = p.radiiLy[i] / PARAMS.bulgeRadiusLy;
+      const lum = p.colors[i * 3] + p.colors[i * 3 + 1] + p.colors[i * 3 + 2];
+      if (rn < 0.3) {
+        innerLum += lum;
+        innerN += 1;
+      } else if (rn > 0.7) {
+        outerLum += lum;
+        outerN += 1;
+      }
+    }
+    expect(innerN).toBeGreaterThan(50);
+    expect(outerN).toBeGreaterThan(50);
+    expect(innerLum / innerN).toBeGreaterThan(outerLum / outerN);
+  });
+
+  it('盘粒子外缘均亮度更低且更冷（外盘梯度生效，无硬边由纯函数单测覆盖）', () => {
+    const p = generateGalaxyDiskParticles(PARAMS);
+    const diskStart = Math.round(PARAMS.count * (PARAMS.bulgeFraction + PARAMS.barFraction));
+    const inner = { r: 0, g: 0, b: 0, n: 0 };
+    const outer = { r: 0, g: 0, b: 0, n: 0 };
+    for (let i = diskStart; i < p.count; i += 1) {
+      const rn = p.radiiLy[i] / PARAMS.diskRadiusLy;
+      const acc = rn < OUTER_DISK_GRADIENT_START ? inner : rn > 0.9 ? outer : null;
+      if (acc) {
+        acc.r += p.colors[i * 3];
+        acc.g += p.colors[i * 3 + 1];
+        acc.b += p.colors[i * 3 + 2];
+        acc.n += 1;
+      }
+    }
+    expect(inner.n).toBeGreaterThan(200);
+    expect(outer.n).toBeGreaterThan(200);
+    const innerLum = (inner.r + inner.g + inner.b) / inner.n;
+    const outerLum = (outer.r + outer.g + outer.b) / outer.n;
+    expect(outerLum).toBeLessThan(innerLum);
+    // 渐冷：外缘 B/R 均值比高于内盘
+    expect(outer.b / outer.r).toBeGreaterThan(inner.b / inner.r);
+  });
+
+  it('旋臂黄底混入后盘面整体 R−B 高于纯 youngDisk 口径（黄底可辨）', () => {
+    const p = generateGalaxyDiskParticles(PARAMS);
+    const diskStart = Math.round(PARAMS.count * (PARAMS.bulgeFraction + PARAMS.barFraction));
+    let r = 0;
+    let b = 0;
+    let n = 0;
+    for (let i = diskStart; i < p.count; i += 1) {
+      if (p.radiiLy[i] / PARAMS.diskRadiusLy < OUTER_DISK_GRADIENT_START) {
+        r += p.colors[i * 3];
+        b += p.colors[i * 3 + 2];
+        n += 1;
+      }
+    }
+    // 纯 youngDisk 大样本均值为 B > R（SC1 断言）；混入 55% oldDisk 黄底
+    // + 20% 臂间 oldDisk 后，内盘（无外盘梯度干扰区）整体转向 R ≥ B
+    expect(n).toBeGreaterThan(500);
+    expect(r / n).toBeGreaterThan(b / n);
   });
 });
 

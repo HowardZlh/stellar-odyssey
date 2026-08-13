@@ -990,11 +990,21 @@ export function createSoftPointCanvas(size = 64): HTMLCanvasElement {
 /**
  * 核球/银晕辉光贴图（P6 §3.3）：径向渐变基底 + fBm 噪声扰动的多层辉光，
  * 替换纯径向渐变圆斑，消除"贴图圆斑"感。确定性种子。
+ *
+ * SC2-1：可选 `edgeColor` 提供径向双色渐变（中心 `color` → 边缘
+ * `edgeColor` 按归一化半径线性插值），与核球粒子"中心亮黄白 →
+ * 外缘暖橙"径向渐变协调；缺省单色路径（银晕辉光等）逐字节零变化。
  */
-export function createBulgeGlowCanvas(color: string, size = 256, seed = 7): HTMLCanvasElement {
+export function createBulgeGlowCanvas(
+  color: string,
+  size = 256,
+  seed = 7,
+  edgeColor?: string,
+): HTMLCanvasElement {
   const canvas = makeCanvas(size, size);
   const ctx = getContext2D(canvas);
   const c = hexToRgb(color);
+  const edge = edgeColor === undefined ? c : hexToRgb(edgeColor);
   const fbm = createFbm(seed, 4, 6, 6);
   const half = size / 2;
   const image = ctx.createImageData(size, size);
@@ -1011,9 +1021,11 @@ export function createBulgeGlowCanvas(color: string, size = 256, seed = 7): HTML
       const alpha = clamp01(radial * radial * (0.55 + 0.9 * n));
       const idx = (y * size + x) * 4;
       const bright = 0.7 + 0.3 * n;
-      data[idx] = c.r * bright;
-      data[idx + 1] = c.g * bright;
-      data[idx + 2] = c.b * bright;
+      // SC2-1 径向双色：中心 color → 边缘 edgeColor（单色时恒 c）
+      const t = Math.min(1, dist);
+      data[idx] = (c.r + (edge.r - c.r) * t) * bright;
+      data[idx + 1] = (c.g + (edge.g - c.g) * t) * bright;
+      data[idx + 2] = (c.b + (edge.b - c.b) * t) * bright;
       data[idx + 3] = alpha * 255;
     }
   }

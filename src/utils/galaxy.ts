@@ -73,7 +73,12 @@
 import type { Vec3 } from '@/types';
 import { normalizeAngle } from '@/utils/physics';
 import { createSeededRandom } from '@/utils/random';
-import { sampleStarColor, srgbToLinear01 } from '@/utils/starPopulation';
+import {
+  applyBulgeRadialGradient,
+  applyOuterDiskGradient,
+  sampleStarColor,
+  srgbToLinear01,
+} from '@/utils/starPopulation';
 
 /** 银盘半径（光年）：银盘直径约 10 万光年 */
 export const GALACTIC_DISK_RADIUS_LY = 50000;
@@ -482,11 +487,26 @@ const INTER_ARM_FRACTION = 0.2;
 const NEBULA_FRACTION = 0.08;
 
 /**
+ * 旋臂粒子基底混入 oldDisk（中老年黄橙）的比例（SC2-2）
+ *
+ * 参考图（NGC 4414）旋臂底色为盘面黄而非纯蓝——旋臂区域除年轻
+ * 星族 I 外仍以中老年盘星为主体（旋臂为密度波而非独立星群，
+ * Lin & Shu 1964 密度波理论口径）；蓝白年轻星以"串珠"形式点缀于
+ * 臂脊（shader vWave 密度波增亮 + HII 团块通道保持既有调制）。
+ * 口径：HII 粉（NEBULA_FRACTION）判定后的非粉旋臂粒子按该比例
+ * 抽 oldDisk 黄底，其余保持 youngDisk 蓝白串珠。
+ */
+export const ARM_OLD_DISK_BASE_FRACTION = 0.55;
+
+/**
  * 确定性生成银盘粒子（需求 4.4：粒子大小/密度中心到边缘渐变、≥6 种恒星颜色混合）
  *
  * 颜色（SC1）：星族采样器 `sampleStarColor`（starPopulation.ts，发光加权
  * Teff 采样 → blackbodyRGB 连续颜色，线性 RGB）——核球/棒 → bulge、
  * 旋臂 → youngDisk、臂间 → oldDisk；HII 粉 8% 掺入保留。
+ * 颜色（SC2）：核球/棒叠加径向渐变（中心亮黄白 → 外缘暖橙）；旋臂
+ * 混入 `ARM_OLD_DISK_BASE_FRACTION` 黄底；盘粒子叠加外盘渐冷渐暗
+ * 梯度（径向因子均为 starPopulation.ts 纯函数，依据注释就地登记）。
  *
  * - 核球（bulgeFraction 占比）：半径 bulgeRadiusLy 内三维近球状分布
  *   （略压扁），老年星族红黄色调，高度分布比薄盘厚；
@@ -563,14 +583,18 @@ export function generateGalaxyDiskParticles(params: GalaxyDiskParams): GalaxyDis
       result.barFlags[i] = 1;
 
       // SC1：棒与核球同为老年星族 II（bulge 预设，K/M 红黄 + 红巨星，
-      // 禁 O/B）；legacy 路径保持单色 + 亮度抖动（随机数消耗序列一致性）
+      // 禁 O/B）；legacy 路径保持单色 + 亮度抖动（随机数消耗序列一致性）。
+      // SC2-1：叠加径向渐变（中心亮黄白 → 外缘暖橙，按棒半长归一）
       if (legacy) {
         const brightness = 0.8 + 0.2 * rand();
         result.colors[i * 3] = legacyBulge.r * brightness;
         result.colors[i * 3 + 1] = legacyBulge.g * brightness;
         result.colors[i * 3 + 2] = legacyBulge.b * brightness;
       } else {
-        const color = sampleStarColor('bulge', rand);
+        const color = applyBulgeRadialGradient(
+          sampleStarColor('bulge', rand),
+          result.radiiLy[i] / barHalfLengthLy,
+        );
         result.colors[i * 3] = color.r;
         result.colors[i * 3 + 1] = color.g;
         result.colors[i * 3 + 2] = color.b;
@@ -585,14 +609,19 @@ export function generateGalaxyDiskParticles(params: GalaxyDiskParams): GalaxyDis
       result.phases[i] = azimuth;
       result.heightsLy[i] = rr * cosPolar * BULGE_FLATTENING;
 
-      // SC1：核球老年星族 II 采样（径向渐变归 SC2）；legacy 同上
+      // SC1：核球老年星族 II 采样；legacy 同上。
+      // SC2-1：叠加径向渐变（按 3D 半径 rr / 核球半径归一，
+      // 中心亮黄白 → 外缘暖橙，applyBulgeRadialGradient 依据登记）
       if (legacy) {
         const brightness = 0.85 + 0.15 * rand();
         result.colors[i * 3] = legacyBulge.r * brightness;
         result.colors[i * 3 + 1] = legacyBulge.g * brightness;
         result.colors[i * 3 + 2] = legacyBulge.b * brightness;
       } else {
-        const color = sampleStarColor('bulge', rand);
+        const color = applyBulgeRadialGradient(
+          sampleStarColor('bulge', rand),
+          rr / params.bulgeRadiusLy,
+        );
         result.colors[i * 3] = color.r;
         result.colors[i * 3 + 1] = color.g;
         result.colors[i * 3 + 2] = color.b;
@@ -624,9 +653,11 @@ export function generateGalaxyDiskParticles(params: GalaxyDiskParams): GalaxyDis
       result.warpsLy[i] = warpYLy(r, result.phases[i]);
 
       // SC1 颜色：星族采样器（发光加权，starPopulation.ts 唯一事实源）——
-      // 旋臂 → youngDisk（年轻星族 I，蓝白为主）；臂间/弥散 → oldDisk
-      // （中老年 F/G/K 黄橙）；旋臂 HII 粉红团块 8% 机制原样保留
-      // （旋臂混入 oldDisk 底色的配比归 SC2，本阶段旋臂纯 youngDisk）。
+      // 臂间/弥散 → oldDisk（中老年 F/G/K 黄橙）；旋臂 HII 粉红团块
+      // 8% 机制原样保留。SC2-2 旋臂分层：非粉旋臂粒子按
+      // ARM_OLD_DISK_BASE_FRACTION 混入 oldDisk 黄底（参考图旋臂
+      // 底色为黄），其余保持 youngDisk 蓝白串珠。SC2-4：全部盘粒子
+      // 叠加外盘"渐冷渐暗"梯度（applyOuterDiskGradient，de Jong 1996）。
       // legacy 路径 = 历史色板均匀抽样（近观星系层零变化）
       if (legacy) {
         const color =
@@ -636,12 +667,16 @@ export function generateGalaxyDiskParticles(params: GalaxyDiskParams): GalaxyDis
         result.colors[i * 3] = color.r;
         result.colors[i * 3 + 1] = color.g;
         result.colors[i * 3 + 2] = color.b;
-      } else if (!isInterArm && rand() < NEBULA_FRACTION) {
-        result.colors[i * 3] = pink.r;
-        result.colors[i * 3 + 1] = pink.g;
-        result.colors[i * 3 + 2] = pink.b;
       } else {
-        const color = sampleStarColor(isInterArm ? 'oldDisk' : 'youngDisk', rand);
+        const rNorm = r / params.diskRadiusLy;
+        const isNebula = !isInterArm && rand() < NEBULA_FRACTION;
+        const base = isNebula
+          ? pink
+          : sampleStarColor(
+              isInterArm || rand() < ARM_OLD_DISK_BASE_FRACTION ? 'oldDisk' : 'youngDisk',
+              rand,
+            );
+        const color = applyOuterDiskGradient(base, rNorm);
         result.colors[i * 3] = color.r;
         result.colors[i * 3 + 1] = color.g;
         result.colors[i * 3 + 2] = color.b;

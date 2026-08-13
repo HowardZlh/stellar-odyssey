@@ -326,9 +326,11 @@ export function Galaxy(): JSX.Element {
           if (d2 > 0.25) discard;
           // 柔和圆点（中心亮边缘淡）；密度波调制亮度（vWave ∈ [1−c, 1+c]）
           float falloff = 1.0 - smoothstep(0.05, 0.25, d2);
-          // R2-9 尘埃红化：中平面残余光偏红棕（星际消光蓝端更强）
+          // R2-9/SC2-3 尘埃褐化：中平面残余光变暗 + R>G>B 褐色偏移
+          // （星际消光曲线蓝端衰减更强 → 视觉 = 变暗 + 偏红褐，
+          // Cardelli et al. 1989；系数级改动，通道结构不变）
           vec3 col = vColor * vWave;
-          col = mix(col, col * vec3(1.0, 0.55, 0.38), vDust * 0.6);
+          col = mix(col, col * vec3(0.72, 0.42, 0.24), vDust * 0.8);
           gl_FragColor = vec4(col, uOpacity * (0.35 + 0.65 * falloff));
         }
       `,
@@ -421,9 +423,11 @@ export function Galaxy(): JSX.Element {
 
   // ---------- 中心辉光（多层）与银心标记 ----------
   const glowTextures = useMemo(() => {
-    // 核球/银晕：噪声扰动多层辉光（P6 §3.3，替换纯径向渐变圆斑）
+    // 核球/银晕：噪声扰动多层辉光（P6 §3.3，替换纯径向渐变圆斑）。
+    // SC2-1：核球辉光径向双色（中心亮黄白 #fff3dc → 边缘暖橙 #ffb066），
+    // 与核球粒子径向渐变（applyBulgeRadialGradient）色温协调
     const core = new THREE.CanvasTexture(
-      createBulgeGlowCanvas("#ffe8c8", 256, 91),
+      createBulgeGlowCanvas("#fff3dc", 256, 91, "#ffb066"),
     );
     const halo = new THREE.CanvasTexture(
       createBulgeGlowCanvas("#c8d4ff", 256, 41),
@@ -954,8 +958,10 @@ export function Galaxy(): JSX.Element {
         visible={false}
       >
         <sphereGeometry args={[1, 48, 12]} />
+        {/* SC2-3：暗带色 #170d06（近黑）→ #3d2415（可辨识暖褐，
+            R>G>B，Cardelli 1989 消光红化观感；渐入逻辑不变） */}
         <meshBasicMaterial
-          color="#170d06"
+          color="#3d2415"
           transparent
           opacity={0}
           depthWrite={false}

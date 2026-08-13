@@ -143,6 +143,104 @@ export const STAR_POPULATION_BUCKETS: Readonly<
 };
 
 // ---------------------------------------------------------------------------
+// SC2 径向颜色调制（REQUIREMENTS_STAR_COLORS §SC2-1/-4，生成期纯函数）
+// ---------------------------------------------------------------------------
+
+/**
+ * 核球中心亮度提升幅度（半径 0 处 gain = 1 + 该值，向外二次衰减）
+ *
+ * 依据：旋涡星系核球面亮度向心陡增（Sérsic 轮廓），参考图（NGC 4414）
+ * 核心呈亮黄白、外缘暖橙——中心以"亮度提升 + 向暖白靠拢"近似高
+ * 恒星密度的视觉叠加（§SC2-1）。
+ */
+export const BULGE_CENTER_BRIGHTEN = 0.35;
+
+/** 核球中心向暖白靠拢的最大混合比（半径 0 处，向外二次衰减） */
+export const BULGE_CENTER_WHITEN = 0.5;
+
+/** 核球中心暖白参考色（线性 RGB，约 #fff3dc 的线性域值——亮黄白） */
+export const BULGE_CENTER_WHITE: Readonly<LinearRgb> = { r: 1.0, g: 0.9, b: 0.72 };
+
+/** 核球外缘暖橙乘性色调（线性 RGB 乘子；r=1 处满额，向心线性减弱） */
+export const BULGE_EDGE_WARM_TINT: Readonly<LinearRgb> = { r: 1.0, g: 0.78, b: 0.5 };
+
+/**
+ * 外盘"渐冷渐暗"最大暗化比例（盘缘 rNorm=1 处亮度 ×(1−该值)）
+ *
+ * 依据：盘星系面亮度径向指数衰减、B−V 由内向外变蓝（de Jong 1996,
+ * A&A 313）；低面亮度外盘视觉上呈"渐暗渐冷"（§0.3/§SC2-4 登记）。
+ */
+export const OUTER_DISK_DIM_MAX = 0.42;
+
+/** 外盘冷色乘性色调（压 R/G 留 B → 变冷同时不越界，线性 RGB 乘子） */
+export const OUTER_DISK_COOL_TINT: Readonly<LinearRgb> = { r: 0.8, g: 0.9, b: 1.0 };
+
+/** 外盘梯度起始半径（rNorm，smoothstep 下沿——内盘不受影响、无硬边） */
+export const OUTER_DISK_GRADIENT_START = 0.4;
+
+/** rNorm 参数校验 + [0,1] 钳制（超界半径按边界值处理，非法值抛错） */
+function clampRadiusNorm(rNorm: number): number {
+  if (!Number.isFinite(rNorm)) {
+    throw new RangeError(`归一化半径必须为有限数，收到 ${rNorm}`);
+  }
+  return Math.min(1, Math.max(0, rNorm));
+}
+
+/** Hermite smoothstep（与 GLSL smoothstep 同式，纯 CPU 生成期使用） */
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * 核球/棒粒子径向颜色渐变（SC2-1，生成期一次性调用）
+ *
+ * 中心（rNorm→0）：亮度提升 `BULGE_CENTER_BRIGHTEN` + 向暖白
+ * `BULGE_CENTER_WHITE` 靠拢（亮黄白核心）；外缘（rNorm→1）：乘
+ * `BULGE_EDGE_WARM_TINT` 暖橙色调。两端权重均连续（中心二次、
+ * 外缘线性），无硬边；输出钳制在 [0,1]。
+ *
+ * @param color 星族采样输出（线性 RGB）
+ * @param rNorm 粒子半径 / 核球半径（超界钳制到 [0,1]）
+ */
+export function applyBulgeRadialGradient(color: LinearRgb, rNorm: number): LinearRgb {
+  const r = clampRadiusNorm(rNorm);
+  const centerW = (1 - r) * (1 - r);
+  const whiten = BULGE_CENTER_WHITEN * centerW;
+  const gain = 1 + BULGE_CENTER_BRIGHTEN * centerW;
+  const mixTint = (base: number, white: number, tint: number): number =>
+    Math.min(1, (base * (1 - whiten) + white * whiten) * gain * (1 + (tint - 1) * r));
+  return {
+    r: mixTint(color.r, BULGE_CENTER_WHITE.r, BULGE_EDGE_WARM_TINT.r),
+    g: mixTint(color.g, BULGE_CENTER_WHITE.g, BULGE_EDGE_WARM_TINT.g),
+    b: mixTint(color.b, BULGE_CENTER_WHITE.b, BULGE_EDGE_WARM_TINT.b),
+  };
+}
+
+/**
+ * 盘粒子外盘"渐冷渐暗"径向梯度（SC2-4，生成期一次性调用）
+ *
+ * `OUTER_DISK_GRADIENT_START` 内恒等返回；向外按 smoothstep 平滑
+ * 叠加暗化（至 ×(1−OUTER_DISK_DIM_MAX)）与冷色调（乘
+ * `OUTER_DISK_COOL_TINT`），边缘与星空背景过渡无硬边（§SC2-4，
+ * de Jong 1996 依据见常量注释）。
+ *
+ * @param color 星族采样/HII 粉输出（线性 RGB）
+ * @param rNorm 粒子半径 / 盘半径（超界钳制到 [0,1]）
+ */
+export function applyOuterDiskGradient(color: LinearRgb, rNorm: number): LinearRgb {
+  const r = clampRadiusNorm(rNorm);
+  const w = smoothstep(OUTER_DISK_GRADIENT_START, 1, r);
+  if (w === 0) return { r: color.r, g: color.g, b: color.b };
+  const gain = 1 - OUTER_DISK_DIM_MAX * w;
+  return {
+    r: color.r * gain * (1 + (OUTER_DISK_COOL_TINT.r - 1) * w),
+    g: color.g * gain * (1 + (OUTER_DISK_COOL_TINT.g - 1) * w),
+    b: color.b * gain * (1 + (OUTER_DISK_COOL_TINT.b - 1) * w),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // 采样
 // ---------------------------------------------------------------------------
 
