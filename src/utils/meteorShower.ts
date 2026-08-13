@@ -1490,3 +1490,113 @@ export function labQualityTier(env: LabQualityEnv): LabQualityTier {
   if (env.dpr >= 3 && shortSide < 1024) return 'reduced';
   return 'full';
 }
+
+/**
+ * 画质档渲染参数表（§4.5 M4-2：组件只消费本表，禁止在组件内散落判定）
+ *
+ * reduced 档（千元机 ≥30 FPS 底线）：关 Bloom、流星槽位与余迹槽位减半、
+ * 条痕 K 折半、星场粒径上限下调、DPR 钳制 ≤ 2；full 档为既有观感
+ * （全部量与 M3 交付时逐项一致，full 档零观感变化）。
+ */
+export interface LabQualityParams {
+  /** 后期 Bloom 开关（reduced 关——mipmap blur 全屏链是移动端大头） */
+  bloomEnabled: boolean;
+  /** 流星槽位数缩放因子（slotCount 按雨基数 × 本因子后取整） */
+  slotFactor: number;
+  /** 余迹绑定槽位上限（full = AFTERGLOW_MAX_SLOTS） */
+  afterglowMaxSlots: number;
+  /** 余迹粒子预算（full = AFTERGLOW_PARTICLE_BUDGET） */
+  afterglowParticleBudget: number;
+  /** 条痕顶点数 K（full = METEOR_TRAIL_VERTICES；折半仍 ≥ §4.3 原域下限 16） */
+  trailVertices: number;
+  /** 星场点精灵像素上限（星穹 shader uPointMax；full = 既有 clamp 24） */
+  starPointMaxPx: number;
+  /** Canvas DPR 上限（R3F dpr=[1, maxDpr]） */
+  maxDpr: number;
+}
+
+/** 星场点精灵像素上限（full 档，M2 星穹 shader 既有 clamp 值） */
+export const STAR_POINT_MAX_PX = 24;
+
+export function labQualityParams(tier: LabQualityTier): LabQualityParams {
+  if (tier === 'reduced') {
+    return {
+      bloomEnabled: false,
+      slotFactor: 0.5,
+      afterglowMaxSlots: Math.ceil(AFTERGLOW_MAX_SLOTS / 2),
+      afterglowParticleBudget: Math.ceil(AFTERGLOW_PARTICLE_BUDGET / 2),
+      trailVertices: METEOR_TRAIL_VERTICES / 2,
+      starPointMaxPx: 16,
+      maxDpr: 2,
+    };
+  }
+  return {
+    bloomEnabled: true,
+    slotFactor: 1,
+    afterglowMaxSlots: AFTERGLOW_MAX_SLOTS,
+    afterglowParticleBudget: AFTERGLOW_PARTICLE_BUDGET,
+    trailVertices: METEOR_TRAIL_VERTICES,
+    starPointMaxPx: STAR_POINT_MAX_PX,
+    maxDpr: 2,
+  };
+}
+
+/**
+ * 按画质档缩放槽位预算（reduced 减半；下限 1 防空槽位系统）
+ *
+ * 流量自洽登记：fluxFraction = HR/3600 × T / N 随 N 减半自动翻倍
+ * （钳制 ≤1 前物理点燃率 HR 不变），reduced 档牺牲的是并发容量上限
+ * 而非可见速率——与 §4.5"槽位减半"的预期一致。
+ */
+export function labSlotCount(baseCount: number, params: LabQualityParams): number {
+  if (!Number.isInteger(baseCount) || baseCount < 1) {
+    throw new RangeError(`槽位基数必须为正整数，收到 ${baseCount}`);
+  }
+  return Math.max(1, Math.round(baseCount * params.slotFactor));
+}
+
+// ---------------------------------------------------------------------------
+// 音频可听化（§5 M4-1：ignitedSlots 触发的可听子集与频度控制）
+// ---------------------------------------------------------------------------
+
+/** 可听化普通槽位入选比例（质量降序前 25%——"只对亮流星触发"的量化口径） */
+export const AUDIBLE_NORMAL_FRACTION = 0.25;
+
+/** 单帧可听化触发上限（防高流量音疲劳：狮子座暴 ~6 颗/s 时也最多双声叠加） */
+export const AUDIBLE_MAX_PER_FRAME = 2;
+
+/**
+ * 普通流星哨鸣最小真实间隔（秒）：延时摄影 ×60 等高倍率下单帧扫过
+ * 多个点燃周期，帧上限仍可能连帧触发（60 fps × 2 = 120 声/s），
+ * 以真实时间节流兜底；火流星哨鸣豁免（稀有且显著，不受间隔限制）。
+ */
+export const AUDIBLE_MIN_GAP_REAL_SEC = 0.25;
+
+/**
+ * 可听化槽位集（§5：真实流星无声，射电回波可听化只对"亮流星/火流星"
+ * 触发以控频度——普通流星密集时静默防音疲劳）
+ *
+ * 入选规则（确定性，selectAfterglowSlots 同范式）：火流星槽位全量入选；
+ * 普通槽位按质量降序（质量 → 峰值光度单调映射，§1.1）取前 fraction 比例
+ * （向上取整，普通槽位存在时至少 1 个）。
+ *
+ * @returns 入选槽位下标 Set（消费侧 O(1) 查询本帧点燃槽位是否可听）
+ */
+export function selectAudibleSlots(
+  slots: readonly MeteorSlot[],
+  fraction: number = AUDIBLE_NORMAL_FRACTION
+): Set<number> {
+  if (!(fraction >= 0 && fraction <= 1)) {
+    throw new RangeError(`入选比例必须在 [0, 1]，收到 ${fraction}`);
+  }
+  const audible = new Set<number>();
+  const normals: number[] = [];
+  for (let i = 0; i < slots.length; i++) {
+    if (slots[i].isFireball) audible.add(i);
+    else normals.push(i);
+  }
+  normals.sort((a, b) => slots[b].massKg - slots[a].massKg);
+  const take = fraction === 0 ? 0 : Math.min(normals.length, Math.ceil(normals.length * fraction));
+  for (let k = 0; k < take; k++) audible.add(normals[k]);
+  return audible;
+}

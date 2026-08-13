@@ -17,6 +17,7 @@ import {
   fovPointScaleFactor,
   pinchFovDeg,
   safariGestureFovDeg,
+  touchPinchScale,
   wheelLookDelta,
 } from '../labGestures';
 import {
@@ -110,6 +111,27 @@ describe('safariGestureFovDeg（gesture* 捏合 → FOV）', () => {
     expect(safariGestureFovDeg(65, 0)).toBe(65);
     expect(safariGestureFovDeg(65, -1)).toBe(65);
     expect(safariGestureFovDeg(65, Number.NaN)).toBe(65);
+  });
+});
+
+describe('touchPinchScale（M4-2 触屏双指捏合 → 累计比例）', () => {
+  it('比例 = 当前双指距 / 起始双指距（>1 张开 = 放大）', () => {
+    expect(touchPinchScale(100, 200)).toBeCloseTo(2, 12);
+    expect(touchPinchScale(200, 100)).toBeCloseTo(0.5, 12);
+    expect(touchPinchScale(150, 150)).toBe(1);
+  });
+
+  it('与 safariGestureFovDeg 组合：张开变窄、捏拢变宽（同一钳制函数复用）', () => {
+    expect(safariGestureFovDeg(65, touchPinchScale(100, 200))).toBeCloseTo(32.5, 12);
+    expect(safariGestureFovDeg(60, touchPinchScale(100, 80))).toBeCloseTo(75, 12);
+  });
+
+  it('非法输入（起始距 ≤0 / 非有限）返回 1（不缩放）', () => {
+    expect(touchPinchScale(0, 100)).toBe(1);
+    expect(touchPinchScale(-5, 100)).toBe(1);
+    expect(touchPinchScale(100, 0)).toBe(1);
+    expect(touchPinchScale(Number.NaN, 100)).toBe(1);
+    expect(touchPinchScale(100, Number.POSITIVE_INFINITY)).toBe(1);
   });
 });
 

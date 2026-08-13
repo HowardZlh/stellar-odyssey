@@ -202,8 +202,8 @@ interface MeteorAssets {
  * 碎片方向 = 随机单位向量 × fragmentLateralMagnitudeKm（锥角半角 ≤2° 量级，
  * M1 纯函数），非火流星槽位同样消费随机数（确定性顺序）但顶点被 shader 剔除。
  */
-function buildMeteorAssets(slots: readonly MeteorSlot[]): MeteorAssets {
-  const vertsPerSlot = METEOR_TRAIL_VERTICES + METEOR_FRAGMENT_GROUPS * METEOR_FRAGMENT_VERTICES;
+function buildMeteorAssets(slots: readonly MeteorSlot[], trailVertices: number): MeteorAssets {
+  const vertsPerSlot = trailVertices + METEOR_FRAGMENT_GROUPS * METEOR_FRAGMENT_VERTICES;
   const n = slots.length * vertsPerSlot;
   const positions = new Float32Array(n * 3);
   const seeds = new Float32Array(n);
@@ -255,8 +255,8 @@ function buildMeteorAssets(slots: readonly MeteorSlot[]): MeteorAssets {
     const slot = slots[si];
     // 主体条痕：aLag 0→1（头 → 尾），trailLag 头密尾疏非线性分布
     // （M3.6-4①：头部相邻间距 < 尾部，近观条痕连续无颗粒断点）
-    for (let k = 0; k < METEOR_TRAIL_VERTICES; k++) {
-      writeVertex(slot, si, trailLag(k, METEOR_TRAIL_VERTICES), 0, [0, 0, 0]);
+    for (let k = 0; k < trailVertices; k++) {
+      writeVertex(slot, si, trailLag(k, trailVertices), 0, [0, 0, 0]);
     }
     // 碎片组：每组一个独立锥角方向（球面均匀采样 × 横向量级）
     const fragMag = fragmentLateralMagnitudeKm(slot.dispCoefs, slot.lifetimeSec);
@@ -319,11 +319,20 @@ function buildMeteorAssets(slots: readonly MeteorSlot[]): MeteorAssets {
 interface MeteorFieldProps {
   slots: readonly MeteorSlot[];
   refs: LabFrameRefs;
+  /** 条痕顶点数 K（M4-2 降级档折半；默认 full 档 METEOR_TRAIL_VERTICES） */
+  trailVertices?: number;
 }
 
 /** 流星条痕粒子系统（1 draw call；每帧只更新 uniforms） */
-export function MeteorField({ slots, refs }: MeteorFieldProps): JSX.Element {
-  const { geometry, material } = useMemo(() => buildMeteorAssets(slots), [slots]);
+export function MeteorField({
+  slots,
+  refs,
+  trailVertices = METEOR_TRAIL_VERTICES,
+}: MeteorFieldProps): JSX.Element {
+  const { geometry, material } = useMemo(
+    () => buildMeteorAssets(slots, trailVertices),
+    [slots, trailVertices]
+  );
 
   useEffect(() => {
     return () => {

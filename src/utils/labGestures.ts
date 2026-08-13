@@ -124,6 +124,23 @@ export function safariGestureFovDeg(startFovDeg: number, gestureScale: number): 
 }
 
 /**
+ * 触屏双指捏合 → 累计缩放比例（M4-2 触控：起始双指距为基准，>1 张开 =
+ * 放大）；消费侧喂 `safariGestureFovDeg`（同一 FOV 钳制函数，M2 登记的
+ * 复用承诺）。起始距非正/输入非有限时返回 1（不缩放）。
+ */
+export function touchPinchScale(startDistPx: number, currentDistPx: number): number {
+  if (
+    !Number.isFinite(startDistPx) ||
+    !Number.isFinite(currentDistPx) ||
+    startDistPx <= 0 ||
+    currentDistPx <= 0
+  ) {
+    return 1;
+  }
+  return currentDistPx / startDistPx;
+}
+
+/**
  * FOV → 星点像素尺度补偿因子（默认 FOV 时恒 1，与 M2 观感逐像素一致；
  * FOV 变窄（放大）时星点按透视投影因子 1/tan(fov/2) 等比变大）
  */

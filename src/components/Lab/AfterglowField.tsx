@@ -169,9 +169,13 @@ interface AfterglowAssets {
  * selectAfterglowSlots；粒子沿母路径按 aPathT 均布（带抖动），沉积点位移
  * aDispKm 用 evalCubic CPU 预求值（shader 免多项式）。
  */
-function buildAfterglowAssets(slots: readonly MeteorSlot[]): AfterglowAssets {
-  const bound = selectAfterglowSlots(slots, AFTERGLOW_MAX_SLOTS);
-  const perSlot = Math.max(4, Math.floor(AFTERGLOW_PARTICLE_BUDGET / Math.max(bound.length, 1)));
+function buildAfterglowAssets(
+  slots: readonly MeteorSlot[],
+  maxSlots: number,
+  particleBudget: number
+): AfterglowAssets {
+  const bound = selectAfterglowSlots(slots, maxSlots);
+  const perSlot = Math.max(4, Math.floor(particleBudget / Math.max(bound.length, 1)));
   const n = bound.length * perSlot;
   const positions = new Float32Array(n * 3);
   const seeds = new Float32Array(n);
@@ -252,11 +256,23 @@ function buildAfterglowAssets(slots: readonly MeteorSlot[]): AfterglowAssets {
 interface AfterglowFieldProps {
   slots: readonly MeteorSlot[];
   refs: LabFrameRefs;
+  /** 余迹绑定槽位上限（M4-2 降级档减半；默认 full 档 AFTERGLOW_MAX_SLOTS） */
+  maxSlots?: number;
+  /** 余迹粒子预算（M4-2 降级档减半；默认 full 档 AFTERGLOW_PARTICLE_BUDGET） */
+  particleBudget?: number;
 }
 
 /** 余迹粒子系统（1 draw call；每帧只更新 uniforms） */
-export function AfterglowField({ slots, refs }: AfterglowFieldProps): JSX.Element {
-  const { geometry, material } = useMemo(() => buildAfterglowAssets(slots), [slots]);
+export function AfterglowField({
+  slots,
+  refs,
+  maxSlots = AFTERGLOW_MAX_SLOTS,
+  particleBudget = AFTERGLOW_PARTICLE_BUDGET,
+}: AfterglowFieldProps): JSX.Element {
+  const { geometry, material } = useMemo(
+    () => buildAfterglowAssets(slots, maxSlots, particleBudget),
+    [slots, maxSlots, particleBudget]
+  );
 
   useEffect(() => {
     return () => {

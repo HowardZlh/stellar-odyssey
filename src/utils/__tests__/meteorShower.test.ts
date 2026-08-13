@@ -8,7 +8,12 @@
  */
 
 import {
+  AFTERGLOW_MAX_SLOTS,
+  AFTERGLOW_PARTICLE_BUDGET,
   AIR_DENSITY_SEA_LEVEL,
+  AUDIBLE_MAX_PER_FRAME,
+  AUDIBLE_MIN_GAP_REAL_SEC,
+  AUDIBLE_NORMAL_FRACTION,
   ATMOSPHERE_SCALE_HEIGHT_KM,
   ATMOSPHERE_TOP_KM,
   BURN_LAYER_TOP_KM,
@@ -45,8 +50,13 @@ import {
   groundAimPosition,
   horizontalFromEquatorial,
   ignitedSlots,
+  labQualityParams,
   labQualityTier,
+  labSlotCount,
   labSunDirection,
+  METEOR_TRAIL_VERTICES,
+  selectAudibleSlots,
+  STAR_POINT_MAX_PX,
   localClockHours,
   localSiderealTime,
   makeMeteorSlots,
@@ -1163,5 +1173,100 @@ describe('M3.7 流星暴场景 + 延时摄影 + 快进入画', () => {
     expect(() => slotTrajectoryInView(mkSlot(), v, mkView({ viewDir: [0, 0, 0] }))).toThrow(
       RangeError
     );
+  });
+});
+
+describe('M4 音频可听化 + 画质档参数表（§5 / §4.5）', () => {
+  const slots = makeMeteorSlots(42, 128, PERSEIDS);
+
+  describe('selectAudibleSlots（可听子集：火流星全量 + 普通质量前 25%）', () => {
+    test('火流星槽位全量入选', () => {
+      const audible = selectAudibleSlots(slots);
+      for (let i = 0; i < slots.length; i++) {
+        if (slots[i].isFireball) expect(audible.has(i)).toBe(true);
+      }
+    });
+
+    test('普通槽位按质量降序取前 fraction（向上取整）', () => {
+      const audible = selectAudibleSlots(slots);
+      const normals = slots
+        .map((s, i) => ({ i, mass: s.massKg, fireball: s.isFireball }))
+        .filter((x) => !x.fireball)
+        .sort((a, b) => b.mass - a.mass);
+      const expected = Math.ceil(normals.length * AUDIBLE_NORMAL_FRACTION);
+      const audibleNormals = normals.filter((x) => audible.has(x.i));
+      expect(audibleNormals).toHaveLength(expected);
+      // 入选普通槽位恰为质量前 expected 名（降序前缀）
+      for (let k = 0; k < expected; k++) {
+        expect(audible.has(normals[k].i)).toBe(true);
+      }
+      // 落选普通槽位质量均 ≤ 入选最小质量
+      const minAudibleMass = normals[expected - 1].mass;
+      for (let k = expected; k < normals.length; k++) {
+        expect(normals[k].mass).toBeLessThanOrEqual(minAudibleMass);
+      }
+    });
+
+    test('fraction 边界：0 → 仅火流星；1 → 全量', () => {
+      const onlyFireballs = selectAudibleSlots(slots, 0);
+      expect(onlyFireballs.size).toBe(slots.filter((s) => s.isFireball).length);
+      expect(selectAudibleSlots(slots, 1).size).toBe(slots.length);
+    });
+
+    test('确定性（同输入同产物）与非法 fraction 抛错', () => {
+      expect([...selectAudibleSlots(slots)].sort()).toEqual([...selectAudibleSlots(slots)].sort());
+      expect(() => selectAudibleSlots(slots, -0.1)).toThrow(RangeError);
+      expect(() => selectAudibleSlots(slots, 1.1)).toThrow(RangeError);
+      expect(() => selectAudibleSlots(slots, Number.NaN)).toThrow(RangeError);
+    });
+
+    test('空槽位数组 → 空集', () => {
+      expect(selectAudibleSlots([]).size).toBe(0);
+    });
+
+    test('频度控制常量登记（§5：帧上限 + 真实间隔节流）', () => {
+      expect(AUDIBLE_NORMAL_FRACTION).toBe(0.25);
+      expect(AUDIBLE_MAX_PER_FRAME).toBe(2);
+      expect(AUDIBLE_MIN_GAP_REAL_SEC).toBe(0.25);
+    });
+  });
+
+  describe('labQualityParams（§4.5 降级参数表：组件只消费）', () => {
+    test('full 档与 M3 交付量逐项一致（零观感变化）', () => {
+      const p = labQualityParams('full');
+      expect(p).toEqual({
+        bloomEnabled: true,
+        slotFactor: 1,
+        afterglowMaxSlots: AFTERGLOW_MAX_SLOTS,
+        afterglowParticleBudget: AFTERGLOW_PARTICLE_BUDGET,
+        trailVertices: METEOR_TRAIL_VERTICES,
+        starPointMaxPx: STAR_POINT_MAX_PX,
+        maxDpr: 2,
+      });
+    });
+
+    test('reduced 档：关 Bloom、槽位/余迹减半、K 折半、星点上限下调、DPR ≤2', () => {
+      const p = labQualityParams('reduced');
+      expect(p.bloomEnabled).toBe(false);
+      expect(p.slotFactor).toBe(0.5);
+      expect(p.afterglowMaxSlots).toBe(Math.ceil(AFTERGLOW_MAX_SLOTS / 2));
+      expect(p.afterglowParticleBudget).toBe(Math.ceil(AFTERGLOW_PARTICLE_BUDGET / 2));
+      expect(p.trailVertices).toBe(METEOR_TRAIL_VERTICES / 2);
+      // K 折半仍 ≥ §4.3 原域下限 16（条痕亮度梯度不塌缩）
+      expect(p.trailVertices).toBeGreaterThanOrEqual(16);
+      expect(p.starPointMaxPx).toBeLessThan(STAR_POINT_MAX_PX);
+      expect(p.maxDpr).toBeLessThanOrEqual(2);
+    });
+
+    test('labSlotCount：按因子缩放取整 + 下限 1 + 非法基数抛错', () => {
+      const full = labQualityParams('full');
+      const reduced = labQualityParams('reduced');
+      expect(labSlotCount(METEOR_SLOT_COUNT, full)).toBe(METEOR_SLOT_COUNT);
+      expect(labSlotCount(METEOR_SLOT_COUNT, reduced)).toBe(METEOR_SLOT_COUNT / 2);
+      expect(labSlotCount(LEONIDS_STORM_1966.slotCount, reduced)).toBe(200);
+      expect(labSlotCount(1, reduced)).toBe(1); // 下限防空槽位系统
+      expect(() => labSlotCount(0, full)).toThrow(RangeError);
+      expect(() => labSlotCount(2.5, full)).toThrow(RangeError);
+    });
   });
 });

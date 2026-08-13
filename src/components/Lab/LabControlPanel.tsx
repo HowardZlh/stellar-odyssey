@@ -1,19 +1,27 @@
 'use client';
 
 /**
- * 流星雨实验室控件面板（M3-5 + M3.5，需求 §3 / §M3.5）：页签切换双雨 +
- * 科普卡片 + 视角分段（地面｜太空）+ HUD（地方时/辐射点高度角/双倒计时）+
- * 快进/演示按钮（含演示标注文案，时间真实性红线）+ 主控件 + 折叠区 +
- * 辐射点标注/触发时跟随/燃烧层参考开关。
+ * 流星雨实验室控件面板（M3-5 + M3.5 + M4，需求 §3 / §M3.5 / §5 / §4.5）：
+ * 页签切换双雨 + 科普卡片 + 视角分段（地面｜太空）+ HUD（地方时/辐射点
+ * 高度角/双倒计时）+ 快进/演示按钮（含演示标注文案，时间真实性红线）+
+ * 主控件 + 折叠区 + 辐射点标注/触发时跟随/燃烧层参考开关 + 音效区
+ * （全局 store 开关/音量 + 可听化 sonification 双语说明，科学口径红线）+
+ * 帮助提示与数据来源署名（§3 辅助 UI）。
  *
  * DOM 覆盖层组件（订阅 locale 合法）；全部文案入 i18n 字典，单位符号
- * （× / h / ° / m/s / mag）为国际通用记号由组件层持有（emoji 同规约）。
+ * （× / h / ° / m/s / mag）为国际通用记号由组件层持有（emoji 同规约）；
+ * 数据来源署名按豁免惯例保持原文（utils/lab.ts dataSource 透传）。
  * 控件变更零场景重建：仅页签切换触发父级 slots 重建（契约 C2.1）；快进/
  * 演示为交互事件路径（写 ref / uniforms，同 C2.1 口径）。
+ *
+ * 响应式（§4.5 M4-2）：桌面（sm+）右上侧栏；移动端（<sm）转底部抽屉——
+ * 标题栏常显、内容区由抽屉开关折叠（Tailwind max-sm 变体，无 JS 断点监听）。
  */
 
 import type { JSX, ReactNode } from 'react';
+import { useState } from 'react';
 import { useT } from '@/hooks/useI18n';
+import { useSimulationStore } from '@/store';
 import type { MessageKey } from '@/i18n';
 import { METEOR_SHOWERS, TIMELAPSE_GEARS, type MeteorShowerParams } from '@/utils/meteorShower';
 import type { LabControlState, LabViewMode } from '@/components/Lab/labTypes';
@@ -91,6 +99,8 @@ interface LabControlPanelProps {
   followActive: boolean;
   /** 自动运镜进行中（§M3.6-1：aim 期间演示/快进按钮同样禁用） */
   aimActive: boolean;
+  /** 数据来源署名（§3 辅助 UI；豁免惯例保持原文，utils/lab.ts 透传） */
+  dataSource: string;
 }
 
 /** 页签定义（emoji/文案键由组件层持有；M3.7 增补 1966 狮子座流星暴） */
@@ -146,15 +156,35 @@ export function LabControlPanel({
   onDemo,
   followActive,
   aimActive,
+  dataSource,
 }: LabControlPanelProps): JSX.Element {
   const tr = useT();
   const shower = METEOR_SHOWERS[showerId];
   // 跟随/自动运镜期间快进与演示按钮禁用（状态机防重入，§M3.5-6/§M3.6-1）
   const actionsDisabled = followActive || aimActive;
+  // 音效走全局 store（需求 §0.1：实验室共享全局音量/静音设置；开关点击
+  // 即用户手势，满足 AudioContext 自动播放策略——LabAudioBridge 接线）
+  const audioEnabled = useSimulationStore((s) => s.audioEnabled);
+  const audioVolume = useSimulationStore((s) => s.audioVolume);
+  const setAudioEnabled = useSimulationStore((s) => s.setAudioEnabled);
+  const setAudioVolume = useSimulationStore((s) => s.setAudioVolume);
+  // 移动端底部抽屉展开态（<sm 生效；桌面侧栏不受影响，M4-2）
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
-    <div className="absolute right-3 top-3 max-h-[calc(100vh-4.5rem)] w-72 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-lg bg-black/65 p-3 text-xs text-gray-100 backdrop-blur">
-      <h2 className="mb-2 font-semibold text-sky-300">🔭 {tr('lab.panelTitle')}</h2>
+    <div className="absolute right-3 top-3 max-h-[calc(100vh-4.5rem)] w-72 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-lg bg-black/65 p-3 text-xs text-gray-100 backdrop-blur max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:top-auto max-sm:max-h-[60vh] max-sm:w-full max-sm:max-w-none max-sm:rounded-b-none">
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold text-sky-300">🔭 {tr('lab.panelTitle')}</h2>
+        <button
+          onClick={() => setDrawerOpen((open) => !open)}
+          aria-expanded={drawerOpen}
+          aria-label={tr(drawerOpen ? 'lab.panelCollapseAria' : 'lab.panelExpandAria')}
+          className="rounded px-2 py-0.5 text-sky-300 transition-colors hover:bg-white/10 sm:hidden"
+        >
+          {drawerOpen ? '▾' : '▴'}
+        </button>
+      </div>
+      <div className={`mt-2 ${drawerOpen ? '' : 'max-sm:hidden'}`}>
 
       {/* 页签：双流星雨切换（切换 = 换常量组 + 历元 + 一次性重建，契约 C2.1） */}
       <div role="tablist" aria-label={tr('lab.showerTabAria')} className="mb-2 flex gap-1">
@@ -372,6 +402,44 @@ export function LabControlPanel({
         />
         <span>{tr('lab.ctrlBurnLayer')}</span>
       </label>
+
+      {/* 音效区（M4-1，§5）：全局 store 开关/音量（与主场景同一事实源，
+          masterGain 链天然承接静音）+ 可听化 sonification 说明（科学口径
+          红线：真实流星无声——双语常显，不可省略） */}
+      <div className="mt-3 border-t border-white/10 pt-2">
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={audioEnabled}
+            onChange={(e) => setAudioEnabled(e.target.checked)}
+          />
+          <span>🔊 {tr('lab.audioEnable')}</span>
+        </label>
+        {audioEnabled && (
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={audioVolume}
+            aria-label={tr('lab.audioVolumeAria')}
+            onChange={(e) => setAudioVolume(Number.parseFloat(e.target.value))}
+            className="mt-1 h-1.5 w-full cursor-pointer accent-sky-400"
+          />
+        )}
+        <p className="mt-1 text-[10px] leading-snug text-gray-400">
+          {tr('lab.sonificationNote')}
+        </p>
+      </div>
+
+      {/* 帮助提示（§3 辅助 UI：如何环顾/找辐射点） */}
+      <p className="mt-2 text-[10px] leading-snug text-gray-400">💡 {tr('lab.helpTips')}</p>
+
+      {/* 数据来源署名（§3 辅助 UI；豁免惯例保持原文） */}
+      <p className="mt-2 border-t border-white/10 pt-2 text-[10px] leading-snug text-gray-500">
+        {tr('lab.dataSourceLabel')}：{dataSource}
+      </p>
+      </div>
     </div>
   );
 }

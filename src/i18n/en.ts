@@ -230,6 +230,14 @@ export const en: I18nDict = {
     vaporizedToast: 'The meteoroid has fully vaporized before reaching the ground — cometary meteoroids burn up at 80–115 km and never land',
     ctrlBurnLayer: 'Burn-layer reference discs (80/115 km)',
     hintSpace: 'Drag to orbit above the burn layers · Scroll to zoom',
+    audioEnable: 'Meteor audio (sonification)',
+    audioVolumeAria: 'Audio volume',
+    sonificationNote:
+      'Sonification note: real meteors are silent. The descending whistle emulates radio echoes — forward scatter of radio signals off the ionized trail, a radio-observation technique; the fireball crackle nods to "electrophonic sounds", a rare and still-debated phenomenon.',
+    helpTips:
+      'Drag or two-finger scroll to look around; enable the radiant marker to find it — every meteor streaks away from that point; use the fast-forward/demo buttons to see one right away.',
+    panelExpandAria: 'Expand the observation console',
+    panelCollapseAria: 'Collapse the observation console',
   },
   helpHint: {
     controls:

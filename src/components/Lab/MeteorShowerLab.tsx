@@ -98,6 +98,9 @@ import {
   formatDurationClock,
   groundAimPosition,
   horizontalFromEquatorial,
+  labQualityParams,
+  labQualityTier,
+  labSlotCount,
   localClockHours,
   localSiderealTime,
   makeMeteorSlots,
@@ -107,6 +110,7 @@ import {
   slotTrajectoryInView,
   spaceAimPosition,
   visibleHourlyRate,
+  type LabQualityParams,
   type MeteorSlot,
   type NextIgnitionEvent,
 } from '@/utils/meteorShower';
@@ -121,6 +125,7 @@ import {
   fovPointScaleFactor,
   pinchFovDeg,
   safariGestureFovDeg,
+  touchPinchScale,
   wheelLookDelta,
 } from '@/utils/labGestures';
 import {
@@ -135,6 +140,7 @@ import { blackbodyRGB } from '@/utils/starPhysics';
 import type { MessageKey } from '@/i18n';
 import { MeteorField } from '@/components/Lab/MeteorField';
 import { AfterglowField } from '@/components/Lab/AfterglowField';
+import { LabAudioBridge, LabAudioTrigger } from '@/components/Lab/LabAudio';
 import { MeteorHeadDetail } from '@/components/Lab/MeteorHeadDetail';
 import { MeteorTrailRibbon } from '@/components/Lab/MeteorTrailRibbon';
 import { LabEarth } from '@/components/Lab/LabEarth';
@@ -203,6 +209,7 @@ const STAR_DOME_VERTEX_SHADER = /* glsl */ `
   uniform float uSize;
   uniform float uScale;
   uniform float uDomeRadius;
+  uniform float uPointMax;
   varying vec3 vColor;
   void main() {
     // 极限星等剔除：暗于阈值的星直接移出裁剪域（零 fragment 开销）
@@ -217,7 +224,7 @@ const STAR_DOME_VERTEX_SHADER = /* glsl */ `
     vec4 mvPosition = modelViewMatrix * vec4(dir * uDomeRadius, 1.0);
     // 星等 → 尺寸：简单幂律（mag 0 为 uSize 基准）
     float size = uSize * pow(1.32, -aMag);
-    gl_PointSize = clamp(size * (uScale / -mvPosition.z), 1.0, 24.0);
+    gl_PointSize = clamp(size * (uScale / -mvPosition.z), 1.0, uPointMax);
     // 星等 → 亮度：半对数压缩 10^(−0.2·mag)，亮星微超 1 供 Bloom 拾取
     float brightness = clamp(pow(10.0, -0.2 * aMag), 0.03, 1.6);
     vColor = color * brightness;
@@ -559,6 +566,8 @@ function BurnLayerReference(): JSX.Element {
 interface StarDomeProps {
   stars: readonly YaleBrightStar[];
   refs: LabFrameRefs;
+  /** 星点像素上限（§4.5 M4-2 降级档下调；labQualityParams 唯一事实源） */
+  starPointMaxPx: number;
 }
 
 /**
@@ -566,7 +575,7 @@ interface StarDomeProps {
  * 每帧仅更新旋转矩阵/极限星等/像素尺度 uniforms（M3：limitingMag /
  * observerLat / hourOffset / timeScale 控件经 refs 接管，历元随页签切换）。
  */
-function StarDome({ stars, refs }: StarDomeProps): JSX.Element {
+function StarDome({ stars, refs, starPointMaxPx }: StarDomeProps): JSX.Element {
   const { geometry, material } = useMemo(() => {
     const n = stars.length;
     const positions = new Float32Array(n * 3);
@@ -597,6 +606,7 @@ function StarDome({ stars, refs }: StarDomeProps): JSX.Element {
         uSize: { value: 30 },
         uScale: { value: 400 },
         uDomeRadius: { value: STAR_DOME_RADIUS_UNITS },
+        uPointMax: { value: starPointMaxPx },
       },
       vertexShader: STAR_DOME_VERTEX_SHADER,
       fragmentShader: STAR_DOME_FRAGMENT_SHADER,
@@ -606,7 +616,7 @@ function StarDome({ stars, refs }: StarDomeProps): JSX.Element {
       blending: THREE.AdditiveBlending,
     });
     return { geometry: geo, material: mat };
-  }, [stars]);
+  }, [stars, starPointMaxPx]);
 
   useEffect(() => {
     return () => {
@@ -697,6 +707,33 @@ function TrackpadLookControls(): null {
       cam.lookAt(0, 0, 0);
     };
 
+    // 触屏双指捏合（M4-2 触控）：起始双指距为基准 → touchPinchScale →
+    // safariGestureFovDeg（M2 登记的同一 FOV 钳制函数复用）。单指环顾由
+    // OrbitControls 原生触控 rotate 承担；仅双指时 preventDefault（防页面缩放）。
+    let touchStartDistPx = 0;
+    let touchStartFovDeg = cam.fov;
+    const touchDistPx = (touches: TouchList): number =>
+      Math.hypot(
+        touches[0].clientX - touches[1].clientX,
+        touches[0].clientY - touches[1].clientY
+      );
+    const onTouchStart = (e: TouchEvent): void => {
+      if (e.touches.length === 2) {
+        touchStartDistPx = touchDistPx(e.touches);
+        touchStartFovDeg = cam.fov;
+      }
+    };
+    const onTouchMove = (e: TouchEvent): void => {
+      if (e.touches.length !== 2 || touchStartDistPx <= 0) return;
+      e.preventDefault();
+      applyFov(
+        safariGestureFovDeg(touchStartFovDeg, touchPinchScale(touchStartDistPx, touchDistPx(e.touches)))
+      );
+    };
+    const onTouchEnd = (e: TouchEvent): void => {
+      if (e.touches.length < 2) touchStartDistPx = 0;
+    };
+
     const onGestureStart = (e: Event): void => {
       e.preventDefault();
       gestureActive = true;
@@ -718,11 +755,19 @@ function TrackpadLookControls(): null {
     el.addEventListener('gesturestart', onGestureStart, { passive: false });
     el.addEventListener('gesturechange', onGestureChange, { passive: false });
     el.addEventListener('gestureend', onGestureEnd, { passive: false });
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
     return () => {
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('gesturestart', onGestureStart);
       el.removeEventListener('gesturechange', onGestureChange);
       el.removeEventListener('gestureend', onGestureEnd);
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
     };
   }, [camera, gl]);
 
@@ -791,6 +836,23 @@ export function MeteorShowerLab(): JSX.Element {
 
   const shower = METEOR_SHOWERS[showerId];
 
+  // 画质档（§4.5 M4-2）：挂载时判定一次（labQualityTier 纯函数、参数注入
+  // 可测；组件只消费 labQualityParams 参数表）。reduced：关 Bloom、槽位
+  // 与余迹减半、条痕 K 折半、星点像素上限下调、DPR 钳制 ≤2。
+  const [quality] = useState<LabQualityParams>(() =>
+    labQualityParams(
+      typeof window === 'undefined'
+        ? 'full'
+        : labQualityTier({
+            dpr: window.devicePixelRatio,
+            userAgent: navigator.userAgent,
+            screenWidth: window.screen.width,
+            screenHeight: window.screen.height,
+            deviceMemoryGb: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
+          })
+    )
+  );
+
   // 帧循环共享 refs（渲染期同步赋值：useFrame 读到的永远是最新控件值）
   const timeSecRef = useRef(0);
   const settingsRef = useRef(settings);
@@ -814,7 +876,11 @@ export function MeteorShowerLab(): JSX.Element {
 
   // 槽位烘焙：RK4 + 拟合一次性完成；页签切换重建（契约 C2.1 唯一例外路径）
   // 槽位数按雨覆写（M3.7：狮子座暴 400，容量设计见 LEONIDS_STORM_1966 注释）
-  const slots = useMemo(() => makeMeteorSlots(METEOR_SLOT_SEED, shower.slotCount, shower), [shower]);
+  // × 画质档因子（M4-2 reduced 减半；流量分数随 N 自动翻倍、可见速率不变）
+  const slots = useMemo(
+    () => makeMeteorSlots(METEOR_SLOT_SEED, labSlotCount(shower.slotCount, quality), shower),
+    [shower, quality]
+  );
 
   /** 请求结束跟随（ESC/退出按钮/页签切换；rig 下一帧复原相机后回调还原） */
   const requestFollowEnd = (): void => {
@@ -1101,6 +1167,7 @@ export function MeteorShowerLab(): JSX.Element {
       <Canvas
         flat
         gl={{ antialias: true }}
+        dpr={[1, quality.maxDpr]}
         camera={{
           position: INITIAL_CAMERA_POSITION,
           fov: LAB_FOV_DEFAULT_DEG,
@@ -1121,10 +1188,18 @@ export function MeteorShowerLab(): JSX.Element {
           onEnd={handleFollowEnd}
         />
         {followActive && <FollowOrbitGestures refs={refs} />}
-        {stars && <StarDome stars={stars} refs={refs} />}
-        {/* 流星 + 余迹：与星场共 3 个粒子系统 draw call（§4.1，禁止合并） */}
-        <MeteorField slots={slots} refs={refs} />
-        <AfterglowField slots={slots} refs={refs} />
+        {stars && <StarDome stars={stars} refs={refs} starPointMaxPx={quality.starPointMaxPx} />}
+        {/* 流星 + 余迹：与星场共 3 个粒子系统 draw call（§4.1，禁止合并）；
+            条痕 K/余迹预算按画质档（M4-2，labQualityParams 唯一事实源） */}
+        <MeteorField slots={slots} refs={refs} trailVertices={quality.trailVertices} />
+        <AfterglowField
+          slots={slots}
+          refs={refs}
+          maxSlots={quality.afterglowMaxSlots}
+          particleBudget={quality.afterglowParticleBudget}
+        />
+        {/* 音频触发（M4-1，§5）：ignitedSlots CPU 镜像 → 哨鸣/爆裂 */}
+        <LabAudioTrigger slots={slots} refs={refs} />
         {/* 近观头部细节层（M3.6-4③ + M3.8-4① S1 重做）：常驻挂载、仅演示/
             跟随期间 visible（+1 draw call 登记——"行星近观 4K 细节层"的
             流星对应物） */}
@@ -1192,12 +1267,23 @@ export function MeteorShowerLab(): JSX.Element {
           ))}
         {viewMode === 'ground' && !followActive && !aimActive && <TrackpadLookControls />}
         {/* 后期：Bloom + ACES ToneMapping（DevPreviewHarness 同配置；
-            火流星末端闪爆 HDR ×15 由 Bloom 拾取，§4.4） */}
-        <EffectComposer multisampling={4}>
-          <Bloom intensity={0.6} luminanceThreshold={0.6} luminanceSmoothing={0.2} mipmapBlur />
-          <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
-        </EffectComposer>
+            火流星末端闪爆 HDR ×15 由 Bloom 拾取，§4.4）。
+            reduced 档（§4.5 M4-2）：关 Bloom（mipmap blur 全屏链是移动端
+            大头）+ 关 MSAA，仅保留 ACES 色调映射（HDR 色不裁剪）。 */}
+        {quality.bloomEnabled ? (
+          <EffectComposer multisampling={4}>
+            <Bloom intensity={0.6} luminanceThreshold={0.6} luminanceSmoothing={0.2} mipmapBlur />
+            <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+          </EffectComposer>
+        ) : (
+          <EffectComposer multisampling={0}>
+            <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+          </EffectComposer>
+        )}
       </Canvas>
+
+      {/* 全局音效接线（M4-1）：store 音效开关 → 共享引擎 masterGain */}
+      <LabAudioBridge />
 
       {/* 左上：返回实验室 + 条目标题 */}
       <div className="absolute left-4 top-4 select-none rounded-lg bg-black/60 px-3 py-2 text-xs text-gray-100 backdrop-blur">
@@ -1209,7 +1295,7 @@ export function MeteorShowerLab(): JSX.Element {
         )}
       </div>
 
-      {/* 右上：控件面板（§3 + §M3.5） */}
+      {/* 右上：控件面板（§3 + §M3.5；移动端为底部抽屉，M4-2） */}
       <LabControlPanel
         showerId={showerId}
         onShowerChange={handleShowerChange}
@@ -1222,6 +1308,7 @@ export function MeteorShowerLab(): JSX.Element {
         onDemo={handleDemo}
         followActive={followActive}
         aimActive={aimActive}
+        dataSource={entry?.dataSource ?? ''}
       />
 
       {/* 跟随视角：退出按钮（ESC 等价，§M3.5-6） */}

@@ -276,6 +276,19 @@ export const zh = {
     vaporizedToast: '流星体已完全汽化，未及地面——彗星质地流星体在 80–115 km 高空烧尽，不会落到地面',
     ctrlBurnLayer: '燃烧层参考盘（80/115 km）',
     hintSpace: '拖动环绕俯瞰燃烧层 · 滚轮缩放距离',
+    /**
+     * M4 音频可听化（§5）+ 移动端底部抽屉 + 帮助提示（§3 辅助 UI）。
+     * sonificationNote 为科学口径红线常显说明（真实流星无声；射电回波为
+     * 无线电观测手段、静电传声为有争议的罕见现象），双语不可省略。
+     */
+    audioEnable: '流星音效（可听化）',
+    audioVolumeAria: '音效音量',
+    sonificationNote:
+      '可听化（sonification）说明：真实流星本身无声。哨鸣模拟射电回波——流星电离尾对无线电信号的前向散射，属无线电观测手段；火流星爆裂声对应"静电传声"，为尚存争议的罕见现象。',
+    helpTips:
+      '拖动或双指滚动环顾夜空；打开辐射点标注找到标记——流星都从那里向四方飞出；用快进/演示按钮可立即看到一颗。',
+    panelExpandAria: '展开观测控制台',
+    panelCollapseAria: '收起观测控制台',
   },
   helpHint: {
     /**
