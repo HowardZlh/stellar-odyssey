@@ -198,6 +198,208 @@ export const zh = {
     demoQuotaExhausted: '今日免费演示次数已用完，解锁后不限次',
     cycleLockedTooltip: '银河系/宇宙巡游为支持者专属',
   },
+  /**
+   * 天文实验室（M2 骨架：/lab 首页 + /lab/meteor-shower 场景页 + 主界面入口）。
+   * 条目标题/描述键由 utils/lab.ts 注册表以 MessageKey 类型引用（契约 C4）。
+   */
+  lab: {
+    /** 主界面控制面板入口（emoji 🔭 由组件层持有） */
+    entrySection: '天文实验室',
+    entryLabel: '进入天文实验室',
+    entryAria: '打开天文实验室（新标签页）',
+    /** /lab 首页 */
+    title: '天文实验室',
+    subtitle: '基于真实星表与物理模型的可交互天象实验',
+    backToApp: '返回星图',
+    backToLab: '返回实验室',
+    open: '进入实验',
+    dataSourceLabel: '数据来源',
+    /** 场景页加载态（next/dynamic 场景 chunk + 亮星 JSON 两级提示） */
+    loadingScene: '正在加载实验室场景…',
+    loadingStars: '正在加载亮星星表…',
+    starsFailed: '亮星星表加载失败，星穹暂不可用——请刷新页面重试',
+    /** 未注册条目占位（/lab/<id> 直达无效 id 时） */
+    unknownEntry: '未注册的实验条目',
+    /** 场景操作提示（方案 A：双指滚动环顾 / 捏合缩放视野） */
+    hintLookAround: '拖动或双指滚动环顾夜空 · 双指捏合缩放视野',
+    /** 流星雨条目（utils/lab.ts 注册表引用） */
+    meteorShowerTitle: '盛夏双重流星雨',
+    meteorShowerDescription:
+      '英仙座与天鹅座κ双流星雨的物理仿真观测场：耶鲁亮星目录真实星穹（8,404 颗，视星等 ≤ 6.5）按地平坐标投影，可环顾仰望的北纬夜空；另附 1966 狮子座流星暴历史场景重现。',
+    /** M3 控件面板/科普卡片/HUD/辐射点标注（单位记号 ×/h/°/m/s/mag 由组件层持有） */
+    panelTitle: '观测控制台',
+    showerTabAria: '切换流星雨',
+    showerPerseids: '英仙座',
+    showerKappaCygnids: '天鹅座κ',
+    /** M3.7 流星暴页签（1966 狮子座历史事件重现）+ 延时摄影档 */
+    showerLeonids1966: '狮子座暴 1966',
+    cardRadiant: '辐射点',
+    cardSpeed: '入速',
+    cardZhr: 'ZHR',
+    cardParent: '母体',
+    parentPerseids: '109P/Swift–Tuttle 彗星',
+    parentKappaCygnids: '未确定（候选体尚存争议）',
+    parentLeonids: '55P/Tempel–Tuttle 彗星',
+    stormNote1966: '历史重现：1966-11-17 狮子座流星暴，按保守文献值 ZHR 40,000 仿真（峰值估计一度达约 40 颗/秒）',
+    ctrlTimeScale: '时间流速',
+    ctrlTimeLapse: '延时摄影',
+    ctrlHourOffset: '地方时偏移',
+    ctrlLimitingMag: '光害（极限星等）',
+    ctrlObserverLat: '观测纬度',
+    ctrlAdvanced: '高级控件',
+    ctrlFireballRate: '火流星概率增益',
+    ctrlWindSpeed: '高空风速',
+    ctrlRadiantMarker: '辐射点标注',
+    hudLocalTime: '地方时',
+    hudRadiantAlt: '辐射点高度角',
+    /** 辐射点标注星座名（3D 场景经 LabelText 叶组件消费） */
+    radiantLabelPerseids: '英仙座',
+    radiantLabelKappaCygnids: '天鹅座',
+    radiantLabelLeonids: '狮子座',
+    /**
+     * M3.5 目验辅助：视角切换/倒计时/快进/演示/跟随/燃烧层参考。
+     * demoDisclaimer 为时间真实性红线常显标注（演示 = 时间轴外注入）；
+     * vaporizedToast 为烧尽点科普收尾（落地成坑禁止实现，科学红线）。
+     */
+    viewModeAria: '切换观测视角',
+    viewGround: '地面',
+    viewSpace: '太空',
+    hudNextMeteor: '下一颗流星',
+    hudNextFireball: '下一颗火流星',
+    ffMeteor: '快进到下一颗流星',
+    ffFireball: '快进到下一颗火流星',
+    demoMeteor: '演示流星',
+    demoFireball: '演示火流星',
+    demoDisclaimer: '演示为时间轴外注入，非当前时刻真实流量调度',
+    ctrlFollowOnDemo: '触发时跟随',
+    followExit: '退出跟随 (ESC)',
+    vaporizedToast: '流星体已完全汽化，未及地面——彗星质地流星体在 80–115 km 高空烧尽，不会落到地面',
+    ctrlBurnLayer: '燃烧层参考盘（80/115 km）',
+    hintSpace: '拖动环绕俯瞰燃烧层 · 滚轮缩放距离',
+    /**
+     * M4 音频可听化（§5）+ 移动端底部抽屉 + 帮助提示（§3 辅助 UI）。
+     * sonificationNote 为科学口径红线常显说明（真实流星无声；射电回波为
+     * 无线电观测手段、静电传声为有争议的罕见现象），双语不可省略。
+     */
+    audioEnable: '流星音效（可听化）',
+    audioVolumeAria: '音效音量',
+    sonificationNote:
+      '可听化（sonification）说明：真实流星本身无声。哨鸣模拟射电回波——流星电离尾对无线电信号的前向散射，属无线电观测手段；火流星爆裂声对应"静电传声"，为尚存争议的罕见现象。',
+    helpTips:
+      '拖动或双指滚动环顾夜空；打开辐射点标注找到标记——流星都从那里向四方飞出；用快进/演示按钮可立即看到一颗。',
+    panelExpandAria: '展开观测控制台',
+    panelCollapseAria: '收起观测控制台',
+    /**
+     * O1 天体观察站（/lab/observatory）：画廊/门控/观察工位文案。
+     * 门控口径红线：锁定与解锁提示为对价口径（unlock 组同轨），
+     * 禁止与赞助（零回报）口径交叉。
+     */
+    observatoryTitle: '天体观察站',
+    observatoryDescription:
+      '开放全部近观细节工位：恒星表面、体积星云、星系近观、黑洞引力透镜等 23 个观察对象，附实时调参滑杆、性能读数与预设视角。',
+    observatoryPickBody: '选择观察对象',
+    observatoryEnter: '进入观察',
+    observatoryBackToGallery: '返回天体列表',
+    observatoryPremiumBadge: '支持者专属 · 每日限量试玩',
+    observatoryFreeWindowNote: '限时免费开放中：{date} 前全部天体不限次',
+    observatoryEntitledNote: '支持者权益已激活：全部天体不限次',
+    observatoryQuotaLine: '今日剩余观察 {count} 次',
+    observatoryPremiumQuotaLine: '专属天体今日试玩剩余 {count} 次',
+    observatoryLockedTitle: '观察受限',
+    observatoryLockedDaily: '今日免费观察次数已用完，解锁后不限次，或明天再来。',
+    observatoryLockedPremium:
+      '支持者专属天体的今日试玩次数已用完，解锁后不限次，或明天再来。',
+    observatoryUnknownBody: '未注册的观察对象',
+    /** 观察工位 HUD/面板（帧率读数复用 perfMonitor.* 键组） */
+    obsHudFps: '帧率',
+    obsHudHeap: 'JS 堆',
+    obsHudClock: '虚拟时钟',
+    obsHudQuality: '体积质量档',
+    obsHudSource: '来源',
+    obsPanelBloom: '辉光 Bloom',
+    obsPanelGrid: '参考网格',
+    obsPanelExposure: '曝光',
+    obsPanelPresets: '预设视角',
+    obsPanelParams: '观察参数',
+    /** 观察对象标题（devPreview 注册表 titleKey 引用，23 条） */
+    obsBodyBetelgeuse: '参宿四 · 红超巨星',
+    obsBodyRigel: '参宿七 · 蓝超巨星',
+    obsBodySirius: '天狼星 A · 主序星',
+    obsBodySiriusB: '天狼星 B · 白矮星',
+    obsBodyDeltaCephei: '造父一 · 黄超巨星',
+    obsBodyWr124: 'WR 124 · 沃尔夫-拉叶星与抛射壳',
+    obsBodyVolumeTest: '体积云测试体（技术演示）',
+    obsBodyOrionNebula: '猎户座星云 M42',
+    obsBodyRingNebula: '环状星云 M57',
+    obsBodyHorsehead: '马头星云 Barnard 33',
+    obsBodyCrabPulsar: '蟹状星云 M1',
+    obsBodyM31: '仙女座星系 M31',
+    obsBodyM33: '三角座星系 M33',
+    obsBodyLmc: '大麦哲伦云 LMC',
+    obsBodySmc: '小麦哲伦云 SMC',
+    obsBodyM87: '室女座 A M87 · 星系团中心',
+    obsBodyBlackholeTest: '黑洞引力透镜（技术演示）',
+    obsBodyPleiades: '昴星团 M45',
+    obsBodyM13: '武仙座球状星团 M13',
+    obsBodyQuasar3c273: '类星体 3C 273',
+    obsBodyAntennae: '触须星系 NGC 4038/4039',
+    obsBodyClusterLensing: '星系团引力透镜（技术演示）',
+    obsBodyGrb: '伽马射线暴 GRB 221009A',
+    /** 观察参数滑杆标签（devPreview 注册表 labelKey 引用，同语义键跨条目复用） */
+    obsParamTeff: '有效温度 Teff（K）',
+    obsParamCellScale: '对流噪声频率',
+    obsParamTimeScale: '时间流速',
+    obsParamShAmplitude: '球谐斑块幅度',
+    obsParamShSpeed: '球谐演化速度',
+    obsParamEjectaDensity: '抛射壳密度倍率',
+    obsParamExpandAmp: '径向膨胀幅度',
+    obsParamSteps: '基准步进数',
+    obsParamRaySteps: '步进数',
+    obsParamDensity: '密度倍率',
+    obsParamCurtainDensity: '发射幕密度倍率',
+    obsParamAbsorption: '吸收系数',
+    obsParamHueA: '色相 A（Hα 红）',
+    obsParamHueB: '色相 B（OIII 青绿）',
+    obsParamIntensity: '亮度',
+    obsParamQuality: '质量档（0自动 1低 2中 3高）',
+    obsParamJitter: '蓝噪声抖动（0关 1开）',
+    obsParamWeightBias: '双色权重（−OIII/+Hα）',
+    obsParamDust: '尘埃吸收倍率',
+    obsParamImageDriven: '影像驱动（0 参数化对照/1 影像）',
+    obsParamDustStrength: '尘埃带强度',
+    obsParamDustStrengthNoop: '尘埃带强度（此天体不适用）',
+    obsParamHiiDensity: 'HII 区密度',
+    obsParamHiiDensityNoop: 'HII 区密度（此天体不适用）',
+    obsParamInclination: '倾角覆写（°）',
+    obsParamVolExtinction: '体积尘埃消光强度（0 = 关闭）',
+    obsParamVolThickness: '尘埃盘厚（光年）',
+    obsParamDor30Boost: '30 Dor 亮度（0 关闭）',
+    obsParamDor30Scale: '30 Dor 尺度放大',
+    obsParamGcCount: '球状星团数量',
+    obsParamMembers: '室女座成员点缀（0 关/1 开）',
+    obsParamIcmOpacity: 'ICM 弥散辉光强度',
+    obsParamMassScale: '质量尺度',
+    obsParamCameraDistance: '相机距离',
+    obsParamDiskIncl: '盘倾角（°，0=正视/90=侧视）',
+    obsParamDiskInner: '盘内缘（r_s）',
+    obsParamDiskOuter: '盘外缘（r_s）',
+    obsParamBeamStrength: '束流强度',
+    obsParamSizeGain: '粒径增益',
+    obsParamSpikeGain: '星芒尺寸',
+    obsParamNebulaStrength: '反射星云强度',
+    obsParamBrightnessGain: '亮度增益',
+    obsParamDiskGain: '盘亮度',
+    obsParamTorusGain: '尘埃环面亮度',
+    obsParamJetAngle: '喷流全开角（°）',
+    obsParamJetGain: '喷流亮度',
+    obsParamShellGain: '余辉强度',
+    obsParamEinsteinRadius: '爱因斯坦半径（场景单位）',
+    obsParamLensStrength: '透镜强度',
+    obsParamSourceGain: '背景源亮度',
+    /** 预设视角按钮标签（devPreview 注册表 viewPresets.labelKey 引用） */
+    obsPresetOverview: '全景语境',
+    obsPresetCore: '核心推近（EHT 光子环）',
+  },
   helpHint: {
     /**
      * 操作引导正文（迁移自 HelpHint JSX：空格/\u00a0 与原 JSX 空白折叠

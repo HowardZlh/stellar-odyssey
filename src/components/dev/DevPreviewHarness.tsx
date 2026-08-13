@@ -2,52 +2,19 @@
 
 import type { JSX } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, Grid } from '@react-three/drei';
-import { Bloom, EffectComposer, ToneMapping } from '@react-three/postprocessing';
-import { ToneMappingMode } from 'postprocessing';
 import {
   clampParamValue,
   defaultParamValues,
   previewEntryForBody,
   previewHasVolumeLayer,
-  previewMinCameraDistance,
   registeredPreviewIds,
 } from '@/utils/devPreview';
+import { formatFpsLabel, formatMemoryMB } from '@/utils/performance';
 import {
-  createFpsCounter,
-  formatFpsLabel,
-  formatMemoryMB,
-  readUsedHeapBytes,
-  recordFrame,
-} from '@/utils/performance';
-import { PreviewScene } from '@/components/dev/PreviewScene';
-import { ClusterLensingPass } from '@/components/Scene/ClusterLensingEffect';
-
-/** R4-23 预览透镜强度：常量 1（强度滑杆经持有者 visible01 生效） */
-const LENS_STRENGTH_FULL = (): number => 1;
-
-/**
- * 预设视角应用器（R5-4）：点击预设按钮后把相机沿当前视线方向移到目标
- * 距离（OrbitControls target 恒为原点；无 damping，外部写位置即生效）
- */
-function CameraDistancePreset({
-  preset,
-}: {
-  preset: { distance: number; nonce: number } | null;
-}): null {
-  const camera = useThree((s) => s.camera);
-  useEffect(() => {
-    if (!preset) return;
-    const len = camera.position.length();
-    if (len < 1e-6) {
-      camera.position.set(0, 0, preset.distance);
-    } else {
-      camera.position.multiplyScalar(preset.distance / len);
-    }
-  }, [preset, camera]);
-  return null;
-}
+  PreviewCanvas,
+  usePerfSample,
+  type CameraPreset,
+} from '@/components/dev/PreviewCanvas';
 
 /**
  * 开发预览工位主界面（R4-1，IMPROVEMENT_REQUIREMENTS_4 §R4-1）
@@ -55,34 +22,11 @@ function CameraDistancePreset({
  * 独立 Canvas（黑背景 + 可选参考网格），不挂载主场景任何组件
  * （无 Galaxy/Universe/SolarSystem/音频/store 主循环）。仅在 dev 模式经
  * `/dev/preview` 动态 import 加载，主应用 bundle 零增大。
+ *
+ * O1 重构登记：Canvas/后期管线与帧率采样抽至共享层
+ * `components/dev/PreviewCanvas.tsx`（天体观察站复用，渲染配置零变化）；
+ * 本文件保留 dev 专属 DOM 覆盖层（HUD/参数面板，硬编码中文不入 i18n）。
  */
-
-/** rAF 帧率/堆采样 HUD（组件自持 rAF，不依赖主循环） */
-function usePerfHud(): { fps: string; heap: string } {
-  const [fps, setFps] = useState('统计中…');
-  const [heap, setHeap] = useState('不可用');
-  useEffect(() => {
-    let frameId = 0;
-    let counter = createFpsCounter(performance.now());
-    const loop = (nowMs: number): void => {
-      const next = recordFrame(counter, nowMs);
-      if (next.fps !== counter.fps) {
-        setFps(formatFpsLabel(next.fps));
-        setHeap(
-          formatMemoryMB(
-            readUsedHeapBytes(performance as { memory?: { usedJSHeapSize?: number } }),
-          ),
-        );
-      }
-      counter = next;
-      frameId = requestAnimationFrame(loop);
-    };
-    frameId = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(frameId);
-  }, []);
-  return { fps, heap };
-}
-
 export interface DevPreviewHarnessProps {
   /** URL ?body=<id> */
   bodyId: string | null;
@@ -97,14 +41,14 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
   const [exposure, setExposure] = useState(1);
   const [showGrid, setShowGrid] = useState(true);
   // R5-4 预设视角：nonce 递增保证同一预设可重复触发
-  const [preset, setPreset] = useState<{ distance: number; nonce: number } | null>(null);
+  const [preset, setPreset] = useState<CameraPreset | null>(null);
 
   // body 变化时重置滑杆
   useEffect(() => {
     setValues(defaultParamValues(entry));
   }, [entry]);
 
-  const { fps, heap } = usePerfHud();
+  const perf = usePerfSample();
   // 虚拟时钟读数（时间流速滑杆的即时数值反馈）：由 PreviewScene 每帧直写
   // textContent，不走 React state（避免 60Hz 重渲染）
   const clockLabelRef = useRef<HTMLSpanElement | null>(null);
@@ -131,67 +75,22 @@ export function DevPreviewHarness({ bodyId }: DevPreviewHarnessProps): JSX.Eleme
 
   return (
     <div className="relative h-screen w-screen bg-black">
-      {/* flat：关闭 renderer 内建 tone mapping，统一由 EffectComposer 末端的
-          ToneMapping(ACES) 在帧缓冲级做映射——曝光对裸 ShaderMaterial（如
-          StellarSurface）同样生效，且内建材质不会被双重映射 */}
-      <Canvas
-        flat
-        gl={{ logarithmicDepthBuffer: true, antialias: true }}
-        camera={{ position: [0, 0, entry.cameraDistance], near: 0.01, far: 1000 }}
-      >
-        <color attach="background" args={['#000000']} />
-        <ambientLight intensity={0.4} />
-        <pointLight position={[5, 5, 5]} intensity={1.2} />
-        {showGrid && (
-          <Grid
-            args={[20, 20]}
-            cellColor="#223"
-            sectionColor="#335"
-            fadeDistance={40}
-            infiniteGrid
-          />
-        )}
-        <PreviewScene
-          entry={entry}
-          values={values}
-          exposure={exposure}
-          clockLabelRef={clockLabelRef}
-          qualityLabelRef={qualityLabelRef}
-        />
-        {/* minDistance 按条目相机距离推导（可被 minCameraDistance 覆写——
-            R5-4 核心推近需允许更近），防止推进到天体内部（单面材质黑屏） */}
-        <OrbitControls enablePan minDistance={previewMinCameraDistance(entry)} maxDistance={100} />
-        <CameraDistancePreset preset={preset} />
-        {/* 常驻 Composer：ToneMapping 必须始终在管线末端（曝光的实现载体），
-            Bloom 按开关条件渲染并置于其前（作用于线性 HDR）；
-            R4-23 透镜 Effect 置于最前（Bloom 采样已透镜化帧缓冲） */}
-        {bloom ? (
-          <EffectComposer multisampling={4}>
-            {entry.componentKey === 'cluster-lensing-effect' ? (
-              <ClusterLensingPass getStrength={LENS_STRENGTH_FULL} />
-            ) : (
-              <></>
-            )}
-            <Bloom intensity={0.6} luminanceThreshold={0.6} luminanceSmoothing={0.2} mipmapBlur />
-            <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
-          </EffectComposer>
-        ) : (
-          <EffectComposer multisampling={4}>
-            {entry.componentKey === 'cluster-lensing-effect' ? (
-              <ClusterLensingPass getStrength={LENS_STRENGTH_FULL} />
-            ) : (
-              <></>
-            )}
-            <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
-          </EffectComposer>
-        )}
-      </Canvas>
+      <PreviewCanvas
+        entry={entry}
+        values={values}
+        exposure={exposure}
+        bloom={bloom}
+        showGrid={showGrid}
+        preset={preset}
+        clockLabelRef={clockLabelRef}
+        qualityLabelRef={qualityLabelRef}
+      />
 
       {/* 左上：性能 HUD */}
       <div className="pointer-events-none absolute left-4 top-4 select-none rounded-lg bg-black/60 px-3 py-2 text-xs text-gray-100 backdrop-blur">
         <div className="mb-1 font-semibold text-sky-300">{entry.title}</div>
-        <div>帧率：{fps}</div>
-        <div>JS 堆：{heap}</div>
+        <div>帧率：{formatFpsLabel(perf.fps)}</div>
+        <div>JS 堆：{formatMemoryMB(perf.heapBytes)}</div>
         <div>
           虚拟时钟：<span ref={clockLabelRef}>0.0</span> s
         </div>

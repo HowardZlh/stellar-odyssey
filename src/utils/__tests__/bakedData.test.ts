@@ -8,10 +8,12 @@ import {
   loadPleiades,
   loadStarParams,
   loadM13Profile,
+  loadYaleBrightStars,
   resetBakedDataCache,
   validatePleiades,
   validateStarParams,
   validateM13Profile,
+  validateYaleBrightStars,
   STAR_PARAM_KEYS,
 } from '../bakedData';
 import pleiadesFixture from './fixtures/pleiades.fixture.json';
@@ -185,6 +187,57 @@ describe('validateM13Profile', () => {
 });
 
 // ---------------------------------------------------------------------------
+// validateYaleBrightStars（M2，契约 C3）
+// ---------------------------------------------------------------------------
+
+/** 合成合法亮星数组（条数域下限 8300，字段全在数值域内） */
+function makeYaleStars(count = 8300): Array<Record<string, unknown>> {
+  return Array.from({ length: count }, (_, i) => ({
+    ra: (i * 0.042) % 360,
+    dec: -89 + (i % 179),
+    mag: -1.4 + (i % 79) * 0.1,
+    bv: -0.3 + (i % 40) * 0.1,
+  }));
+}
+
+describe('validateYaleBrightStars', () => {
+  it('接受合法裸数组并逐条通过', () => {
+    const data = validateYaleBrightStars(makeYaleStars());
+    expect(data).not.toBeNull();
+    expect(data).toHaveLength(8300);
+    expect(data?.[0]).toEqual({ ra: 0, dec: -89, mag: -1.4, bv: -0.3 });
+  });
+
+  it('拒绝非数组与条数越域（<8300 或 >9200）', () => {
+    expect(validateYaleBrightStars(null)).toBeNull();
+    expect(validateYaleBrightStars({ stars: makeYaleStars() })).toBeNull();
+    expect(validateYaleBrightStars(makeYaleStars(8299))).toBeNull();
+    expect(validateYaleBrightStars(makeYaleStars(9201))).toBeNull();
+  });
+
+  it('拒绝字段越域/NaN/非对象条目（契约 C3 域断言）', () => {
+    const withPatch = (patch: Record<string, unknown>): unknown => {
+      const stars = makeYaleStars();
+      stars[42] = { ...stars[42], ...patch };
+      return stars;
+    };
+    expect(validateYaleBrightStars(withPatch({ ra: -0.1 }))).toBeNull();
+    expect(validateYaleBrightStars(withPatch({ ra: 360 }))).toBeNull();
+    expect(validateYaleBrightStars(withPatch({ dec: 90.5 }))).toBeNull();
+    expect(validateYaleBrightStars(withPatch({ dec: -91 }))).toBeNull();
+    expect(validateYaleBrightStars(withPatch({ mag: 6.51 }))).toBeNull();
+    expect(validateYaleBrightStars(withPatch({ mag: -3 }))).toBeNull();
+    expect(validateYaleBrightStars(withPatch({ bv: 6.1 }))).toBeNull();
+    expect(validateYaleBrightStars(withPatch({ bv: -2 }))).toBeNull();
+    expect(validateYaleBrightStars(withPatch({ mag: Number.NaN }))).toBeNull();
+    expect(validateYaleBrightStars(withPatch({ bv: '0.5' }))).toBeNull();
+    const stars = makeYaleStars() as unknown[];
+    stars[0] = 7;
+    expect(validateYaleBrightStars(stars)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 加载器：fetch + 缓存 + 降级
 // ---------------------------------------------------------------------------
 
@@ -239,6 +292,16 @@ describe('loadPleiades / loadStarParams / loadM13Profile', () => {
     expect(await loadPleiades()).toBeNull();
   });
 
+  it('loadYaleBrightStars 成功加载并缓存（M2）', async () => {
+    const mock = mockFetchOk(makeYaleStars());
+    const first = await loadYaleBrightStars();
+    const second = await loadYaleBrightStars();
+    expect(first).toHaveLength(8300);
+    expect(second).toBe(first);
+    expect(mock).toHaveBeenCalledTimes(1);
+    expect(mock).toHaveBeenCalledWith('/data/yale_bright_stars.json');
+  });
+
   it('resetBakedDataCache 后重新 fetch', async () => {
     const mock = mockFetchOk(clone(starParamsFixture));
     await loadStarParams();
@@ -270,6 +333,12 @@ describe('public/data/ 烘焙产物完整性', () => {
     expect(Math.abs(mean.x)).toBeLessThan(0.01);
     expect(Math.abs(mean.y)).toBeLessThan(0.01);
     expect(Math.abs(mean.z)).toBeLessThan(0.01);
+  });
+
+  it('yale_bright_stars.json 通过校验：mag ≤ 6.5 完备样本 8404 条（§M1-1 差异登记口径）', () => {
+    const data = validateYaleBrightStars(readProduct('yale_bright_stars.json'));
+    expect(data).not.toBeNull();
+    expect(data).toHaveLength(8404);
   });
 
   it('star-params.json 通过校验且含 6 颗 R4 恒星', () => {

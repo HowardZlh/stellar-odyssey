@@ -1,0 +1,7 @@
+{
+  "source": "Yale Bright Star Catalogue, 5th Revised Edition (Hoffleit & Warren 1991)",
+  "url": "http://tdc-www.harvard.edu/catalogs/bsc5.dat.gz",
+  "retrievedAt": "2026-08-12T00:00:00Z",
+  "license": "公开天文目录（Yale University Observatory / ADC，学术引用许可）",
+  "format": "bsc5.dat 定长文本：J2000 RA 字节 76-90、GLON/GLAT 91-102、Vmag 103-107、B-V 110-114（列位依 ADC ReadMe，逐字节核对于 2026-08-12）"
+}

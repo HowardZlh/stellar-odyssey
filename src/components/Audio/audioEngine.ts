@@ -416,6 +416,84 @@ export class AudioEngine {
     }
   }
 
+  /**
+   * 流星射电回波可听化（流星雨实验室 M4，需求 §5）：正弦哨鸣
+   * 1200 → 150 Hz 指数降频 + 低通滤波同步下扫——射电前向散射回波的
+   * 经典"哨降"音（sonification：真实流星无声，UI 侧有双语说明）。
+   *
+   * @param isFireball 火流星拉长衰减（1.5 s；普通 0.6 s）并微增音量
+   */
+  playMeteorPing(isFireball: boolean, volume = 1): void {
+    if (!this.context || !this.masterGain) return;
+    try {
+      const context = this.context;
+      const now = context.currentTime;
+      const decaySec = isFireball ? 1.5 : 0.6;
+
+      const gain = context.createGain();
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime((isFireball ? 0.32 : 0.22) * volume, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + decaySec);
+      gain.connect(this.masterGain);
+
+      const osc = context.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1200, now);
+      osc.frequency.exponentialRampToValueAtTime(150, now + decaySec);
+      // 低通随音高同步下扫（高频起音清亮、尾音闷收，避免尾段电子感）
+      const filter = context.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.Q.value = 0.7;
+      filter.frequency.setValueAtTime(2400, now);
+      filter.frequency.exponentialRampToValueAtTime(320, now + decaySec);
+      osc.connect(filter);
+      filter.connect(gain);
+      osc.start(now);
+      osc.stop(now + decaySec + 0.05);
+    } catch {
+      // 静默降级
+    }
+  }
+
+  /**
+   * 火流星静电爆裂可听化（流星雨实验室 M4，需求 §5）：闪爆同步的
+   * 低音量噪声 crackle——短噪声源 + 带通滤波 + 三连快衰减脉冲
+   * （sonification：静电传声为有争议的罕见现象，UI 侧有双语说明）。
+   */
+  playFireballCrackle(volume = 1): void {
+    if (!this.context || !this.masterGain) return;
+    try {
+      const context = this.context;
+      const now = context.currentTime;
+      // 三连爆裂脉冲（间隔/强度递减，模拟碎裂 sputter 质感）
+      const pops: ReadonlyArray<{ atSec: number; peak: number }> = [
+        { atSec: 0, peak: 0.28 },
+        { atSec: 0.07, peak: 0.18 },
+        { atSec: 0.16, peak: 0.1 },
+      ];
+      for (const pop of pops) {
+        const start = now + pop.atSec;
+        const noise = context.createBufferSource();
+        noise.buffer = this.createNoiseBuffer(context);
+        const filter = context.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.Q.value = 1.4;
+        filter.frequency.value = 2800;
+        const gain = context.createGain();
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(pop.peak * volume, start + 0.008);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.22);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+        noise.start(start);
+        noise.stop(start + 0.25);
+      }
+    } catch {
+      // 静默降级
+    }
+  }
+
   /** 短音序列（UI 音效共用）：正弦短音 + 指数衰减 */
   private playBlip(frequencies: number[], noteSec: number, peakGain: number): void {
     if (!this.context || !this.masterGain) return;

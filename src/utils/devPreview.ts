@@ -10,8 +10,15 @@
  * - `componentKey` 为字符串标识，预览页（组件层）据此选择实际的 R3F 组件挂载，
  *   使渲染依赖不污染纯逻辑层，也让预览专用组件可被动态 import（主 bundle 零增大）。
  * - 每个条目声明 ≤8 个调试滑杆（`PreviewParam`）；超过即视为配置错误（`validatePreviewEntry`）。
+ *
+ * O1（天体观察站）扩展：条目/滑杆/预设视角新增可选 i18n 键字段
+ * （`titleKey` / `labelKey`，type-only import 编译期擦除）——实验室观察站
+ * （/lab/observatory，面向用户双语）经键查字典渲染；dev 工位继续消费
+ * 硬编码中文 `title` / `label` 不受影响。全量条目键完备性由
+ * observatoryGate 单测断言（新增条目漏键即测试失败）。
  */
 
+import type { MessageKey } from '@/i18n';
 import {
   BLACKBODY_TEFF_MAX_K,
   BLACKBODY_TEFF_MIN_K,
@@ -46,8 +53,10 @@ export const MAX_PREVIEW_PARAMS = 8;
 export interface PreviewParam {
   /** 参数键（组件内消费，需在同一条目内唯一） */
   key: string;
-  /** 面板显示标签 */
+  /** 面板显示标签（dev 工位消费，中文原文） */
   label: string;
+  /** 观察站面板标签 i18n 键（O1；用户面板经字典渲染，同语义键跨条目复用） */
+  labelKey?: MessageKey;
   /** 滑杆最小值 */
   min: number;
   /** 滑杆最大值 */
@@ -65,8 +74,10 @@ export interface PreviewParam {
 export interface PreviewViewPreset {
   /** 按钮键（同一条目内唯一） */
   key: string;
-  /** 按钮显示标签 */
+  /** 按钮显示标签（dev 工位消费，中文原文） */
   label: string;
+  /** 观察站按钮标签 i18n 键（O1） */
+  labelKey?: MessageKey;
   /** 目标相机距离（预览场景单位） */
   distanceUnits: number;
 }
@@ -77,8 +88,10 @@ export interface PreviewViewPreset {
 export interface PreviewEntry {
   /** 天体 id（与 catalog/specialBodies/galaxies 一致） */
   bodyId: string;
-  /** 面板标题（人类可读） */
+  /** 面板标题（dev 工位消费，中文原文） */
   title: string;
+  /** 观察站显示标题 i18n 键（O1；画廊卡片与观察 HUD 经字典渲染） */
+  titleKey?: MessageKey;
   /** 预览组件标识（预览页据此选择实际 R3F 组件） */
   componentKey: string;
   /** 调试滑杆声明（≤MAX_PREVIEW_PARAMS 个） */
@@ -217,7 +230,12 @@ export function stellarPreviewConfigForBody(
   return STELLAR_PREVIEW_CONFIGS.get(id) ?? null;
 }
 
-function makeStellarEntry(bodyId: string, title: string, dataSource: string): PreviewEntry {
+function makeStellarEntry(
+  bodyId: string,
+  title: string,
+  titleKey: MessageKey,
+  dataSource: string,
+): PreviewEntry {
   const config = STELLAR_PREVIEW_CONFIGS.get(bodyId);
   if (!config) {
     throw new RangeError(`恒星预览条目 ${bodyId} 缺少 STELLAR_PREVIEW_CONFIGS 配置`);
@@ -227,6 +245,7 @@ function makeStellarEntry(bodyId: string, title: string, dataSource: string): Pr
     {
       key: 'teffK',
       label: '有效温度 Teff（K）',
+      labelKey: 'lab.obsParamTeff',
       min: BLACKBODY_TEFF_MIN_K,
       max: BLACKBODY_TEFF_MAX_K,
       default: star.teffK,
@@ -235,11 +254,19 @@ function makeStellarEntry(bodyId: string, title: string, dataSource: string): Pr
     {
       key: 'cellScale',
       label: '对流噪声频率',
+      labelKey: 'lab.obsParamCellScale',
       min: 0.5,
       max: 14,
       default: granulationCellScale(star.radiusRsun),
     },
-    { key: 'timeScale', label: '时间流速', min: 0, max: 4, default: 1 },
+    {
+      key: 'timeScale',
+      label: '时间流速',
+      labelKey: 'lab.obsParamTimeScale',
+      min: 0,
+      max: 4,
+      default: 1,
+    },
   ];
   // R4-18 参宿四专属滑杆：球谐幅度 / 演化速度（§R4-18 第 3 条指定两件）
   if (bodyId === 'betelgeuse') {
@@ -247,6 +274,7 @@ function makeStellarEntry(bodyId: string, title: string, dataSource: string): Pr
       {
         key: 'shAmplitude',
         label: '球谐斑块幅度',
+        labelKey: 'lab.obsParamShAmplitude',
         min: 0,
         max: 1,
         default: BETELGEUSE_SH_AMPLITUDE_DEFAULT,
@@ -254,6 +282,7 @@ function makeStellarEntry(bodyId: string, title: string, dataSource: string): Pr
       {
         key: 'shSpeed',
         label: '球谐演化速度',
+        labelKey: 'lab.obsParamShSpeed',
         min: 0,
         max: 6,
         default: BETELGEUSE_SH_EVOLVE_SPEED_DEFAULT,
@@ -267,6 +296,7 @@ function makeStellarEntry(bodyId: string, title: string, dataSource: string): Pr
       {
         key: 'density',
         label: '抛射壳密度倍率',
+        labelKey: 'lab.obsParamEjectaDensity',
         min: 0,
         max: 6,
         default: WR124_SCENE_VOLUME_PARAMS.densityScale,
@@ -274,6 +304,7 @@ function makeStellarEntry(bodyId: string, title: string, dataSource: string): Pr
       {
         key: 'expandAmp',
         label: '径向膨胀幅度',
+        labelKey: 'lab.obsParamExpandAmp',
         min: 0,
         max: 0.4,
         default: WR124_EXPAND_AMP,
@@ -283,6 +314,7 @@ function makeStellarEntry(bodyId: string, title: string, dataSource: string): Pr
   return {
     bodyId,
     title,
+    titleKey,
     componentKey: 'stellar-surface',
     // R4-20：WR 124 相机外推（抛射壳中面 ≈ 4.2 单位、体积盒半宽 7——
     // 起始视角覆盖恒星 + 完整壳层；其余恒星维持近观 3.2）
@@ -296,31 +328,37 @@ const STELLAR_ENTRIES: readonly PreviewEntry[] = [
   makeStellarEntry(
     'betelgeuse',
     '参宿四 Betelgeuse（红超巨星 M1-M2 · StellarSurface）',
+    'lab.obsBodyBetelgeuse',
     'Joyce et al. (2020)；ESO VLT/SPHERE（Montargès et al. 2021）；Claret (2000) 临边昏暗近似档',
   ),
   makeStellarEntry(
     'rigel',
     '参宿七 Rigel（蓝超巨星 B8Ia · StellarSurface）',
+    'lab.obsBodyRigel',
     'Przybilla et al. (2010)；Claret (2000) 临边昏暗近似档',
   ),
   makeStellarEntry(
     'sirius',
     '天狼星 A Sirius A（主序星 A0mA1Va · StellarSurface）',
+    'lab.obsBodySirius',
     'Kervella et al. (2003)；Adelman (2004)；Claret (2000) 临边昏暗近似档',
   ),
   makeStellarEntry(
     'sirius-b',
     '天狼星 B Sirius B（白矮星 DA1.9 · StellarSurface）',
+    'lab.obsBodySiriusB',
     'Barstow et al. (2005)；Holberg et al. (1998)；Claret (2000) 临边昏暗近似档（WD 档）',
   ),
   makeStellarEntry(
     'delta-cephei',
     '造父一 δ Cephei（黄超巨星 F5Iab · StellarSurface）',
+    'lab.obsBodyDeltaCephei',
     'Mérand et al. (2005)；Engle et al. (2014)；Claret (2000) 临边昏暗近似档',
   ),
   makeStellarEntry(
     'wr-124',
     'WR 124（沃尔夫-拉叶星 WN8h · StellarSurface + M1-67 抛射壳体积）',
+    'lab.obsBodyWr124',
     'Hamann et al. (2019)；Claret (2000) 临边昏暗近似档（O 档高温近似）；M1-67 抛射壳：NASA/ESA Hubble 与 JWST（2023）公版图像观感参考（团块泡沫程序化近似 + v∝r 均匀膨胀流，非逐结贴合照片）',
   ),
 ];
@@ -339,17 +377,18 @@ const STELLAR_ENTRIES: readonly PreviewEntry[] = [
 const VOLUME_TEST_ENTRY: PreviewEntry = {
   bodyId: 'volume-test',
   title: '体积测试体 Volume Test（球形 fBm 密度云 · raymarch）',
+  titleKey: 'lab.obsBodyVolumeTest',
   componentKey: 'volume-raymarch-test',
   cameraDistance: 3.2,
   params: [
-    { key: 'steps', label: '基准步进数', min: 16, max: 128, default: 64, step: 1 },
-    { key: 'density', label: '密度倍率', min: 0, max: 6, default: 2.2 },
-    { key: 'absorption', label: '吸收系数', min: 0.2, max: 12, default: 5 },
-    { key: 'hueA', label: '色相 A（Hα 红）', min: 0, max: 360, default: 352 },
-    { key: 'hueB', label: '色相 B（OIII 青绿）', min: 0, max: 360, default: 172 },
-    { key: 'intensity', label: '亮度', min: 0.1, max: 4, default: 1.2 },
-    { key: 'quality', label: '质量档（0自动 1低 2中 3高）', min: 0, max: 3, default: 0, step: 1 },
-    { key: 'jitter', label: '蓝噪声抖动（0关 1开）', min: 0, max: 1, default: 1, step: 1 },
+    { key: 'steps', label: '基准步进数', labelKey: 'lab.obsParamSteps', min: 16, max: 128, default: 64, step: 1 },
+    { key: 'density', label: '密度倍率', labelKey: 'lab.obsParamDensity', min: 0, max: 6, default: 2.2 },
+    { key: 'absorption', label: '吸收系数', labelKey: 'lab.obsParamAbsorption', min: 0.2, max: 12, default: 5 },
+    { key: 'hueA', label: '色相 A（Hα 红）', labelKey: 'lab.obsParamHueA', min: 0, max: 360, default: 352 },
+    { key: 'hueB', label: '色相 B（OIII 青绿）', labelKey: 'lab.obsParamHueB', min: 0, max: 360, default: 172 },
+    { key: 'intensity', label: '亮度', labelKey: 'lab.obsParamIntensity', min: 0.1, max: 4, default: 1.2 },
+    { key: 'quality', label: '质量档（0自动 1低 2中 3高）', labelKey: 'lab.obsParamQuality', min: 0, max: 3, default: 0, step: 1 },
+    { key: 'jitter', label: '蓝噪声抖动（0关 1开）', labelKey: 'lab.obsParamJitter', min: 0, max: 1, default: 1, step: 1 },
   ],
   dataSource:
     'R4-3/R4-4 框架测试体：程序化 fBm 密度场（无真实观测数据）；双色对应 Hα/OIII 窄带映射方向',
@@ -367,16 +406,17 @@ const VOLUME_TEST_ENTRY: PreviewEntry = {
 const ORION_NEBULA_ENTRY: PreviewEntry = {
   bodyId: 'orion-nebula',
   title: '猎户座星云 M42（体积 raymarch · 双通道密度场）',
+  titleKey: 'lab.obsBodyOrionNebula',
   componentKey: 'orion-nebula-volume',
   cameraDistance: 3.6,
   params: [
-    { key: 'steps', label: '基准步进数', min: 16, max: 128, default: 64, step: 1 },
-    { key: 'density', label: '密度倍率', min: 0, max: 8, default: 3.2 },
-    { key: 'weightBias', label: '双色权重（−OIII/+Hα）', min: -1, max: 1, default: 0 },
-    { key: 'dust', label: '尘埃吸收倍率', min: 0, max: 4, default: 1 },
-    { key: 'intensity', label: '亮度', min: 0.1, max: 4, default: 1.3 },
-    { key: 'quality', label: '质量档（0自动 1低 2中 3高）', min: 0, max: 3, default: 0, step: 1 },
-    { key: 'jitter', label: '蓝噪声抖动（0关 1开）', min: 0, max: 1, default: 1, step: 1 },
+    { key: 'steps', label: '基准步进数', labelKey: 'lab.obsParamSteps', min: 16, max: 128, default: 64, step: 1 },
+    { key: 'density', label: '密度倍率', labelKey: 'lab.obsParamDensity', min: 0, max: 8, default: 3.2 },
+    { key: 'weightBias', label: '双色权重（−OIII/+Hα）', labelKey: 'lab.obsParamWeightBias', min: -1, max: 1, default: 0 },
+    { key: 'dust', label: '尘埃吸收倍率', labelKey: 'lab.obsParamDust', min: 0, max: 4, default: 1 },
+    { key: 'intensity', label: '亮度', labelKey: 'lab.obsParamIntensity', min: 0.1, max: 4, default: 1.3 },
+    { key: 'quality', label: '质量档（0自动 1低 2中 3高）', labelKey: 'lab.obsParamQuality', min: 0, max: 3, default: 0, step: 1 },
+    { key: 'jitter', label: '蓝噪声抖动（0关 1开）', labelKey: 'lab.obsParamJitter', min: 0, max: 1, default: 1, step: 1 },
   ],
   dataSource:
     'NASA/ESA Hubble 公版图像（形态参考，程序化近似登记：扇贝腔/西北亮弓/东南暗湾/Trapezium 空腔与电离前沿壳）；Hα/OIII 双色权重取纯径向近似',
@@ -395,15 +435,16 @@ const ORION_NEBULA_ENTRY: PreviewEntry = {
 const RING_NEBULA_ENTRY: PreviewEntry = {
   bodyId: 'ring-nebula',
   title: '环状星云 M57（壳层体积 raymarch · 三轴椭球壳密度场）',
+  titleKey: 'lab.obsBodyRingNebula',
   componentKey: 'ring-nebula-volume',
   cameraDistance: 3.2,
   params: [
-    { key: 'steps', label: '基准步进数', min: 16, max: 128, default: 48, step: 1 },
-    { key: 'density', label: '密度倍率', min: 0, max: 6, default: 1.6 },
-    { key: 'weightBias', label: '双色权重（−OIII/+Hα）', min: -1, max: 1, default: 0 },
-    { key: 'intensity', label: '亮度', min: 0.1, max: 4, default: 1.2 },
-    { key: 'quality', label: '质量档（0自动 1低 2中 3高）', min: 0, max: 3, default: 0, step: 1 },
-    { key: 'jitter', label: '蓝噪声抖动（0关 1开）', min: 0, max: 1, default: 1, step: 1 },
+    { key: 'steps', label: '基准步进数', labelKey: 'lab.obsParamSteps', min: 16, max: 128, default: 48, step: 1 },
+    { key: 'density', label: '密度倍率', labelKey: 'lab.obsParamDensity', min: 0, max: 6, default: 1.6 },
+    { key: 'weightBias', label: '双色权重（−OIII/+Hα）', labelKey: 'lab.obsParamWeightBias', min: -1, max: 1, default: 0 },
+    { key: 'intensity', label: '亮度', labelKey: 'lab.obsParamIntensity', min: 0.1, max: 4, default: 1.2 },
+    { key: 'quality', label: '质量档（0自动 1低 2中 3高）', labelKey: 'lab.obsParamQuality', min: 0, max: 3, default: 0, step: 1 },
+    { key: 'jitter', label: '蓝噪声抖动（0关 1开）', labelKey: 'lab.obsParamJitter', min: 0, max: 1, default: 1, step: 1 },
   ],
   dataSource:
     "O'Dell et al. (2013, ApJ 780, 26) 三轴椭球壳模型（形状参考，程序化近似登记：赤道增密环/极向暗瓣/内腔近空/外晕弱壳）；内缘 OIII 青绿/外缘 Hα+NII 红橙（NII 合并单档）；中心白矮星 Teff≈125 kK 经 blackbodyRGB 表上限 50 kK 档",
@@ -424,15 +465,16 @@ const RING_NEBULA_ENTRY: PreviewEntry = {
 const HORSEHEAD_ENTRY: PreviewEntry = {
   bodyId: 'horsehead',
   title: '马头星云 Barnard 33（吸收体积 raymarch · 暗云柱 + IC 434 发射幕）',
+  titleKey: 'lab.obsBodyHorsehead',
   componentKey: 'horsehead-nebula-volume',
   cameraDistance: 3.4,
   params: [
-    { key: 'steps', label: '基准步进数', min: 16, max: 128, default: 48, step: 1 },
-    { key: 'density', label: '发射幕密度倍率', min: 0, max: 8, default: 3.0 },
-    { key: 'dust', label: '尘埃吸收倍率', min: 0, max: 4, default: 2.2 },
-    { key: 'intensity', label: '亮度', min: 0.1, max: 4, default: 1.1 },
-    { key: 'quality', label: '质量档（0自动 1低 2中 3高）', min: 0, max: 3, default: 0, step: 1 },
-    { key: 'jitter', label: '蓝噪声抖动（0关 1开）', min: 0, max: 1, default: 1, step: 1 },
+    { key: 'steps', label: '基准步进数', labelKey: 'lab.obsParamSteps', min: 16, max: 128, default: 48, step: 1 },
+    { key: 'density', label: '发射幕密度倍率', labelKey: 'lab.obsParamCurtainDensity', min: 0, max: 8, default: 3.0 },
+    { key: 'dust', label: '尘埃吸收倍率', labelKey: 'lab.obsParamDust', min: 0, max: 4, default: 2.2 },
+    { key: 'intensity', label: '亮度', labelKey: 'lab.obsParamIntensity', min: 0.1, max: 4, default: 1.1 },
+    { key: 'quality', label: '质量档（0自动 1低 2中 3高）', labelKey: 'lab.obsParamQuality', min: 0, max: 3, default: 0, step: 1 },
+    { key: 'jitter', label: '蓝噪声抖动（0关 1开）', labelKey: 'lab.obsParamJitter', min: 0, max: 1, default: 1, step: 1 },
   ],
   dataSource:
     'NASA/ESA Hubble 公版图像（轮廓形态参考，程序化近似登记：颈柱/头部/吻部/鬃丘 + 底部云堤 5 椭球 SDF 平滑并 + fBm 边缘侵蚀，不逐像素贴合照片）；IC 434 Hα 红色发射幕（低密度大尺度发射层方案登记）',
@@ -453,15 +495,16 @@ const HORSEHEAD_ENTRY: PreviewEntry = {
 const CRAB_NEBULA_ENTRY: PreviewEntry = {
   bodyId: 'crab-pulsar',
   title: '蟹状星云 M1（丝状体积 raymarch · 曲线骨架丝网 + OIII 弥散）',
+  titleKey: 'lab.obsBodyCrabPulsar',
   componentKey: 'crab-nebula-volume',
   cameraDistance: 3.6,
   params: [
-    { key: 'steps', label: '基准步进数', min: 16, max: 128, default: 64, step: 1 },
-    { key: 'density', label: '密度倍率', min: 0, max: 8, default: 2.6 },
-    { key: 'weightBias', label: '双色权重（−OIII/+Hα）', min: -1, max: 1, default: 0 },
-    { key: 'intensity', label: '亮度', min: 0.1, max: 4, default: 1.15 },
-    { key: 'quality', label: '质量档（0自动 1低 2中 3高）', min: 0, max: 3, default: 0, step: 1 },
-    { key: 'jitter', label: '蓝噪声抖动（0关 1开）', min: 0, max: 1, default: 1, step: 1 },
+    { key: 'steps', label: '基准步进数', labelKey: 'lab.obsParamSteps', min: 16, max: 128, default: 64, step: 1 },
+    { key: 'density', label: '密度倍率', labelKey: 'lab.obsParamDensity', min: 0, max: 8, default: 2.6 },
+    { key: 'weightBias', label: '双色权重（−OIII/+Hα）', labelKey: 'lab.obsParamWeightBias', min: -1, max: 1, default: 0 },
+    { key: 'intensity', label: '亮度', labelKey: 'lab.obsParamIntensity', min: 0.1, max: 4, default: 1.15 },
+    { key: 'quality', label: '质量档（0自动 1低 2中 3高）', labelKey: 'lab.obsParamQuality', min: 0, max: 3, default: 0, step: 1 },
+    { key: 'jitter', label: '蓝噪声抖动（0关 1开）', labelKey: 'lab.obsParamJitter', min: 0, max: 1, default: 1, step: 1 },
   ],
   dataSource:
     'NASA/ESA Hubble 公版图像（丝状网络形态参考，程序化近似登记：12 条随机游走曲线骨架沿线增密 + 方向场扭曲，非逐丝贴合照片）；Chandra（Weisskopf et al. 2000）PWN 环面/喷流形态参考（主场景 shader 发射体，预览页仅体积层登记）；外围 Hα 红橙丝/内部 OIII 青弥散按内外分区径向近似',
@@ -509,6 +552,7 @@ function dustVolumeParams(galaxyId: string): readonly PreviewParam[] {
     {
       key: 'volExtinction',
       label: '体积消光强度 σ（0 = R4-10 暗粒子对照）',
+      labelKey: 'lab.obsParamVolExtinction',
       min: 0,
       max: 40,
       default: p.extinctionSigma,
@@ -517,6 +561,7 @@ function dustVolumeParams(galaxyId: string): readonly PreviewParam[] {
     {
       key: 'volThicknessLy',
       label: '尘埃盘厚（光年）',
+      labelKey: 'lab.obsParamVolThickness',
       min: 400,
       max: 6000,
       default: p.boxThicknessLy,
@@ -537,13 +582,14 @@ const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
   {
     bodyId: 'm31',
     title: '仙女座星系 M31（近观多分量粒子层 · 倾角 77°/影像驱动）',
+    titleKey: 'lab.obsBodyM31',
     componentKey: 'galaxy-near-view',
     cameraDistance: 4.2,
     params: [
-      { key: 'imageDriven', label: '影像驱动（0 参数化对照/1 影像）', min: 0, max: 1, default: 1, step: 1 },
-      { key: 'dustStrength', label: '尘埃带强度', min: 0, max: 1, default: 0.8 },
-      { key: 'hiiDensity', label: 'HII 区密度', min: 0, max: 1, default: 0.5 },
-      { key: 'inclinationDeg', label: '倾角覆写（°）', min: 0, max: 90, default: 77, step: 1 },
+      { key: 'imageDriven', label: '影像驱动（0 参数化对照/1 影像）', labelKey: 'lab.obsParamImageDriven', min: 0, max: 1, default: 1, step: 1 },
+      { key: 'dustStrength', label: '尘埃带强度', labelKey: 'lab.obsParamDustStrength', min: 0, max: 1, default: 0.8 },
+      { key: 'hiiDensity', label: 'HII 区密度', labelKey: 'lab.obsParamHiiDensity', min: 0, max: 1, default: 0.5 },
+      { key: 'inclinationDeg', label: '倾角覆写（°）', labelKey: 'lab.obsParamInclination', min: 0, max: 90, default: 77, step: 1 },
       ...dustVolumeParams('m31'),
     ],
     dataSource:
@@ -552,13 +598,14 @@ const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
   {
     bodyId: 'm33',
     title: '三角座星系 M33（近观多分量粒子层 · 影像驱动/NGC 604）',
+    titleKey: 'lab.obsBodyM33',
     componentKey: 'galaxy-near-view',
     cameraDistance: 4.2,
     params: [
-      { key: 'imageDriven', label: '影像驱动（0 参数化对照/1 影像）', min: 0, max: 1, default: 1, step: 1 },
-      { key: 'dustStrength', label: '尘埃带强度', min: 0, max: 1, default: 0.35 },
-      { key: 'hiiDensity', label: 'HII 区密度', min: 0, max: 1, default: 0.9 },
-      { key: 'inclinationDeg', label: '倾角覆写（°，影像已含投影默认 0）', min: 0, max: 90, default: 0, step: 1 },
+      { key: 'imageDriven', label: '影像驱动（0 参数化对照/1 影像）', labelKey: 'lab.obsParamImageDriven', min: 0, max: 1, default: 1, step: 1 },
+      { key: 'dustStrength', label: '尘埃带强度', labelKey: 'lab.obsParamDustStrength', min: 0, max: 1, default: 0.35 },
+      { key: 'hiiDensity', label: 'HII 区密度', labelKey: 'lab.obsParamHiiDensity', min: 0, max: 1, default: 0.9 },
+      { key: 'inclinationDeg', label: '倾角覆写（°，影像已含投影默认 0）', labelKey: 'lab.obsParamInclination', min: 0, max: 90, default: 0, step: 1 },
       ...dustVolumeParams('m33'),
     ],
     dataSource:
@@ -567,19 +614,21 @@ const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
   {
     bodyId: 'lmc',
     title: '大麦哲伦云 LMC（近观粒子云 · 影像驱动/30 Dor 与棒分层）',
+    titleKey: 'lab.obsBodyLmc',
     componentKey: 'galaxy-near-view',
     cameraDistance: 4.2,
     params: [
-      { key: 'imageDriven', label: '影像驱动（0 参数化对照/1 影像）', min: 0, max: 1, default: 1, step: 1 },
-      { key: 'dustStrength', label: '尘埃带强度（LMC 配额 0，登记）', min: 0, max: 1, default: 0.3 },
-      { key: 'hiiDensity', label: 'HII 区密度（LMC 配额 0，登记）', min: 0, max: 1, default: 0.85 },
-      { key: 'inclinationDeg', label: '倾角覆写（°，影像已含投影默认 0）', min: 0, max: 90, default: 0, step: 1 },
+      { key: 'imageDriven', label: '影像驱动（0 参数化对照/1 影像）', labelKey: 'lab.obsParamImageDriven', min: 0, max: 1, default: 1, step: 1 },
+      { key: 'dustStrength', label: '尘埃带强度（LMC 配额 0，登记）', labelKey: 'lab.obsParamDustStrengthNoop', min: 0, max: 1, default: 0.3 },
+      { key: 'hiiDensity', label: 'HII 区密度（LMC 配额 0，登记）', labelKey: 'lab.obsParamHiiDensityNoop', min: 0, max: 1, default: 0.85 },
+      { key: 'inclinationDeg', label: '倾角覆写（°，影像已含投影默认 0）', labelKey: 'lab.obsParamInclination', min: 0, max: 90, default: 0, step: 1 },
       ...dustVolumeParams('lmc'),
       // R5-5：30 Doradus 亮度/尺度（§R5-5 A 第 3 条；共 8 个 = 上限）
-      { key: 'dor30Boost', label: '30 Dor 亮度（0 关闭）', min: 0, max: 3, default: 1 },
+      { key: 'dor30Boost', label: '30 Dor 亮度（0 关闭）', labelKey: 'lab.obsParamDor30Boost', min: 0, max: 3, default: 1 },
       {
         key: 'dor30Scale',
         label: '30 Dor 尺度放大系数（登记默认 5）',
+        labelKey: 'lab.obsParamDor30Scale',
         min: 1,
         max: 8,
         default: TARANTULA_SCALE_BOOST_DEFAULT,
@@ -591,13 +640,14 @@ const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
   {
     bodyId: 'smc',
     title: '小麦哲伦云 SMC（近观粒子云 · 影像驱动/延展形状）',
+    titleKey: 'lab.obsBodySmc',
     componentKey: 'galaxy-near-view',
     cameraDistance: 4.2,
     params: [
-      { key: 'imageDriven', label: '影像驱动（0 参数化对照/1 影像）', min: 0, max: 1, default: 1, step: 1 },
-      { key: 'dustStrength', label: '尘埃带强度（SMC 配额 0，登记）', min: 0, max: 1, default: 0.25 },
-      { key: 'hiiDensity', label: 'HII 区密度（SMC 配额 0，登记）', min: 0, max: 1, default: 0.6 },
-      { key: 'inclinationDeg', label: '倾角覆写（°，影像已含投影默认 0）', min: 0, max: 90, default: 0, step: 1 },
+      { key: 'imageDriven', label: '影像驱动（0 参数化对照/1 影像）', labelKey: 'lab.obsParamImageDriven', min: 0, max: 1, default: 1, step: 1 },
+      { key: 'dustStrength', label: '尘埃带强度（SMC 配额 0，登记）', labelKey: 'lab.obsParamDustStrengthNoop', min: 0, max: 1, default: 0.25 },
+      { key: 'hiiDensity', label: 'HII 区密度（SMC 配额 0，登记）', labelKey: 'lab.obsParamHiiDensityNoop', min: 0, max: 1, default: 0.6 },
+      { key: 'inclinationDeg', label: '倾角覆写（°，影像已含投影默认 0）', labelKey: 'lab.obsParamInclination', min: 0, max: 90, default: 0, step: 1 },
     ],
     dataSource:
       `RC3（de Vaucouleurs et al. 1991）SB(s)m pec；前景球状星团 47 Tuc/NGC 362 已遮罩（产物 meta 登记）；${GALAXY_IMAGE_SOURCE_ZH}`,
@@ -614,17 +664,18 @@ const GALAXY_NEAR_VIEW_ENTRIES: readonly PreviewEntry[] = [
 const M87_ENVIRONMENT_ENTRY: PreviewEntry = {
   bodyId: 'm87',
   title: '室女座A M87（星系团中心语境 · 球状星团/成员点缀/EHT 联动）',
+  titleKey: 'lab.obsBodyM87',
   componentKey: 'm87-environment',
   cameraDistance: 4.2,
   minCameraDistance: 0.15,
   viewPresets: [
-    { key: 'overview', label: '全景语境', distanceUnits: 4.2 },
-    { key: 'core', label: '核心推近（EHT 光子环）', distanceUnits: 0.4 },
+    { key: 'overview', label: '全景语境', labelKey: 'lab.obsPresetOverview', distanceUnits: 4.2 },
+    { key: 'core', label: '核心推近（EHT 光子环）', labelKey: 'lab.obsPresetCore', distanceUnits: 0.4 },
   ],
   params: [
-    { key: 'gcCount', label: '球状星团数（呈现缩减登记）', min: 200, max: 2000, default: 2000, step: 100 },
-    { key: 'members', label: '室女座成员点缀（0 关/1 开）', min: 0, max: 1, default: 1, step: 1 },
-    { key: 'icmOpacity', label: 'ICM 弥散辉光强度', min: 0, max: 0.4, default: 0.14, step: 0.01 },
+    { key: 'gcCount', label: '球状星团数（呈现缩减登记）', labelKey: 'lab.obsParamGcCount', min: 200, max: 2000, default: 2000, step: 100 },
+    { key: 'members', label: '室女座成员点缀（0 关/1 开）', labelKey: 'lab.obsParamMembers', min: 0, max: 1, default: 1, step: 1 },
+    { key: 'icmOpacity', label: 'ICM 弥散辉光强度', labelKey: 'lab.obsParamIcmOpacity', min: 0, max: 0.4, default: 0.14, step: 0.01 },
   ],
   dataSource: M87_ENVIRONMENT_SOURCE_ZH,
 };
@@ -647,16 +698,17 @@ const M87_ENVIRONMENT_ENTRY: PreviewEntry = {
 const BLACKHOLE_LENSED_ENTRY: PreviewEntry = {
   bodyId: 'blackhole-test',
   title: '黑洞引力透镜 Black Hole Lensing（光子环 + 背景弯曲 + 吸积盘翻折像）',
+  titleKey: 'lab.obsBodyBlackholeTest',
   componentKey: 'blackhole-lensed',
   cameraDistance: 8,
   params: [
-    { key: 'massScale', label: '质量尺度', min: 0.3, max: 4, default: 1 },
-    { key: 'cameraDistance', label: '相机距离', min: 4, max: 60, default: 8 },
-    { key: 'steps', label: '步进数', min: 16, max: 128, default: 64, step: 1 },
-    { key: 'diskInclDeg', label: '盘倾角（°，0=正视/90=侧视）', min: 0, max: 90, default: 75, step: 1 },
-    { key: 'diskInnerRs', label: '盘内缘（r_s）', min: 2, max: 6, default: 3 },
-    { key: 'diskOuterRs', label: '盘外缘（r_s）', min: 6, max: 13, default: 12 },
-    { key: 'beamStrength', label: '束流强度', min: 0, max: 2, default: 1 },
+    { key: 'massScale', label: '质量尺度', labelKey: 'lab.obsParamMassScale', min: 0.3, max: 4, default: 1 },
+    { key: 'cameraDistance', label: '相机距离', labelKey: 'lab.obsParamCameraDistance', min: 4, max: 60, default: 8 },
+    { key: 'steps', label: '步进数', labelKey: 'lab.obsParamRaySteps', min: 16, max: 128, default: 64, step: 1 },
+    { key: 'diskInclDeg', label: '盘倾角（°，0=正视/90=侧视）', labelKey: 'lab.obsParamDiskIncl', min: 0, max: 90, default: 75, step: 1 },
+    { key: 'diskInnerRs', label: '盘内缘（r_s）', labelKey: 'lab.obsParamDiskInner', min: 2, max: 6, default: 3 },
+    { key: 'diskOuterRs', label: '盘外缘（r_s）', labelKey: 'lab.obsParamDiskOuter', min: 6, max: 13, default: 12 },
+    { key: 'beamStrength', label: '束流强度', labelKey: 'lab.obsParamBeamStrength', min: 0, max: 2, default: 1 },
   ],
   dataSource:
     'Schwarzschild 二阶 PPN 偏转（Keeton & Petters 2005）+ 解析捕获截面 b_crit=3√3/2·r_s（MTW §25.6）；吸积盘 T∝r^(−3/4)（Novikov-Thorne/Shakura-Sunyaev 薄盘近似，内缘截断）+ 多普勒束流 δ³ + 引力红移 √(1−r_s/r)（峰值温度压标至可视化档登记）；观感基准 EHT M87*（2019）/Sgr A*（2022）与 Interstellar 盘翻折像；强场对数发散域以驻留发光高斯核近似（艺术化登记）',
@@ -674,12 +726,13 @@ const BLACKHOLE_LENSED_ENTRY: PreviewEntry = {
 const PLEIADES_ENTRY: PreviewEntry = {
   bodyId: 'pleiades',
   title: '昴星团 M45（Gaia DR3 真实成员星 + 蓝色反射星云）',
+  titleKey: 'lab.obsBodyPleiades',
   componentKey: 'pleiades-catalog',
   cameraDistance: 4.5,
   params: [
-    { key: 'sizeGain', label: '粒径增益', min: 0.3, max: 3, default: 1 },
-    { key: 'spikeGain', label: '星芒尺寸', min: 0, max: 2, default: 1 },
-    { key: 'nebulaStrength', label: '反射星云强度', min: 0, max: 2, default: 1 },
+    { key: 'sizeGain', label: '粒径增益', labelKey: 'lab.obsParamSizeGain', min: 0.3, max: 3, default: 1 },
+    { key: 'spikeGain', label: '星芒尺寸', labelKey: 'lab.obsParamSpikeGain', min: 0, max: 2, default: 1 },
+    { key: 'nebulaStrength', label: '反射星云强度', labelKey: 'lab.obsParamNebulaStrength', min: 0, max: 2, default: 1 },
   ],
   dataSource:
     'Gaia DR3（ESA Archive，选星判据见 pleiades.json meta：锥形检索 2.5° + 视差 7.0–7.7 mas + 自行共动，按 G 取最亮 600 颗）；B−V→Teff 取 Ballesteros (2012) 黑体近似；命名星天测 SIMBAD（Gaia 缺失的最亮 5 颗径向取簇质心距离合成，登记）；反射星云为分层 sprite 艺术化近似（蓝色散射色调）',
@@ -697,11 +750,12 @@ const PLEIADES_ENTRY: PreviewEntry = {
 const M13_ENTRY: PreviewEntry = {
   bodyId: 'm13',
   title: 'M13 武仙座球状星团（King 分布 + HR 图颜色）',
+  titleKey: 'lab.obsBodyM13',
   componentKey: 'm13-king-cluster',
   cameraDistance: 4,
   params: [
-    { key: 'sizeGain', label: '粒径增益', min: 0.3, max: 3, default: 1 },
-    { key: 'brightnessGain', label: '亮度增益', min: 0.2, max: 2, default: 1 },
+    { key: 'sizeGain', label: '粒径增益', labelKey: 'lab.obsParamSizeGain', min: 0.3, max: 3, default: 1 },
+    { key: 'brightnessGain', label: '亮度增益', labelKey: 'lab.obsParamBrightnessGain', min: 0.2, max: 2, default: 1 },
   ],
   dataSource:
     'Harris (1996, AJ 112, 1487; 2010 版) 球状星团目录 NGC 6205（核半径 0.62′/潮汐半径 21.01′/浓度 c=1.53/距离 7.1 kpc，m13-profile.json 烘焙产物）；King (1962/1966) 三维密度解析去投影式逆变换采样（64 点数值反查表，半质量半径 ≈0.121 r_t）；HR 颜色两档近似登记：老年红黄星族 90%（Teff 3.9–5.8 kK，u² 偏冷端）+ 蓝离散星/水平支蓝端 10%（7.5–10.5 kK）→ blackbodyRGB（R4-6 复用）',
@@ -719,13 +773,14 @@ const M13_ENTRY: PreviewEntry = {
 const QUASAR_ENTRY: PreviewEntry = {
   bodyId: 'quasar-3c273',
   title: '类星体 3C 273（近观吸积盘 + BLR 辉光 + 尘埃环面 + 喷流）',
+  titleKey: 'lab.obsBodyQuasar3c273',
   componentKey: 'quasar-near-view',
   cameraDistance: 6,
   params: [
-    { key: 'beamStrength', label: '束流强度', min: 0, max: 2, default: 1 },
-    { key: 'diskGain', label: '盘亮度', min: 0.1, max: 3, default: 1 },
-    { key: 'torusGain', label: '尘埃环面亮度', min: 0, max: 2, default: 1 },
-    { key: 'timeScale', label: '时间流速', min: 0, max: 4, default: 1 },
+    { key: 'beamStrength', label: '束流强度', labelKey: 'lab.obsParamBeamStrength', min: 0, max: 2, default: 1 },
+    { key: 'diskGain', label: '盘亮度', labelKey: 'lab.obsParamDiskGain', min: 0.1, max: 3, default: 1 },
+    { key: 'torusGain', label: '尘埃环面亮度', labelKey: 'lab.obsParamTorusGain', min: 0, max: 2, default: 1 },
+    { key: 'timeScale', label: '时间流速', labelKey: 'lab.obsParamTimeScale', min: 0, max: 4, default: 1 },
   ],
   dataSource:
     '吸积盘 T∝r^(−3/4)（Novikov-Thorne/Shakura-Sunyaev 薄盘近似）+ 多普勒束流 δ³ + 引力红移 √(1−r_s/r)（R4-12 复用；透镜 raymarch 不启用登记）；峰值色温压标 12,000 K（3C 273 真实"大蓝包"~10⁴–10⁵ K）；尘埃环面取 AGN 统一模型（Urry & Padovani 1995）粒子环近似（暗红棕艺术化档）；盘/BLR/环面尺度比例为可视化档（真实跨 3–5 量级）',
@@ -742,11 +797,12 @@ const QUASAR_ENTRY: PreviewEntry = {
 const ANTENNAE_ENTRY: PreviewEntry = {
   bodyId: 'antennae',
   title: '触须星系 NGC 4038/4039（N-body 烘焙潮汐尾）',
+  titleKey: 'lab.obsBodyAntennae',
   componentKey: 'antennae-near-view',
   cameraDistance: 7,
   params: [
-    { key: 'timeScale', label: '时间流速', min: 0, max: 8, default: 1 },
-    { key: 'sizeGain', label: '粒径增益', min: 0.3, max: 3, default: 1 },
+    { key: 'timeScale', label: '时间流速', labelKey: 'lab.obsParamTimeScale', min: 0, max: 8, default: 1 },
+    { key: 'sizeGain', label: '粒径增益', labelKey: 'lab.obsParamSizeGain', min: 0.3, max: 3, default: 1 },
   ],
   dataSource:
     'Toomre & Toomre (1972, ApJ 178, 623) 潮汐相互作用图景：受限三体/测试粒子模拟离线烘焙（两 Plummer 软化质心抛物线交会 + 各 2,796 粒顺行盘、倾角 60°、RK4 定步长积分，10 快照；参数登记 scripts/bake-data/antennae.ts）；T&T 原文 Antennae 用 e≈0.5 椭圆、此处按需求取抛物线登记；快照全程 ↔ 600 Myr（三角波往返映射保证插值连续，登记）；双盘暖橙/冷蓝配色为区分尾源盘的艺术化强调档',
@@ -765,12 +821,13 @@ const ANTENNAE_ENTRY: PreviewEntry = {
 const CLUSTER_LENSING_ENTRY: PreviewEntry = {
   bodyId: 'cluster-lensing',
   title: '星系团引力透镜（SIS 屏幕空间折射 · 原型 Abell 370）',
+  titleKey: 'lab.obsBodyClusterLensing',
   componentKey: 'cluster-lensing-effect',
   cameraDistance: 8,
   params: [
-    { key: 'einsteinRadius', label: '爱因斯坦半径（场景单位）', min: 0.5, max: 4, default: 2 },
-    { key: 'strength', label: '透镜强度', min: 0, max: 1, default: 1 },
-    { key: 'sourceGain', label: '背景源亮度', min: 0, max: 2, default: 1 },
+    { key: 'einsteinRadius', label: '爱因斯坦半径（场景单位）', labelKey: 'lab.obsParamEinsteinRadius', min: 0.5, max: 4, default: 2 },
+    { key: 'strength', label: '透镜强度', labelKey: 'lab.obsParamLensStrength', min: 0, max: 1, default: 1 },
+    { key: 'sourceGain', label: '背景源亮度', labelKey: 'lab.obsParamSourceGain', min: 0, max: 2, default: 1 },
   ],
   dataSource:
     'SIS 奇异等温球透镜方程 β = θ − θ_E·θ̂（Narayan & Bartelmann 1996 §3.1；Schneider, Ehlers & Falco 1992），屏幕空间 UV 重采样近似（仅对团块之后背景严格成立，前景同被偏移登记）；原型 Abell 370（真实 θ_E ≈ 30″–40″，此处压缩至近观十几度可视化档登记）；影响域窗为实现性裁剪（真实 SIS 偏转全域恒为 θ_E）',
@@ -788,20 +845,22 @@ const CLUSTER_LENSING_ENTRY: PreviewEntry = {
 const GRB_ENTRY: PreviewEntry = {
   bodyId: 'grb',
   title: '伽马射线暴 GRB 221009A（近观双喷流 + 余辉膨胀壳）',
+  titleKey: 'lab.obsBodyGrb',
   componentKey: 'grb-near-view',
   cameraDistance: 7,
   params: [
-    { key: 'timeScale', label: '时间流速', min: 0, max: 8, default: 1 },
+    { key: 'timeScale', label: '时间流速', labelKey: 'lab.obsParamTimeScale', min: 0, max: 8, default: 1 },
     {
       key: 'jetAngleDeg',
       label: '喷流全开角（°，登记默认 5）',
+      labelKey: 'lab.obsParamJetAngle',
       min: 2,
       max: 12,
       default: GRB_NEAR_JET_FULL_ANGLE_DEG,
       step: 0.5,
     },
-    { key: 'jetGain', label: '喷流亮度', min: 0, max: 2, default: 1 },
-    { key: 'shellGain', label: '余辉强度', min: 0, max: 2, default: 1 },
+    { key: 'jetGain', label: '喷流亮度', labelKey: 'lab.obsParamJetGain', min: 0, max: 2, default: 1 },
+    { key: 'shellGain', label: '余辉强度', labelKey: 'lab.obsParamShellGain', min: 0, max: 2, default: 1 },
   ],
   dataSource: GRB_NEAR_SOURCE_ZH,
 };

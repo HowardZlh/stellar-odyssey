@@ -16,13 +16,14 @@ the heliopause close-up, ambient auto-triggered solar events, far views plus all
 science notes in the Galaxy / Universe views (L3/L4), audio, and the bilingual UI — none of it
 requires unlocking.
 
-Unlocking adds three kinds of access (identical across tiers; only duration differs):
+Unlocking adds four kinds of access (identical across tiers; only duration differs):
 
 | Content | Free experience | Unlocked |
 |---|---|---|
 | **Close-view detail layers** (stellar surfaces / volumetric nebulae / black-hole gravitational lensing / close views of clusters, galaxies and extragalactic objects — 24 in total) | Visible from afar; detail layers lock when zooming in | All open |
 | **L3/L4 tour sequences** (`[` / `]` stop-by-stop touring in the galaxy/universe views, including kiosk mode) | Locked (L1/L2 tours unrestricted) | All open |
 | **Manual event demos** (flares / CMEs / supernovae / merger preview) | 5 per day shared (resets each calendar day; ambient auto-triggered events don't count) | Unlimited |
+| **Astronomy Lab · Body Observatory** ([/lab/observatory](https://stellar.guushu.com/lab/observatory), an interactive observing field of all 23 close-up detail rigs) | 10 observations per day shared (of which 7 popular targets — black-hole lensing, M87, Betelgeuse, etc. — share 3 daily trials that also count against the total; unlimited during the launch free-access window) | Unlimited |
 
 ## Tiers & pricing
 
@@ -84,7 +85,8 @@ Your unlock credential is a three-segment string starting with `SO1.` (a time-li
 ## Expiry & renewal
 
 - Upon expiry, the app reverts to the free experience automatically (close-view detail layers and
-  L3/L4 tours lock again; demos return to the daily quota). There is **no auto-renewal**.
+  L3/L4 tours lock again; demos and the Body Observatory return to their daily quotas). There is
+  **no auto-renewal**.
 - Renewing = purchase any tier again and redeem; activating the new token replaces the old one.
   Token durations do **not stack**.
 
