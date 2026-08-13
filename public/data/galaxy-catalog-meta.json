@@ -1,9 +1,23 @@
 {
   "meta": {
     "source": "2MASS Redshift Survey (2MRS)，Huchra et al. 2012, ApJS 199, 26；VizieR J/ApJS/199/26/table3（CDS）",
-    "retrievedAt": "2026-07-30T08:19:04.546Z",
+    "retrievedAt": "2026-08-13T10:14:59.002Z",
     "license": "公开科学数据：引用 Huchra et al. (2012, ApJS 199, 26)；VizieR/CDS 数据使用规范",
     "count": 43488
+  },
+  "format": {
+    "version": 2,
+    "layout": "[MAGIC=21175, VERSION=2, N] + N×[sgx, sgy, sgz (Mpc 超星系笛卡尔), w]（Float32 小端）",
+    "w": "w = 形态档×100000 + J−K 量化档×1000 + round(亮度档×999)（整数值浮点 ≤ 299,999）",
+    "morphTier": "0 = 早型（T ≤ 0）、1 = 晚型（1 ≤ T ≤ 19）、2 = 未知（T ≥ 20 或不可解析）",
+    "jkTier": "0–98 = J−K 色指数按 [0.79, 1.31]（实际分布 P1–P99，Huchra et al. 2012）线性量化；99 = Jcmag 缺失未知档（消费侧回退形态档色调）",
+    "brightness": "0–999 = K_s 星等 [11.75, 4.0] 线性归一（亮端 → 999）"
+  },
+  "jkColor": {
+    "quantP01": 0.79,
+    "quantP99": 1.31,
+    "missingCount": 40,
+    "missingFraction": 0.00092
   },
   "h0KmSMpc": 70,
   "czMinKmS": 100,

@@ -175,7 +175,7 @@ describe('颜色 / 尺寸映射', () => {
     expect(catalogNearSizePx(0.5)).toBeGreaterThan(catalogFarSizePx(1));
   });
 
-  it('形态档基色：椭圆偏黄（R>B）、旋涡偏蓝白（B>R）、未知中性', () => {
+  it('形态档基色（SC3 起 jk 未知档回退路径）：椭圆偏黄（R>B）、旋涡偏蓝白（B>R）、未知中性', () => {
     const [e, s, u] = MORPH_TIER_COLORS_SRGB;
     expect(e[0]).toBeGreaterThan(e[2]);
     expect(s[2]).toBeGreaterThan(s[0]);
@@ -184,11 +184,13 @@ describe('颜色 / 尺寸映射', () => {
 });
 
 describe('两级 LOD 属性构建', () => {
-  /** 合成目录：近域 2 条（10/79 Mpc）+ 远景 2 条（81/300 Mpc），三档形态 */
+  /** 合成目录：近域 2 条（10/79 Mpc）+ 远景 2 条（81/300 Mpc），三档形态；
+   * jk 档覆盖红端/蓝端/未知/中段（SC3 V2） */
   const data: GalaxyCatalogData = {
     count: 4,
     positionsMpc: new Float32Array([10, 0, 0, 0, 79, 0, 0, 0, 81, 150, 150, 150 * Math.SQRT2]),
     morphTiers: new Uint8Array([0, 1, 2, 1]),
+    jkTiers: new Uint8Array([98, 0, 99, 49]),
     brightness01: new Float32Array([1, 0.5, 0, 0.25]),
   };
 

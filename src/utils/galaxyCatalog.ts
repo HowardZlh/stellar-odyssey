@@ -35,7 +35,9 @@
  * 两级 LOD（§R5-3 B）：拉尼亚凯亚近域（≤ 80 Mpc ≈ 2.6 亿光年半径）
  * 软圆点适度增大 + 远景单像素两个 Points（各一次 draw call）。
  * 亮度档 → 顶点尺寸与颜色强度（加性混合下颜色强度等效 alpha）；
- * 形态档 → 色调（椭圆偏黄 / 旋涡偏蓝白 / 未知中性）。
+ * J−K 量化档 → 连续色调（SC3：J−K 大/早型 → 红黄、小/晚型 → 蓝白，
+ * 线性平滑插值）；未知档（Jcmag 缺失）回退形态档 3 色
+ * （椭圆偏黄 / 旋涡偏蓝白 / 未知中性）。
  */
 
 import type { Vec3 } from '@/types';
@@ -43,6 +45,8 @@ import type { GalaxyCatalogData } from '@/utils/bakedData';
 import { LOCAL_GROUP_GALAXIES } from '@/data/galaxies';
 import {
   ENTITY_GALAXY_SKY,
+  JK_QUANT_MAX_TIER,
+  JK_TIER_UNKNOWN,
   LY_PER_MPC,
   angularSeparationDeg,
   equatorialToGalacticUnit,
@@ -190,12 +194,47 @@ export function catalogDistanceToSceneUnits(distanceMpc: number): number {
   return cosmicDistanceToSceneUnits(distanceMpc * LY_PER_MPC);
 }
 
-/** 形态档基色（sRGB）：0 早型偏黄 / 1 晚型蓝白 / 2 未知中性暖灰 */
+/**
+ * 形态档基色（sRGB）：0 早型偏黄 / 1 晚型蓝白 / 2 未知中性暖灰。
+ * SC3 起降级为 J−K 未知档（jkTier = 99，Jcmag 缺失 ~0.09%）的回退路径——
+ * 主路径为 catalogColorFromJkTier 连续色调映射。
+ */
 export const MORPH_TIER_COLORS_SRGB: readonly [number, number, number][] = [
   [1.0, 0.85, 0.66],
   [0.78, 0.86, 1.0],
   [0.85, 0.83, 0.77],
 ];
+
+/**
+ * J−K 连续色调端点（sRGB，SC3）：量化档 0（J−K ≤ P1，最蓝/晚型）→ 蓝白，
+ * 档 98（J−K ≥ P99，最红/早型）→ 红黄（Huchra et al. 2012：早型 J−K 偏红、
+ * 晚型偏蓝，§0.3 登记）；端点色与原 3 档形态色调同族，观感连续升级。
+ */
+export const CATALOG_JK_BLUE_SRGB: readonly [number, number, number] = [0.76, 0.86, 1.0];
+export const CATALOG_JK_RED_SRGB: readonly [number, number, number] = [1.0, 0.78, 0.5];
+
+/**
+ * J−K 量化档 → 色调（sRGB，纯函数）：0–98 在蓝白 ↔ 红黄端点间线性平滑
+ * 插值（逐通道单调 → J−K 增即色温降）；99 = 未知档回退形态档 3 色
+ * （旧行为即回退路径）。
+ */
+export function catalogColorFromJkTier(
+  jkTier: number,
+  morphTier: number,
+): readonly [number, number, number] {
+  if (!Number.isInteger(jkTier) || jkTier < 0 || jkTier > JK_TIER_UNKNOWN) {
+    throw new RangeError(`J−K 量化档必须为 [0,${JK_TIER_UNKNOWN}] 整数，收到 ${jkTier}`);
+  }
+  if (jkTier === JK_TIER_UNKNOWN) {
+    return MORPH_TIER_COLORS_SRGB[morphTier] ?? MORPH_TIER_COLORS_SRGB[2];
+  }
+  const t = jkTier / JK_QUANT_MAX_TIER;
+  return [
+    CATALOG_JK_BLUE_SRGB[0] + (CATALOG_JK_RED_SRGB[0] - CATALOG_JK_BLUE_SRGB[0]) * t,
+    CATALOG_JK_BLUE_SRGB[1] + (CATALOG_JK_RED_SRGB[1] - CATALOG_JK_BLUE_SRGB[1]) * t,
+    CATALOG_JK_BLUE_SRGB[2] + (CATALOG_JK_RED_SRGB[2] - CATALOG_JK_BLUE_SRGB[2]) * t,
+  ];
+}
 
 /** 亮度档 → 颜色强度（加性混合下等效 alpha；暗端保底可见） */
 export function catalogIntensity01(brightness01: number): number {
@@ -279,7 +318,7 @@ export function buildCatalogLodAttributes(
       positions[k * 3 + 1] = p.y * units;
       positions[k * 3 + 2] = p.z * units;
       const b = data.brightness01[i];
-      const base = MORPH_TIER_COLORS_SRGB[data.morphTiers[i]] ?? MORPH_TIER_COLORS_SRGB[2];
+      const base = catalogColorFromJkTier(data.jkTiers[i], data.morphTiers[i]);
       const intensity = catalogIntensity01(b);
       colors[k * 3] = srgbToLinear01(base[0]) * intensity;
       colors[k * 3 + 1] = srgbToLinear01(base[1]) * intensity;
