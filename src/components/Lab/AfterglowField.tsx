@@ -32,6 +32,8 @@ import {
   AFTERGLOW_FADE_ORDINARY_SEC,
   AFTERGLOW_MAX_SLOTS,
   AFTERGLOW_PARTICLE_BUDGET,
+  EPOCH_LOCAL_HOURS,
+  EPOCH_SUN_DECLINATION_DEG,
   METEOR_CYCLE_PERIOD_SEC,
   evalCubic,
   fluxFraction,
@@ -42,6 +44,7 @@ import {
   visibleHourlyRate,
   type MeteorSlot,
 } from '@/utils/meteorShower';
+import { effectiveLimitingMag, labSunAltitudeRad } from '@/utils/labSky';
 import { createSeededRandom } from '@/utils/random';
 import { fovPointScaleFactor } from '@/utils/labGestures';
 import type { LabFrameRefs } from '@/components/Lab/labTypes';
@@ -274,7 +277,16 @@ export function AfterglowField({ slots, refs }: AfterglowFieldProps): JSX.Elemen
       lst
     );
     const dir = sceneDirFromAltAz(radiant);
-    const hr = visibleHourlyRate(shower.zhr, shower.populationIndex, radiant.altRad, s.limitingMag);
+    // 有效 lm（M3.8-2）：与 MeteorField 流量链同口径（母槽位门控同步）
+    const sunAlt = labSunAltitudeRad(
+      EPOCH_LOCAL_HOURS[shower.id],
+      EPOCH_SUN_DECLINATION_DEG[shower.id],
+      s.hourOffset,
+      t / 3600,
+      s.observerLat
+    );
+    const lmEff = effectiveLimitingMag(s.limitingMag, sunAlt);
+    const hr = visibleHourlyRate(shower.zhr, shower.populationIndex, radiant.altRad, lmEff);
     const u = material.uniforms;
     u.uTime.value = t;
     u.uCyclePeriod.value = shower.cyclePeriodSec;

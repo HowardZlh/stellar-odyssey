@@ -61,9 +61,11 @@ const CLOUD_DRIFT_RAD_PER_SEC = (0.12 * 2 * Math.PI) / 86164;
 const EARTH_SURFACE_VERTEX_SHADER = /* glsl */ `
   varying vec2 vUv;
   varying vec3 vNormalW;
+  varying vec3 vPosW;
   void main() {
     vUv = uv;
     vNormalW = normalize(mat3(modelMatrix) * normal);
+    vPosW = (modelMatrix * vec4(position, 1.0)).xyz;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
@@ -96,16 +98,36 @@ const EARTH_SURFACE_FRAGMENT_SHADER = /* glsl */ `
   }
 `;
 
-/** 云层 shader（Planet.tsx CLOUD_FRAGMENT_SHADER 复制精简 + uSunDir） */
+/** 云层视距渐隐起点/终点（km；M3.8-4③ S3 z-fighting 消解，取值登记见下） */
+const CLOUD_FADE_NEAR_KM = 800;
+const CLOUD_FADE_FAR_KM = 1500;
+
+/**
+ * 云层 shader（Planet.tsx CLOUD_FRAGMENT_SHADER 复制精简 + uSunDir）
+ *
+ * M3.8-4③（S3 层叠伪影修正，方案"按视距渐隐"登记）：跟随档 near 强制
+ * 0.05，远距（~2000 km）斜掠角下深度分辨率 ~5 km ≈ 云层高 8 km →
+ * 云层与表面 z-fighting 显形为虚线接缝。逐片元按相机—片元距离渐隐
+ * （800 km 起淡出、1500 km 全隐——该距离云像素信息量为零），远距斜掠
+ * 区无混合写入即无闪烁；近观（跟随 0.6–6 km，云层近区 ≲ 数百 km）
+ * 观感零变化。渐隐仅跟随档启用（uFadeByDist 按相机 near 每帧判定——
+ * 太空档 near=2 深度分辨率 ~1.5 km 无 z-fighting，云层远观保持完整）。
+ */
 const EARTH_CLOUD_FRAGMENT_SHADER = /* glsl */ `
   uniform sampler2D uMap;
   uniform float uOpacity;
   uniform vec3 uSunDir;
   uniform float uAmbient;
   uniform float uTerminatorSoftness;
+  uniform float uFadeByDist;
   varying vec2 vUv;
   varying vec3 vNormalW;
+  varying vec3 vPosW;
   void main() {
+    // 视距渐隐（S3）：远距斜掠区云层深度差低于深度缓冲分辨率 → 直接丢弃
+    float viewDist = distance(cameraPosition, vPosW);
+    float distFade = 1.0 - uFadeByDist * smoothstep(${CLOUD_FADE_NEAR_KM.toFixed(1)}, ${CLOUD_FADE_FAR_KM.toFixed(1)}, viewDist);
+    if (distFade <= 0.001) discard;
     vec3 geoN = normalize(vNormalW);
     float ndl = dot(geoN, uSunDir);
     float day = smoothstep(-uTerminatorSoftness, uTerminatorSoftness, ndl);
@@ -113,7 +135,7 @@ const EARTH_CLOUD_FRAGMENT_SHADER = /* glsl */ `
     // 真实云图（灰度 JPG）：亮度即云量 → alpha（Planet.tsx uUseAlphaMap=1 分支）
     float cloudAlpha = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
     float light = uAmbient + (1.0 - uAmbient) * day;
-    gl_FragColor = vec4(vec3(light), cloudAlpha * uOpacity);
+    gl_FragColor = vec4(vec3(light), cloudAlpha * uOpacity * distFade);
   }
 `;
 
@@ -192,6 +214,7 @@ export function LabEarth({ refs, visible }: LabEarthProps): JSX.Element {
           uSunDir: { value: new THREE.Vector3(0, -1, 0) },
           uAmbient: { value: 0.05 },
           uTerminatorSoftness: { value: 0.08 },
+          uFadeByDist: { value: 0 },
         },
         vertexShader: EARTH_SURFACE_VERTEX_SHADER,
         fragmentShader: EARTH_CLOUD_FRAGMENT_SHADER,
@@ -238,10 +261,13 @@ export function LabEarth({ refs, visible }: LabEarthProps): JSX.Element {
     };
   }, [surfaceMaterial, cloudMaterial, atmosphereMaterial]);
 
-  useFrame(() => {
+  useFrame((state) => {
     if (!visible) return; // 隐藏期零 uniform 更新（visible 由 props 门控）
     const s = refs.settingsRef.current;
     const shower = refs.showerRef.current;
+    // 云层视距渐隐仅小近平面（跟随档 near=0.05）启用（S3 登记见 shader 头）
+    cloudMaterial.uniforms.uFadeByDist.value =
+      (state.camera as THREE.PerspectiveCamera).near < 1 ? 1 : 0;
     // 太阳方向 = 当地时钟推算（与 HUD 时钟/星穹旋转共用同一时间输入自洽）；
     // 太阳赤纬按雨历元（8 月 +14° / 11 月狮子座暴 −19°，M3.7）
     const clock = localClockHours(

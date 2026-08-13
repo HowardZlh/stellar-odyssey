@@ -36,6 +36,8 @@ import { useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import {
+  EPOCH_LOCAL_HOURS,
+  EPOCH_SUN_DECLINATION_DEG,
   FRAGMENT_BREAKUP_PROGRESS,
   METEOR_CYCLE_PERIOD_SEC,
   METEOR_FRAGMENT_GROUPS,
@@ -52,6 +54,7 @@ import {
   visibleHourlyRate,
   type MeteorSlot,
 } from '@/utils/meteorShower';
+import { effectiveLimitingMag, labSunAltitudeRad } from '@/utils/labSky';
 import { createSeededRandom } from '@/utils/random';
 import { fovPointScaleFactor } from '@/utils/labGestures';
 import { NOISE_GLSL } from '@/components/Lab/AfterglowField';
@@ -342,7 +345,17 @@ export function MeteorField({ slots, refs }: MeteorFieldProps): JSX.Element {
       lst
     );
     const dir = sceneDirFromAltAz(radiant);
-    const hr = visibleHourlyRate(shower.zhr, shower.populationIndex, radiant.altRad, s.limitingMag);
+    // 有效 lm（M3.8-2 晨昏蒙影链）：天亮流量自然归零（visibleHourlyRate
+    // 签名与公式不动，只换 lm 输入——契约 C1）
+    const sunAlt = labSunAltitudeRad(
+      EPOCH_LOCAL_HOURS[shower.id],
+      EPOCH_SUN_DECLINATION_DEG[shower.id],
+      s.hourOffset,
+      t / 3600,
+      s.observerLat
+    );
+    const lmEff = effectiveLimitingMag(s.limitingMag, sunAlt);
+    const hr = visibleHourlyRate(shower.zhr, shower.populationIndex, radiant.altRad, lmEff);
     const u = material.uniforms;
     u.uTime.value = t;
     u.uCyclePeriod.value = shower.cyclePeriodSec;

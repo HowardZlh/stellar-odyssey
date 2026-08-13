@@ -77,6 +77,7 @@ import {
   CAMERA_RADIUS_MAX_UNITS,
   CAMERA_RADIUS_MIN_UNITS,
   EPOCH_LOCAL_HOURS,
+  EPOCH_SUN_DECLINATION_DEG,
   FASTFORWARD_LEAD_REAL_SEC,
   FOLLOW_DISTANCE_DEFAULT_KM,
   FOLLOW_LINGER_REAL_SEC,
@@ -122,13 +123,23 @@ import {
   safariGestureFovDeg,
   wheelLookDelta,
 } from '@/utils/labGestures';
+import {
+  effectiveLimitingMag,
+  emptyLabSkyColors,
+  labGroundColor,
+  labSkyColors,
+  labSunAltitudeRad,
+} from '@/utils/labSky';
 import { bvToTeffK, srgbToLinear01 } from '@/utils/pleiadesCatalog';
 import { blackbodyRGB } from '@/utils/starPhysics';
 import type { MessageKey } from '@/i18n';
 import { MeteorField } from '@/components/Lab/MeteorField';
 import { AfterglowField } from '@/components/Lab/AfterglowField';
 import { MeteorHeadDetail } from '@/components/Lab/MeteorHeadDetail';
+import { MeteorTrailRibbon } from '@/components/Lab/MeteorTrailRibbon';
 import { LabEarth } from '@/components/Lab/LabEarth';
+import { LabSkyDome } from '@/components/Lab/LabSkyDome';
+import { HorizonRidge } from '@/components/Lab/HorizonRidge';
 import { RadiantMarker } from '@/components/Lab/RadiantMarker';
 import {
   LabControlPanel,
@@ -613,8 +624,16 @@ function StarDome({ stars, refs }: StarDomeProps): JSX.Element {
       state.gl.domElement.height *
       0.5 *
       fovPointScaleFactor((state.camera as THREE.PerspectiveCamera).fov);
-    // limitingMag 同时驱动恒星剔除与流量压低（§1.4 自洽联动）
-    material.uniforms.uLimitingMag.value = s.limitingMag;
+    // 有效 lm（M3.8-2 晨昏蒙影链）= min(用户 lm, 晨昏上限)——天亮星隐；
+    // 与流量链同口径（同时驱动恒星剔除与流量压低，§1.4 自洽联动）
+    const sunAlt = labSunAltitudeRad(
+      EPOCH_LOCAL_HOURS[shower.id],
+      EPOCH_SUN_DECLINATION_DEG[shower.id],
+      s.hourOffset,
+      refs.timeSecRef.current / 3600,
+      s.observerLat
+    );
+    material.uniforms.uLimitingMag.value = effectiveLimitingMag(s.limitingMag, sunAlt);
     // 恒星时演化：历元随页签、时长随 timeScale 放大后的共享 uTime
     const lst = localSiderealTime(shower.epochLst0Deg, s.hourOffset, refs.timeSecRef.current / 3600);
     const m = equatorialToHorizontalMatrix(s.observerLat, lst);
@@ -710,12 +729,39 @@ function TrackpadLookControls(): null {
   return null;
 }
 
-/** 地面剪影圆盘（暗色、不透明——遮蔽地平线以下的星，禁止地景细节工作量） */
-function GroundDisk(): JSX.Element {
+/**
+ * 地面剪影圆盘（不透明——遮蔽地平线以下的星）。M3.8-1：材质色改每帧
+ * 动态（labGroundColor = 地平天光 × 反照系数——夜天光照亮地景的深蓝灰，
+ * 随光害/晨昏联动；颜色经 labSky 纯函数，out 复用零 GC）。
+ */
+function GroundDisk({ refs }: { refs: LabFrameRefs }): JSX.Element {
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const tmp = useMemo(
+    () => ({ sky: emptyLabSkyColors(), ground: [0, 0, 0] as [number, number, number] }),
+    []
+  );
+
+  useFrame(() => {
+    const material = materialRef.current;
+    if (!material) return;
+    const s = refs.settingsRef.current;
+    const shower = refs.showerRef.current;
+    const sunAlt = labSunAltitudeRad(
+      EPOCH_LOCAL_HOURS[shower.id],
+      EPOCH_SUN_DECLINATION_DEG[shower.id],
+      s.hourOffset,
+      refs.timeSecRef.current / 3600,
+      s.observerLat
+    );
+    labSkyColors(s.limitingMag, sunAlt, tmp.sky);
+    labGroundColor(tmp.sky, tmp.ground);
+    material.color.setRGB(tmp.ground[0], tmp.ground[1], tmp.ground[2]);
+  });
+
   return (
     <mesh rotation-x={-Math.PI / 2} position={[0, GROUND_DISK_Y_UNITS, 0]}>
       <circleGeometry args={[STAR_DOME_RADIUS_UNITS, 96]} />
-      <meshBasicMaterial color="#04060a" side={THREE.DoubleSide} />
+      <meshBasicMaterial ref={materialRef} color="#04060a" side={THREE.DoubleSide} />
     </mesh>
   );
 }
@@ -797,18 +843,28 @@ export function MeteorShowerLab(): JSX.Element {
     setViewMode(mode);
   };
 
-  /** 当前时刻流量链快照（快进/倒计时共用，全部 M1/M3.5 纯函数） */
+  /** 当前时刻流量链快照（快进/倒计时共用，全部 M1/M3.5/M3.8 纯函数） */
   const fluxSnapshot = (): { fluxFrac: number } => {
     const s = settingsRef.current;
     const sh = showerRef.current;
-    const lst = localSiderealTime(sh.epochLst0Deg, s.hourOffset, timeSecRef.current / 3600);
+    const elapsedHours = timeSecRef.current / 3600;
+    const lst = localSiderealTime(sh.epochLst0Deg, s.hourOffset, elapsedHours);
     const radiant = horizontalFromEquatorial(
       sh.radiantRaDeg,
       sh.radiantDecDeg,
       s.observerLat,
       lst
     );
-    const hr = visibleHourlyRate(sh.zhr, sh.populationIndex, radiant.altRad, s.limitingMag);
+    // 有效 lm（M3.8-2）：白天流量 ≈0——快进/倒计时与场景同口径
+    const sunAlt = labSunAltitudeRad(
+      EPOCH_LOCAL_HOURS[sh.id],
+      EPOCH_SUN_DECLINATION_DEG[sh.id],
+      s.hourOffset,
+      elapsedHours,
+      s.observerLat
+    );
+    const lmEff = effectiveLimitingMag(s.limitingMag, sunAlt);
+    const hr = visibleHourlyRate(sh.zhr, sh.populationIndex, radiant.altRad, lmEff);
     return { fluxFrac: fluxFraction(hr, slots.length, sh.cyclePeriodSec) };
   };
 
@@ -1005,7 +1061,16 @@ export function MeteorShowerLab(): JSX.Element {
         localClockHours(EPOCH_LOCAL_HOURS[sh.id], s.hourOffset, elapsedHours)
       );
       const radiantAltDeg = Math.round(radiant.altRad / DEG);
-      const hr = visibleHourlyRate(sh.zhr, sh.populationIndex, radiant.altRad, s.limitingMag);
+      // 有效 lm（M3.8-2）：HUD 倒计时与场景流量链同口径（天亮流量归零 → "—"）
+      const sunAlt = labSunAltitudeRad(
+        EPOCH_LOCAL_HOURS[sh.id],
+        EPOCH_SUN_DECLINATION_DEG[sh.id],
+        s.hourOffset,
+        elapsedHours,
+        s.observerLat
+      );
+      const lmEff = effectiveLimitingMag(s.limitingMag, sunAlt);
+      const hr = visibleHourlyRate(sh.zhr, sh.populationIndex, radiant.altRad, lmEff);
       const fluxFrac = fluxFraction(hr, slots.length, sh.cyclePeriodSec);
       const countdown = (next: NextIgnitionEvent | null): string =>
         s.timeScale > 0 && next
@@ -1060,9 +1125,13 @@ export function MeteorShowerLab(): JSX.Element {
         {/* 流星 + 余迹：与星场共 3 个粒子系统 draw call（§4.1，禁止合并） */}
         <MeteorField slots={slots} refs={refs} />
         <AfterglowField slots={slots} refs={refs} />
-        {/* 近观头部细节层（M3.6-4③）：常驻挂载、仅演示/跟随期间 visible
-            （+1 draw call 登记——"行星近观 4K 细节层"的流星对应物） */}
+        {/* 近观头部细节层（M3.6-4③ + M3.8-4① S1 重做）：常驻挂载、仅演示/
+            跟随期间 visible（+1 draw call 登记——"行星近观 4K 细节层"的
+            流星对应物） */}
         <MeteorHeadDetail slots={slots} refs={refs} />
+        {/* 近景条痕 ribbon（M3.8-4② S2）：常驻挂载、仅跟随/演示且观距
+            < 8 km 渐显（+1 draw call 仅近观期间；与远观点精灵加性共存） */}
+        <MeteorTrailRibbon slots={slots} refs={refs} />
         {settings.showRadiant && hud.radiantAltDeg > 0 && (
           <RadiantMarker refs={refs} labelKey={RADIANT_LABEL_KEYS[showerId]} />
         )}
@@ -1071,9 +1140,16 @@ export function MeteorShowerLab(): JSX.Element {
         {/* 真实地球（M3.6-3）：常驻挂载 + visible 门控（太空档/跟随期间可见；
             纹理页面挂载即低优先级预载，切档零等待） */}
         <LabEarth refs={refs} visible={viewMode === 'space' || followActive} />
-        {/* 地面剪影盘：仅地面档且非跟随（贴地曲率不可辨；跟随期间隐藏防
-            平面盘遮挡真实地球夜面——M3.6-3 登记差异） */}
-        {viewMode === 'ground' && !followActive && <GroundDisk />}
+        {/* 地面环境（仅地面档且非跟随，三者同门控——跟随/太空的天空由
+            LabEarth 大气壳承担）：天光穹壳（M3.8-1，+1 draw call）+
+            地面剪影盘（动态反照色）+ 山脊剪影带（M3.8-3，+1 draw call） */}
+        {viewMode === 'ground' && !followActive && (
+          <>
+            <LabSkyDome refs={refs} />
+            <GroundDisk refs={refs} />
+            <HorizonRidge refs={refs} baseY={GROUND_DISK_Y_UNITS} />
+          </>
+        )}
         {/* 相机控制（跟随/自动运镜期间整体卸载，防 damping 与
             FollowCameraRig/AimRig 争抢相机；结束时相机已就位，重挂载的
             OrbitControls 从当前位姿接管）。
