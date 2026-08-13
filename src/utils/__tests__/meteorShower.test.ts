@@ -15,6 +15,8 @@ import {
   DEFAULT_LIMITING_MAG,
   DEFAULT_OBSERVER_LAT_DEG,
   EPOCH_LOCAL_HOURS,
+  FOLLOW_CAMERA_BACK_KM,
+  FOLLOW_CAMERA_UP_KM,
   FRAGMENT_CONE_HALF_ANGLE_RAD,
   FRAGMENT_MAX_LATERAL_KM,
   KAPPA_CYGNIDS,
@@ -27,7 +29,9 @@ import {
   evalCubic,
   fitCubicThroughOrigin,
   fluxFraction,
+  followCameraPose,
   formatClockHHMM,
+  formatDurationClock,
   fragmentLateralMagnitudeKm,
   horizontalFromEquatorial,
   ignitedSlots,
@@ -35,6 +39,8 @@ import {
   localClockHours,
   localSiderealTime,
   makeMeteorSlots,
+  nextIgnition,
+  pickDemoSlot,
   sceneDirFromAltAz,
   selectAfterglowSlots,
   slotPhase,
@@ -622,5 +628,214 @@ describe('M3 渲染/控件联动纯函数（§1.5 / §3 / §4）', () => {
     expect(visibleFireballs.length).toBeGreaterThanOrEqual(1);
     // 普通流星同样在激活集内（默认体验非"全火流星"）
     expect(slots.some((s) => s.aGateRank < flux && !s.isFireball)).toBe(true);
+  });
+});
+
+describe('M3.5 目验辅助纯函数（§M3.5-1）', () => {
+  /** 最小合成槽位（调度/挑选/位姿测试用；物理场无关字段取占位值） */
+  const mkSlot = (over: Partial<MeteorSlot> = {}): MeteorSlot => ({
+    aSeed: 0.5,
+    aGateRank: 0.1,
+    aFireballRank: 0.5,
+    isFireball: false,
+    startPos: [0, 115, 0],
+    lifetimeSec: 1,
+    massKg: 1e-4,
+    dispCoefs: [40, 0, 0],
+    intenCoefs: [1, 0, 0],
+    ...over,
+  });
+
+  describe('nextIgnition（契约 C2 前瞻镜像）', () => {
+    test('解析解 = 逐槽位回绕公式的最小值（门控同式过滤）', () => {
+      const slots = makeMeteorSlots(11, 40, KAPPA_CYGNIDS);
+      const T = KAPPA_CYGNIDS.cyclePeriodSec;
+      const from = 987.6;
+      const flux = 0.5;
+      const fb = 0.6;
+      const expected = slots
+        .map((s, i) => ({ i, t: (Math.floor(s.aSeed + from / T) + 1 - s.aSeed) * T }))
+        .filter(({ i }) => {
+          const s = slots[i];
+          return s.aGateRank < flux && (!s.isFireball || s.aFireballRank < fb);
+        })
+        .sort((a, b) => a.t - b.t)[0];
+      const got = nextIgnition(slots, flux, fb, from, T, false);
+      expect(got).not.toBeNull();
+      expect(got!.slotIndex).toBe(expected.i);
+      expect(got!.igniteAtSec).toBeCloseTo(expected.t, 9);
+    });
+
+    test('与 ignitedSlots 交叉锁定：点燃瞬间被镜像捕获、此前无更早候选', () => {
+      const slots = makeMeteorSlots(7, 64, PERSEIDS);
+      const T = PERSEIDS.cyclePeriodSec;
+      const flux = 0.25;
+      const fb = DEFAULT_FIREBALL_RATE;
+      let from = 123.456;
+      for (let k = 0; k < 5; k++) {
+        const next = nextIgnition(slots, flux, fb, from, T, false);
+        expect(next).not.toBeNull();
+        const { slotIndex, igniteAtSec } = next!;
+        expect(igniteAtSec).toBeGreaterThan(from);
+        const eps = 1e-6 * T;
+        // 点燃瞬间：ignitedSlots(igniteAt−ε, igniteAt+ε] 捕获该槽位
+        expect(ignitedSlots(igniteAtSec - eps, igniteAtSec + eps, slots, flux, T)).toContain(
+          slotIndex
+        );
+        // (from, igniteAt−ε] 内无同门控口径的更早点燃（ignitedSlots 只带流量
+        // 门控，需按 nextIgnition 口径补火流星门控过滤后为空）
+        if (igniteAtSec - eps > from) {
+          const earlier = ignitedSlots(from, igniteAtSec - eps, slots, flux, T).filter(
+            (i) => !slots[i].isFireball || slots[i].aFireballRank < fb
+          );
+          expect(earlier).toHaveLength(0);
+        }
+        from = igniteAtSec;
+      }
+    });
+
+    test('fireballOnly：只扫火流星槽位', () => {
+      const slots = makeMeteorSlots(7, 64, PERSEIDS);
+      const T = PERSEIDS.cyclePeriodSec;
+      const got = nextIgnition(slots, 1, 1, 0, T, true);
+      expect(got).not.toBeNull();
+      expect(slots[got!.slotIndex].isFireball).toBe(true);
+      // 火流星候选时刻 ≥ 全量候选时刻（子集最小值不早于全集）
+      const all = nextIgnition(slots, 1, 1, 0, T, false);
+      expect(got!.igniteAtSec).toBeGreaterThanOrEqual(all!.igniteAtSec);
+    });
+
+    test('无候选：流量为零 / 火流星门控全关 → null；非法周期抛错', () => {
+      const slots = makeMeteorSlots(7, 32, PERSEIDS);
+      expect(nextIgnition(slots, 0, 1, 0, 3600, false)).toBeNull();
+      expect(nextIgnition(slots, 1, 0, 0, 3600, true)).toBeNull();
+      expect(nextIgnition([], 1, 1, 0, 3600, false)).toBeNull();
+      expect(() => nextIgnition(slots, 1, 1, 0, 0, false)).toThrow(RangeError);
+    });
+
+    test('严格 > from：从点燃时刻再查询给出严格更晚时刻（单调推进）', () => {
+      const slot = mkSlot({ aSeed: 0.25 });
+      const T = 100;
+      const first = nextIgnition([slot], 1, 1, 0, T, false);
+      // t = (⌊0.25⌋ + 1 − 0.25) × 100 = 75
+      expect(first!.igniteAtSec).toBeCloseTo(75, 10);
+      const second = nextIgnition([slot], 1, 1, first!.igniteAtSec, T, false);
+      expect(second!.igniteAtSec).toBeCloseTo(175, 9);
+    });
+  });
+
+  describe('pickDemoSlot（演示槽位挑选）', () => {
+    const velocityDir: [number, number, number] = [0, -1, 0];
+
+    test('轨迹中点最贴近视线者胜出（演示流星必在视野内）', () => {
+      // 中点 = startPos + v×disp(0.5×1) = startPos − [0,20,0]
+      const overhead = mkSlot({ startPos: [0, 115, 0] }); // 中点 (0,95,0)：正上方
+      const east = mkSlot({ startPos: [200, 115, 0] }); // 中点 (200,95,0)：偏东
+      // 视线朝天顶 → 正上方槽位胜出
+      expect(pickDemoSlot([east, overhead], velocityDir, [0, 0, 0], [0, 1, 0], false)).toBe(1);
+      // 视线正对偏东槽位中点 → 偏东槽位胜出
+      expect(pickDemoSlot([east, overhead], velocityDir, [0, 0, 0], [200, 95, 0], false)).toBe(0);
+    });
+
+    test('fireballOnly：视线更贴近普通槽位时仍只挑火流星', () => {
+      const ordinary = mkSlot({ startPos: [0, 115, 0] });
+      const fireball = mkSlot({ startPos: [200, 115, 0], isFireball: true });
+      expect(pickDemoSlot([ordinary, fireball], velocityDir, [0, 0, 0], [0, 1, 0], true)).toBe(1);
+    });
+
+    test('退化：无候选/中点与相机重合 → -1；零视线向量抛错', () => {
+      const ordinary = mkSlot();
+      expect(pickDemoSlot([ordinary], velocityDir, [0, 0, 0], [0, 1, 0], true)).toBe(-1);
+      // 相机恰在中点 (0,95,0)：方向未定义 → 跳过 → -1
+      expect(pickDemoSlot([ordinary], velocityDir, [0, 95, 0], [0, 1, 0], false)).toBe(-1);
+      expect(() => pickDemoSlot([ordinary], velocityDir, [0, 0, 0], [0, 0, 0], false)).toThrow(
+        RangeError
+      );
+    });
+  });
+
+  describe('followCameraPose（跟随位姿）', () => {
+    const startPos: [number, number, number] = [10, 115, -5];
+    const dispCoefs: [number, number, number] = [50, -10, 1];
+    const lifetime = 1;
+    const vRaw: [number, number, number] = [1, -2, 0.5];
+    const vLen = Math.hypot(...vRaw);
+    const v: [number, number, number] = [vRaw[0] / vLen, vRaw[1] / vLen, vRaw[2] / vLen];
+
+    test('target = 流星头部（shader 位移公式 CPU 镜像）', () => {
+      for (const t of [0, 0.3, 0.7, 1]) {
+        const disp = evalCubic(dispCoefs, t);
+        const pose = followCameraPose(startPos, dispCoefs, lifetime, v, t);
+        expect(pose.target[0]).toBeCloseTo(startPos[0] + v[0] * disp, 10);
+        expect(pose.target[1]).toBeCloseTo(startPos[1] + v[1] * disp, 10);
+        expect(pose.target[2]).toBeCloseTo(startPos[2] + v[2] * disp, 10);
+      }
+    });
+
+    test('相机与头部距离恒定 = hypot(后距, 上偏)（两偏移正交）', () => {
+      const expected = Math.hypot(FOLLOW_CAMERA_BACK_KM, FOLLOW_CAMERA_UP_KM);
+      for (const t of [0, 0.25, 0.5, 1, 2]) {
+        const { position, target } = followCameraPose(startPos, dispCoefs, lifetime, v, t);
+        const d = Math.hypot(
+          position[0] - target[0],
+          position[1] - target[1],
+          position[2] - target[2]
+        );
+        expect(d).toBeCloseTo(expected, 10);
+        // 上偏分量 ⊥ 速度方向：(position − (head − v×back))·v ≈ 0
+        const ox = position[0] - (target[0] - v[0] * FOLLOW_CAMERA_BACK_KM);
+        const oy = position[1] - (target[1] - v[1] * FOLLOW_CAMERA_BACK_KM);
+        const oz = position[2] - (target[2] - v[2] * FOLLOW_CAMERA_BACK_KM);
+        expect(ox * v[0] + oy * v[1] + oz * v[2]).toBeCloseTo(0, 10);
+      }
+    });
+
+    test('elapsed 钳制 [0, lifetime]：烧尽后驻留烧尽点（无落地，科学红线）', () => {
+      const atEnd = followCameraPose(startPos, dispCoefs, lifetime, v, lifetime);
+      const after = followCameraPose(startPos, dispCoefs, lifetime, v, lifetime + 5);
+      expect(after).toEqual(atEnd);
+      const atStart = followCameraPose(startPos, dispCoefs, lifetime, v, 0);
+      const before = followCameraPose(startPos, dispCoefs, lifetime, v, -1);
+      expect(before).toEqual(atStart);
+    });
+
+    test('铅垂速度退化：+X 兜底正交化，位姿有限且距离不变', () => {
+      const vertical: [number, number, number] = [0, -1, 0];
+      const pose = followCameraPose([0, 115, 0], dispCoefs, lifetime, vertical, 0.5);
+      expect(pose.position.every(Number.isFinite)).toBe(true);
+      const d = Math.hypot(
+        pose.position[0] - pose.target[0],
+        pose.position[1] - pose.target[1],
+        pose.position[2] - pose.target[2]
+      );
+      expect(d).toBeCloseTo(Math.hypot(FOLLOW_CAMERA_BACK_KM, FOLLOW_CAMERA_UP_KM), 10);
+    });
+
+    test('非法寿命抛错', () => {
+      expect(() => followCameraPose(startPos, dispCoefs, 0, v, 0)).toThrow(RangeError);
+    });
+  });
+
+  describe('formatDurationClock（倒计时格式化）', () => {
+    test('m:ss（< 1 h）与 h:mm:ss（≥ 1 h）', () => {
+      expect(formatDurationClock(0)).toBe('0:00');
+      expect(formatDurationClock(1)).toBe('0:01');
+      expect(formatDurationClock(90)).toBe('1:30');
+      expect(formatDurationClock(600)).toBe('10:00');
+      expect(formatDurationClock(3661)).toBe('1:01:01');
+      expect(formatDurationClock(7200)).toBe('2:00:00');
+    });
+
+    test('向上取整（倒计时口径）与负值钳制', () => {
+      expect(formatDurationClock(0.4)).toBe('0:01');
+      expect(formatDurationClock(59.2)).toBe('1:00');
+      expect(formatDurationClock(3599.5)).toBe('1:00:00');
+      expect(formatDurationClock(-5)).toBe('0:00');
+    });
+
+    test('非有限输入抛错', () => {
+      expect(() => formatDurationClock(Number.NaN)).toThrow(RangeError);
+      expect(() => formatDurationClock(Number.POSITIVE_INFINITY)).toThrow(RangeError);
+    });
   });
 });

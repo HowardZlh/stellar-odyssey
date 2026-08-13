@@ -250,6 +250,26 @@ export const zh = {
     /** 辐射点标注星座名（3D 场景经 LabelText 叶组件消费） */
     radiantLabelPerseids: '英仙座',
     radiantLabelKappaCygnids: '天鹅座',
+    /**
+     * M3.5 目验辅助：视角切换/倒计时/快进/演示/跟随/燃烧层参考。
+     * demoDisclaimer 为时间真实性红线常显标注（演示 = 时间轴外注入）；
+     * vaporizedToast 为烧尽点科普收尾（落地成坑禁止实现，科学红线）。
+     */
+    viewModeAria: '切换观测视角',
+    viewGround: '地面',
+    viewSpace: '太空',
+    hudNextMeteor: '下一颗流星',
+    hudNextFireball: '下一颗火流星',
+    ffMeteor: '快进到下一颗流星',
+    ffFireball: '快进到下一颗火流星',
+    demoMeteor: '演示流星',
+    demoFireball: '演示火流星',
+    demoDisclaimer: '演示为时间轴外注入，非当前时刻真实流量调度',
+    ctrlFollowOnDemo: '触发时跟随',
+    followExit: '退出跟随 (ESC)',
+    vaporizedToast: '流星体已完全汽化，未及地面——彗星质地流星体在 80–115 km 高空烧尽，不会落到地面',
+    ctrlBurnLayer: '燃烧层参考盘（80/115 km）',
+    hintSpace: '拖动环绕俯瞰燃烧层 · 滚轮缩放距离',
   },
   helpHint: {
     /**

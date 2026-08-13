@@ -19,6 +19,11 @@
  *   抗锯齿因子叠乘，§1.1 红线）
  * - 火流星末端闪爆 HDR ×15 喂 Bloom（§4.4）；镁绿 518 nm 混色
  * - uVelocityDir = −辐射点方向（全体平行 → 透视自然汇聚，§1.2）
+ *
+ * 演示扩展分支（M3.5-3，契约 C2 登记）：aSlotIndex（烘焙期一次写入）+
+ * uDemoSlot/uDemoStart uniforms——命中槽位 elapsed 以 uDemoStart 起算并绕过
+ * 流量/火流星双门控（时间轴外注入，DOM 层常显标注文案）；其余槽位与核心
+ * 调度公式零改动。
  */
 
 import type { JSX } from 'react';
@@ -58,6 +63,7 @@ const METEOR_VERTEX_SHADER = /* glsl */ `
   attribute float aIsFireball;
   attribute float aLag;
   attribute float aFragIndex;
+  attribute float aSlotIndex;
   attribute vec3 aStartPos;
   attribute vec3 aDispCoefs;
   attribute vec3 aIntenCoefs;
@@ -67,6 +73,8 @@ const METEOR_VERTEX_SHADER = /* glsl */ `
   uniform float uLagSpan;
   uniform float uFluxFraction;
   uniform float uFireballFraction;
+  uniform float uDemoSlot;
+  uniform float uDemoStart;
   uniform vec3 uVelocityDir;
   uniform float uPhenomenon;
   uniform float uScale;
@@ -76,10 +84,18 @@ const METEOR_VERTEX_SHADER = /* glsl */ `
   void main() {
     float cycle   = fract(aSeed + uTime / uCyclePeriod);      // 循环相位（契约 C2）
     float elapsed = cycle * uCyclePeriod - aLag * uLagSpan;   // 条痕滞后采样（§4.3）
-    bool culled = aGateRank >= uFluxFraction                  // 流量门控：独立属性（契约 C2）
-      || elapsed < 0.0 || elapsed > aDuration
-      || (aFragIndex > 0.5 && aIsFireball < 0.5)              // 非火流星槽位碎片剔除
+    bool gated = aGateRank >= uFluxFraction                   // 流量门控：独立属性（契约 C2）
       || (aIsFireball > 0.5 && aFireballRank >= uFireballFraction); // 火流星门控（§4.2）
+    // 演示扩展分支（M3.5-3，契约 C2 登记）：时间轴外注入——命中槽位以
+    // uDemoStart 起算 elapsed，绕过双门控；核心调度公式（上方）零改动
+    bool isDemo = uDemoSlot >= 0.0 && abs(aSlotIndex - uDemoSlot) < 0.5;
+    if (isDemo) {
+      elapsed = (uTime - uDemoStart) - aLag * uLagSpan;
+      gated = false;
+    }
+    bool culled = gated
+      || elapsed < 0.0 || elapsed > aDuration
+      || (aFragIndex > 0.5 && aIsFireball < 0.5);             // 非火流星槽位碎片剔除
     if (culled) {
       vIntensity = 0.0;
       vColor = vec3(0.0);
@@ -148,6 +164,7 @@ function buildMeteorAssets(slots: readonly MeteorSlot[]): MeteorAssets {
   const isFireballs = new Float32Array(n);
   const lags = new Float32Array(n);
   const fragIndices = new Float32Array(n);
+  const slotIndices = new Float32Array(n);
   const startPositions = new Float32Array(n * 3);
   const dispCoefs = new Float32Array(n * 3);
   const intenCoefs = new Float32Array(n * 3);
@@ -157,6 +174,7 @@ function buildMeteorAssets(slots: readonly MeteorSlot[]): MeteorAssets {
   let v = 0;
   const writeVertex = (
     slot: MeteorSlot,
+    slotIndex: number,
     lag: number,
     fragIndex: number,
     fragDir: readonly [number, number, number]
@@ -168,6 +186,7 @@ function buildMeteorAssets(slots: readonly MeteorSlot[]): MeteorAssets {
     isFireballs[v] = slot.isFireball ? 1 : 0;
     lags[v] = lag;
     fragIndices[v] = fragIndex;
+    slotIndices[v] = slotIndex; // 演示注入寻址（uDemoSlot，M3.5-3；烘焙期一次写入）
     startPositions[v * 3] = slot.startPos[0];
     startPositions[v * 3 + 1] = slot.startPos[1];
     startPositions[v * 3 + 2] = slot.startPos[2];
@@ -183,10 +202,11 @@ function buildMeteorAssets(slots: readonly MeteorSlot[]): MeteorAssets {
     v += 1;
   };
 
-  for (const slot of slots) {
+  for (let si = 0; si < slots.length; si++) {
+    const slot = slots[si];
     // 主体条痕：aLag 0→1（头 → 尾）
     for (let k = 0; k < METEOR_TRAIL_VERTICES; k++) {
-      writeVertex(slot, k / (METEOR_TRAIL_VERTICES - 1), 0, [0, 0, 0]);
+      writeVertex(slot, si, k / (METEOR_TRAIL_VERTICES - 1), 0, [0, 0, 0]);
     }
     // 碎片组：每组一个独立锥角方向（球面均匀采样 × 横向量级）
     const fragMag = fragmentLateralMagnitudeKm(slot.dispCoefs, slot.lifetimeSec);
@@ -200,7 +220,7 @@ function buildMeteorAssets(slots: readonly MeteorSlot[]): MeteorAssets {
         z * fragMag,
       ];
       for (let j = 0; j < METEOR_FRAGMENT_VERTICES; j++) {
-        writeVertex(slot, (j / (METEOR_FRAGMENT_VERTICES - 1)) * FRAGMENT_LAG_MAX, g, dir);
+        writeVertex(slot, si, (j / (METEOR_FRAGMENT_VERTICES - 1)) * FRAGMENT_LAG_MAX, g, dir);
       }
     }
   }
@@ -215,6 +235,7 @@ function buildMeteorAssets(slots: readonly MeteorSlot[]): MeteorAssets {
   geometry.setAttribute('aIsFireball', new THREE.BufferAttribute(isFireballs, 1));
   geometry.setAttribute('aLag', new THREE.BufferAttribute(lags, 1));
   geometry.setAttribute('aFragIndex', new THREE.BufferAttribute(fragIndices, 1));
+  geometry.setAttribute('aSlotIndex', new THREE.BufferAttribute(slotIndices, 1));
   geometry.setAttribute('aStartPos', new THREE.BufferAttribute(startPositions, 3));
   geometry.setAttribute('aDispCoefs', new THREE.BufferAttribute(dispCoefs, 3));
   geometry.setAttribute('aIntenCoefs', new THREE.BufferAttribute(intenCoefs, 3));
@@ -228,6 +249,9 @@ function buildMeteorAssets(slots: readonly MeteorSlot[]): MeteorAssets {
       uLagSpan: { value: METEOR_LAG_SPAN_SEC },
       uFluxFraction: { value: 0 },
       uFireballFraction: { value: 0 },
+      // 演示注入（M3.5-3）：-1 = 无演示；DOM 触发经 demoRef → useFrame 写入
+      uDemoSlot: { value: -1 },
+      uDemoStart: { value: 0 },
       uVelocityDir: { value: new THREE.Vector3(0, -1, 0) },
       uPhenomenon: { value: 0 },
       uScale: { value: 400 },
@@ -276,6 +300,10 @@ export function MeteorField({ slots, refs }: MeteorFieldProps): JSX.Element {
     u.uCyclePeriod.value = shower.cyclePeriodSec;
     u.uFluxFraction.value = fluxFraction(hr, slots.length, shower.cyclePeriodSec);
     u.uFireballFraction.value = s.fireballRate;
+    // 演示注入消费（M3.5-3：交互事件写 demoRef，此处仅 uniforms 透传）
+    const demo = refs.demoRef.current;
+    u.uDemoSlot.value = demo ? demo.slotIndex : -1;
+    u.uDemoStart.value = demo ? demo.startTimeSec : 0;
     (u.uVelocityDir.value as THREE.Vector3).set(-dir[0], -dir[1], -dir[2]);
     u.uPhenomenon.value = shower.id === 'perseids' ? 0 : 1;
     // 像素尺度 + FOV 缩放补偿（触控板捏合缩放时与星穹同步等比，方案 A）

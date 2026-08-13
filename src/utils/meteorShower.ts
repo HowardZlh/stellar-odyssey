@@ -185,6 +185,41 @@ export const EPOCH_LOCAL_HOURS: Record<MeteorShowerParams['id'], number> = {
 };
 
 // ---------------------------------------------------------------------------
+// 常量：M3.5 目验辅助 + 太空视角 + 跟随视角（§M3.5）
+// ---------------------------------------------------------------------------
+
+/** 快进提前量（真实秒；lead = 本值 × max(timeScale, 1) 场景秒，§M3.5-2） */
+export const FASTFORWARD_LEAD_REAL_SEC = 1.5;
+
+/** 跟随视角慢动作时间流速（进入跟随时自动设定，控件如实显示，§M3.5-6） */
+export const FOLLOW_SLOWMO_TIMESCALE = 0.1;
+
+/** 跟随视角烧尽后驻留时长（真实秒：展示余迹 + 汽化科普提示，§M3.5-6） */
+export const FOLLOW_LINGER_REAL_SEC = 2;
+
+/** 跟随相机在流星头部侧后方距离（km，§M3.5-6） */
+export const FOLLOW_CAMERA_BACK_KM = 1.2;
+
+/** 跟随相机上向侧偏（km，垂直于速度方向分量，§M3.5-6） */
+export const FOLLOW_CAMERA_UP_KM = 0.4;
+
+/** 太空视角轨道目标：燃烧层中心（km；80–115 层中点取整，§M3.5-4） */
+export const SPACE_VIEW_TARGET_UNITS: [number, number, number] = [0, 97, 0];
+
+/** 太空视角轨道半径钳制（场景单位，§M3.5-4） */
+export const SPACE_CAMERA_RADIUS_MIN_UNITS = 150;
+export const SPACE_CAMERA_RADIUS_MAX_UNITS = 1500;
+
+/** 太空视角切换预设机位（场景单位，§M3.5-4） */
+export const SPACE_CAMERA_PRESET_UNITS: [number, number, number] = [500, 320, 500];
+
+/**
+ * 太空视角 polar 上限（防穿地）：相机与 target 同高即为下限视角——
+ * polar ≤ π/2 时相机 y ≥ target y = 97 > 0，任意半径下恒在地面上方。
+ */
+export const SPACE_POLAR_MAX_RAD = Math.PI / 2;
+
+// ---------------------------------------------------------------------------
 // 坐标族（§1.3，契约 C5）
 // ---------------------------------------------------------------------------
 
@@ -847,6 +882,176 @@ export function selectAfterglowSlots(
     return sb.massKg - sa.massKg;
   });
   return indices.slice(0, Math.min(maxSlots, slots.length));
+}
+
+// ---------------------------------------------------------------------------
+// M3.5 目验辅助纯函数（§M3.5：倒计时/快进/演示挑选/跟随位姿）
+// ---------------------------------------------------------------------------
+
+export interface NextIgnitionEvent {
+  /** 点燃槽位下标 */
+  slotIndex: number;
+  /** 点燃时刻（场景秒，严格 > fromSec） */
+  igniteAtSec: number;
+}
+
+/**
+ * 下一次点燃解析解（§M3.5-1；契约 C2 调度公式的前瞻镜像）
+ *
+ * 每槽位相位回绕时刻解析解：t = (⌊aSeed + from/T⌋ + 1 − aSeed) × T（严格
+ * > from——禁止逐帧扫描仿真）；门控与 shader 严格同式（aGateRank <
+ * fluxFrac；火流星槽位还需 aFireballRank < fireballFrac，§4.2 双门控），
+ * 全部通过门控槽位取最小 t。与 `ignitedSlots` 交叉单测锁定。
+ *
+ * 登记近似：门控分数取调用时刻的流量链快照——点燃时刻最远 T 秒后，
+ * 期间辐射点高度变化导致的 flux 漂移不回溯修正（倒计时/快进口径一致）。
+ *
+ * @param fireballOnly 只扫火流星槽位（"下一颗火流星"倒计时/快进）
+ * @returns 无候选（流量为零/火流星门控全关）时 null
+ */
+export function nextIgnition(
+  slots: readonly MeteorSlot[],
+  fluxFrac: number,
+  fireballFrac: number,
+  fromSec: number,
+  cyclePeriodSec: number,
+  fireballOnly: boolean
+): NextIgnitionEvent | null {
+  if (!(cyclePeriodSec > 0)) {
+    throw new RangeError(`循环周期必须为正，收到 ${cyclePeriodSec}`);
+  }
+  let best: NextIgnitionEvent | null = null;
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i];
+    if (fireballOnly && !slot.isFireball) continue;
+    if (slot.aGateRank >= fluxFrac) continue; // 门控用 aGateRank（契约 C2）
+    if (slot.isFireball && slot.aFireballRank >= fireballFrac) continue; // 火流星门控（§4.2）
+    const igniteAtSec =
+      (Math.floor(slot.aSeed + fromSec / cyclePeriodSec) + 1 - slot.aSeed) * cyclePeriodSec;
+    if (best === null || igniteAtSec < best.igniteAtSec) {
+      best = { slotIndex: i, igniteAtSec };
+    }
+  }
+  return best;
+}
+
+/**
+ * 演示槽位挑选（§M3.5-3）：轨迹中点最贴近相机视线者——保证演示触发的
+ * 流星出现在当前视野内。
+ *
+ * 评分 = normalize(mid − cameraPos) · normalize(viewDir)，其中轨迹中点
+ * mid = startPos + velocityDir × evalCubic(dispCoefs, 0.5 × lifetime)。
+ *
+ * @param velocityDir 当前流星飞行方向（单位向量，= −辐射点方向）
+ * @param fireballOnly 只挑火流星槽位（"演示火流星"按钮）
+ * @returns 最优槽位下标；无候选（含中点与相机重合的退化）时 -1
+ */
+export function pickDemoSlot(
+  slots: readonly MeteorSlot[],
+  velocityDir: readonly [number, number, number],
+  cameraPos: readonly [number, number, number],
+  viewDir: readonly [number, number, number],
+  fireballOnly: boolean
+): number {
+  const viewLen = Math.hypot(viewDir[0], viewDir[1], viewDir[2]);
+  if (!(viewLen > 0)) {
+    throw new RangeError('视线方向不能为零向量');
+  }
+  let bestIndex = -1;
+  let bestScore = -Infinity;
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i];
+    if (fireballOnly && !slot.isFireball) continue;
+    const disp = evalCubic(slot.dispCoefs, 0.5 * slot.lifetimeSec);
+    const dx = slot.startPos[0] + velocityDir[0] * disp - cameraPos[0];
+    const dy = slot.startPos[1] + velocityDir[1] * disp - cameraPos[1];
+    const dz = slot.startPos[2] + velocityDir[2] * disp - cameraPos[2];
+    const len = Math.hypot(dx, dy, dz);
+    if (!(len > 0)) continue; // 中点与相机重合：方向未定义，跳过
+    const score = (dx * viewDir[0] + dy * viewDir[1] + dz * viewDir[2]) / (len * viewLen);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
+export interface FollowCameraPose {
+  /** 相机位置（场景单位 km） */
+  position: [number, number, number];
+  /** 注视点 = 流星头部（场景单位 km） */
+  target: [number, number, number];
+}
+
+/**
+ * 跟随视角相机位姿（§M3.5-6；流星头位置为 shader 位移公式的 CPU 精确镜像）
+ *
+ * 头部 = startPos + velocityDir × evalCubic(dispCoefs, clamp(elapsed, 0,
+ * lifetime))——烧尽后钳制在烧尽点（驻留展示余迹，无落地/成坑：彗星质地
+ * 流星体在 80–115 km 完全汽化，科学准确性红线）。
+ * 相机 = 头部 − velocityDir × FOLLOW_CAMERA_BACK_KM + 上向侧偏
+ * FOLLOW_CAMERA_UP_KM（世界上方向剔除沿速度分量后归一；速度近铅垂时
+ * 退化用 +X 轴正交化兜底）。两偏移正交 → 相机与头部距离恒定
+ * hypot(1.2, 0.4) km（单测锁定）。
+ *
+ * @param velocityDir 流星飞行方向（单位向量）
+ */
+export function followCameraPose(
+  startPos: readonly [number, number, number],
+  dispCoefs: readonly [number, number, number],
+  lifetimeSec: number,
+  velocityDir: readonly [number, number, number],
+  elapsedSec: number
+): FollowCameraPose {
+  if (!(lifetimeSec > 0)) {
+    throw new RangeError(`寿命必须为正，收到 ${lifetimeSec}`);
+  }
+  const t = Math.min(Math.max(elapsedSec, 0), lifetimeSec);
+  const disp = evalCubic(dispCoefs, t);
+  const target: [number, number, number] = [
+    startPos[0] + velocityDir[0] * disp,
+    startPos[1] + velocityDir[1] * disp,
+    startPos[2] + velocityDir[2] * disp,
+  ];
+  // 上向侧偏：up=[0,1,0] 剔除沿速度方向分量（Gram–Schmidt）
+  const dotUp = velocityDir[1];
+  let ux = -dotUp * velocityDir[0];
+  let uy = 1 - dotUp * velocityDir[1];
+  let uz = -dotUp * velocityDir[2];
+  let uLen = Math.hypot(ux, uy, uz);
+  if (uLen < 1e-6) {
+    // 速度平行铅垂线：+X 轴正交化兜底
+    const dotX = velocityDir[0];
+    ux = 1 - dotX * velocityDir[0];
+    uy = -dotX * velocityDir[1];
+    uz = -dotX * velocityDir[2];
+    uLen = Math.hypot(ux, uy, uz);
+  }
+  const position: [number, number, number] = [
+    target[0] - velocityDir[0] * FOLLOW_CAMERA_BACK_KM + (ux / uLen) * FOLLOW_CAMERA_UP_KM,
+    target[1] - velocityDir[1] * FOLLOW_CAMERA_BACK_KM + (uy / uLen) * FOLLOW_CAMERA_UP_KM,
+    target[2] - velocityDir[2] * FOLLOW_CAMERA_BACK_KM + (uz / uLen) * FOLLOW_CAMERA_UP_KM,
+  ];
+  return { position, target };
+}
+
+/**
+ * 倒计时格式化（§M3.5-1）："m:ss"（< 1 h）/ "h:mm:ss"（≥ 1 h）。
+ * 秒数向上取整（倒计时口径：剩余 0.5 s 显示 "0:01" 而非 "0:00"）；
+ * 负值钳制为 0。
+ */
+export function formatDurationClock(seconds: number): string {
+  if (!Number.isFinite(seconds)) {
+    throw new RangeError(`秒数必须有限，收到 ${seconds}`);
+  }
+  const total = Math.max(0, Math.ceil(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
 }
 
 // ---------------------------------------------------------------------------

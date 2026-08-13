@@ -2,7 +2,19 @@
 
 /**
  * 盛夏双重流星雨实验室场景（M3：星穹 + 流星条痕 + 余迹 + 辐射点标注 +
- * 控件面板；音频/移动端降级随 M4 递进）
+ * 控件面板；M3.5：倒计时/快进/演示触发 + 太空视角 + 燃烧层参考 + 跟随视角；
+ * 音频/移动端降级随 M4 递进）
+ *
+ * M3.5 目验辅助（§M3.5，全部为交互事件路径——契约 C2.1 口径，零 buffer 上传）：
+ * - 快进（方案 A，时间真实红线）：timeSecRef 直接跳到 nextIgnition 解析解
+ *   的真实点燃时刻前 ~1.5 真实秒——时钟/星穹/倒计时自洽前移，不伪造；
+ * - 演示（方案 B，时间轴外注入）：pickDemoSlot 选视野内槽位写 demoRef →
+ *   uDemoSlot/uDemoStart（shader 演示扩展分支）；页面常显标注文案；
+ * - 跟随视角：演示触发联动，FollowCameraRig 每帧经 followCameraPose 写相机
+ *   （慢动作 ×0.1 如实显示在滑杆）；烧尽驻留 ~2 s 展示余迹 + 汽化科普提示
+ *   （落地成坑禁止实现：彗星质地流星体 80–115 km 完全汽化，科学红线）；
+ * - 太空视角：OrbitControls key remount（target 燃烧层中心、半径 150–1500、
+ *   polar ≤ π/2 防穿地）+ 燃烧层参考盘（非粒子系统，不占 draw call 预算）。
  *
  * 比例尺登记（契约 C5）：1 场景单位 = 1 km（独立比例尺，与主场景
  * SCENE_UNITS_PER_AU 无关）；星穹半径 3000；相机漫游半径 0.1–1.5。
@@ -47,21 +59,41 @@ import { useYaleBrightStars } from '@/hooks/useYaleBrightStars';
 import type { YaleBrightStar } from '@/utils/bakedData';
 import { labEntryForId, LAB_PAGE_PATH } from '@/utils/lab';
 import {
+  AFTERGLOW_FADE_FIREBALL_SEC,
+  BURN_LAYER_BOTTOM_KM,
+  BURN_LAYER_HORIZONTAL_RADIUS_KM,
+  BURN_LAYER_TOP_KM,
   CAMERA_RADIUS_MAX_UNITS,
   CAMERA_RADIUS_MIN_UNITS,
   EPOCH_LOCAL_HOURS,
+  FASTFORWARD_LEAD_REAL_SEC,
+  FOLLOW_LINGER_REAL_SEC,
+  FOLLOW_SLOWMO_TIMESCALE,
   KAPPA_CYGNIDS,
   METEOR_SLOT_COUNT,
   PERSEIDS,
+  SPACE_CAMERA_PRESET_UNITS,
+  SPACE_CAMERA_RADIUS_MAX_UNITS,
+  SPACE_CAMERA_RADIUS_MIN_UNITS,
+  SPACE_POLAR_MAX_RAD,
+  SPACE_VIEW_TARGET_UNITS,
   STAR_DOME_RADIUS_UNITS,
   equatorialToHorizontalMatrix,
   equatorialUnitVector,
+  fluxFraction,
+  followCameraPose,
   formatClockHHMM,
+  formatDurationClock,
   horizontalFromEquatorial,
   localClockHours,
   localSiderealTime,
   makeMeteorSlots,
+  nextIgnition,
+  pickDemoSlot,
   sceneDirFromAltAz,
+  visibleHourlyRate,
+  type MeteorSlot,
+  type NextIgnitionEvent,
 } from '@/utils/meteorShower';
 import {
   LAB_FOV_DEFAULT_DEG,
@@ -84,7 +116,15 @@ import {
   type LabHudState,
   type MeteorShowerId,
 } from '@/components/Lab/LabControlPanel';
-import { DEFAULT_LAB_CONTROLS, type LabControlState, type LabFrameRefs } from '@/components/Lab/labTypes';
+import {
+  DEFAULT_LAB_CONTROLS,
+  type LabCameraPose,
+  type LabControlState,
+  type LabDemoState,
+  type LabFollowState,
+  type LabFrameRefs,
+  type LabViewMode,
+} from '@/components/Lab/labTypes';
 
 /** 度 → 弧度（单位换算，非球面公式） */
 const DEG = Math.PI / 180;
@@ -159,8 +199,169 @@ function LabTimeDriver({ refs }: { refs: LabFrameRefs }): null {
   useFrame((_, delta) => {
     // 钳制 delta 防页签切回时跳帧（uTime 突进 = 流星集体跳相位）
     refs.timeSecRef.current += Math.min(delta, 0.1) * refs.settingsRef.current.timeScale;
+    // 演示注入过期清除（寿命 + 余迹渐隐窗后恢复该槽位正常调度，M3.5-3）
+    const demo = refs.demoRef.current;
+    if (demo && refs.timeSecRef.current > demo.expiresAtSec) {
+      refs.demoRef.current = null;
+    }
   });
   return null;
+}
+
+/**
+ * 相机位姿桥（M3.5-3）：每帧 mutate cameraPoseRef（勿 setState，零 GC）——
+ * DOM 层演示按钮读取喂 pickDemoSlot（保证演示流星出现在当前视野内）。
+ */
+function CameraPoseBridge({ refs }: { refs: LabFrameRefs }): null {
+  const camera = useThree((s) => s.camera);
+  useFrame(() => {
+    const pose = refs.cameraPoseRef.current;
+    pose.position[0] = camera.position.x;
+    pose.position[1] = camera.position.y;
+    pose.position[2] = camera.position.z;
+    // 视线方向 = 相机 −Z 世界方向（matrixWorld 第 3 列取反）
+    const e = camera.matrixWorld.elements;
+    pose.viewDir[0] = -e[8];
+    pose.viewDir[1] = -e[9];
+    pose.viewDir[2] = -e[10];
+  });
+  return null;
+}
+
+/** 视角档预设机位（切档/跟随结束时相机复位，交互事件路径） */
+function applyViewPreset(camera: THREE.Camera, viewMode: LabViewMode): void {
+  if (viewMode === 'space') {
+    camera.position.set(...SPACE_CAMERA_PRESET_UNITS);
+    camera.lookAt(...SPACE_VIEW_TARGET_UNITS);
+  } else {
+    camera.position.set(...INITIAL_CAMERA_POSITION);
+    camera.lookAt(0, 0, 0);
+  }
+}
+
+/** 视角档切换复位：地面 ⇄ 太空时相机置预设机位（初始挂载不动，M3.5-4） */
+function ViewModeRig({ viewMode }: { viewMode: LabViewMode }): null {
+  const camera = useThree((s) => s.camera);
+  const prevRef = useRef(viewMode);
+  useEffect(() => {
+    if (prevRef.current === viewMode) return;
+    prevRef.current = viewMode;
+    applyViewPreset(camera, viewMode);
+  }, [viewMode, camera]);
+  return null;
+}
+
+interface FollowCameraRigProps {
+  refs: LabFrameRefs;
+  slots: readonly MeteorSlot[];
+  viewMode: LabViewMode;
+  /** 烧尽瞬间回调（一次性：DOM 层弹汽化科普提示） */
+  onBurnout: () => void;
+  /** 跟随结束回调（还原 timeScale/followActive；相机已由 rig 复位） */
+  onEnd: (savedTimeScale: number) => void;
+}
+
+/**
+ * 跟随视角状态机（M3.5-6）：每帧经 followCameraPose（M1 位移公式 CPU 镜像）
+ * 写相机贴随流星头部；烧尽（elapsed > lifetime，位姿钳制在烧尽点）后驻留
+ * FOLLOW_LINGER_REAL_SEC 真实秒展示余迹，随后自动复位相机到当前视角档预设
+ * 并回调 DOM 层还原。endRequested（ESC/退出按钮/页签切换）随时中止。
+ * 跟随期间 OrbitControls 由父级卸载（避免 damping 每帧争抢相机）。
+ */
+function FollowCameraRig({ refs, slots, viewMode, onBurnout, onEnd }: FollowCameraRigProps): null {
+  const camera = useThree((s) => s.camera);
+  const lingerSecRef = useRef(0);
+  const burnoutSentRef = useRef(false);
+
+  useFrame((_, delta) => {
+    const follow = refs.followRef.current;
+    if (!follow) return;
+    const slot = slots[follow.slotIndex] as MeteorSlot | undefined;
+
+    const end = (): void => {
+      refs.followRef.current = null;
+      lingerSecRef.current = 0;
+      burnoutSentRef.current = false;
+      applyViewPreset(camera, viewMode);
+      onEnd(follow.savedTimeScale);
+    };
+
+    if (!slot || follow.endRequested) {
+      end();
+      return;
+    }
+
+    // 飞行方向与流星系统同帧同式（流量链经 M1 纯函数，= −辐射点方向）
+    const s = refs.settingsRef.current;
+    const shower = refs.showerRef.current;
+    const lst = localSiderealTime(shower.epochLst0Deg, s.hourOffset, refs.timeSecRef.current / 3600);
+    const radiant = horizontalFromEquatorial(
+      shower.radiantRaDeg,
+      shower.radiantDecDeg,
+      s.observerLat,
+      lst
+    );
+    const dir = sceneDirFromAltAz(radiant);
+    const elapsed = refs.timeSecRef.current - follow.startTimeSec;
+    const pose = followCameraPose(
+      slot.startPos,
+      slot.dispCoefs,
+      slot.lifetimeSec,
+      [-dir[0], -dir[1], -dir[2]],
+      elapsed
+    );
+    camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
+    camera.lookAt(pose.target[0], pose.target[1], pose.target[2]);
+
+    // 烧尽：驻留展示余迹 + 汽化科普提示（无落地/成坑，科学红线）
+    if (elapsed > slot.lifetimeSec) {
+      if (!burnoutSentRef.current) {
+        burnoutSentRef.current = true;
+        onBurnout();
+      }
+      lingerSecRef.current += delta; // 驻留计时用真实秒（不随 timeScale 缩放）
+      if (lingerSecRef.current >= FOLLOW_LINGER_REAL_SEC) end();
+    }
+  });
+  return null;
+}
+
+/**
+ * 燃烧层参考几何（M3.5-5）：80/115 km 两层低透明度盘面 + 边界环（半径 300），
+ * depthWrite:false 防遮星点/流星；仅太空档渲染、面板可开关（默认开）。
+ * 非粒子系统，不占 §4.1 的 3 draw call 预算。
+ */
+function BurnLayerReference(): JSX.Element {
+  return (
+    <group>
+      {[BURN_LAYER_BOTTOM_KM, BURN_LAYER_TOP_KM].map((heightKm) => (
+        <group key={heightKm} position={[0, heightKm, 0]} rotation-x={-Math.PI / 2}>
+          <mesh>
+            <circleGeometry args={[BURN_LAYER_HORIZONTAL_RADIUS_KM, 64]} />
+            <meshBasicMaterial
+              color="#67e8f9"
+              transparent
+              opacity={0.05}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+            />
+          </mesh>
+          <mesh>
+            <ringGeometry
+              args={[BURN_LAYER_HORIZONTAL_RADIUS_KM - 3, BURN_LAYER_HORIZONTAL_RADIUS_KM, 96]}
+            />
+            <meshBasicMaterial
+              color="#67e8f9"
+              transparent
+              opacity={0.45}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+            />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
 }
 
 interface StarDomeProps {
@@ -350,7 +551,15 @@ export function MeteorShowerLab(): JSX.Element {
 
   const [showerId, setShowerId] = useState<MeteorShowerId>('perseids');
   const [settings, setSettings] = useState<LabControlState>(DEFAULT_LAB_CONTROLS);
-  const [hud, setHud] = useState<LabHudState>({ clockText: '--:--', radiantAltDeg: 0 });
+  const [viewMode, setViewMode] = useState<LabViewMode>('ground');
+  const [followActive, setFollowActive] = useState(false);
+  const [vaporizedVisible, setVaporizedVisible] = useState(false);
+  const [hud, setHud] = useState<LabHudState>({
+    clockText: '--:--',
+    radiantAltDeg: 0,
+    nextMeteorText: '—',
+    nextFireballText: '—',
+  });
 
   const shower = showerId === 'perseids' ? PERSEIDS : KAPPA_CYGNIDS;
 
@@ -360,27 +569,152 @@ export function MeteorShowerLab(): JSX.Element {
   settingsRef.current = settings;
   const showerRef = useRef(shower);
   showerRef.current = shower;
+  const demoRef = useRef<LabDemoState | null>(null);
+  const followRef = useRef<LabFollowState | null>(null);
+  const cameraPoseRef = useRef<LabCameraPose>({
+    position: [...INITIAL_CAMERA_POSITION],
+    viewDir: [...INITIAL_VIEW_DIR],
+  });
   const refs: LabFrameRefs = useMemo(
-    () => ({ timeSecRef, settingsRef, showerRef }),
+    () => ({ timeSecRef, settingsRef, showerRef, demoRef, followRef, cameraPoseRef }),
     []
   );
 
   // 槽位烘焙：RK4 + 拟合一次性完成；页签切换重建（契约 C2.1 唯一例外路径）
   const slots = useMemo(() => makeMeteorSlots(METEOR_SLOT_SEED, METEOR_SLOT_COUNT, shower), [shower]);
 
+  /** 请求结束跟随（ESC/退出按钮/页签切换；rig 下一帧复原相机后回调还原） */
+  const requestFollowEnd = (): void => {
+    const follow = followRef.current;
+    if (follow) follow.endRequested = true;
+  };
+
   const handleShowerChange = (id: MeteorShowerId): void => {
     if (id === showerId) return;
+    // 页签切换强制结束演示/跟随（新雨槽位拟合系数不同，旧下标失义）
+    demoRef.current = null;
+    requestFollowEnd();
+    setVaporizedVisible(false);
     // 换历元：uTime 归零对齐新历元起点（交互事件路径，非每帧）
     timeSecRef.current = 0;
     setShowerId(id);
   };
 
-  // HUD：500 ms 间隔经 M1 纯函数计算（DOM 层，不进 useFrame）
+  /** 当前时刻流量链快照（快进/倒计时共用，全部 M1/M3.5 纯函数） */
+  const fluxSnapshot = (): { fluxFrac: number } => {
+    const s = settingsRef.current;
+    const sh = showerRef.current;
+    const lst = localSiderealTime(sh.epochLst0Deg, s.hourOffset, timeSecRef.current / 3600);
+    const radiant = horizontalFromEquatorial(
+      sh.radiantRaDeg,
+      sh.radiantDecDeg,
+      s.observerLat,
+      lst
+    );
+    const hr = visibleHourlyRate(sh.zhr, sh.populationIndex, radiant.altRad, s.limitingMag);
+    return { fluxFrac: fluxFraction(hr, slots.length, sh.cyclePeriodSec) };
+  };
+
+  /** 快进（方案 A，时间真实）：跳到真实点燃时刻前 ~1.5 真实秒 */
+  const handleFastForward = (fireballOnly: boolean): void => {
+    const s = settingsRef.current;
+    const sh = showerRef.current;
+    const now = timeSecRef.current;
+    const { fluxFrac } = fluxSnapshot();
+    const next = nextIgnition(slots, fluxFrac, s.fireballRate, now, sh.cyclePeriodSec, fireballOnly);
+    if (!next) return;
+    // lead = 1.5 × max(timeScale, 1) 场景秒 ≈ 1.5 真实秒（timeScale ≥ 1 时）
+    const lead = FASTFORWARD_LEAD_REAL_SEC * Math.max(s.timeScale, 1);
+    timeSecRef.current = Math.max(now, next.igniteAtSec - lead);
+    // timeScale = 0 时快进后自动恢复 ×1（否则画面冻结在点燃前）
+    if (s.timeScale === 0) {
+      setSettings((prev) => ({ ...prev, timeScale: 1 }));
+    }
+  };
+
+  /** 演示触发（方案 B，时间轴外注入；followOnDemo 勾选时联动进入跟随） */
+  const handleDemo = (fireballOnly: boolean): void => {
+    if (followRef.current) return;
+    const s = settingsRef.current;
+    const sh = showerRef.current;
+    const pose = cameraPoseRef.current;
+    const lst = localSiderealTime(sh.epochLst0Deg, s.hourOffset, timeSecRef.current / 3600);
+    const radiant = horizontalFromEquatorial(
+      sh.radiantRaDeg,
+      sh.radiantDecDeg,
+      s.observerLat,
+      lst
+    );
+    const dir = sceneDirFromAltAz(radiant);
+    const slotIndex = pickDemoSlot(
+      slots,
+      [-dir[0], -dir[1], -dir[2]],
+      pose.position,
+      pose.viewDir,
+      fireballOnly
+    );
+    if (slotIndex < 0) return;
+    const startTimeSec = timeSecRef.current;
+    demoRef.current = {
+      slotIndex,
+      startTimeSec,
+      // 过期 = 寿命 + 最长余迹渐隐窗（火流星 10 s）后恢复正常调度
+      expiresAtSec: startTimeSec + slots[slotIndex].lifetimeSec + AFTERGLOW_FADE_FIREBALL_SEC,
+    };
+    setVaporizedVisible(false);
+    // timeScale = 0 时自动恢复 ×1（否则演示画面冻结）
+    const effectiveTimeScale = s.timeScale === 0 ? 1 : s.timeScale;
+    if (s.followOnDemo) {
+      followRef.current = {
+        slotIndex,
+        startTimeSec,
+        savedTimeScale: effectiveTimeScale,
+        endRequested: false,
+      };
+      setFollowActive(true);
+      // 慢动作 ×0.1（timeScale 本为用户控件，滑杆如实显示，非时间伪造）
+      setSettings((prev) => ({ ...prev, timeScale: FOLLOW_SLOWMO_TIMESCALE }));
+    } else if (s.timeScale === 0) {
+      setSettings((prev) => ({ ...prev, timeScale: 1 }));
+    }
+  };
+
+  /** 跟随结束（rig 已复位相机）：还原 timeScale 与 OrbitControls 挂载 */
+  const handleFollowEnd = (savedTimeScale: number): void => {
+    setFollowActive(false);
+    setSettings((prev) => ({ ...prev, timeScale: savedTimeScale }));
+  };
+
+  /** 烧尽：汽化科普提示（落地成坑禁止实现——科学准确性红线） */
+  const handleBurnout = (): void => {
+    setVaporizedVisible(true);
+  };
+
+  // ESC 退出跟随
+  useEffect(() => {
+    if (!followActive) return;
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') requestFollowEnd();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [followActive]);
+
+  // 汽化提示自动隐藏（跟随驻留 2 s + 返回后短暂驻留供阅读）
+  useEffect(() => {
+    if (!vaporizedVisible) return;
+    const id = window.setTimeout(() => setVaporizedVisible(false), 6000);
+    return () => window.clearTimeout(id);
+  }, [vaporizedVisible]);
+
+  // HUD：500 ms 间隔经 M1/M3.5 纯函数计算（DOM 层，不进 useFrame；
+  // 倒计时 = (igniteAt − uTime)/timeScale 折算真实秒，时间真实性红线）
   useEffect(() => {
     const tick = (): void => {
       const s = settingsRef.current;
       const sh = showerRef.current;
-      const elapsedHours = timeSecRef.current / 3600;
+      const nowSec = timeSecRef.current;
+      const elapsedHours = nowSec / 3600;
       const lst = localSiderealTime(sh.epochLst0Deg, s.hourOffset, elapsedHours);
       const radiant = horizontalFromEquatorial(
         sh.radiantRaDeg,
@@ -392,16 +726,31 @@ export function MeteorShowerLab(): JSX.Element {
         localClockHours(EPOCH_LOCAL_HOURS[sh.id], s.hourOffset, elapsedHours)
       );
       const radiantAltDeg = Math.round(radiant.altRad / DEG);
+      const hr = visibleHourlyRate(sh.zhr, sh.populationIndex, radiant.altRad, s.limitingMag);
+      const fluxFrac = fluxFraction(hr, slots.length, sh.cyclePeriodSec);
+      const countdown = (next: NextIgnitionEvent | null): string =>
+        s.timeScale > 0 && next
+          ? formatDurationClock((next.igniteAtSec - nowSec) / s.timeScale)
+          : '—';
+      const nextMeteorText = countdown(
+        nextIgnition(slots, fluxFrac, s.fireballRate, nowSec, sh.cyclePeriodSec, false)
+      );
+      const nextFireballText = countdown(
+        nextIgnition(slots, fluxFrac, s.fireballRate, nowSec, sh.cyclePeriodSec, true)
+      );
       setHud((prev) =>
-        prev.clockText === clockText && prev.radiantAltDeg === radiantAltDeg
+        prev.clockText === clockText &&
+        prev.radiantAltDeg === radiantAltDeg &&
+        prev.nextMeteorText === nextMeteorText &&
+        prev.nextFireballText === nextFireballText
           ? prev
-          : { clockText, radiantAltDeg }
+          : { clockText, radiantAltDeg, nextMeteorText, nextFireballText }
       );
     };
     tick();
     const id = window.setInterval(tick, 500);
     return () => window.clearInterval(id);
-  }, []);
+  }, [slots]);
 
   return (
     <div className="relative h-screen w-screen bg-black">
@@ -417,6 +766,15 @@ export function MeteorShowerLab(): JSX.Element {
       >
         <color attach="background" args={['#000004']} />
         <LabTimeDriver refs={refs} />
+        <CameraPoseBridge refs={refs} />
+        <ViewModeRig viewMode={viewMode} />
+        <FollowCameraRig
+          refs={refs}
+          slots={slots}
+          viewMode={viewMode}
+          onBurnout={handleBurnout}
+          onEnd={handleFollowEnd}
+        />
         {stars && <StarDome stars={stars} refs={refs} />}
         {/* 流星 + 余迹：与星场共 3 个粒子系统 draw call（§4.1，禁止合并） */}
         <MeteorField slots={slots} refs={refs} />
@@ -424,25 +782,47 @@ export function MeteorShowerLab(): JSX.Element {
         {settings.showRadiant && hud.radiantAltDeg > 0 && (
           <RadiantMarker refs={refs} labelKey={RADIANT_LABEL_KEYS[showerId]} />
         )}
+        {/* 燃烧层参考盘（M3.5-5）：仅太空档 + 开关（默认开）；非粒子系统 */}
+        {viewMode === 'space' && settings.showBurnLayer && <BurnLayerReference />}
         <GroundDisk />
-        {/* 环顾式仰视（§2）：target 固定原点、半径钳制 0.1–1.5、禁平移；
-            polar 域取 labGestures 常量（与 wheel 环顾钳制同一事实源）——
-            视线俯角 ≤20°（不看穿地面）、仰角上限 ≈88°（避开天顶极点奇异）。
-            enableZoom 关闭：视距 dolly 无意义（视差 <0.05%），滚轮/捏合语义
-            由 TrackpadLookControls 承载（方案 A） */}
-        <OrbitControls
-          target={[0, 0, 0]}
-          minDistance={CAMERA_RADIUS_MIN_UNITS}
-          maxDistance={CAMERA_RADIUS_MAX_UNITS}
-          enablePan={false}
-          enableZoom={false}
-          minPolarAngle={LAB_POLAR_MIN_RAD}
-          maxPolarAngle={LAB_POLAR_MAX_RAD}
-          rotateSpeed={0.45}
-          enableDamping
-          dampingFactor={0.12}
-        />
-        <TrackpadLookControls />
+        {/* 相机控制（跟随期间整体卸载，防 damping 与 FollowCameraRig 争抢相机；
+            结束时 rig 已复位相机，重挂载的 OrbitControls 从当前位姿接管）。
+            地面档（§2）：环顾式仰视——target 原点、半径 0.1–1.5、禁平移；
+            polar 域取 labGestures 常量（与 wheel 环顾钳制同一事实源）；
+            enableZoom 关闭（视差 <0.05%，缩放语义由 TrackpadLookControls FOV 承载）。
+            太空档（M3.5-4，key remount）：target 燃烧层中心 (0,97,0)、半径
+            150–1500、polar ≤ π/2 防穿地；滚轮 dolly 缩放距离。 */}
+        {!followActive &&
+          (viewMode === 'ground' ? (
+            <OrbitControls
+              key="ground"
+              target={[0, 0, 0]}
+              minDistance={CAMERA_RADIUS_MIN_UNITS}
+              maxDistance={CAMERA_RADIUS_MAX_UNITS}
+              enablePan={false}
+              enableZoom={false}
+              minPolarAngle={LAB_POLAR_MIN_RAD}
+              maxPolarAngle={LAB_POLAR_MAX_RAD}
+              rotateSpeed={0.45}
+              enableDamping
+              dampingFactor={0.12}
+            />
+          ) : (
+            <OrbitControls
+              key="space"
+              target={[SPACE_VIEW_TARGET_UNITS[0], SPACE_VIEW_TARGET_UNITS[1], SPACE_VIEW_TARGET_UNITS[2]]}
+              minDistance={SPACE_CAMERA_RADIUS_MIN_UNITS}
+              maxDistance={SPACE_CAMERA_RADIUS_MAX_UNITS}
+              enablePan={false}
+              enableZoom
+              minPolarAngle={0.05}
+              maxPolarAngle={SPACE_POLAR_MAX_RAD}
+              rotateSpeed={0.6}
+              enableDamping
+              dampingFactor={0.12}
+            />
+          ))}
+        {viewMode === 'ground' && !followActive && <TrackpadLookControls />}
         {/* 后期：Bloom + ACES ToneMapping（DevPreviewHarness 同配置；
             火流星末端闪爆 HDR ×15 由 Bloom 拾取，§4.4） */}
         <EffectComposer multisampling={4}>
@@ -461,18 +841,40 @@ export function MeteorShowerLab(): JSX.Element {
         )}
       </div>
 
-      {/* 右上：控件面板（§3） */}
+      {/* 右上：控件面板（§3 + §M3.5） */}
       <LabControlPanel
         showerId={showerId}
         onShowerChange={handleShowerChange}
         settings={settings}
         onSettingsChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
         hud={hud}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        onFastForward={handleFastForward}
+        onDemo={handleDemo}
+        followActive={followActive}
       />
 
-      {/* 底部：操作提示 */}
+      {/* 跟随视角：退出按钮（ESC 等价，§M3.5-6） */}
+      {followActive && (
+        <button
+          onClick={requestFollowEnd}
+          className="absolute bottom-14 left-1/2 -translate-x-1/2 rounded-lg bg-black/70 px-4 py-2 text-xs text-sky-200 backdrop-blur transition-colors hover:bg-black/85"
+        >
+          {tr('lab.followExit')}
+        </button>
+      )}
+
+      {/* 汽化科普提示（烧尽点收尾——彗星流星体不落地，科学红线） */}
+      {vaporizedVisible && (
+        <p className="pointer-events-none absolute bottom-24 left-1/2 max-w-md -translate-x-1/2 rounded-lg bg-black/70 px-4 py-2 text-center text-xs leading-relaxed text-emerald-200 backdrop-blur">
+          {tr('lab.vaporizedToast')}
+        </p>
+      )}
+
+      {/* 底部：操作提示（按视角档切换） */}
       <p className="pointer-events-none absolute bottom-3 left-1/2 max-w-[calc(100%-1.5rem)] -translate-x-1/2 truncate whitespace-nowrap rounded bg-black/40 px-3 py-1 text-[10px] text-gray-400 backdrop-blur">
-        {tr('lab.hintLookAround')}
+        {viewMode === 'space' ? tr('lab.hintSpace') : tr('lab.hintLookAround')}
       </p>
 
       {/* 亮星星表加载态/失败态覆盖层（场景 chunk 加载提示在路由层） */}

@@ -16,6 +16,11 @@
  * 风切变（§1.5）：顶点 shader 以粒子高度 y 采样 3D 值噪声（hash3/valueNoise3
  * 复用 SunCutaway/Sun 现成片段，勿新写）产生水平蛇形偏移；幅度 ∝ uWindSpeed ×
  * 滞空时长（m/s→km 换算 ×3 可辨度增益，登记艺术化）。
+ *
+ * 演示扩展分支（M3.5-3，与 MeteorField 同构）：aSlotIndex = 绑定的母槽位
+ * 下标；uDemoSlot 命中时演示窗口 t ∈ [aDepositTime, aDuration+aFadeDur]
+ * 起算点换 uDemoStart 并绕过双门控。登记限制：余迹只绑 50 槽位（火流星
+ * 全绑定、普通演示槽位可能无余迹）。
  */
 
 import type { JSX } from 'react';
@@ -78,13 +83,16 @@ const AFTERGLOW_VERTEX_SHADER = /* glsl */ `
   attribute float aDepositTime;
   attribute float aDispKm;
   attribute float aNoiseSeed;
+  attribute float aSlotIndex;
   attribute vec3 aStartPos;
   uniform float uTime;
   uniform float uCyclePeriod;
   uniform float uFluxFraction;
   uniform float uFireballFraction;
-  uniform float uWindSpeed;
+  uniform float uDemoSlot;
+  uniform float uDemoStart;
   uniform vec3 uVelocityDir;
+  uniform float uWindSpeed;
   uniform float uPhenomenon;
   uniform float uScale;
   varying float vAlpha;
@@ -94,9 +102,15 @@ const AFTERGLOW_VERTEX_SHADER = /* glsl */ `
   void main() {
     float cycle = fract(aSeed + uTime / uCyclePeriod);   // 与母槽位同相位（契约 C2）
     float t = cycle * uCyclePeriod;
-    bool culled = aGateRank >= uFluxFraction              // 门控与流星系统严格同式
-      || (aIsFireball > 0.5 && aFireballRank >= uFireballFraction)
-      || t < aDepositTime || t > aDuration + aFadeDur;
+    bool gated = aGateRank >= uFluxFraction               // 门控与流星系统严格同式
+      || (aIsFireball > 0.5 && aFireballRank >= uFireballFraction);
+    // 演示扩展分支（M3.5-3，与 MeteorField 同构）：起算点换 uDemoStart、绕过双门控
+    bool isDemo = uDemoSlot >= 0.0 && abs(aSlotIndex - uDemoSlot) < 0.5;
+    if (isDemo) {
+      t = uTime - uDemoStart;
+      gated = false;
+    }
+    bool culled = gated || t < aDepositTime || t > aDuration + aFadeDur;
     if (culled) {
       vAlpha = 0.0;
       vColor = vec3(0.0);
@@ -163,6 +177,7 @@ function buildAfterglowAssets(slots: readonly MeteorSlot[]): AfterglowAssets {
   const depositTimes = new Float32Array(n);
   const dispKms = new Float32Array(n);
   const noiseSeeds = new Float32Array(n);
+  const slotIndices = new Float32Array(n);
   const startPositions = new Float32Array(n * 3);
 
   const rand = createSeededRandom(AFTERGLOW_SEED);
@@ -183,6 +198,7 @@ function buildAfterglowAssets(slots: readonly MeteorSlot[]): AfterglowAssets {
       depositTimes[v] = pathT * slot.lifetimeSec;
       dispKms[v] = evalCubic(slot.dispCoefs, pathT * slot.lifetimeSec);
       noiseSeeds[v] = rand();
+      slotIndices[v] = slotIndex; // 母槽位下标（演示注入寻址，M3.5-3）
       startPositions[v * 3] = slot.startPos[0];
       startPositions[v * 3 + 1] = slot.startPos[1];
       startPositions[v * 3 + 2] = slot.startPos[2];
@@ -201,6 +217,7 @@ function buildAfterglowAssets(slots: readonly MeteorSlot[]): AfterglowAssets {
   geometry.setAttribute('aDepositTime', new THREE.BufferAttribute(depositTimes, 1));
   geometry.setAttribute('aDispKm', new THREE.BufferAttribute(dispKms, 1));
   geometry.setAttribute('aNoiseSeed', new THREE.BufferAttribute(noiseSeeds, 1));
+  geometry.setAttribute('aSlotIndex', new THREE.BufferAttribute(slotIndices, 1));
   geometry.setAttribute('aStartPos', new THREE.BufferAttribute(startPositions, 3));
 
   const material = new THREE.ShaderMaterial({
@@ -209,6 +226,9 @@ function buildAfterglowAssets(slots: readonly MeteorSlot[]): AfterglowAssets {
       uCyclePeriod: { value: METEOR_CYCLE_PERIOD_SEC },
       uFluxFraction: { value: 0 },
       uFireballFraction: { value: 0 },
+      // 演示注入（M3.5-3）：-1 = 无演示；与 MeteorField 同一 demoRef 事实源
+      uDemoSlot: { value: -1 },
+      uDemoStart: { value: 0 },
       uWindSpeed: { value: 0 },
       uVelocityDir: { value: new THREE.Vector3(0, -1, 0) },
       uPhenomenon: { value: 0 },
@@ -257,6 +277,9 @@ export function AfterglowField({ slots, refs }: AfterglowFieldProps): JSX.Elemen
     u.uCyclePeriod.value = shower.cyclePeriodSec;
     u.uFluxFraction.value = fluxFraction(hr, slots.length, shower.cyclePeriodSec);
     u.uFireballFraction.value = s.fireballRate;
+    const demo = refs.demoRef.current;
+    u.uDemoSlot.value = demo ? demo.slotIndex : -1;
+    u.uDemoStart.value = demo ? demo.startTimeSec : 0;
     u.uWindSpeed.value = s.windSpeed;
     (u.uVelocityDir.value as THREE.Vector3).set(-dir[0], -dir[1], -dir[2]);
     u.uPhenomenon.value = shower.id === 'perseids' ? 0 : 1;

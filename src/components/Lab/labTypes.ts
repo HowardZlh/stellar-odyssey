@@ -1,9 +1,11 @@
 /**
- * 流星雨实验室共享类型（M3）：控件状态 + 帧循环共享 refs
+ * 流星雨实验室共享类型（M3 + M3.5）：控件状态 + 帧循环共享 refs +
+ * 演示/跟随/相机位姿桥
  *
  * 控件（§3）改动只写 settingsRef（uniforms 每帧消费，契约 C2.1：不触发
  * attribute 重建）；唯一的重建路径是页签切换（showerRef + slots useMemo）。
- * 纯类型模块，无业务逻辑（可测逻辑一律下沉 utils/meteorShower.ts）。
+ * M3.5 的快进/演示/跟随/切档全部是交互事件路径（契约 C2.1 口径，零 buffer
+ * 上传）。纯类型模块，无业务逻辑（可测逻辑一律下沉 utils/meteorShower.ts）。
  */
 
 import type { MutableRefObject } from 'react';
@@ -15,7 +17,10 @@ import {
   DEFAULT_WIND_SPEED_M_PER_SEC,
 } from '@/utils/meteorShower';
 
-/** 控件面板状态（§3 全部 7 项 + 辐射点标注开关） */
+/** 观测视角档（§M3.5-4：地面环顾 ｜ 太空环绕俯瞰燃烧层） */
+export type LabViewMode = 'ground' | 'space';
+
+/** 控件面板状态（§3 全部 7 项 + 辐射点标注开关 + M3.5 跟随/燃烧层开关） */
 export interface LabControlState {
   /** 时间推进率 [0, 10] */
   timeScale: number;
@@ -31,6 +36,10 @@ export interface LabControlState {
   windSpeed: number;
   /** 辐射点标注开关（§3 辅助 UI） */
   showRadiant: boolean;
+  /** 演示触发时进入跟随视角（§M3.5-6） */
+  followOnDemo: boolean;
+  /** 燃烧层参考盘开关（仅太空档渲染，默认开，§M3.5-5） */
+  showBurnLayer: boolean;
 }
 
 /** 控件默认值（§3；数值默认量收口 utils/meteorShower.ts 常量） */
@@ -42,7 +51,47 @@ export const DEFAULT_LAB_CONTROLS: LabControlState = {
   fireballRate: DEFAULT_FIREBALL_RATE,
   windSpeed: DEFAULT_WIND_SPEED_M_PER_SEC,
   showRadiant: true,
+  followOnDemo: false,
+  showBurnLayer: true,
 };
+
+/**
+ * 演示注入状态（§M3.5-3，方案 B 时间轴外注入）：DOM 按钮写入，
+ * MeteorField/AfterglowField useFrame 消费进 uDemoSlot/uDemoStart。
+ * 时间真实性红线：演示非当前时刻真实流量调度，页面常显标注文案。
+ */
+export interface LabDemoState {
+  /** 演示槽位下标（uDemoSlot；pickDemoSlot 产物） */
+  slotIndex: number;
+  /** 注入时刻（场景秒，uDemoStart） */
+  startTimeSec: number;
+  /** 过期时刻（场景秒 = 注入 + 寿命 + 余迹渐隐窗；过期自动清除恢复正常调度） */
+  expiresAtSec: number;
+}
+
+/**
+ * 跟随视角状态（§M3.5-6）：DOM 触发写入，FollowCameraRig useFrame 消费
+ * （每帧经 followCameraPose 写相机）。ESC/按钮/页签切换置 endRequested，
+ * rig 在下一帧复原相机后回调 DOM 层还原 timeScale/OrbitControls。
+ */
+export interface LabFollowState {
+  /** 跟随槽位下标（与演示注入同槽位） */
+  slotIndex: number;
+  /** 演示注入时刻（场景秒；elapsed = uTime − 本值） */
+  startTimeSec: number;
+  /** 进入跟随前的时间流速（结束时还原） */
+  savedTimeScale: number;
+  /** DOM 层请求结束（ESC/退出按钮/页签切换强制结束） */
+  endRequested: boolean;
+}
+
+/** 相机位姿桥（CameraPoseBridge 每帧 mutate；DOM 演示按钮读取喂 pickDemoSlot） */
+export interface LabCameraPose {
+  /** 相机世界坐标（场景单位） */
+  position: [number, number, number];
+  /** 视线方向（单位向量，相机 −Z 世界方向） */
+  viewDir: [number, number, number];
+}
 
 /**
  * 帧循环共享 refs：DOM 层（面板/HUD）写入，Canvas 子树 useFrame 读取——
@@ -55,4 +104,10 @@ export interface LabFrameRefs {
   settingsRef: MutableRefObject<LabControlState>;
   /** 当前流星雨参数（页签切换随 slots 重建一并更新） */
   showerRef: MutableRefObject<MeteorShowerParams>;
+  /** 演示注入状态（null = 无演示；LabTimeDriver 负责过期清除） */
+  demoRef: MutableRefObject<LabDemoState | null>;
+  /** 跟随视角状态（null = 未跟随） */
+  followRef: MutableRefObject<LabFollowState | null>;
+  /** 相机位姿桥（Canvas 内每帧 mutate，DOM 事件路径只读） */
+  cameraPoseRef: MutableRefObject<LabCameraPose>;
 }
