@@ -47,6 +47,7 @@ import {
   horizontalFromEquatorial,
   localSiderealTime,
   sceneDirFromAltAz,
+  timeLapseLagSpanSec,
   trailLag,
   visibleHourlyRate,
   type MeteorSlot,
@@ -345,6 +346,8 @@ export function MeteorField({ slots, refs }: MeteorFieldProps): JSX.Element {
     const u = material.uniforms;
     u.uTime.value = t;
     u.uCyclePeriod.value = shower.cyclePeriodSec;
+    // 延时摄影条痕跨度补偿（M3.7-2：≤×10 恒为契约 C2 默认 0.15，零观感变化）
+    u.uLagSpan.value = timeLapseLagSpanSec(s.timeScale);
     u.uFluxFraction.value = fluxFraction(hr, slots.length, shower.cyclePeriodSec);
     u.uFireballFraction.value = s.fireballRate;
     // 演示注入消费（M3.5-3：交互事件写 demoRef，此处仅 uniforms 透传）
@@ -352,7 +355,8 @@ export function MeteorField({ slots, refs }: MeteorFieldProps): JSX.Element {
     u.uDemoSlot.value = demo ? demo.slotIndex : -1;
     u.uDemoStart.value = demo ? demo.startTimeSec : 0;
     (u.uVelocityDir.value as THREE.Vector3).set(-dir[0], -dir[1], -dir[2]);
-    u.uPhenomenon.value = shower.id === 'perseids' ? 0 : 1;
+    // 色相：快流星蓝白（英仙座/狮子座暴）↔ 慢流星橙黄（天鹅座κ），M3.7 三页签
+    u.uPhenomenon.value = shower.id === 'kappaCygnids' ? 1 : 0;
     // 像素尺度 + FOV 缩放补偿（触控板捏合缩放时与星穹同步等比，方案 A）
     u.uScale.value =
       state.gl.domElement.height *

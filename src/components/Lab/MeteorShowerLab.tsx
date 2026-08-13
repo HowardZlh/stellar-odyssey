@@ -81,9 +81,7 @@ import {
   FOLLOW_DISTANCE_DEFAULT_KM,
   FOLLOW_LINGER_REAL_SEC,
   FOLLOW_SLOWMO_TIMESCALE,
-  KAPPA_CYGNIDS,
-  METEOR_SLOT_COUNT,
-  PERSEIDS,
+  METEOR_SHOWERS,
   SPACE_CAMERA_PRESET_UNITS,
   SPACE_CAMERA_RADIUS_MAX_UNITS,
   SPACE_CAMERA_RADIUS_MIN_UNITS,
@@ -92,6 +90,7 @@ import {
   STAR_DOME_RADIUS_UNITS,
   equatorialToHorizontalMatrix,
   equatorialUnitVector,
+  evalCubic,
   fluxFraction,
   followOrbitPose,
   formatClockHHMM,
@@ -104,6 +103,7 @@ import {
   nextIgnition,
   pickDemoSlot,
   sceneDirFromAltAz,
+  slotTrajectoryInView,
   spaceAimPosition,
   visibleHourlyRate,
   type MeteorSlot,
@@ -182,6 +182,7 @@ const INITIAL_CAMERA_POSITION: [number, number, number] = [
 const RADIANT_LABEL_KEYS: Record<MeteorShowerId, MessageKey> = {
   perseids: 'lab.radiantLabelPerseids',
   kappaCygnids: 'lab.radiantLabelKappaCygnids',
+  leonids1966: 'lab.radiantLabelLeonids',
 };
 
 const STAR_DOME_VERTEX_SHADER = /* glsl */ `
@@ -267,17 +268,18 @@ function CameraPoseBridge({ refs }: { refs: LabFrameRefs }): null {
 }
 
 /**
- * 演示自动运镜 rig（M3.6-1，决策 A1）：aimRef 存在时每帧对相机做
- * "方向球面插值 + 半径线性插值"（smoothstep 缓动，~0.6 s），到位后
- * 清除 aimRef 并回调 DOM 层注入演示。运镜期间 OrbitControls 由父级
- * 卸载（防 damping 争抢相机），交互事件路径零 buffer 上传。
+ * 自动运镜 rig（M3.6-1 决策 A1 + M3.7-3 快进入画）：aimRef 存在时每帧对
+ * 相机做"方向球面插值 + 半径线性插值"（smoothstep 缓动，~0.6 s），到位后
+ * 清除 aimRef 并回调 DOM 层（演示路径注入演示；快进路径仅转向——流星由
+ * 真实调度点燃，时间真实红线）。运镜期间 OrbitControls 由父级卸载
+ * （防 damping 争抢相机），交互事件路径零 buffer 上传。
  */
 function AimRig({
   refs,
   onDone,
 }: {
   refs: LabFrameRefs;
-  onDone: (slotIndex: number) => void;
+  onDone: (aim: LabAimState) => void;
 }): null {
   const camera = useThree((s) => s.camera);
   // 帧临时向量（挂载期复用，渲染循环零 GC）
@@ -319,7 +321,7 @@ function AimRig({
     camera.lookAt(aim.center[0], aim.center[1], aim.center[2]);
     if (k >= 1) {
       refs.aimRef.current = null;
-      onDone(aim.slotIndex);
+      onDone(aim);
     }
   });
   return null;
@@ -741,7 +743,7 @@ export function MeteorShowerLab(): JSX.Element {
     nextFireballText: '—',
   });
 
-  const shower = showerId === 'perseids' ? PERSEIDS : KAPPA_CYGNIDS;
+  const shower = METEOR_SHOWERS[showerId];
 
   // 帧循环共享 refs（渲染期同步赋值：useFrame 读到的永远是最新控件值）
   const timeSecRef = useRef(0);
@@ -765,7 +767,8 @@ export function MeteorShowerLab(): JSX.Element {
   );
 
   // 槽位烘焙：RK4 + 拟合一次性完成；页签切换重建（契约 C2.1 唯一例外路径）
-  const slots = useMemo(() => makeMeteorSlots(METEOR_SLOT_SEED, METEOR_SLOT_COUNT, shower), [shower]);
+  // 槽位数按雨覆写（M3.7：狮子座暴 400，容量设计见 LEONIDS_STORM_1966 注释）
+  const slots = useMemo(() => makeMeteorSlots(METEOR_SLOT_SEED, shower.slotCount, shower), [shower]);
 
   /** 请求结束跟随（ESC/退出按钮/页签切换；rig 下一帧复原相机后回调还原） */
   const requestFollowEnd = (): void => {
@@ -809,8 +812,47 @@ export function MeteorShowerLab(): JSX.Element {
     return { fluxFrac: fluxFraction(hr, slots.length, sh.cyclePeriodSec) };
   };
 
-  /** 快进（方案 A，时间真实）：跳到真实点燃时刻前 ~1.5 真实秒 */
+  /**
+   * 启动自动运镜（M3.6-1 演示 / M3.7-3 快进共用）：目标机位 = 轨迹中点
+   * 的两档 aim 纯函数（保持当前轨道半径/距离），AimRig 球面插值到位。
+   */
+  const startAim = (
+    slotIndex: number,
+    midPoint: readonly [number, number, number],
+    injectDemoOnDone: boolean
+  ): void => {
+    const pose = cameraPoseRef.current;
+    const center: [number, number, number] =
+      viewMode === 'ground' ? [0, 0, 0] : [...SPACE_VIEW_TARGET_UNITS];
+    const fromOffset: [number, number, number] = [
+      pose.position[0] - center[0],
+      pose.position[1] - center[1],
+      pose.position[2] - center[2],
+    ];
+    const radius = Math.hypot(fromOffset[0], fromOffset[1], fromOffset[2]);
+    if (!(radius > 0)) return; // 相机与轨道中心重合（防御，正常不可达）
+    const aimPos =
+      viewMode === 'ground'
+        ? groundAimPosition(midPoint, radius)
+        : spaceAimPosition(midPoint, center, radius);
+    aimRef.current = {
+      slotIndex,
+      injectDemoOnDone,
+      center,
+      fromOffset,
+      toOffset: [aimPos[0] - center[0], aimPos[1] - center[1], aimPos[2] - center[2]],
+      elapsedSec: 0,
+    };
+    setAimActive(true);
+  };
+
+  /**
+   * 快进（方案 A，时间真实）：跳到真实点燃时刻前 ~1.5 真实秒。
+   * M3.7-3 入画保障：目标槽位轨迹不在视锥内时自动运镜到其轨迹中点——
+   * 只动相机不动时间（运镜 0.6 s < 提前量 1.5 s，倒计时归零时必已就位）。
+   */
   const handleFastForward = (fireballOnly: boolean): void => {
+    if (followRef.current || aimRef.current) return;
     const s = settingsRef.current;
     const sh = showerRef.current;
     const now = timeSecRef.current;
@@ -823,6 +865,29 @@ export function MeteorShowerLab(): JSX.Element {
     // timeScale = 0 时快进后自动恢复 ×1（否则画面冻结在点燃前）
     if (s.timeScale === 0) {
       setSettings((prev) => ({ ...prev, timeScale: 1 }));
+    }
+    // 入画判定用跳转后时刻的飞行方向（辐射点随 LST 微移，与点燃时刻同步）
+    const lst = localSiderealTime(sh.epochLst0Deg, s.hourOffset, timeSecRef.current / 3600);
+    const radiant = horizontalFromEquatorial(
+      sh.radiantRaDeg,
+      sh.radiantDecDeg,
+      s.observerLat,
+      lst
+    );
+    const dir = sceneDirFromAltAz(radiant);
+    const v: [number, number, number] = [-dir[0], -dir[1], -dir[2]];
+    const slot = slots[next.slotIndex];
+    if (!slotTrajectoryInView(slot, v, cameraPoseRef.current)) {
+      const midDisp = evalCubic(slot.dispCoefs, 0.5 * slot.lifetimeSec);
+      startAim(
+        next.slotIndex,
+        [
+          slot.startPos[0] + v[0] * midDisp,
+          slot.startPos[1] + v[1] * midDisp,
+          slot.startPos[2] + v[2] * midDisp,
+        ],
+        false // 快进只转相机；流星由真实调度点燃（时间真实红线）
+      );
     }
   };
 
@@ -883,34 +948,14 @@ export function MeteorShowerLab(): JSX.Element {
       injectDemo(pick.slotIndex);
       return;
     }
-    // 自动运镜保底（决策 A1）：目标机位 = 两档 aim 纯函数（保持当前轨道半径/距离）
-    const center: [number, number, number] =
-      viewMode === 'ground' ? [0, 0, 0] : [...SPACE_VIEW_TARGET_UNITS];
-    const fromOffset: [number, number, number] = [
-      pose.position[0] - center[0],
-      pose.position[1] - center[1],
-      pose.position[2] - center[2],
-    ];
-    const radius = Math.hypot(fromOffset[0], fromOffset[1], fromOffset[2]);
-    if (!(radius > 0)) return; // 相机与轨道中心重合（防御，正常不可达）
-    const aimPos =
-      viewMode === 'ground'
-        ? groundAimPosition(pick.midPoint, radius)
-        : spaceAimPosition(pick.midPoint, center, radius);
-    aimRef.current = {
-      slotIndex: pick.slotIndex,
-      center,
-      fromOffset,
-      toOffset: [aimPos[0] - center[0], aimPos[1] - center[1], aimPos[2] - center[2]],
-      elapsedSec: 0,
-    };
-    setAimActive(true);
+    // 自动运镜保底（决策 A1）：到位后注入演示
+    startAim(pick.slotIndex, pick.midPoint, true);
   };
 
-  /** 自动运镜到位（AimRig 回调）：注入演示并恢复按钮/OrbitControls */
-  const handleAimDone = (slotIndex: number): void => {
+  /** 自动运镜到位（AimRig 回调）：演示路径注入；快进路径流星由真实调度点燃 */
+  const handleAimDone = (aim: LabAimState): void => {
     setAimActive(false);
-    injectDemo(slotIndex);
+    if (aim.injectDemoOnDone) injectDemo(aim.slotIndex);
   };
 
   /** 跟随结束（rig 已复位相机）：还原 timeScale 与 OrbitControls 挂载 */

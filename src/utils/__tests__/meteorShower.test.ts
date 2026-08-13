@@ -17,13 +17,17 @@ import {
   DEFAULT_OBSERVER_LAT_DEG,
   EARTH_RADIUS_KM,
   EPOCH_LOCAL_HOURS,
+  EPOCH_SUN_DECLINATION_DEG,
   FOLLOW_DISTANCE_DEFAULT_KM,
   FOLLOW_DISTANCE_MAX_KM,
   FOLLOW_DISTANCE_MIN_KM,
   FRAGMENT_CONE_HALF_ANGLE_RAD,
   FRAGMENT_MAX_LATERAL_KM,
   KAPPA_CYGNIDS,
+  LEONIDS_STORM_1966,
   METEOR_CYCLE_PERIOD_SEC,
+  METEOR_LAG_SPAN_SEC,
+  METEOR_SHOWERS,
   METEOR_SLOT_COUNT,
   PERSEIDS,
   SPACE_CAMERA_RADIUS_MAX_UNITS,
@@ -51,8 +55,11 @@ import {
   sceneDirFromAltAz,
   selectAfterglowSlots,
   slotPhase,
+  slotTrajectoryInView,
   solveAblationRK4,
   spaceAimPosition,
+  TIMELAPSE_GEARS,
+  timeLapseLagSpanSec,
   trailLag,
   truncateAblationCurves,
   visibleHourlyRate,
@@ -1037,5 +1044,124 @@ describe('M3.5 目验辅助纯函数（§M3.5-1）', () => {
       expect(() => formatDurationClock(Number.NaN)).toThrow(RangeError);
       expect(() => formatDurationClock(Number.POSITIVE_INFINITY)).toThrow(RangeError);
     });
+  });
+});
+
+describe('M3.7 流星暴场景 + 延时摄影 + 快进入画', () => {
+  /** 最小合成槽位（视锥判定测试用；与 M3.5 describe 内 mkSlot 同构） */
+  const mkSlot = (over: Partial<MeteorSlot> = {}): MeteorSlot => ({
+    aSeed: 0.5,
+    aGateRank: 0.1,
+    aFireballRank: 0.5,
+    isFireball: false,
+    startPos: [0, 115, 0],
+    lifetimeSec: 1,
+    massKg: 1e-4,
+    dispCoefs: [40, 0, 0],
+    intenCoefs: [1, 0, 0],
+    ...over,
+  });
+  /** 视锥描述便捷构造（北望地平、fovY 90°、方形视口） */
+  const mkView = (over: Partial<DemoCameraView> = {}): DemoCameraView => ({
+    position: [0, 0, 0],
+    viewDir: [0, 0, -1],
+    upDir: [0, 1, 0],
+    fovYRad: Math.PI / 2,
+    aspect: 1,
+    ...over,
+  });
+
+  test('LEONIDS_STORM_1966 参数（IAU MDC #13 LEO）与历元辐射点 Alt≈64° 锚点', () => {
+    expect(LEONIDS_STORM_1966.id).toBe('leonids1966');
+    expect(LEONIDS_STORM_1966.entrySpeedKmPerSec).toBe(71); // 主流雨最快
+    expect(LEONIDS_STORM_1966.zhr).toBe(40000); // 1966 暴发保守文献值
+    expect(LEONIDS_STORM_1966.slotCount).toBe(400);
+    const lst = localSiderealTime(LEONIDS_STORM_1966.epochLst0Deg, 0, 0);
+    const { altRad } = horizontalFromEquatorial(
+      LEONIDS_STORM_1966.radiantRaDeg,
+      LEONIDS_STORM_1966.radiantDecDeg,
+      DEFAULT_OBSERVER_LAT_DEG,
+      lst
+    );
+    expect(altRad / DEG).toBeGreaterThan(62);
+    expect(altRad / DEG).toBeLessThan(66);
+  });
+
+  test('容量无饱和：控件全域（lm ≤ 6.5、Alt ≤ 90°）流量门控不截断真实速率', () => {
+    const { slotCount, cyclePeriodSec, zhr, populationIndex } = LEONIDS_STORM_1966;
+    // 极端上界：辐射点天顶 + 极限星等 6.5 → HR = ZHR，期望激活恰 ≤ slotCount
+    const hrMax = visibleHourlyRate(zhr, populationIndex, Math.PI / 2, 6.5);
+    expect(hrMax).toBeCloseTo(zhr, 6);
+    expect(fluxFraction(hrMax, slotCount, cyclePeriodSec)).toBeLessThanOrEqual(1);
+    // 默认条件（历元 Alt≈64°、lm 6.0）：点燃率 ≈ 6.3 颗/s（"星陨如雨"量级）
+    const lst = localSiderealTime(LEONIDS_STORM_1966.epochLst0Deg, 0, 0);
+    const { altRad } = horizontalFromEquatorial(152, 22, DEFAULT_OBSERVER_LAT_DEG, lst);
+    const hr = visibleHourlyRate(zhr, populationIndex, altRad, DEFAULT_LIMITING_MAG);
+    const flux = fluxFraction(hr, slotCount, cyclePeriodSec);
+    expect(flux).toBeLessThan(1); // 默认条件不饱和
+    const ratePerSec = (flux * slotCount) / cyclePeriodSec;
+    expect(ratePerSec).toBeCloseTo(hr / 3600, 10); // 速率不受 (slotCount, T) 影响
+    expect(ratePerSec).toBeGreaterThan(5);
+    expect(ratePerSec).toBeLessThan(8);
+  });
+
+  test('烧蚀烘焙兼容 71 km/s 入速：寿命有效且位移有限', () => {
+    const slots = makeMeteorSlots(7, 16, LEONIDS_STORM_1966);
+    expect(slots).toHaveLength(16);
+    for (const slot of slots) {
+      expect(slot.lifetimeSec).toBeGreaterThan(0);
+      expect(slot.lifetimeSec).toBeLessThanOrEqual(1.2);
+      expect(Number.isFinite(evalCubic(slot.dispCoefs, slot.lifetimeSec))).toBe(true);
+    }
+  });
+
+  test('METEOR_SHOWERS 注册 map 与历元常量族完整性（三页签）', () => {
+    expect(Object.keys(METEOR_SHOWERS).sort()).toEqual(['kappaCygnids', 'leonids1966', 'perseids']);
+    expect(METEOR_SHOWERS.perseids).toBe(PERSEIDS);
+    expect(METEOR_SHOWERS.kappaCygnids).toBe(KAPPA_CYGNIDS);
+    expect(METEOR_SHOWERS.leonids1966).toBe(LEONIDS_STORM_1966);
+    expect(PERSEIDS.slotCount).toBe(METEOR_SLOT_COUNT);
+    expect(KAPPA_CYGNIDS.slotCount).toBe(METEOR_SLOT_COUNT);
+    expect(EPOCH_LOCAL_HOURS.leonids1966).toBe(5);
+    expect(EPOCH_SUN_DECLINATION_DEG.perseids).toBe(14);
+    expect(EPOCH_SUN_DECLINATION_DEG.leonids1966).toBe(-19);
+  });
+
+  test('timeLapseLagSpanSec：≤×10 恒为契约 C2 默认；>×10 线性放大（×60 → 0.9 s）', () => {
+    for (const ts of [0, 1, 5, 10, Number.NaN]) {
+      expect(timeLapseLagSpanSec(ts)).toBe(METEOR_LAG_SPAN_SEC);
+    }
+    expect(timeLapseLagSpanSec(30)).toBeCloseTo(METEOR_LAG_SPAN_SEC * 3, 12);
+    expect(timeLapseLagSpanSec(60)).toBeCloseTo(0.9, 12);
+    expect(TIMELAPSE_GEARS).toEqual([1, 10, 60]); // ×300 放弃（单帧闪点，M3.7 决策登记）
+  });
+
+  test('labSunDirection 可选赤纬：11 月历元 05:00 太阳地平下（夜面）；默认参数向后兼容', () => {
+    const nov = labSunDirection(5, 40, EPOCH_SUN_DECLINATION_DEG.leonids1966);
+    expect(nov[1]).toBeLessThan(-0.3); // 黎明前深居地平下
+    expect(Math.hypot(...nov)).toBeCloseTo(1, 10);
+    expect(labSunDirection(12, 40)).toEqual(labSunDirection(12, 40, 14));
+    expect(() => labSunDirection(5, 40, Number.NaN)).toThrow(RangeError);
+  });
+
+  test('slotTrajectoryInView：与 pickDemoSlot 硬性过滤同式（双端 + 15% 边距）', () => {
+    const v: [number, number, number] = [0, -1, 0];
+    // 全轨迹入画（起点 y/z=0.5、烧尽点 0.3 均 ≤ 0.85）
+    expect(slotTrajectoryInView(mkSlot({ startPos: [0, 100, -200] }), v, mkView())).toBe(true);
+    // 起点超边距（y/z = 0.9 > 0.85，名义 FOV 内）
+    expect(slotTrajectoryInView(mkSlot({ startPos: [0, 180, -200] }), v, mkView())).toBe(false);
+    // 背向相机
+    expect(slotTrajectoryInView(mkSlot({ startPos: [0, 100, 200] }), v, mkView())).toBe(false);
+    // 烧尽点出画（速度朝相机，终点越过相机背面）
+    expect(slotTrajectoryInView(mkSlot({ startPos: [0, 0, -30] }), [0, 0, 1], mkView())).toBe(false);
+    // 与 pickDemoSlot 判定交叉：入画槽位 needsAim=false、出画槽位 needsAim=true
+    const inSlot = mkSlot({ startPos: [0, 100, -200] });
+    const outSlot = mkSlot({ startPos: [0, 180, -200] });
+    expect(pickDemoSlot([inSlot], v, mkView(), false)!.needsAim).toBe(false);
+    expect(pickDemoSlot([outSlot], v, mkView(), false)!.needsAim).toBe(true);
+    // 非法视锥抛错（buildViewBasis 共用防御）
+    expect(() => slotTrajectoryInView(mkSlot(), v, mkView({ viewDir: [0, 0, 0] }))).toThrow(
+      RangeError
+    );
   });
 });

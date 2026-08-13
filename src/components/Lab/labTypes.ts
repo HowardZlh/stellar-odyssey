@@ -94,14 +94,18 @@ export interface LabFollowState {
 }
 
 /**
- * 演示自动运镜状态（§M3.6-1，决策 A1）：handleDemo 发现 needsAim 时写入，
- * AimRig useFrame 消费——~0.6 s 球面插值（方向 slerp + 半径 lerp）相机到
- * aim 目标机位，到位后回调 DOM 层注入演示并清除本状态。aim 期间演示/快进
- * 按钮禁用、OrbitControls 卸载（防 damping 争抢相机）。
+ * 自动运镜状态（§M3.6-1 决策 A1 + §M3.7-3 快进入画）：handleDemo 发现
+ * needsAim / handleFastForward 发现目标槽位不在视锥时写入，AimRig useFrame
+ * 消费——~0.6 s 球面插值（方向 slerp + 半径 lerp）相机到 aim 目标机位，
+ * 到位后回调 DOM 层（演示路径注入演示；快进路径只转相机，流星由真实调度
+ * 点燃）并清除本状态。aim 期间演示/快进按钮禁用、OrbitControls 卸载
+ * （防 damping 争抢相机）。
  */
 export interface LabAimState {
-  /** 待注入演示的槽位下标（pickDemoSlot 全域最优） */
+  /** 目标槽位下标（演示 = pickDemoSlot 全域最优；快进 = nextIgnition 槽位） */
   slotIndex: number;
+  /** 到位后是否注入演示（演示路径 true；快进路径 false——时间真实红线，M3.7-3） */
+  injectDemoOnDone: boolean;
   /** 轨道中心（地面档 = 原点；太空档 = 燃烧层中心） */
   center: [number, number, number];
   /** 起点相机相对中心的偏移（球面插值起点） */

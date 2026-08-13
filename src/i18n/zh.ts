@@ -225,19 +225,24 @@ export const zh = {
     /** 流星雨条目（utils/lab.ts 注册表引用） */
     meteorShowerTitle: '盛夏双重流星雨',
     meteorShowerDescription:
-      '英仙座与天鹅座κ双流星雨的物理仿真观测场：耶鲁亮星目录真实星穹（8,404 颗，视星等 ≤ 6.5）按地平坐标投影，可环顾仰望的北纬夜空。',
+      '英仙座与天鹅座κ双流星雨的物理仿真观测场：耶鲁亮星目录真实星穹（8,404 颗，视星等 ≤ 6.5）按地平坐标投影，可环顾仰望的北纬夜空；另附 1966 狮子座流星暴历史场景重现。',
     /** M3 控件面板/科普卡片/HUD/辐射点标注（单位记号 ×/h/°/m/s/mag 由组件层持有） */
     panelTitle: '观测控制台',
     showerTabAria: '切换流星雨',
     showerPerseids: '英仙座',
     showerKappaCygnids: '天鹅座κ',
+    /** M3.7 流星暴页签（1966 狮子座历史事件重现）+ 延时摄影档 */
+    showerLeonids1966: '狮子座暴 1966',
     cardRadiant: '辐射点',
     cardSpeed: '入速',
     cardZhr: 'ZHR',
     cardParent: '母体',
     parentPerseids: '109P/Swift–Tuttle 彗星',
     parentKappaCygnids: '未确定（候选体尚存争议）',
+    parentLeonids: '55P/Tempel–Tuttle 彗星',
+    stormNote1966: '历史重现：1966-11-17 狮子座流星暴，按保守文献值 ZHR 40,000 仿真（峰值估计一度达约 40 颗/秒）',
     ctrlTimeScale: '时间流速',
+    ctrlTimeLapse: '延时摄影',
     ctrlHourOffset: '地方时偏移',
     ctrlLimitingMag: '光害（极限星等）',
     ctrlObserverLat: '观测纬度',
@@ -250,6 +255,7 @@ export const zh = {
     /** 辐射点标注星座名（3D 场景经 LabelText 叶组件消费） */
     radiantLabelPerseids: '英仙座',
     radiantLabelKappaCygnids: '天鹅座',
+    radiantLabelLeonids: '狮子座',
     /**
      * M3.5 目验辅助：视角切换/倒计时/快进/演示/跟随/燃烧层参考。
      * demoDisclaimer 为时间真实性红线常显标注（演示 = 时间轴外注入）；

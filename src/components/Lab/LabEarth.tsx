@@ -39,6 +39,7 @@ import {
   ATMOSPHERE_TOP_KM,
   EARTH_RADIUS_KM,
   EPOCH_LOCAL_HOURS,
+  EPOCH_SUN_DECLINATION_DEG,
   labSunDirection,
   localClockHours,
 } from '@/utils/meteorShower';
@@ -241,13 +242,14 @@ export function LabEarth({ refs, visible }: LabEarthProps): JSX.Element {
     if (!visible) return; // 隐藏期零 uniform 更新（visible 由 props 门控）
     const s = refs.settingsRef.current;
     const shower = refs.showerRef.current;
-    // 太阳方向 = 当地时钟推算（与 HUD 时钟/星穹旋转共用同一时间输入自洽）
+    // 太阳方向 = 当地时钟推算（与 HUD 时钟/星穹旋转共用同一时间输入自洽）；
+    // 太阳赤纬按雨历元（8 月 +14° / 11 月狮子座暴 −19°，M3.7）
     const clock = localClockHours(
       EPOCH_LOCAL_HOURS[shower.id],
       s.hourOffset,
       refs.timeSecRef.current / 3600
     );
-    const sunDir = labSunDirection(clock, s.observerLat);
+    const sunDir = labSunDirection(clock, s.observerLat, EPOCH_SUN_DECLINATION_DEG[shower.id]);
     (surfaceMaterial.uniforms.uSunDir.value as THREE.Vector3).set(...sunDir);
     (cloudMaterial.uniforms.uSunDir.value as THREE.Vector3).set(...sunDir);
     (atmosphereMaterial.uniforms.uSunDir.value as THREE.Vector3).set(...sunDir);

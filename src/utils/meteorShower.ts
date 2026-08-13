@@ -74,8 +74,8 @@ export const DEFAULT_OBSERVER_LAT_DEG = 40;
 // ---------------------------------------------------------------------------
 
 export interface MeteorShowerParams {
-  /** 标识（'perseids' | 'kappaCygnids'） */
-  id: 'perseids' | 'kappaCygnids';
+  /** 标识（'perseids' | 'kappaCygnids' | 'leonids1966'——M3.7 增补流星暴场景） */
+  id: 'perseids' | 'kappaCygnids' | 'leonids1966';
   /** 辐射点赤经（度，J2000） */
   radiantRaDeg: number;
   /** 辐射点赤纬（度，J2000） */
@@ -100,7 +100,19 @@ export interface MeteorShowerParams {
    * = 激活槽位数/T 恒等于 HR/3600，物理速率不受 T 影响。
    */
   cyclePeriodSec: number;
+  /**
+   * 槽位预算（M3.7 契约 C1 增量：按雨覆写，页签切换随 slots 重建生效）。
+   *
+   * 高流量饱和陷阱（与 T 联动设计）：uFluxFraction = HR/3600×T/slotCount
+   * 被钳制 ≤ 1——期望激活超过 slotCount 时点燃率封顶在 slotCount/T，
+   * 真实速率被截断。按雨取 (slotCount, T) 使控件全域（lm ≤ 6.5、
+   * Alt ≤ 90°）期望激活 ≤ slotCount（流星暴场景的容量单测锁定）。
+   */
+  slotCount: number;
 }
+
+/** 默认流星槽位数（§4 全量档；M3.7 起为按雨 slotCount 的默认量，reduced 减半归 M4） */
+export const METEOR_SLOT_COUNT = 200;
 
 /**
  * 英仙座流星雨（Perseids，IAU MDC #7 PER；母体 109P/Swift-Tuttle）
@@ -117,6 +129,7 @@ export const PERSEIDS: MeteorShowerParams = {
   fireballSlotFraction: 0.1,
   // 默认条件 HR≈53/h → 期望激活槽位 ≈53（多样性充足；见接口注释量化说明）
   cyclePeriodSec: 3600,
+  slotCount: METEOR_SLOT_COUNT,
 };
 
 /**
@@ -134,14 +147,47 @@ export const KAPPA_CYGNIDS: MeteorShowerParams = {
   fireballSlotFraction: 0.25,
   // 默认条件 HR≈1.58/h → T=4800 s 期望激活 ≈2.1 槽（≥1 普通 + ≥1 火流星候选）
   cyclePeriodSec: 4800,
+  slotCount: METEOR_SLOT_COUNT,
+};
+
+/**
+ * 1966 狮子座流星暴（Leonids storm，IAU MDC #13 LEO；母体 55P/Tempel–Tuttle）
+ * —— M3.7 决策 B：真实历史事件重现（1966-11-17，"星陨如雨"级暴发）。
+ *
+ * 数据登记：辐射点/入速取 IAU MDC（RA 152°/Dec +22°、V∞ 71 km/s——
+ * 主流雨中最快，条痕更长更蓝、烧尽更高）；ZHR 40,000 为 1966 暴发的
+ * 保守文献量级（峰值估计一度达 ~40 颗/秒 ≈ 144,000/h，Jenniskens 2006，
+ * 科普卡注明）；r=2.5（暴发期星族指数）。
+ * 历元 1966-11-17 当地 05:00（黎明前辐射点高悬）：太阳 RA≈235° →
+ * 当地子夜 LST≈55°，05:00 → LST₀≈130°（此时辐射点 Alt≈64°，单测锚点）。
+ *
+ * 容量设计（接口注释"高流量饱和陷阱"）：控件全域 HR 上限 = ZHR/r^0 =
+ * 40,000/h（lm=6.5、Alt=90°）→ 期望激活 = HR/3600×T = 400 = slotCount，
+ * 流量门控恰不饱和；默认条件（Alt≈64°、lm 6.0）HR≈22,500/h ≈ 6.3 颗/s。
+ */
+export const LEONIDS_STORM_1966: MeteorShowerParams = {
+  id: 'leonids1966',
+  radiantRaDeg: 152,
+  radiantDecDeg: 22,
+  entrySpeedKmPerSec: 71,
+  zhr: 40000,
+  populationIndex: 2.5,
+  epochLst0Deg: 130,
+  fireballSlotFraction: 0.15,
+  cyclePeriodSec: 36,
+  slotCount: 400,
+};
+
+/** 流星雨注册 map（M3.7：消费侧按页签 id 查找，替代双雨三元表达式） */
+export const METEOR_SHOWERS: Record<MeteorShowerParams['id'], MeteorShowerParams> = {
+  perseids: PERSEIDS,
+  kappaCygnids: KAPPA_CYGNIDS,
+  leonids1966: LEONIDS_STORM_1966,
 };
 
 // ---------------------------------------------------------------------------
 // 常量：M3 渲染/控件（需求 §3 / §4）
 // ---------------------------------------------------------------------------
-
-/** 流星槽位数（§4 全量档；reduced 减半归 M4） */
-export const METEOR_SLOT_COUNT = 200;
 
 /**
  * 条痕顶点数 K——M3.6-4① 变更：24 → 48（近观条痕连续无颗粒断点；
@@ -186,10 +232,21 @@ export const DEFAULT_FIREBALL_RATE = 0.3;
 /** windSpeed 控件默认值（m/s，§3 控件 7） */
 export const DEFAULT_WIND_SPEED_M_PER_SEC = 30;
 
-/** 各雨历元当地时刻（小时，§1.3：英仙座 8/13 02:00 / 天鹅座κ 8/17 23:00） */
+/** 各雨历元当地时刻（小时，§1.3：英仙座 8/13 02:00 / 天鹅座κ 8/17 23:00 / 狮子座暴 11/17 05:00） */
 export const EPOCH_LOCAL_HOURS: Record<MeteorShowerParams['id'], number> = {
   perseids: 2,
   kappaCygnids: 23,
+  leonids1966: 5,
+};
+
+/**
+ * 各雨历元太阳赤纬（度，M3.7——LabEarth 夜面 terminator 随历元自洽）：
+ * 8 月中旬 ≈ +14°、11 月中旬 ≈ −19°（历元邻近数日漂移 <1.5°，登记近似）。
+ */
+export const EPOCH_SUN_DECLINATION_DEG: Record<MeteorShowerParams['id'], number> = {
+  perseids: 14,
+  kappaCygnids: 14,
+  leonids1966: -19,
 };
 
 // ---------------------------------------------------------------------------
@@ -254,10 +311,16 @@ export const AIM_DURATION_SEC = 0.6;
 export const FRUSTUM_MARGIN_FRACTION = 0.15;
 
 /**
- * 太阳赤纬（度，8 月中旬 ≈ +14°，常量登记——实验室历元为 8/13、8/17，
- * 期间赤纬漂移 <1.5°，对夜面 terminator 观感无可辨差异）。
+ * 太阳赤纬（度，8 月中旬 ≈ +14°，常量登记——labSunDirection 的默认赤纬；
+ * M3.7 起按雨历元经 EPOCH_SUN_DECLINATION_DEG 覆写（11 月狮子座暴 −19°）。
  */
 export const SUN_DECLINATION_MID_AUG_DEG = 14;
+
+/** 延时摄影档位（M3.7 决策 A；×300 放弃登记：单颗流星寿命 < 1 帧退化为闪点） */
+export const TIMELAPSE_GEARS: readonly number[] = [1, 10, 60];
+
+/** 条痕跨度补偿的基准时间流速（≤ 本值时保持契约 C2 默认 uLagSpan） */
+export const TIMELAPSE_LAGSPAN_BASE_TIMESCALE = 10;
 
 // ---------------------------------------------------------------------------
 // 坐标族（§1.3，契约 C5）
@@ -1039,12 +1102,15 @@ function pointInFrustum(
  * @param fireballOnly 只挑火流星槽位（"演示火流星"按钮）
  * @returns 挑选结果；无候选（含中点与相机重合的退化）时 null
  */
-export function pickDemoSlot(
-  slots: readonly MeteorSlot[],
-  velocityDir: readonly [number, number, number],
-  view: DemoCameraView,
-  fireballOnly: boolean
-): DemoSlotPick | null {
+/** 相机正交基（forward/right/trueUp；pickDemoSlot 与 slotTrajectoryInView 共用） */
+interface ViewBasis {
+  forward: [number, number, number];
+  right: [number, number, number];
+  trueUp: [number, number, number];
+}
+
+/** 由视锥描述建正交基（视线归一 + upDir 叉积；退化时 +Y/+X 轴兜底重建） */
+function buildViewBasis(view: DemoCameraView): ViewBasis {
   const viewLen = Math.hypot(view.viewDir[0], view.viewDir[1], view.viewDir[2]);
   if (!(viewLen > 0)) {
     throw new RangeError('视线方向不能为零向量');
@@ -1052,7 +1118,6 @@ export function pickDemoSlot(
   if (!(view.fovYRad > 0) || !(view.aspect > 0)) {
     throw new RangeError(`视野角与宽高比必须为正，收到 fovY=${view.fovYRad}, aspect=${view.aspect}`);
   }
-  // 相机正交基：forward = 视线归一；right = forward×up（退化时 upDir 兜底轴换 +X/+Y）
   const forward: [number, number, number] = [
     view.viewDir[0] / viewLen,
     view.viewDir[1] / viewLen,
@@ -1081,6 +1146,43 @@ export function pickDemoSlot(
     right[2] * forward[0] - right[0] * forward[2],
     right[0] * forward[1] - right[1] * forward[0],
   ];
+  return { forward, right, trueUp };
+}
+
+/**
+ * 槽位全轨迹入视锥判定（M3.7-3 快进入画消费；判定口径与 pickDemoSlot
+ * 硬性过滤严格同式）：轨迹起点与烧尽点均在视锥内（各向留 15% 边距）。
+ */
+export function slotTrajectoryInView(
+  slot: MeteorSlot,
+  velocityDir: readonly [number, number, number],
+  view: DemoCameraView
+): boolean {
+  const { forward, right, trueUp } = buildViewBasis(view);
+  if (
+    !pointInFrustum(slot.startPos[0], slot.startPos[1], slot.startPos[2], view, right, trueUp, forward)
+  ) {
+    return false;
+  }
+  const endDisp = evalCubic(slot.dispCoefs, slot.lifetimeSec);
+  return pointInFrustum(
+    slot.startPos[0] + velocityDir[0] * endDisp,
+    slot.startPos[1] + velocityDir[1] * endDisp,
+    slot.startPos[2] + velocityDir[2] * endDisp,
+    view,
+    right,
+    trueUp,
+    forward
+  );
+}
+
+export function pickDemoSlot(
+  slots: readonly MeteorSlot[],
+  velocityDir: readonly [number, number, number],
+  view: DemoCameraView,
+  fireballOnly: boolean
+): DemoSlotPick | null {
+  const { forward, right, trueUp } = buildViewBasis(view);
 
   let bestInIndex = -1; // 全轨迹入视锥集内最优（中点最贴近视野中心）
   let bestInScore = -Infinity;
@@ -1276,21 +1378,42 @@ export function followOrbitPose(
 
 /**
  * 实验室太阳方向（M3.6-3；LabEarth 昼夜 terminator 驱动）：
- * 复用 horizontalFromEquatorial（ra=0、dec=+14° 8 月中旬常量、
- * lst = 时角 = (clock−12)×15°——ra=0 时 H = LST）→ sceneDirFromAltAz
+ * 复用 horizontalFromEquatorial（ra=0、dec=太阳赤纬、lst = 时角 =
+ * (clock−12)×15°——ra=0 时 H = LST）→ sceneDirFromAltAz
  * （alt 可为负：历元 ~02:00 太阳深居地平下 → 夜面朝上 + 城市夜灯）。
  *
  * @param clockHours 当地时钟（小时，localClockHours 产物）
  * @param latDeg 观测纬度（度）
+ * @param sunDecDeg 太阳赤纬（度；M3.7 契约 C1 增量：可选参数，默认 8 月
+ *   中旬 +14°，消费侧按雨历元传 EPOCH_SUN_DECLINATION_DEG）
  * @returns 指向太阳的场景方向单位向量（契约 C5 轴向）
  */
-export function labSunDirection(clockHours: number, latDeg: number): [number, number, number] {
-  if (!Number.isFinite(clockHours) || !Number.isFinite(latDeg)) {
-    throw new RangeError(`时钟与纬度必须有限，收到 clock=${clockHours}, lat=${latDeg}`);
+export function labSunDirection(
+  clockHours: number,
+  latDeg: number,
+  sunDecDeg: number = SUN_DECLINATION_MID_AUG_DEG
+): [number, number, number] {
+  if (!Number.isFinite(clockHours) || !Number.isFinite(latDeg) || !Number.isFinite(sunDecDeg)) {
+    throw new RangeError(
+      `时钟/纬度/赤纬必须有限，收到 clock=${clockHours}, lat=${latDeg}, dec=${sunDecDeg}`
+    );
   }
   const hourAngleRad = (clockHours - 12) * 15 * DEG;
-  const altAz = horizontalFromEquatorial(0, SUN_DECLINATION_MID_AUG_DEG, latDeg, hourAngleRad);
+  const altAz = horizontalFromEquatorial(0, sunDecDeg, latDeg, hourAngleRad);
   return sceneDirFromAltAz(altAz);
+}
+
+/**
+ * 延时摄影条痕跨度补偿（M3.7 决策 A，契约 C2 uLagSpan 默认量的动态覆写
+ * 登记——uniform-only，调度公式不变）：≤×10 保持默认 0.15 s（既有观感
+ * 零变化）；>×10 线性放大（×60 → 0.9 s）——高倍率下单颗流星真实存续
+ * < 数帧，条痕跨度放大为整条飞行路径的"积分成像"（延时摄影相机口径）。
+ */
+export function timeLapseLagSpanSec(timeScale: number): number {
+  if (!Number.isFinite(timeScale) || timeScale <= TIMELAPSE_LAGSPAN_BASE_TIMESCALE) {
+    return METEOR_LAG_SPAN_SEC;
+  }
+  return METEOR_LAG_SPAN_SEC * (timeScale / TIMELAPSE_LAGSPAN_BASE_TIMESCALE);
 }
 
 /**

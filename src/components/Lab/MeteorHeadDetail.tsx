@@ -184,11 +184,9 @@ export function MeteorHeadDetail({ slots, refs }: MeteorHeadDetailProps): JSX.El
     u.uTime.value = refs.timeSecRef.current;
     u.uIntensity.value = inten;
     u.uIsFireball.value = slot.isFireball ? 1 : 0;
-    (u.uColor.value as THREE.Color).setRGB(
-      shower.id === 'perseids' ? 0.62 : 1.0,
-      shower.id === 'perseids' ? 0.76 : 0.68,
-      shower.id === 'perseids' ? 1.0 : 0.32
-    );
+    // 色相同 MeteorField 口径：天鹅座κ橙黄，其余（英仙座/狮子座暴）蓝白
+    const warm = shower.id === 'kappaCygnids';
+    (u.uColor.value as THREE.Color).setRGB(warm ? 1.0 : 0.62, warm ? 0.68 : 0.76, warm ? 0.32 : 1.0);
     mesh.visible = inten > 0.001;
   });
 

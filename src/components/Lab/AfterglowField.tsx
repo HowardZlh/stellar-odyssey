@@ -285,7 +285,8 @@ export function AfterglowField({ slots, refs }: AfterglowFieldProps): JSX.Elemen
     u.uDemoStart.value = demo ? demo.startTimeSec : 0;
     u.uWindSpeed.value = s.windSpeed;
     (u.uVelocityDir.value as THREE.Vector3).set(-dir[0], -dir[1], -dir[2]);
-    u.uPhenomenon.value = shower.id === 'perseids' ? 0 : 1;
+    // 色相同 MeteorField 口径：天鹅座κ橙黄，其余（英仙座/狮子座暴）蓝白
+    u.uPhenomenon.value = shower.id === 'kappaCygnids' ? 1 : 0;
     // 像素尺度 + FOV 缩放补偿（触控板捏合缩放时与星穹同步等比，方案 A）
     u.uScale.value =
       state.gl.domElement.height *

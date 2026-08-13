@@ -15,7 +15,7 @@
 import type { JSX, ReactNode } from 'react';
 import { useT } from '@/hooks/useI18n';
 import type { MessageKey } from '@/i18n';
-import { KAPPA_CYGNIDS, PERSEIDS, type MeteorShowerParams } from '@/utils/meteorShower';
+import { METEOR_SHOWERS, TIMELAPSE_GEARS, type MeteorShowerParams } from '@/utils/meteorShower';
 import type { LabControlState, LabViewMode } from '@/components/Lab/labTypes';
 
 export type MeteorShowerId = MeteorShowerParams['id'];
@@ -93,10 +93,11 @@ interface LabControlPanelProps {
   aimActive: boolean;
 }
 
-/** 页签定义（emoji/文案键由组件层持有） */
+/** 页签定义（emoji/文案键由组件层持有；M3.7 增补 1966 狮子座流星暴） */
 const SHOWER_TABS: ReadonlyArray<{ id: MeteorShowerId; labelKey: MessageKey }> = [
   { id: 'perseids', labelKey: 'lab.showerPerseids' },
   { id: 'kappaCygnids', labelKey: 'lab.showerKappaCygnids' },
+  { id: 'leonids1966', labelKey: 'lab.showerLeonids1966' },
 ];
 
 /** 视角分段定义（§M3.5-4：地面环顾 ｜ 太空俯瞰） */
@@ -109,6 +110,7 @@ const VIEW_MODE_TABS: ReadonlyArray<{ id: LabViewMode; labelKey: MessageKey }> =
 const PARENT_KEYS: Record<MeteorShowerId, MessageKey> = {
   perseids: 'lab.parentPerseids',
   kappaCygnids: 'lab.parentKappaCygnids',
+  leonids1966: 'lab.parentLeonids',
 };
 
 /** 小型操作按钮（快进/演示两组共用样式） */
@@ -146,7 +148,7 @@ export function LabControlPanel({
   aimActive,
 }: LabControlPanelProps): JSX.Element {
   const tr = useT();
-  const shower = showerId === 'perseids' ? PERSEIDS : KAPPA_CYGNIDS;
+  const shower = METEOR_SHOWERS[showerId];
   // 跟随/自动运镜期间快进与演示按钮禁用（状态机防重入，§M3.5-6/§M3.6-1）
   const actionsDisabled = followActive || aimActive;
 
@@ -205,6 +207,11 @@ export function LabControlPanel({
         <span className="text-gray-400">{tr('lab.cardParent')}</span>
         <span>{tr(PARENT_KEYS[showerId])}</span>
       </div>
+
+      {/* 流星暴历史场景标注（M3.7-1：ZHR 为保守文献值，科普口径常显） */}
+      {showerId === 'leonids1966' && (
+        <p className="mb-2 text-[10px] leading-snug text-amber-300/80">{tr('lab.stormNote1966')}</p>
+      )}
 
       {/* HUD：地方时 + 辐射点高度角 + 双倒计时（§M3.5-2，真实秒折算常显） */}
       <div className="mb-2 rounded bg-sky-950/60 px-2 py-1 font-mono text-[11px] text-sky-200">
@@ -266,6 +273,26 @@ export function LabControlPanel({
         ariaLabel={tr('lab.ctrlTimeScale')}
         onChange={(v) => onSettingsChange({ timeScale: v })}
       />
+      {/* 延时摄影档位（M3.7-2：×1/×10/×60；×60 超出滑杆域，滑杆视觉钳制
+          在 10、数值显示如实——拖动滑杆即回到 0–10 精调域，登记） */}
+      <div className="mb-2 flex items-center gap-1">
+        <span className="mr-1 text-gray-400">{tr('lab.ctrlTimeLapse')}</span>
+        {TIMELAPSE_GEARS.map((gear) => (
+          <button
+            key={gear}
+            aria-label={`${tr('lab.ctrlTimeLapse')} ×${gear}`}
+            aria-pressed={settings.timeScale === gear}
+            onClick={() => onSettingsChange({ timeScale: gear })}
+            className={`flex-1 rounded px-1.5 py-0.5 text-[11px] transition-colors ${
+              settings.timeScale === gear
+                ? 'bg-sky-500/30 font-semibold text-sky-200'
+                : 'bg-white/5 text-gray-400 hover:bg-white/10'
+            }`}
+          >
+            ×{gear}
+          </button>
+        ))}
+      </div>
       <SliderRow
         label={tr('lab.ctrlHourOffset')}
         display={`${settings.hourOffset >= 0 ? '+' : ''}${settings.hourOffset.toFixed(2)} h`}
