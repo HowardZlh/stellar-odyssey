@@ -174,7 +174,7 @@ Issues and PRs are welcome! Please read the [contributing guide](CONTRIBUTING.md
 
 ## 🔓 Supporter Unlock
 
-Some advanced content (close-view detail layers / galaxy & universe tour sequences / unlimited event demos) is available as a **time-limited supporter unlock**, while the free experience stays intact (all L1/L2 features and every far-view science note are unaffected). Tiers: **Week Pass ¥6 / Month Pass ¥15 / Year Pass ¥88** (Ko-fi reference: $1 / $2.5 / $13). Purchase and redeem at [stellar.guushu.com/unlock](https://stellar.guushu.com/unlock); full guide in [docs/en/unlock-guide.md](docs/en/unlock-guide.md). Unlocking is entirely independent of the sponsorship below (which comes with no rewards).
+Some advanced content (close-view detail layers / galaxy & universe tour sequences / unlimited event demos / unlimited access to the Astronomy Lab's Body Observatory) is available as a **time-limited supporter unlock**, while the free experience stays intact (all L1/L2 features and every far-view science note are unaffected, and the Observatory has a free daily quota). Tiers: **Week Pass ¥6 / Month Pass ¥15 / Year Pass ¥88** (Ko-fi reference: $1 / $2.5 / $13). Purchase and redeem at [stellar.guushu.com/unlock](https://stellar.guushu.com/unlock); full guide in [docs/en/unlock-guide.md](docs/en/unlock-guide.md). Unlocking is entirely independent of the sponsorship below (which comes with no rewards).
 
 ## 💖 Sponsor
 

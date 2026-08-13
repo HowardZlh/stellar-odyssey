@@ -189,6 +189,19 @@
 - 支持深色模式
 - 响应式设计，适配不同屏幕
 
+### 移动端兼容（强制）
+
+**所有面向用户的页面与功能必须兼容手机端**（基准视口 ≥375px 宽，无横向溢出）。新增/修改任何 UI 时逐条对照：
+
+1. **判定体系统一**：布局分流一律用既有判据——`utils/deviceCapability.ts`（`pointer: coarse` = isTouch、`max-width: 767px` = isCompact）+ `hooks/useViewportKind.ts` / store `isCompact`。**禁止 UA 嗅探、禁止自建断点判据**
+2. **优先纯 CSS 断点**：能用 `max-md:` / `max-sm:` 变体解决的布局差异不引入 JS 分流（断点口径与 isCompact 的 767px 一致）；需要结构性分流（如表格转堆叠卡片、桌面侧栏转底部抽屉）才用 `isCompact`
+3. **触控目标 ≥44pt**：可点元素移动端最小 `min-h-11`（44px）/ 图标钮 `h-11 w-11`（惯用 `max-md:min-h-11 max-md:px-4 max-md:py-3` 追加放大，桌面样式不变）；滑杆 thumb 已由 `globals.css` 全局放大，勿覆盖
+4. **safe-area 避让**：贴边固定元素必须避让刘海/圆角/Home 条——简单场景用 `pb-safe-b` 等简写类（tailwind.config 已注册四向），叠加偏移用 `calc(env(safe-area-inset-*) + …)` 任意值类；独立页面复用统一滚动骨架（donate/lab/unlock/contributors 同款 `fixed inset-0 overflow-y-auto + safe-area padding`）
+5. **场景内浮层面板**：桌面侧栏在 `<sm` 转底部抽屉（标题栏常显 + ▾/▴ 开合钮 + `aria-expanded`，默认收起防遮挡场景），参照 `Lab/LabControlPanel.tsx` / `Lab/ObservatoryHarness.tsx` 范式；主应用走 `mobilePanel` 单值互斥 + BottomTabBar
+6. **3D 场景触控**：必须支持单指旋转/双指捏合缩放（OrbitControls 原生或自定义手势，自定义捏合参照 `MeteorShowerLab` 的 `touchPinchScale`；`touchmove` 需 `passive: false`）
+7. **测试范式**：移动端分流逻辑需有测试——组件订阅 store 的用 `useSimulationStore.setState({ isCompact: true })` 直写（`MobileLayoutM3.test.tsx` 先例）；页面消费 hook 的用 `jest.mock('@/hooks/useViewportKind')` 注入（`unlock.test.tsx` 先例）
+8. **验收口径**：375–430px 宽无横向溢出、可交互元素可触达、贴边元素不被系统 UI 遮挡；涉及解锁/门控的锁定提示与引导链路在移动端必须完整可用
+
 ### 交互设计
 - 操作响应时间 < 100ms
 - 提供清晰的操作反馈

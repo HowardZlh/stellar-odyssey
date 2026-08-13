@@ -211,7 +211,7 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 
 ## 🔓 支持者解锁
 
-部分高级内容（近观细节层 / 银河系与宇宙视角巡游序列 / 事件演示不限次）为**支持者限时解锁**，免费体验保持完整（L1/L2 全部功能与全部远观科普不受影响）。档位：**周卡 ¥6 / 月卡 ¥15 / 年卡 ¥88**（Ko-fi 参考价 $1 / $2.5 / $13）。购买与兑换见 [stellar.guushu.com/unlock](https://stellar.guushu.com/unlock)，详细说明见 [docs/unlock-guide.md](docs/unlock-guide.md)。解锁与下方赞助（零回报）相互独立。
+部分高级内容（近观细节层 / 银河系与宇宙视角巡游序列 / 事件演示不限次 / 天文实验室「天体观察站」不限次）为**支持者限时解锁**，免费体验保持完整（L1/L2 全部功能与全部远观科普不受影响，观察站每日有免费观察额度）。档位：**周卡 ¥6 / 月卡 ¥15 / 年卡 ¥88**（Ko-fi 参考价 $1 / $2.5 / $13）。购买与兑换见 [stellar.guushu.com/unlock](https://stellar.guushu.com/unlock)，详细说明见 [docs/unlock-guide.md](docs/unlock-guide.md)。解锁与下方赞助（零回报）相互独立。
 
 ## 💖 赞助支持
 

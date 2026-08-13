@@ -29,6 +29,8 @@ export interface LabEntry {
   componentKey: string;
   /** 数据/近似来源登记（署名豁免惯例：保持原文，不入 i18n 字典） */
   dataSource: string;
+  /** 首页卡片 emoji（i18n 纪律：emoji 不入字典，由数据/组件层持有） */
+  emoji: string;
 }
 
 /** 路由段合法形态：小写字母/数字/连字符（静态导出路径安全） */
@@ -53,6 +55,9 @@ export function validateLabEntry(entry: LabEntry): void {
   if (entry.dataSource.length === 0) {
     throw new RangeError(`实验室条目 ${entry.labId} 的 dataSource 不得为空（来源登记强制）`);
   }
+  if (entry.emoji.length === 0) {
+    throw new RangeError(`实验室条目 ${entry.labId} 的 emoji 不得为空（首页卡片标识）`);
+  }
 }
 
 /**
@@ -66,6 +71,23 @@ const METEOR_SHOWER_ENTRY: LabEntry = {
   componentKey: 'meteor-shower-lab',
   dataSource:
     'Yale Bright Star Catalog, 5th Revised Ed.（Hoffleit & Warren 1991，mag ≤ 6.5 共 8,404 颗）；IAU Meteor Data Center（英仙座 #7 PER / 天鹅座κ #12 KCG 辐射点与入速）；烧蚀模型经典近似（§1.1 登记）',
+  emoji: '☄️',
+};
+
+/**
+ * 天体观察站（O1，REQUIREMENTS_OBSERVATORY.md）：/dev/preview 全部 23 个
+ * 近观细节工位的用户版画廊 + 单天体观察场景（`?body=<id>` 选天体）。
+ * 各天体来源登记随 `utils/devPreview.ts` 注册表逐条持有（画廊卡片展示），
+ * 门控（免费期/每日限次/支持者专属池）见 `data/observatoryGate.ts`。
+ */
+const OBSERVATORY_ENTRY: LabEntry = {
+  labId: 'observatory',
+  titleKey: 'lab.observatoryTitle',
+  descriptionKey: 'lab.observatoryDescription',
+  componentKey: 'observatory-lab',
+  dataSource:
+    '各观察对象来源逐条登记于画廊卡片（Gaia DR3 / SIMBAD / Harris 目录 / NASA·ESA Hubble·JWST 公版影像 / DSS2 巡天 / EHT 观感基准等，见 utils/devPreview.ts 注册表）',
+  emoji: '🔭',
 };
 
 /**
@@ -75,7 +97,7 @@ const METEOR_SHOWER_ENTRY: LabEntry = {
  * 并断言 labId 唯一（重复注册即抛错）。
  */
 export const LAB_REGISTRY: ReadonlyMap<string, LabEntry> = (() => {
-  const entries: readonly LabEntry[] = [METEOR_SHOWER_ENTRY];
+  const entries: readonly LabEntry[] = [METEOR_SHOWER_ENTRY, OBSERVATORY_ENTRY];
   const map = new Map<string, LabEntry>();
   for (const e of entries) {
     validateLabEntry(e);

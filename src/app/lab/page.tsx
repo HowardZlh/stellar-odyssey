@@ -72,14 +72,16 @@ export default function LabPage(): JSX.Element {
           <p className="mt-2 text-sm text-gray-400">{tr('lab.subtitle')}</p>
         </header>
 
-        {/* 条目卡片列表（注册表驱动，本期仅流星雨一项） */}
+        {/* 条目卡片列表（注册表驱动：流星雨 + 天体观察站，后续条目注册即出现） */}
         <section className="mt-10 space-y-4">
           {entries.map((entry) => (
             <article
               key={entry.labId}
               className="rounded-xl border border-white/10 bg-space-panel p-5 backdrop-blur"
             >
-              <h2 className="text-lg font-medium text-sky-300">☄️ {tr(entry.titleKey)}</h2>
+              <h2 className="text-lg font-medium text-sky-300">
+                {entry.emoji} {tr(entry.titleKey)}
+              </h2>
               <p className="mt-2 text-xs leading-5 text-gray-400">{tr(entry.descriptionKey)}</p>
               {/* 数据来源署名（豁免惯例：保持原文，不入 i18n 字典） */}
               <p className="mt-3 text-[10px] leading-4 text-gray-600">
