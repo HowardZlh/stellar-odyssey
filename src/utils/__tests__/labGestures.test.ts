@@ -9,13 +9,22 @@ import {
   LAB_POLAR_MAX_RAD,
   LAB_POLAR_MIN_RAD,
   WHEEL_LOOK_SIGN,
+  clampFollowDistance,
+  clampFollowElevation,
   clampLabFovDeg,
   clampLabPolar,
+  followOrbitDelta,
   fovPointScaleFactor,
   pinchFovDeg,
   safariGestureFovDeg,
   wheelLookDelta,
 } from '../labGestures';
+import {
+  FOLLOW_DISTANCE_DEFAULT_KM,
+  FOLLOW_DISTANCE_MAX_KM,
+  FOLLOW_DISTANCE_MIN_KM,
+  FOLLOW_ELEVATION_MAX_RAD,
+} from '../meteorShower';
 
 describe('clampLabFovDeg / clampLabPolar（钳制域）', () => {
   it('FOV 钳制到 [30, 85]，默认 65 在域内，非有限数回退默认', () => {
@@ -118,5 +127,43 @@ describe('fovPointScaleFactor（星点尺度补偿）', () => {
   it('与透视投影因子一致：factor = tan(默认/2)/tan(fov/2)', () => {
     const expected = Math.tan((65 * Math.PI) / 360) / Math.tan((40 * Math.PI) / 360);
     expect(fovPointScaleFactor(40)).toBeCloseTo(expected, 12);
+  });
+});
+
+describe('M3.6-2 跟随环绕手势（followOrbitDelta / clampFollowElevation / clampFollowDistance）', () => {
+  it('followOrbitDelta：拖满视口高 = 180°；拖拽上移（dy<0）= 仰角增大', () => {
+    const d = followOrbitDelta(400, -800, 800);
+    expect(d.dAzimuthRad).toBeCloseTo((Math.PI / 800) * 400, 12);
+    expect(d.dElevationRad).toBeCloseTo(Math.PI, 12); // −(π/800)×(−800)
+  });
+
+  it('followOrbitDelta：非法输入（NaN/非正视口高）返回零增量', () => {
+    expect(followOrbitDelta(Number.NaN, 10, 800)).toEqual({ dAzimuthRad: 0, dElevationRad: 0 });
+    expect(followOrbitDelta(10, Number.NaN, 800)).toEqual({ dAzimuthRad: 0, dElevationRad: 0 });
+    expect(followOrbitDelta(10, 10, 0)).toEqual({ dAzimuthRad: 0, dElevationRad: 0 });
+    expect(followOrbitDelta(10, 10, -1)).toEqual({ dAzimuthRad: 0, dElevationRad: 0 });
+  });
+
+  it('clampFollowElevation：钳制 ±75°（防头/尾奇异），NaN 回退 0', () => {
+    expect(clampFollowElevation(Math.PI)).toBeCloseTo(FOLLOW_ELEVATION_MAX_RAD, 12);
+    expect(clampFollowElevation(-Math.PI)).toBeCloseTo(-FOLLOW_ELEVATION_MAX_RAD, 12);
+    expect(clampFollowElevation(0.3)).toBe(0.3);
+    expect(clampFollowElevation(Number.NaN)).toBe(0);
+    expect(FOLLOW_ELEVATION_MAX_RAD).toBeCloseTo((75 * Math.PI) / 180, 12);
+  });
+
+  it('clampFollowDistance：指数缩放可逆（滚轮往返回原值）', () => {
+    const zoomed = clampFollowDistance(1.5, -200);
+    expect(zoomed).toBeLessThan(1.5); // deltaY<0 = 拉近
+    expect(clampFollowDistance(zoomed, 200)).toBeCloseTo(1.5, 10);
+  });
+
+  it('clampFollowDistance：钳制 [0.6, 6] km；NaN 输入回退', () => {
+    expect(clampFollowDistance(1.5, -100000)).toBe(FOLLOW_DISTANCE_MIN_KM);
+    expect(clampFollowDistance(1.5, 100000)).toBe(FOLLOW_DISTANCE_MAX_KM);
+    expect(clampFollowDistance(100, 0)).toBe(FOLLOW_DISTANCE_MAX_KM);
+    expect(clampFollowDistance(0.01, 0)).toBe(FOLLOW_DISTANCE_MIN_KM);
+    expect(clampFollowDistance(Number.NaN, 0)).toBe(FOLLOW_DISTANCE_DEFAULT_KM);
+    expect(clampFollowDistance(1.5, Number.NaN)).toBe(1.5);
   });
 });

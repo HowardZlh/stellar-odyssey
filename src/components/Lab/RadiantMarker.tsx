@@ -2,8 +2,10 @@
 
 /**
  * 辐射点标注（M3-4，需求 §3 辅助 UI）：圆圈 + 十字刻度 + 星座名标签，
- * 置于辐射点方向 × 2940（星穹半径内侧），每帧随天穹同步旋转（CPU 经 M1
- * 坐标函数求辐射点地平方向，组件零内联球面公式）。
+ * 置于辐射点方向 × 9800（星穹半径 10000 内侧；M3.6 契约 C5 联动——
+ * 距离与几何自 2940 基准等角放大 ×10/3，地面档角尺寸观感不变），
+ * 每帧随天穹同步旋转（CPU 经 M1 坐标函数求辐射点地平方向，组件零内联
+ * 球面公式）。
  *
  * locale 纪律：本组件不订阅 locale——星座名经叶组件 LabelText（内部订阅），
  * 语言切换不重建场景图（Scene/LocalizedLabelText 惯例）。
@@ -25,17 +27,23 @@ import {
 } from '@/utils/meteorShower';
 import type { LabFrameRefs } from '@/components/Lab/labTypes';
 
-/** 标注距离（场景单位，星穹半径 3000 内侧防深度冲突） */
-const MARKER_DISTANCE_UNITS = 2940;
+/**
+ * 标注几何等角缩放（M3.6-3 契约 C5 联动）：星穹 3000 → 10000 后标注
+ * 距离与几何一并 ×10/3——地面档观感角尺寸不变（目验回归项）。
+ */
+const MARKER_SCALE = 10 / 3;
 
-/** 圆圈内/外半径（场景单位；2940 距离下 ≈1.5° 视径） */
-const RING_INNER_UNITS = 70;
-const RING_OUTER_UNITS = 78;
+/** 标注距离（场景单位，星穹半径 10000 内侧防深度冲突；2940 × 10/3） */
+const MARKER_DISTANCE_UNITS = 2940 * MARKER_SCALE;
+
+/** 圆圈内/外半径（场景单位；9800 距离下 ≈1.5° 视径不变） */
+const RING_INNER_UNITS = 70 * MARKER_SCALE;
+const RING_OUTER_UNITS = 78 * MARKER_SCALE;
 
 /** 十字刻度：距中心偏移与长宽（留中心空窗，不遮流星） */
-const TICK_OFFSET_UNITS = 108;
-const TICK_LENGTH_UNITS = 44;
-const TICK_WIDTH_UNITS = 6;
+const TICK_OFFSET_UNITS = 108 * MARKER_SCALE;
+const TICK_LENGTH_UNITS = 44 * MARKER_SCALE;
+const TICK_WIDTH_UNITS = 6 * MARKER_SCALE;
 
 const MARKER_COLOR = '#7dd3fc';
 

@@ -18,7 +18,18 @@
  *   （拖拽右移 ≙ 双指右滑）。若目验方向相反，翻转 WHEEL_LOOK_SIGN 即可。
  *
  * 纯 TS 模块（不 import three/React），单测覆盖率 gate ≥90%。
+ *
+ * M3.6-2 追加：跟随环绕手势（拖拽 = 绕流星头部环绕、滚轮 = 距离缩放）——
+ * followOrbitDelta / clampFollowElevation / clampFollowDistance，钳制域
+ * 常量取 utils/meteorShower.ts 的 FOLLOW_* 常量族（同一事实源）。
  */
+
+import {
+  FOLLOW_DISTANCE_DEFAULT_KM,
+  FOLLOW_DISTANCE_MAX_KM,
+  FOLLOW_DISTANCE_MIN_KM,
+  FOLLOW_ELEVATION_MAX_RAD,
+} from '@/utils/meteorShower';
 
 /** FOV 缩放域下限（度）——过窄会放大指向抖动 */
 export const LAB_FOV_MIN_DEG = 30;
@@ -120,4 +131,64 @@ export function fovPointScaleFactor(fovDeg: number): number {
   const halfDefaultRad = (LAB_FOV_DEFAULT_DEG * Math.PI) / 360;
   const halfRad = (clampLabFovDeg(fovDeg) * Math.PI) / 360;
   return Math.tan(halfDefaultRad) / Math.tan(halfRad);
+}
+
+// ---------------------------------------------------------------------------
+// M3.6-2 跟随环绕手势（像素 → 角度/距离换算与钳制；钳制域常量
+// 与 utils/meteorShower.ts 的 FOLLOW_* 常量族同一事实源）
+// ---------------------------------------------------------------------------
+
+/** 拖满视口高 = 环绕 180°（wheelLookDelta 同源的"像素→弧度"口径） */
+export const FOLLOW_ORBIT_RAD_PER_VIEWPORT = Math.PI;
+
+/** 滚轮 → 跟随距离的指数灵敏度（每 deltaY 像素；pinchFovDeg 同风格） */
+export const FOLLOW_DISTANCE_RATE_PER_PX = 0.002;
+
+/** 跟随环绕角增量（消费侧加到 followRef.azimuthRad/elevationRad 上） */
+export interface FollowOrbitDelta {
+  /** 方位角增量（弧度，绕流星飞行方向轴，360° 无限制） */
+  dAzimuthRad: number;
+  /** 仰角增量（弧度；拖拽上移 = 相机升高——dy 取负；消费侧再经 clampFollowElevation） */
+  dElevationRad: number;
+}
+
+/**
+ * 拖拽 → 环绕角增量（1 视口高 ≈ 180° 的线性换算，wheelLookDelta 同源风格）
+ *
+ * @param dxPx pointermove 水平位移（像素）
+ * @param dyPx pointermove 垂直位移（像素，屏幕坐标向下为正）
+ * @param viewportHeightPx 画布 CSS 像素高（≤0 时返回零增量，防御）
+ */
+export function followOrbitDelta(
+  dxPx: number,
+  dyPx: number,
+  viewportHeightPx: number
+): FollowOrbitDelta {
+  if (!Number.isFinite(dxPx) || !Number.isFinite(dyPx) || !(viewportHeightPx > 0)) {
+    return { dAzimuthRad: 0, dElevationRad: 0 };
+  }
+  const radPerPx = FOLLOW_ORBIT_RAD_PER_VIEWPORT / viewportHeightPx;
+  return {
+    dAzimuthRad: radPerPx * dxPx,
+    dElevationRad: -radPerPx * dyPx,
+  };
+}
+
+/** 跟随环绕仰角钳制（±FOLLOW_ELEVATION_MAX_RAD = ±75°，防头/尾奇异） */
+export function clampFollowElevation(elevationRad: number): number {
+  if (!Number.isFinite(elevationRad)) return 0;
+  return Math.max(-FOLLOW_ELEVATION_MAX_RAD, Math.min(FOLLOW_ELEVATION_MAX_RAD, elevationRad));
+}
+
+/**
+ * 滚轮 → 新跟随距离（km）：指数缩放（滚轮向前 deltaY<0 → 拉近），
+ * 乘法叠加保证任意缩放路径可逆、无漂移（pinchFovDeg 同风格）；
+ * 域 [FOLLOW_DISTANCE_MIN_KM, FOLLOW_DISTANCE_MAX_KM] = [0.6, 6] km。
+ */
+export function clampFollowDistance(currentKm: number, wheelDeltaY: number): number {
+  const clamp = (km: number): number =>
+    Math.max(FOLLOW_DISTANCE_MIN_KM, Math.min(FOLLOW_DISTANCE_MAX_KM, km));
+  const base = Number.isFinite(currentKm) ? clamp(currentKm) : FOLLOW_DISTANCE_DEFAULT_KM;
+  if (!Number.isFinite(wheelDeltaY)) return base;
+  return clamp(base * Math.exp(FOLLOW_DISTANCE_RATE_PER_PX * wheelDeltaY));
 }

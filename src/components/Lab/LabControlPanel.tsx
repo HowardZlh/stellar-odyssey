@@ -89,6 +89,8 @@ interface LabControlPanelProps {
   onDemo: (fireballOnly: boolean) => void;
   /** 跟随进行中（快进/演示按钮禁用，防状态机重入） */
   followActive: boolean;
+  /** 自动运镜进行中（§M3.6-1：aim 期间演示/快进按钮同样禁用） */
+  aimActive: boolean;
 }
 
 /** 页签定义（emoji/文案键由组件层持有） */
@@ -141,9 +143,12 @@ export function LabControlPanel({
   onFastForward,
   onDemo,
   followActive,
+  aimActive,
 }: LabControlPanelProps): JSX.Element {
   const tr = useT();
   const shower = showerId === 'perseids' ? PERSEIDS : KAPPA_CYGNIDS;
+  // 跟随/自动运镜期间快进与演示按钮禁用（状态机防重入，§M3.5-6/§M3.6-1）
+  const actionsDisabled = followActive || aimActive;
 
   return (
     <div className="absolute right-3 top-3 max-h-[calc(100vh-4.5rem)] w-72 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-lg bg-black/65 p-3 text-xs text-gray-100 backdrop-blur">
@@ -217,12 +222,12 @@ export function LabControlPanel({
       <div className="mb-2 flex gap-1">
         <ActionButton
           label={tr('lab.ffMeteor')}
-          disabled={followActive}
+          disabled={actionsDisabled}
           onClick={() => onFastForward(false)}
         />
         <ActionButton
           label={tr('lab.ffFireball')}
-          disabled={followActive}
+          disabled={actionsDisabled}
           onClick={() => onFastForward(true)}
         />
       </div>
@@ -231,12 +236,12 @@ export function LabControlPanel({
       <div className="mb-1 flex gap-1">
         <ActionButton
           label={tr('lab.demoMeteor')}
-          disabled={followActive}
+          disabled={actionsDisabled}
           onClick={() => onDemo(false)}
         />
         <ActionButton
           label={tr('lab.demoFireball')}
-          disabled={followActive}
+          disabled={actionsDisabled}
           onClick={() => onDemo(true)}
         />
       </div>

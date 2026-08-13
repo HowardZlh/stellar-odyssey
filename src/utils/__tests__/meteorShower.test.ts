@@ -10,32 +10,39 @@
 import {
   AIR_DENSITY_SEA_LEVEL,
   ATMOSPHERE_SCALE_HEIGHT_KM,
+  ATMOSPHERE_TOP_KM,
   BURN_LAYER_TOP_KM,
   DEFAULT_FIREBALL_RATE,
   DEFAULT_LIMITING_MAG,
   DEFAULT_OBSERVER_LAT_DEG,
+  EARTH_RADIUS_KM,
   EPOCH_LOCAL_HOURS,
-  FOLLOW_CAMERA_BACK_KM,
-  FOLLOW_CAMERA_UP_KM,
+  FOLLOW_DISTANCE_DEFAULT_KM,
+  FOLLOW_DISTANCE_MAX_KM,
+  FOLLOW_DISTANCE_MIN_KM,
   FRAGMENT_CONE_HALF_ANGLE_RAD,
   FRAGMENT_MAX_LATERAL_KM,
   KAPPA_CYGNIDS,
   METEOR_CYCLE_PERIOD_SEC,
   METEOR_SLOT_COUNT,
   PERSEIDS,
+  SPACE_CAMERA_RADIUS_MAX_UNITS,
+  STAR_DOME_RADIUS_UNITS,
   airDensityAtKm,
   equatorialToHorizontalMatrix,
   equatorialUnitVector,
   evalCubic,
   fitCubicThroughOrigin,
   fluxFraction,
-  followCameraPose,
+  followOrbitPose,
   formatClockHHMM,
   formatDurationClock,
   fragmentLateralMagnitudeKm,
+  groundAimPosition,
   horizontalFromEquatorial,
   ignitedSlots,
   labQualityTier,
+  labSunDirection,
   localClockHours,
   localSiderealTime,
   makeMeteorSlots,
@@ -45,8 +52,11 @@ import {
   selectAfterglowSlots,
   slotPhase,
   solveAblationRK4,
+  spaceAimPosition,
+  trailLag,
   truncateAblationCurves,
   visibleHourlyRate,
+  type DemoCameraView,
   type MeteorSlot,
 } from '@/utils/meteorShower';
 
@@ -724,95 +734,285 @@ describe('M3.5 目验辅助纯函数（§M3.5-1）', () => {
     });
   });
 
-  describe('pickDemoSlot（演示槽位挑选）', () => {
+  describe('pickDemoSlot v2（M3.6-1 视锥感知；契约 C1 签名变更）', () => {
     const velocityDir: [number, number, number] = [0, -1, 0];
-
-    test('轨迹中点最贴近视线者胜出（演示流星必在视野内）', () => {
-      // 中点 = startPos + v×disp(0.5×1) = startPos − [0,20,0]
-      const overhead = mkSlot({ startPos: [0, 115, 0] }); // 中点 (0,95,0)：正上方
-      const east = mkSlot({ startPos: [200, 115, 0] }); // 中点 (200,95,0)：偏东
-      // 视线朝天顶 → 正上方槽位胜出
-      expect(pickDemoSlot([east, overhead], velocityDir, [0, 0, 0], [0, 1, 0], false)).toBe(1);
-      // 视线正对偏东槽位中点 → 偏东槽位胜出
-      expect(pickDemoSlot([east, overhead], velocityDir, [0, 0, 0], [200, 95, 0], false)).toBe(0);
+    /** 视锥描述便捷构造（默认北望地平、fovY 90°、方形视口） */
+    const mkView = (over: Partial<DemoCameraView> = {}): DemoCameraView => ({
+      position: [0, 0, 0],
+      viewDir: [0, 0, -1],
+      upDir: [0, 1, 0],
+      fovYRad: Math.PI / 2,
+      aspect: 1,
+      ...over,
     });
 
-    test('fireballOnly：视线更贴近普通槽位时仍只挑火流星', () => {
-      const ordinary = mkSlot({ startPos: [0, 115, 0] });
-      const fireball = mkSlot({ startPos: [200, 115, 0], isFireball: true });
-      expect(pickDemoSlot([ordinary, fireball], velocityDir, [0, 0, 0], [0, 1, 0], true)).toBe(1);
+    test('全轨迹入视锥者胜出：needsAim=false，midPoint = 轨迹中点', () => {
+      // dispCoefs [40,0,0]、寿命 1：start y=115 → end y=75、中点 y=95
+      const north = mkSlot({ startPos: [0, 100, -200] }); // 视野中心附近（|y/z|≤0.85）
+      const behind = mkSlot({ startPos: [0, 100, 200] }); // 背向相机
+      const pick = pickDemoSlot([behind, north], velocityDir, mkView(), false);
+      expect(pick).not.toBeNull();
+      expect(pick!.slotIndex).toBe(1);
+      expect(pick!.needsAim).toBe(false);
+      expect(pick!.midPoint).toEqual([0, 100 - 20, -200]);
     });
 
-    test('退化：无候选/中点与相机重合 → -1；零视线向量抛错', () => {
+    test('边距锚点：起点在名义 FOV 内但超 15% 边距 → 过滤（needsAim 保底）', () => {
+      // fovY 90°：名义 |y/z| ≤ 1，边距后 ≤ 0.85——起点 y/z = 0.9 越界
+      const marginal = mkSlot({ startPos: [0, 180, -200] });
+      const pick = pickDemoSlot([marginal], velocityDir, mkView(), false);
+      expect(pick).not.toBeNull();
+      expect(pick!.needsAim).toBe(true);
+      // 起点 y/z = 0.8 且烧尽点 y/z = 0.7 均在边距内 → 合格
+      const inside = mkSlot({ startPos: [0, 160, -200] });
+      expect(pickDemoSlot([inside], velocityDir, mkView(), false)!.needsAim).toBe(false);
+    });
+
+    test('起点入画但烧尽点出画 → 整条轨迹不合格（硬性双端判定）', () => {
+      // 起点 y/z=0.825 入画；烧尽点 y = 205−40 = 165 → 后仰视角高于边距？
+      // 用超近距设计：start (0, 30, −40)：起点 y/z = 0.75 ✓，烧尽点 y = −10
+      // → y/z = −0.25 ✓仍入画；改用横向出画：start (30, 30, −40) x/z=0.75 ✓
+      // 烧尽点 x 不变但 y=−10 ✓——需纵深出画：velocity 朝相机 [0,0,1]
+      const towardCamera = mkSlot({ startPos: [0, 0, -30] }); // 烧尽点 z = −30+40 = +10：背向
+      const pick = pickDemoSlot([towardCamera], [0, 0, 1], mkView(), false);
+      expect(pick!.needsAim).toBe(true);
+    });
+
+    test('needsAim 保底 = 全域最优（中点方向最贴近视线，原 M3.5 评分）', () => {
+      const sideways = mkSlot({ startPos: [300, 115, -50] }); // 中点偏东（视野外）
+      const behind = mkSlot({ startPos: [0, 115, 300] }); // 中点背向
+      const pick = pickDemoSlot([behind, sideways], velocityDir, mkView(), false);
+      expect(pick!.slotIndex).toBe(1);
+      expect(pick!.needsAim).toBe(true);
+      expect(pick!.midPoint).toEqual([300, 95, -50]);
+    });
+
+    test('fireballOnly：入画的普通槽位在场时仍只挑火流星', () => {
+      const ordinary = mkSlot({ startPos: [0, 100, -200] });
+      const fireball = mkSlot({ startPos: [300, 115, -50], isFireball: true });
+      const pick = pickDemoSlot([ordinary, fireball], velocityDir, mkView(), true);
+      expect(pick!.slotIndex).toBe(1);
+      expect(pick!.needsAim).toBe(true);
+    });
+
+    test('upDir 与视线平行（仰望天顶）退化：兜底基有限且正常挑选', () => {
+      const overhead = mkSlot({ startPos: [0, 115, 0] });
+      const view = mkView({ viewDir: [0, 1, 0], upDir: [0, 1, 0] });
+      const pick = pickDemoSlot([overhead], velocityDir, view, false);
+      expect(pick!.slotIndex).toBe(0);
+      expect(pick!.needsAim).toBe(false);
+    });
+
+    test('退化：无候选/中点与相机重合 → null；非法视锥抛错', () => {
       const ordinary = mkSlot();
-      expect(pickDemoSlot([ordinary], velocityDir, [0, 0, 0], [0, 1, 0], true)).toBe(-1);
-      // 相机恰在中点 (0,95,0)：方向未定义 → 跳过 → -1
-      expect(pickDemoSlot([ordinary], velocityDir, [0, 95, 0], [0, 1, 0], false)).toBe(-1);
-      expect(() => pickDemoSlot([ordinary], velocityDir, [0, 0, 0], [0, 0, 0], false)).toThrow(
+      expect(pickDemoSlot([ordinary], velocityDir, mkView(), true)).toBeNull();
+      // 相机恰在中点 (0,95,0)：方向未定义 → 跳过 → null
+      expect(
+        pickDemoSlot([ordinary], velocityDir, mkView({ position: [0, 95, 0] }), false)
+      ).toBeNull();
+      expect(() =>
+        pickDemoSlot([ordinary], velocityDir, mkView({ viewDir: [0, 0, 0] }), false)
+      ).toThrow(RangeError);
+      expect(() => pickDemoSlot([ordinary], velocityDir, mkView({ fovYRad: 0 }), false)).toThrow(
+        RangeError
+      );
+      expect(() => pickDemoSlot([ordinary], velocityDir, mkView({ aspect: 0 }), false)).toThrow(
         RangeError
       );
     });
   });
 
-  describe('followCameraPose（跟随位姿）', () => {
+  describe('aim 目标机位（M3.6-1，决策 A1 自动运镜）', () => {
+    test('groundAimPosition：反转轨道范式——机位 = −normalize(mid)×radius', () => {
+      const mid: [number, number, number] = [100, 100, -50];
+      const r = 1.2;
+      const pos = groundAimPosition(mid, r);
+      const midLen = Math.hypot(...mid);
+      expect(Math.hypot(...pos)).toBeCloseTo(r, 10);
+      // lookAt 原点即正对中点：pos 与 mid 反向共线
+      for (let i = 0; i < 3; i++) {
+        expect(pos[i]).toBeCloseTo((-mid[i] / midLen) * r, 10);
+      }
+      expect(() => groundAimPosition([0, 0, 0], 1)).toThrow(RangeError);
+      expect(() => groundAimPosition(mid, 0)).toThrow(RangeError);
+    });
+
+    test('spaceAimPosition：中点—target—相机共线（lookAt target 时中点居中偏后）', () => {
+      const mid: [number, number, number] = [100, 95, -50];
+      const target: [number, number, number] = [0, 97, 0];
+      const dist = 500;
+      const pos = spaceAimPosition(mid, target, dist);
+      // 相机—target 距离 = dist
+      const d = Math.hypot(pos[0] - target[0], pos[1] - target[1], pos[2] - target[2]);
+      expect(d).toBeCloseTo(dist, 9);
+      // 相机—target 与 target—mid 同向（中点在 target 正后方）
+      const tm = Math.hypot(target[0] - mid[0], target[1] - mid[1], target[2] - mid[2]);
+      for (let i = 0; i < 3; i++) {
+        expect((pos[i] - target[i]) / dist).toBeCloseTo((target[i] - mid[i]) / tm, 10);
+      }
+      expect(() => spaceAimPosition(target, target, 500)).toThrow(RangeError);
+      expect(() => spaceAimPosition(mid, target, 0)).toThrow(RangeError);
+    });
+  });
+
+  describe('followOrbitPose（M3.6-2 环绕位姿；契约 C1 签名变更）', () => {
     const startPos: [number, number, number] = [10, 115, -5];
     const dispCoefs: [number, number, number] = [50, -10, 1];
     const lifetime = 1;
     const vRaw: [number, number, number] = [1, -2, 0.5];
     const vLen = Math.hypot(...vRaw);
     const v: [number, number, number] = [vRaw[0] / vLen, vRaw[1] / vLen, vRaw[2] / vLen];
+    const dist = FOLLOW_DISTANCE_DEFAULT_KM;
 
     test('target = 流星头部（shader 位移公式 CPU 镜像）', () => {
       for (const t of [0, 0.3, 0.7, 1]) {
         const disp = evalCubic(dispCoefs, t);
-        const pose = followCameraPose(startPos, dispCoefs, lifetime, v, t);
+        const pose = followOrbitPose(startPos, dispCoefs, lifetime, v, t, 0, 0, dist);
         expect(pose.target[0]).toBeCloseTo(startPos[0] + v[0] * disp, 10);
         expect(pose.target[1]).toBeCloseTo(startPos[1] + v[1] * disp, 10);
         expect(pose.target[2]).toBeCloseTo(startPos[2] + v[2] * disp, 10);
       }
     });
 
-    test('相机与头部距离恒定 = hypot(后距, 上偏)（两偏移正交）', () => {
-      const expected = Math.hypot(FOLLOW_CAMERA_BACK_KM, FOLLOW_CAMERA_UP_KM);
-      for (const t of [0, 0.25, 0.5, 1, 2]) {
-        const { position, target } = followCameraPose(startPos, dispCoefs, lifetime, v, t);
-        const d = Math.hypot(
-          position[0] - target[0],
-          position[1] - target[1],
-          position[2] - target[2]
-        );
-        expect(d).toBeCloseTo(expected, 10);
-        // 上偏分量 ⊥ 速度方向：(position − (head − v×back))·v ≈ 0
-        const ox = position[0] - (target[0] - v[0] * FOLLOW_CAMERA_BACK_KM);
-        const oy = position[1] - (target[1] - v[1] * FOLLOW_CAMERA_BACK_KM);
-        const oz = position[2] - (target[2] - v[2] * FOLLOW_CAMERA_BACK_KM);
-        expect(ox * v[0] + oy * v[1] + oz * v[2]).toBeCloseTo(0, 10);
+    test('默认 az=0/elev=0：纯侧视（视线 ⊥ v）且视线水平（⊥ up）', () => {
+      const { position, target } = followOrbitPose(startPos, dispCoefs, lifetime, v, 0.5, 0, 0, dist);
+      const look = [target[0] - position[0], target[1] - position[1], target[2] - position[2]];
+      expect(look[0] * v[0] + look[1] * v[1] + look[2] * v[2]).toBeCloseTo(0, 10);
+      expect(look[1]).toBeCloseTo(0, 10); // 水平：视线 up 分量为零
+    });
+
+    test('任意方位/仰角下相机—头部距离恒等于 distanceKm', () => {
+      for (const az of [0, 0.7, Math.PI, 4.2, -1.3]) {
+        for (const el of [0, 0.5, -0.9, 1.2]) {
+          for (const d of [FOLLOW_DISTANCE_MIN_KM, dist, FOLLOW_DISTANCE_MAX_KM]) {
+            const { position, target } = followOrbitPose(
+              startPos,
+              dispCoefs,
+              lifetime,
+              v,
+              0.5,
+              az,
+              el,
+              d
+            );
+            const got = Math.hypot(
+              position[0] - target[0],
+              position[1] - target[1],
+              position[2] - target[2]
+            );
+            expect(got).toBeCloseTo(d, 10);
+          }
+        }
       }
     });
 
+    test('仰角正方向：elev>0 时相机移向速度反方向一侧（offset·v = −sinE）', () => {
+      const el = 0.6;
+      const { position, target } = followOrbitPose(
+        startPos,
+        dispCoefs,
+        lifetime,
+        v,
+        0.5,
+        0,
+        el,
+        dist
+      );
+      const off = [
+        (position[0] - target[0]) / dist,
+        (position[1] - target[1]) / dist,
+        (position[2] - target[2]) / dist,
+      ];
+      expect(off[0] * v[0] + off[1] * v[1] + off[2] * v[2]).toBeCloseTo(-Math.sin(el), 10);
+    });
+
     test('elapsed 钳制 [0, lifetime]：烧尽后驻留烧尽点（无落地，科学红线）', () => {
-      const atEnd = followCameraPose(startPos, dispCoefs, lifetime, v, lifetime);
-      const after = followCameraPose(startPos, dispCoefs, lifetime, v, lifetime + 5);
+      const atEnd = followOrbitPose(startPos, dispCoefs, lifetime, v, lifetime, 1, 0.3, dist);
+      const after = followOrbitPose(startPos, dispCoefs, lifetime, v, lifetime + 5, 1, 0.3, dist);
       expect(after).toEqual(atEnd);
-      const atStart = followCameraPose(startPos, dispCoefs, lifetime, v, 0);
-      const before = followCameraPose(startPos, dispCoefs, lifetime, v, -1);
+      const atStart = followOrbitPose(startPos, dispCoefs, lifetime, v, 0, 1, 0.3, dist);
+      const before = followOrbitPose(startPos, dispCoefs, lifetime, v, -1, 1, 0.3, dist);
       expect(before).toEqual(atStart);
     });
 
     test('铅垂速度退化：+X 兜底正交化，位姿有限且距离不变', () => {
       const vertical: [number, number, number] = [0, -1, 0];
-      const pose = followCameraPose([0, 115, 0], dispCoefs, lifetime, vertical, 0.5);
+      const pose = followOrbitPose([0, 115, 0], dispCoefs, lifetime, vertical, 0.5, 0.4, 0.2, dist);
       expect(pose.position.every(Number.isFinite)).toBe(true);
       const d = Math.hypot(
         pose.position[0] - pose.target[0],
         pose.position[1] - pose.target[1],
         pose.position[2] - pose.target[2]
       );
-      expect(d).toBeCloseTo(Math.hypot(FOLLOW_CAMERA_BACK_KM, FOLLOW_CAMERA_UP_KM), 10);
+      expect(d).toBeCloseTo(dist, 10);
     });
 
-    test('非法寿命抛错', () => {
-      expect(() => followCameraPose(startPos, dispCoefs, 0, v, 0)).toThrow(RangeError);
+    test('非法寿命/距离抛错', () => {
+      expect(() => followOrbitPose(startPos, dispCoefs, 0, v, 0, 0, 0, dist)).toThrow(RangeError);
+      expect(() => followOrbitPose(startPos, dispCoefs, lifetime, v, 0, 0, 0, 0)).toThrow(
+        RangeError
+      );
+    });
+  });
+
+  describe('labSunDirection（M3.6-3 昼夜 terminator 驱动）', () => {
+    test('12:00 正午：太阳高度角高正（lat 40° → sinAlt = cos26° ≈ 0.899）', () => {
+      const dir = labSunDirection(12, 40);
+      expect(dir[1]).toBeCloseTo(Math.cos((40 - 14) * DEG), 6);
+      expect(Math.hypot(...dir)).toBeCloseTo(1, 10);
+    });
+
+    test('02:00 凌晨（英仙座历元）：太阳深居地平下（夜面 + 城市夜灯前提）', () => {
+      const dir = labSunDirection(2, 40);
+      expect(dir[1]).toBeLessThan(-0.4);
+      expect(Math.hypot(...dir)).toBeCloseTo(1, 10);
+    });
+
+    test('非法输入抛错', () => {
+      expect(() => labSunDirection(Number.NaN, 40)).toThrow(RangeError);
+      expect(() => labSunDirection(2, Number.POSITIVE_INFINITY)).toThrow(RangeError);
+    });
+  });
+
+  describe('trailLag（M3.6-4① 条痕头密尾疏分布）', () => {
+    test('端点锁定 0/1 且严格单调递增', () => {
+      const n = 48;
+      expect(trailLag(0, n)).toBe(0);
+      expect(trailLag(n - 1, n)).toBe(1);
+      for (let k = 1; k < n; k++) {
+        expect(trailLag(k, n)).toBeGreaterThan(trailLag(k - 1, n));
+      }
+    });
+
+    test('头部相邻间距 < 尾部（exponent 1.6 非线性压缩）', () => {
+      const n = 48;
+      const headGap = trailLag(1, n) - trailLag(0, n);
+      const tailGap = trailLag(n - 1, n) - trailLag(n - 2, n);
+      expect(headGap).toBeLessThan(tailGap);
+    });
+
+    test('exponent=1 退化为线性；非法输入抛错', () => {
+      expect(trailLag(12, 25, 1)).toBeCloseTo(0.5, 10);
+      expect(() => trailLag(0, 1)).toThrow(RangeError);
+      expect(() => trailLag(-1, 48)).toThrow(RangeError);
+      expect(() => trailLag(48, 48)).toThrow(RangeError);
+      expect(() => trailLag(0.5, 48)).toThrow(RangeError);
+      expect(() => trailLag(0, 48, 0)).toThrow(RangeError);
+    });
+  });
+
+  describe('M3.6 契约 C5 常量联动（回写 §0.3 的实现锚点）', () => {
+    test('星穹 10000 / 太空半径上限 3000 / 地球 1:1 / 大气顶盖燃烧层', () => {
+      expect(STAR_DOME_RADIUS_UNITS).toBe(10000);
+      expect(SPACE_CAMERA_RADIUS_MAX_UNITS).toBe(3000);
+      expect(EARTH_RADIUS_KM).toBe(6371); // 科学准确性红线：禁止艺术缩放
+      expect(ATMOSPHERE_TOP_KM).toBeGreaterThanOrEqual(BURN_LAYER_TOP_KM);
+      // 太空档最远 3000 km 视地平 limb 斜距 < 星穹半径（防星点穿地球边缘）
+      const h = SPACE_CAMERA_RADIUS_MAX_UNITS;
+      const limbDist = Math.sqrt((EARTH_RADIUS_KM + h) ** 2 - EARTH_RADIUS_KM ** 2);
+      expect(limbDist).toBeLessThan(STAR_DOME_RADIUS_UNITS);
+      // 地面档视差重核：漫游半径 1.5 / 星穹 10000 = 0.015% < 0.05% 红线
+      expect(1.5 / STAR_DOME_RADIUS_UNITS).toBeLessThan(0.0005);
     });
   });
 

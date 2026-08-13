@@ -2,8 +2,13 @@
 
 /**
  * 流星条痕系统（M3-1/M3-2，需求 §4.2/§4.3/§4.4 + 契约 C2）：
- * 全部槽位一个 THREE.Points（1 draw call）——条痕 K=24 顶点 + 火流星
- * 3 组 × 6 子顶点碎片（非火流星槽位的碎片顶点 shader 内剔除）。
+ * 全部槽位一个 THREE.Points（1 draw call）——条痕 K=48 顶点（M3.6-4①：
+ * 24→48 + trailLag 头密尾疏）+ 火流星 3 组 × 6 子顶点碎片（非火流星槽位
+ * 的碎片顶点 shader 内剔除）。
+ *
+ * M3.6-4② 近景细节（零新 draw call）：顶点求屏幕流向 varying（pos 与
+ * pos+ε·uVelocityDir 的 NDC 差归一），片元三层径向结构（白炽核 → 雨色
+ * 辉晕 → 暗红外缘）沿流向椭圆化拉伸 + NOISE_GLSL 时变闪烁。
  *
  * GPU 确定性循环（契约 C2，公式与 M1 ignitedSlots/slotPhase 严格同式）：
  * - 循环相位 fract(aSeed + uTime/uCyclePeriod)
@@ -42,11 +47,13 @@ import {
   horizontalFromEquatorial,
   localSiderealTime,
   sceneDirFromAltAz,
+  trailLag,
   visibleHourlyRate,
   type MeteorSlot,
 } from '@/utils/meteorShower';
 import { createSeededRandom } from '@/utils/random';
 import { fovPointScaleFactor } from '@/utils/labGestures';
+import { NOISE_GLSL } from '@/components/Lab/AfterglowField';
 import type { LabFrameRefs } from '@/components/Lab/labTypes';
 
 /** 碎片 mini 条痕的 aLag 上限（主体条痕 aLag ∈ [0,1]，碎片更短） */
@@ -78,8 +85,11 @@ const METEOR_VERTEX_SHADER = /* glsl */ `
   uniform vec3 uVelocityDir;
   uniform float uPhenomenon;
   uniform float uScale;
+  uniform float uAspect;
   varying float vIntensity;
   varying vec3 vColor;
+  varying vec2 vFlowDir;
+  varying float vSeed;
 
   void main() {
     float cycle   = fract(aSeed + uTime / uCyclePeriod);      // 循环相位（契约 C2）
@@ -99,6 +109,8 @@ const METEOR_VERTEX_SHADER = /* glsl */ `
     if (culled) {
       vIntensity = 0.0;
       vColor = vec3(0.0);
+      vFlowDir = vec2(1.0, 0.0);
+      vSeed = 0.0;
       gl_PointSize = 0.0;
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       return;
@@ -125,20 +137,52 @@ const METEOR_VERTEX_SHADER = /* glsl */ `
     float head = mix(6.0, 1.5, aLag) * mix(1.0, 0.65, step(0.5, aFragIndex));
     gl_PointSize = clamp(head * clamp(vIntensity, 0.2, 3.0) * (uScale / -mvPosition.z), 0.0, 48.0);
     gl_Position = projectionMatrix * mvPosition;
+    // 屏幕流向（M3.6-4②）：投影 pos 与 pos+ε·uVelocityDir 的 NDC 差归一
+    // （×uAspect 折算像素域方向），片元沿此向椭圆化点精灵为 streak
+    vec4 clipB = projectionMatrix * modelViewMatrix * vec4(pos + uVelocityDir * 0.5, 1.0);
+    vec2 ndcA = gl_Position.xy / max(gl_Position.w, 1e-6);
+    vec2 ndcB = clipB.xy / max(clipB.w, 1e-6);
+    vec2 flow = (ndcB - ndcA) * vec2(uAspect, 1.0);
+    float flowLen = length(flow);
+    vFlowDir = flowLen > 1e-6 ? flow / flowLen : vec2(1.0, 0.0);
+    vSeed = aSeed;
   }
 `;
 
+/**
+ * 片元三层径向结构 + 各向异性拉伸（M3.6-4②，零新 draw call）：
+ * 点精灵局部坐标投影到屏幕流向基（along/across），along 轴除以拉伸因子
+ * 把圆点椭圆化为沿运动方向的 streak；径向三层 = 白炽核（0.12）→ 雨色
+ * 辉晕 → 暗红外缘；时变值噪声闪烁（NOISE_GLSL 复用，等离子体湍流观感）。
+ */
 const METEOR_FRAGMENT_SHADER = /* glsl */ `
+  uniform float uTime;
   varying float vIntensity;
   varying vec3 vColor;
+  varying vec2 vFlowDir;
+  varying float vSeed;
+  ${NOISE_GLSL}
   void main() {
     if (vIntensity <= 0.0) discard;
     vec2 c = gl_PointCoord - vec2(0.5);
-    float d2 = dot(c, c);
-    if (d2 > 0.25) discard;
-    // softstep 圆点 × 颜色 × 强度（允许 >1 HDR 值，Composer Bloom 拾取）
-    float soft = 1.0 - smoothstep(0.02, 0.25, d2);
-    gl_FragColor = vec4(vColor * vIntensity * soft, soft);
+    // 流向对齐坐标：along 沿运动方向压缩半径（= 视觉拉伸 ×1.8）
+    vec2 perp = vec2(-vFlowDir.y, vFlowDir.x);
+    float along = dot(c, vFlowDir) / 1.8;
+    float across = dot(c, perp);
+    // 归一椭圆半径（0 = 中心，1 = 外缘；长轴半径 0.5）
+    float r = length(vec2(along, across)) * 2.0;
+    if (r > 1.0) discard;
+    // 三层径向结构：白炽核 → 雨色辉晕 → 暗红外缘
+    float core = 1.0 - smoothstep(0.0, 0.12, r);
+    float halo = (1.0 - smoothstep(0.08, 0.6, r)) * (1.0 - core);
+    float rim = smoothstep(0.35, 0.72, r) * (1.0 - smoothstep(0.72, 1.0, r));
+    vec3 col = vec3(1.0, 0.97, 0.9) * core * 1.8
+      + vColor * halo
+      + vec3(0.5, 0.1, 0.04) * rim * 0.55;
+    // 时变闪烁（大气湍流/烧蚀脉动）：每槽位独立种子，±18% 幅度
+    float flicker = 0.82 + 0.36 * valueNoise3(vec3(vSeed * 917.3, uTime * 22.0, r * 2.0));
+    float alpha = 1.0 - smoothstep(0.0, 1.0, r);
+    gl_FragColor = vec4(col * vIntensity * flicker * alpha, alpha);
   }
 `;
 
@@ -149,7 +193,8 @@ interface MeteorAssets {
 
 /**
  * 一次性烘焙全部槽位 attribute（初始化/页签切换路径，契约 C2.1）：
- * 每槽位 = 条痕 24 顶点 + 3 碎片组 × 6 子顶点 = 42 顶点。
+ * 每槽位 = 条痕 48 顶点（trailLag 头密尾疏，M3.6-4①）+ 3 碎片组 × 6
+ * 子顶点 = 66 顶点（200 槽位共 13,200，预算无压力）。
  * 碎片方向 = 随机单位向量 × fragmentLateralMagnitudeKm（锥角半角 ≤2° 量级，
  * M1 纯函数），非火流星槽位同样消费随机数（确定性顺序）但顶点被 shader 剔除。
  */
@@ -204,9 +249,10 @@ function buildMeteorAssets(slots: readonly MeteorSlot[]): MeteorAssets {
 
   for (let si = 0; si < slots.length; si++) {
     const slot = slots[si];
-    // 主体条痕：aLag 0→1（头 → 尾）
+    // 主体条痕：aLag 0→1（头 → 尾），trailLag 头密尾疏非线性分布
+    // （M3.6-4①：头部相邻间距 < 尾部，近观条痕连续无颗粒断点）
     for (let k = 0; k < METEOR_TRAIL_VERTICES; k++) {
-      writeVertex(slot, si, k / (METEOR_TRAIL_VERTICES - 1), 0, [0, 0, 0]);
+      writeVertex(slot, si, trailLag(k, METEOR_TRAIL_VERTICES), 0, [0, 0, 0]);
     }
     // 碎片组：每组一个独立锥角方向（球面均匀采样 × 横向量级）
     const fragMag = fragmentLateralMagnitudeKm(slot.dispCoefs, slot.lifetimeSec);
@@ -255,6 +301,7 @@ function buildMeteorAssets(slots: readonly MeteorSlot[]): MeteorAssets {
       uVelocityDir: { value: new THREE.Vector3(0, -1, 0) },
       uPhenomenon: { value: 0 },
       uScale: { value: 400 },
+      uAspect: { value: 16 / 9 }, // 每帧覆写（屏幕流向的像素域折算，M3.6-4②）
     },
     vertexShader: METEOR_VERTEX_SHADER,
     fragmentShader: METEOR_FRAGMENT_SHADER,
@@ -311,6 +358,7 @@ export function MeteorField({ slots, refs }: MeteorFieldProps): JSX.Element {
       state.gl.domElement.height *
       0.5 *
       fovPointScaleFactor((state.camera as THREE.PerspectiveCamera).fov);
+    u.uAspect.value = (state.camera as THREE.PerspectiveCamera).aspect;
   });
 
   // attribute 为占位零点（真实位置由 shader 求得），必须关视锥剔除

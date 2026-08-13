@@ -38,8 +38,12 @@ import { createSeededRandom } from '@/utils/random';
 /** 1 场景单位 = 1 km（契约 C5） */
 export const LAB_SCENE_UNITS_PER_KM = 1;
 
-/** 星穹天球半径（场景单位） */
-export const STAR_DOME_RADIUS_UNITS = 3000;
+/**
+ * 星穹天球半径（场景单位）——M3.6 契约 C5 变更：3000 → 10000。
+ * 真实地球（半径 6371）加入后，太空档 3000 km 高度视地平 limb 斜距
+ * ~6900 km，星穹必须大于该值防星点穿地球边缘伪影。
+ */
+export const STAR_DOME_RADIUS_UNITS = 10000;
 
 /** 燃烧层底部高度（km = 场景单位） */
 export const BURN_LAYER_BOTTOM_KM = 80;
@@ -139,8 +143,12 @@ export const KAPPA_CYGNIDS: MeteorShowerParams = {
 /** 流星槽位数（§4 全量档；reduced 减半归 M4） */
 export const METEOR_SLOT_COUNT = 200;
 
-/** 条痕顶点数 K（§4.3 域 [16, 32]） */
-export const METEOR_TRAIL_VERTICES = 24;
+/**
+ * 条痕顶点数 K——M3.6-4① 变更：24 → 48（近观条痕连续无颗粒断点；
+ * §4.3 原域 [16, 32] 放宽登记）。顶点总量 200×(48+18) = 13,200，预算无压力。
+ * 配套 trailLag 头密尾疏非线性分布（烘焙期布局变更，契约 C2.1 初始化路径）。
+ */
+export const METEOR_TRAIL_VERTICES = 48;
 
 /** 火流星碎片组数（§1.5：2–3 组独立子顶点） */
 export const METEOR_FRAGMENT_GROUPS = 3;
@@ -197,18 +205,15 @@ export const FOLLOW_SLOWMO_TIMESCALE = 0.1;
 /** 跟随视角烧尽后驻留时长（真实秒：展示余迹 + 汽化科普提示，§M3.5-6） */
 export const FOLLOW_LINGER_REAL_SEC = 2;
 
-/** 跟随相机在流星头部侧后方距离（km，§M3.5-6） */
-export const FOLLOW_CAMERA_BACK_KM = 1.2;
-
-/** 跟随相机上向侧偏（km，垂直于速度方向分量，§M3.5-6） */
-export const FOLLOW_CAMERA_UP_KM = 0.4;
-
 /** 太空视角轨道目标：燃烧层中心（km；80–115 层中点取整，§M3.5-4） */
 export const SPACE_VIEW_TARGET_UNITS: [number, number, number] = [0, 97, 0];
 
-/** 太空视角轨道半径钳制（场景单位，§M3.5-4） */
+/**
+ * 太空视角轨道半径钳制（场景单位，§M3.5-4）——M3.6 契约 C5 变更：
+ * 上限 1500 → 3000（决策 D：高端拉远可见完整地平弧）。
+ */
 export const SPACE_CAMERA_RADIUS_MIN_UNITS = 150;
-export const SPACE_CAMERA_RADIUS_MAX_UNITS = 1500;
+export const SPACE_CAMERA_RADIUS_MAX_UNITS = 3000;
 
 /** 太空视角切换预设机位（场景单位，§M3.5-4） */
 export const SPACE_CAMERA_PRESET_UNITS: [number, number, number] = [500, 320, 500];
@@ -218,6 +223,41 @@ export const SPACE_CAMERA_PRESET_UNITS: [number, number, number] = [500, 320, 50
  * polar ≤ π/2 时相机 y ≥ target y = 97 > 0，任意半径下恒在地面上方。
  */
 export const SPACE_POLAR_MAX_RAD = Math.PI / 2;
+
+// ---------------------------------------------------------------------------
+// 常量：M3.6 目验反馈修正 + 真实地球 + 流星近景（§M3.6）
+// ---------------------------------------------------------------------------
+
+/** 地球半径（km = 场景单位；1:1 真实比例，决策 C1——禁止艺术缩放） */
+export const EARTH_RADIUS_KM = 6371;
+
+/**
+ * 大气辉光顶高度（km）：流星燃烧层 80–115 之上——大气辉光薄壳半径
+ * = EARTH_RADIUS_KM + 本值，流星恰在辉光层内划过（M3.6-3 真实感核心）。
+ */
+export const ATMOSPHERE_TOP_KM = 120;
+
+/** 跟随环绕默认距离（km，决策 B） */
+export const FOLLOW_DISTANCE_DEFAULT_KM = 1.5;
+
+/** 跟随环绕距离域（km，决策 B；滚轮缩放钳制，labGestures 同源消费） */
+export const FOLLOW_DISTANCE_MIN_KM = 0.6;
+export const FOLLOW_DISTANCE_MAX_KM = 6;
+
+/** 跟随环绕仰角钳制（±75°，防正对流星头/尾方向的奇异，M3.6-2） */
+export const FOLLOW_ELEVATION_MAX_RAD = (75 * Math.PI) / 180;
+
+/** 演示自动运镜时长（秒，决策 A1：~0.6 s 球面平滑插值到位后注入） */
+export const AIM_DURATION_SEC = 0.6;
+
+/** 视锥判定边距（各向留 15%：|x/z| ≤ tan(fov/2)×(1−本值)，M3.6-1） */
+export const FRUSTUM_MARGIN_FRACTION = 0.15;
+
+/**
+ * 太阳赤纬（度，8 月中旬 ≈ +14°，常量登记——实验室历元为 8/13、8/17，
+ * 期间赤纬漂移 <1.5°，对夜面 terminator 观感无可辨差异）。
+ */
+export const SUN_DECLINATION_MID_AUG_DEG = 14;
 
 // ---------------------------------------------------------------------------
 // 坐标族（§1.3，契约 C5）
@@ -935,46 +975,215 @@ export function nextIgnition(
   return best;
 }
 
+/** 相机视锥描述（pickDemoSlot v2 输入；CameraPoseBridge 每帧 mutate 同构） */
+export interface DemoCameraView {
+  /** 相机世界坐标（场景单位） */
+  position: readonly [number, number, number];
+  /** 视线方向（单位向量，相机 −Z 世界方向） */
+  viewDir: readonly [number, number, number];
+  /** 相机上方向（单位向量，matrixWorld 第 2 列） */
+  upDir: readonly [number, number, number];
+  /** 垂直视野角（弧度） */
+  fovYRad: number;
+  /** 宽高比（fovX 由 tan(fovY/2)×aspect 推出） */
+  aspect: number;
+}
+
+/** 演示槽位挑选结果（M3.6-1） */
+export interface DemoSlotPick {
+  /** 最优槽位下标 */
+  slotIndex: number;
+  /** 无"全轨迹入视锥"候选 → 需自动运镜保底（决策 A1） */
+  needsAim: boolean;
+  /** 轨迹中点（needsAim 时 aim 机位计算复用，避免消费侧重算） */
+  midPoint: [number, number, number];
+}
+
 /**
- * 演示槽位挑选（§M3.5-3）：轨迹中点最贴近相机视线者——保证演示触发的
- * 流星出现在当前视野内。
- *
- * 评分 = normalize(mid − cameraPos) · normalize(viewDir)，其中轨迹中点
- * mid = startPos + velocityDir × evalCubic(dispCoefs, 0.5 × lifetime)。
+ * 点的视锥内判定（各向留 FRUSTUM_MARGIN_FRACTION 边距）：
+ * 点投影到相机正交基（forward/right/up），forward 分量 > 0 且
+ * |x/z| ≤ tan(fovX/2)×(1−margin)、|y/z| ≤ tan(fovY/2)×(1−margin)。
+ */
+function pointInFrustum(
+  px: number,
+  py: number,
+  pz: number,
+  view: DemoCameraView,
+  right: readonly [number, number, number],
+  trueUp: readonly [number, number, number],
+  forward: readonly [number, number, number]
+): boolean {
+  const dx = px - view.position[0];
+  const dy = py - view.position[1];
+  const dz = pz - view.position[2];
+  const z = dx * forward[0] + dy * forward[1] + dz * forward[2];
+  if (!(z > 0)) return false; // 背向相机
+  const tanY = Math.tan(view.fovYRad / 2) * (1 - FRUSTUM_MARGIN_FRACTION);
+  const tanX = Math.tan(view.fovYRad / 2) * view.aspect * (1 - FRUSTUM_MARGIN_FRACTION);
+  const x = dx * right[0] + dy * right[1] + dz * right[2];
+  if (Math.abs(x) > tanX * z) return false;
+  const y = dx * trueUp[0] + dy * trueUp[1] + dz * trueUp[2];
+  return Math.abs(y) <= tanY * z;
+}
+
+/**
+ * 演示槽位挑选 v2（M3.6-1，契约 C1 签名变更登记——M3.5 版为
+ * (slots, velocityDir, cameraPos, viewDir, fireballOnly) → number）：
+ * 视锥感知——硬性过滤"轨迹起点与烧尽点（= startPos + v×evalCubic(disp,
+ * lifetime)）均在视锥内（各向留 15% 边距）"的槽位，合格集内挑轨迹中点
+ * 最贴近视野中心者；无合格槽位时返回全域最优（原 M3.5 视线贴近度评分）
+ * + needsAim 标记（消费侧自动运镜保底，决策 A1）。
  *
  * @param velocityDir 当前流星飞行方向（单位向量，= −辐射点方向）
+ * @param view 相机视锥描述（position/viewDir/upDir/fovY/aspect）
  * @param fireballOnly 只挑火流星槽位（"演示火流星"按钮）
- * @returns 最优槽位下标；无候选（含中点与相机重合的退化）时 -1
+ * @returns 挑选结果；无候选（含中点与相机重合的退化）时 null
  */
 export function pickDemoSlot(
   slots: readonly MeteorSlot[],
   velocityDir: readonly [number, number, number],
-  cameraPos: readonly [number, number, number],
-  viewDir: readonly [number, number, number],
+  view: DemoCameraView,
   fireballOnly: boolean
-): number {
-  const viewLen = Math.hypot(viewDir[0], viewDir[1], viewDir[2]);
+): DemoSlotPick | null {
+  const viewLen = Math.hypot(view.viewDir[0], view.viewDir[1], view.viewDir[2]);
   if (!(viewLen > 0)) {
     throw new RangeError('视线方向不能为零向量');
   }
-  let bestIndex = -1;
-  let bestScore = -Infinity;
+  if (!(view.fovYRad > 0) || !(view.aspect > 0)) {
+    throw new RangeError(`视野角与宽高比必须为正，收到 fovY=${view.fovYRad}, aspect=${view.aspect}`);
+  }
+  // 相机正交基：forward = 视线归一；right = forward×up（退化时 upDir 兜底轴换 +X/+Y）
+  const forward: [number, number, number] = [
+    view.viewDir[0] / viewLen,
+    view.viewDir[1] / viewLen,
+    view.viewDir[2] / viewLen,
+  ];
+  let rx = forward[1] * view.upDir[2] - forward[2] * view.upDir[1];
+  let ry = forward[2] * view.upDir[0] - forward[0] * view.upDir[2];
+  let rz = forward[0] * view.upDir[1] - forward[1] * view.upDir[0];
+  let rLen = Math.hypot(rx, ry, rz);
+  if (rLen < 1e-6) {
+    // upDir 与视线平行（退化）：世界 +Y 重建，再退化用 +X
+    rx = forward[1] * 0 - forward[2] * 1;
+    ry = forward[2] * 0 - forward[0] * 0;
+    rz = forward[0] * 1 - forward[1] * 0;
+    rLen = Math.hypot(rx, ry, rz);
+    if (rLen < 1e-6) {
+      rx = forward[1] * 0 - forward[2] * 0;
+      ry = forward[2] * 1 - forward[0] * 0;
+      rz = forward[0] * 0 - forward[1] * 1;
+      rLen = Math.hypot(rx, ry, rz);
+    }
+  }
+  const right: [number, number, number] = [rx / rLen, ry / rLen, rz / rLen];
+  const trueUp: [number, number, number] = [
+    right[1] * forward[2] - right[2] * forward[1],
+    right[2] * forward[0] - right[0] * forward[2],
+    right[0] * forward[1] - right[1] * forward[0],
+  ];
+
+  let bestInIndex = -1; // 全轨迹入视锥集内最优（中点最贴近视野中心）
+  let bestInScore = -Infinity;
+  let bestInMid: [number, number, number] = [0, 0, 0];
+  let bestAnyIndex = -1; // 全域最优（原 M3.5 评分，needsAim 保底）
+  let bestAnyScore = -Infinity;
+  let bestAnyMid: [number, number, number] = [0, 0, 0];
   for (let i = 0; i < slots.length; i++) {
     const slot = slots[i];
     if (fireballOnly && !slot.isFireball) continue;
-    const disp = evalCubic(slot.dispCoefs, 0.5 * slot.lifetimeSec);
-    const dx = slot.startPos[0] + velocityDir[0] * disp - cameraPos[0];
-    const dy = slot.startPos[1] + velocityDir[1] * disp - cameraPos[1];
-    const dz = slot.startPos[2] + velocityDir[2] * disp - cameraPos[2];
+    const midDisp = evalCubic(slot.dispCoefs, 0.5 * slot.lifetimeSec);
+    const mx = slot.startPos[0] + velocityDir[0] * midDisp;
+    const my = slot.startPos[1] + velocityDir[1] * midDisp;
+    const mz = slot.startPos[2] + velocityDir[2] * midDisp;
+    const dx = mx - view.position[0];
+    const dy = my - view.position[1];
+    const dz = mz - view.position[2];
     const len = Math.hypot(dx, dy, dz);
     if (!(len > 0)) continue; // 中点与相机重合：方向未定义，跳过
-    const score = (dx * viewDir[0] + dy * viewDir[1] + dz * viewDir[2]) / (len * viewLen);
-    if (score > bestScore) {
-      bestScore = score;
-      bestIndex = i;
+    const score = (dx * forward[0] + dy * forward[1] + dz * forward[2]) / len;
+    if (score > bestAnyScore) {
+      bestAnyScore = score;
+      bestAnyIndex = i;
+      bestAnyMid = [mx, my, mz];
+    }
+    // 硬性过滤：轨迹起点与烧尽点都入画才合格（M3.6-1）
+    const endDisp = evalCubic(slot.dispCoefs, slot.lifetimeSec);
+    const startIn = pointInFrustum(
+      slot.startPos[0],
+      slot.startPos[1],
+      slot.startPos[2],
+      view,
+      right,
+      trueUp,
+      forward
+    );
+    const endIn =
+      startIn &&
+      pointInFrustum(
+        slot.startPos[0] + velocityDir[0] * endDisp,
+        slot.startPos[1] + velocityDir[1] * endDisp,
+        slot.startPos[2] + velocityDir[2] * endDisp,
+        view,
+        right,
+        trueUp,
+        forward
+      );
+    if (startIn && endIn && score > bestInScore) {
+      bestInScore = score;
+      bestInIndex = i;
+      bestInMid = [mx, my, mz];
     }
   }
-  return bestIndex;
+  if (bestInIndex >= 0) {
+    return { slotIndex: bestInIndex, needsAim: false, midPoint: bestInMid };
+  }
+  if (bestAnyIndex >= 0) {
+    return { slotIndex: bestAnyIndex, needsAim: true, midPoint: bestAnyMid };
+  }
+  return null;
+}
+
+/**
+ * 地面档 aim 目标机位（M3.6-1，决策 A1）：反转轨道范式（target 固定原点）
+ * 下 lookAt 原点即正对轨迹中点——机位 = −normalize(mid) × 当前轨道半径。
+ */
+export function groundAimPosition(
+  midPoint: readonly [number, number, number],
+  radiusUnits: number
+): [number, number, number] {
+  const len = Math.hypot(midPoint[0], midPoint[1], midPoint[2]);
+  if (!(len > 0) || !(radiusUnits > 0)) {
+    throw new RangeError(`轨迹中点不可为原点且半径必须为正，收到 |mid|=${len}, r=${radiusUnits}`);
+  }
+  return [
+    (-midPoint[0] / len) * radiusUnits,
+    (-midPoint[1] / len) * radiusUnits,
+    (-midPoint[2] / len) * radiusUnits,
+  ];
+}
+
+/**
+ * 太空档 aim 目标机位（M3.6-1，决策 A1）：相机在 target 与轨迹中点连线的
+ * 延长线外侧——lookAt target 时中点居中偏后。
+ * 机位 = target + normalize(target − mid) × 当前距离。
+ */
+export function spaceAimPosition(
+  midPoint: readonly [number, number, number],
+  targetUnits: readonly [number, number, number],
+  distUnits: number
+): [number, number, number] {
+  const dx = targetUnits[0] - midPoint[0];
+  const dy = targetUnits[1] - midPoint[1];
+  const dz = targetUnits[2] - midPoint[2];
+  const len = Math.hypot(dx, dy, dz);
+  if (!(len > 0) || !(distUnits > 0)) {
+    throw new RangeError(`中点不可与 target 重合且距离必须为正，收到 |d|=${len}, dist=${distUnits}`);
+  }
+  return [
+    targetUnits[0] + (dx / len) * distUnits,
+    targetUnits[1] + (dy / len) * distUnits,
+    targetUnits[2] + (dz / len) * distUnits,
+  ];
 }
 
 export interface FollowCameraPose {
@@ -985,27 +1194,43 @@ export interface FollowCameraPose {
 }
 
 /**
- * 跟随视角相机位姿（§M3.5-6；流星头位置为 shader 位移公式的 CPU 精确镜像）
+ * 跟随视角环绕位姿（M3.6-2，契约 C1 签名变更登记——替换 M3.5 的
+ * followCameraPose(startPos, dispCoefs, lifetimeSec, velocityDir, elapsedSec)
+ * 固定侧后方位姿版本）。
  *
  * 头部 = startPos + velocityDir × evalCubic(dispCoefs, clamp(elapsed, 0,
  * lifetime))——烧尽后钳制在烧尽点（驻留展示余迹，无落地/成坑：彗星质地
  * 流星体在 80–115 km 完全汽化，科学准确性红线）。
- * 相机 = 头部 − velocityDir × FOLLOW_CAMERA_BACK_KM + 上向侧偏
- * FOLLOW_CAMERA_UP_KM（世界上方向剔除沿速度分量后归一；速度近铅垂时
- * 退化用 +X 轴正交化兜底）。两偏移正交 → 相机与头部距离恒定
- * hypot(1.2, 0.4) km（单测锁定）。
+ *
+ * 以头部为中心、飞行方向 v 为轴建正交坐标系：
+ * - n1 = normalize(up×v)（侧向基；up=[0,1,0]，退化 |up×v|<1e-6 时
+ *   +X 对 v 正交化兜底）
+ * - n2 = v×n1
+ * - offset = cosE·(cosA·n1 + sinA·n2) − sinE·v（单位向量）
+ * 相机 = 头部 + offset×distance、target 恒为头部。
+ * 默认 azimuth=0 / elevation=0 → offset = n1：纯侧视且视线水平
+ * （n1 ⊥ up 分量为零，n1 ⊥ v，单测锁定）。
  *
  * @param velocityDir 流星飞行方向（单位向量）
+ * @param azimuthRad 环绕方位角（绕 v 轴，360° 无限制）
+ * @param elevationRad 环绕仰角（消费侧经 clampFollowElevation 钳制 ±75°）
+ * @param distanceKm 相机—头部距离（消费侧经 clampFollowDistance 钳制 [0.6, 6]）
  */
-export function followCameraPose(
+export function followOrbitPose(
   startPos: readonly [number, number, number],
   dispCoefs: readonly [number, number, number],
   lifetimeSec: number,
   velocityDir: readonly [number, number, number],
-  elapsedSec: number
+  elapsedSec: number,
+  azimuthRad: number,
+  elevationRad: number,
+  distanceKm: number
 ): FollowCameraPose {
   if (!(lifetimeSec > 0)) {
     throw new RangeError(`寿命必须为正，收到 ${lifetimeSec}`);
+  }
+  if (!(distanceKm > 0)) {
+    throw new RangeError(`距离必须为正，收到 ${distanceKm}`);
   }
   const t = Math.min(Math.max(elapsedSec, 0), lifetimeSec);
   const disp = evalCubic(dispCoefs, t);
@@ -1014,26 +1239,78 @@ export function followCameraPose(
     startPos[1] + velocityDir[1] * disp,
     startPos[2] + velocityDir[2] * disp,
   ];
-  // 上向侧偏：up=[0,1,0] 剔除沿速度方向分量（Gram–Schmidt）
-  const dotUp = velocityDir[1];
-  let ux = -dotUp * velocityDir[0];
-  let uy = 1 - dotUp * velocityDir[1];
-  let uz = -dotUp * velocityDir[2];
-  let uLen = Math.hypot(ux, uy, uz);
-  if (uLen < 1e-6) {
-    // 速度平行铅垂线：+X 轴正交化兜底
+  // n1 = up×v（up=[0,1,0]）= (vz, 0, −vx)
+  let n1x = velocityDir[2];
+  let n1y = 0;
+  let n1z = -velocityDir[0];
+  let n1Len = Math.hypot(n1x, n1y, n1z);
+  if (n1Len < 1e-6) {
+    // 速度平行铅垂线：+X 对 v 正交化兜底（Gram–Schmidt）
     const dotX = velocityDir[0];
-    ux = 1 - dotX * velocityDir[0];
-    uy = -dotX * velocityDir[1];
-    uz = -dotX * velocityDir[2];
-    uLen = Math.hypot(ux, uy, uz);
+    n1x = 1 - dotX * velocityDir[0];
+    n1y = -dotX * velocityDir[1];
+    n1z = -dotX * velocityDir[2];
+    n1Len = Math.hypot(n1x, n1y, n1z);
   }
+  n1x /= n1Len;
+  n1y /= n1Len;
+  n1z /= n1Len;
+  // n2 = v×n1（与 v、n1 构成右手正交基）
+  const n2x = velocityDir[1] * n1z - velocityDir[2] * n1y;
+  const n2y = velocityDir[2] * n1x - velocityDir[0] * n1z;
+  const n2z = velocityDir[0] * n1y - velocityDir[1] * n1x;
+  const cosA = Math.cos(azimuthRad);
+  const sinA = Math.sin(azimuthRad);
+  const cosE = Math.cos(elevationRad);
+  const sinE = Math.sin(elevationRad);
+  const ox = cosE * (cosA * n1x + sinA * n2x) - sinE * velocityDir[0];
+  const oy = cosE * (cosA * n1y + sinA * n2y) - sinE * velocityDir[1];
+  const oz = cosE * (cosA * n1z + sinA * n2z) - sinE * velocityDir[2];
   const position: [number, number, number] = [
-    target[0] - velocityDir[0] * FOLLOW_CAMERA_BACK_KM + (ux / uLen) * FOLLOW_CAMERA_UP_KM,
-    target[1] - velocityDir[1] * FOLLOW_CAMERA_BACK_KM + (uy / uLen) * FOLLOW_CAMERA_UP_KM,
-    target[2] - velocityDir[2] * FOLLOW_CAMERA_BACK_KM + (uz / uLen) * FOLLOW_CAMERA_UP_KM,
+    target[0] + ox * distanceKm,
+    target[1] + oy * distanceKm,
+    target[2] + oz * distanceKm,
   ];
   return { position, target };
+}
+
+/**
+ * 实验室太阳方向（M3.6-3；LabEarth 昼夜 terminator 驱动）：
+ * 复用 horizontalFromEquatorial（ra=0、dec=+14° 8 月中旬常量、
+ * lst = 时角 = (clock−12)×15°——ra=0 时 H = LST）→ sceneDirFromAltAz
+ * （alt 可为负：历元 ~02:00 太阳深居地平下 → 夜面朝上 + 城市夜灯）。
+ *
+ * @param clockHours 当地时钟（小时，localClockHours 产物）
+ * @param latDeg 观测纬度（度）
+ * @returns 指向太阳的场景方向单位向量（契约 C5 轴向）
+ */
+export function labSunDirection(clockHours: number, latDeg: number): [number, number, number] {
+  if (!Number.isFinite(clockHours) || !Number.isFinite(latDeg)) {
+    throw new RangeError(`时钟与纬度必须有限，收到 clock=${clockHours}, lat=${latDeg}`);
+  }
+  const hourAngleRad = (clockHours - 12) * 15 * DEG;
+  const altAz = horizontalFromEquatorial(0, SUN_DECLINATION_MID_AUG_DEG, latDeg, hourAngleRad);
+  return sceneDirFromAltAz(altAz);
+}
+
+/**
+ * 条痕滞后非线性分布（M3.6-4①）：lag = (index/(count−1))^exponent——
+ * exponent > 1 时头密尾疏（头部相邻间距 < 尾部，近观条痕连续无颗粒断点）。
+ * 端点锁定：index=0 → 0（头）、index=count−1 → 1（尾）；单调递增。
+ *
+ * @param exponent 非线性指数（默认 1.6，M3.6 决策 E①）
+ */
+export function trailLag(index: number, count: number, exponent = 1.6): number {
+  if (!Number.isInteger(count) || count < 2) {
+    throw new RangeError(`顶点数必须为 ≥2 的整数，收到 ${count}`);
+  }
+  if (!Number.isInteger(index) || index < 0 || index >= count) {
+    throw new RangeError(`下标必须在 [0, ${count - 1}]，收到 ${index}`);
+  }
+  if (!(exponent > 0)) {
+    throw new RangeError(`指数必须为正，收到 ${exponent}`);
+  }
+  return (index / (count - 1)) ** exponent;
 }
 
 /**

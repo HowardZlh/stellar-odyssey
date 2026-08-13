@@ -70,9 +70,11 @@ export interface LabDemoState {
 }
 
 /**
- * 跟随视角状态（§M3.5-6）：DOM 触发写入，FollowCameraRig useFrame 消费
- * （每帧经 followCameraPose 写相机）。ESC/按钮/页签切换置 endRequested，
- * rig 在下一帧复原相机后回调 DOM 层还原 timeScale/OrbitControls。
+ * 跟随视角状态（§M3.5-6 + §M3.6-2 环绕参数）：DOM 触发写入，
+ * FollowCameraRig useFrame 消费（每帧经 followOrbitPose 写相机）。
+ * ESC/按钮/页签切换置 endRequested，rig 在下一帧复原相机后回调 DOM 层
+ * 还原 timeScale/OrbitControls。环绕参数由跟随期间的拖拽/滚轮手势
+ * mutate（交互事件路径，契约 C2.1 口径）；退出跟随不保留。
  */
 export interface LabFollowState {
   /** 跟随槽位下标（与演示注入同槽位） */
@@ -83,6 +85,31 @@ export interface LabFollowState {
   savedTimeScale: number;
   /** DOM 层请求结束（ESC/退出按钮/页签切换强制结束） */
   endRequested: boolean;
+  /** 环绕方位角（弧度，绕飞行方向轴 360° 无限制；默认 0 = 纯侧视，M3.6-2） */
+  azimuthRad: number;
+  /** 环绕仰角（弧度，手势侧经 clampFollowElevation 钳制 ±75°；默认 0 = 水平） */
+  elevationRad: number;
+  /** 相机—头部距离（km，滚轮经 clampFollowDistance 钳制 [0.6, 6]；默认 1.5） */
+  distanceKm: number;
+}
+
+/**
+ * 演示自动运镜状态（§M3.6-1，决策 A1）：handleDemo 发现 needsAim 时写入，
+ * AimRig useFrame 消费——~0.6 s 球面插值（方向 slerp + 半径 lerp）相机到
+ * aim 目标机位，到位后回调 DOM 层注入演示并清除本状态。aim 期间演示/快进
+ * 按钮禁用、OrbitControls 卸载（防 damping 争抢相机）。
+ */
+export interface LabAimState {
+  /** 待注入演示的槽位下标（pickDemoSlot 全域最优） */
+  slotIndex: number;
+  /** 轨道中心（地面档 = 原点；太空档 = 燃烧层中心） */
+  center: [number, number, number];
+  /** 起点相机相对中心的偏移（球面插值起点） */
+  fromOffset: [number, number, number];
+  /** 目标相机相对中心的偏移（groundAimPosition/spaceAimPosition 产物 − center） */
+  toOffset: [number, number, number];
+  /** 已推进时长（真实秒，rig 每帧累加；≥ AIM_DURATION_SEC 时完成） */
+  elapsedSec: number;
 }
 
 /** 相机位姿桥（CameraPoseBridge 每帧 mutate；DOM 演示按钮读取喂 pickDemoSlot） */
@@ -91,6 +118,12 @@ export interface LabCameraPose {
   position: [number, number, number];
   /** 视线方向（单位向量，相机 −Z 世界方向） */
   viewDir: [number, number, number];
+  /** 相机上方向（单位向量，matrixWorld 第 2 列；pickDemoSlot v2 视锥基） */
+  upDir: [number, number, number];
+  /** 垂直视野角（弧度） */
+  fovYRad: number;
+  /** 视口宽高比 */
+  aspect: number;
 }
 
 /**
@@ -108,6 +141,8 @@ export interface LabFrameRefs {
   demoRef: MutableRefObject<LabDemoState | null>;
   /** 跟随视角状态（null = 未跟随） */
   followRef: MutableRefObject<LabFollowState | null>;
+  /** 演示自动运镜状态（null = 无运镜；AimRig 完成/取消时清除，M3.6-1） */
+  aimRef: MutableRefObject<LabAimState | null>;
   /** 相机位姿桥（Canvas 内每帧 mutate，DOM 事件路径只读） */
   cameraPoseRef: MutableRefObject<LabCameraPose>;
 }

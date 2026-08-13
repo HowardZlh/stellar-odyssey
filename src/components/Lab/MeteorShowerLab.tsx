@@ -13,11 +13,21 @@
  * - 跟随视角：演示触发联动，FollowCameraRig 每帧经 followCameraPose 写相机
  *   （慢动作 ×0.1 如实显示在滑杆）；烧尽驻留 ~2 s 展示余迹 + 汽化科普提示
  *   （落地成坑禁止实现：彗星质地流星体 80–115 km 完全汽化，科学红线）；
- * - 太空视角：OrbitControls key remount（target 燃烧层中心、半径 150–1500、
+ * - 太空视角：OrbitControls key remount（target 燃烧层中心、半径 150–3000、
  *   polar ≤ π/2 防穿地）+ 燃烧层参考盘（非粒子系统，不占 draw call 预算）。
  *
- * 比例尺登记（契约 C5）：1 场景单位 = 1 km（独立比例尺，与主场景
- * SCENE_UNITS_PER_AU 无关）；星穹半径 3000；相机漫游半径 0.1–1.5。
+ * M3.6 增补（§M3.6，全部交互事件路径 + 非粒子 mesh，契约 C2/C2.1 守恒）：
+ * - 演示 100% 入画：pickDemoSlot v2 视锥感知（CameraPoseBridge 补
+ *   upDir/fovY/aspect），无"全轨迹入画"候选时 AimRig ~0.6 s 球面运镜保底；
+ * - 跟随环绕：followOrbitPose 默认纯侧视，FollowOrbitGestures 拖拽环绕
+ *   360°/仰角 ±75°、滚轮距离 [0.6, 6] km（labGestures 纯函数换算）；
+ * - 真实地球 LabEarth（1:1，太空档/跟随可见）+ 近观头部细节层
+ *   MeteorHeadDetail（演示/跟随可见，+1 draw call 登记）。
+ *
+ * 比例尺登记（契约 C5，M3.6 联动变更）：1 场景单位 = 1 km（独立比例尺，
+ * 与主场景 SCENE_UNITS_PER_AU 无关）；星穹半径 10000（原 3000——真实
+ * 地球加入后防星点穿地球边缘）；相机漫游半径 0.1–1.5（视差重核
+ * 1.5/10000 = 0.015% < 0.05% 红线）。
  * 轴向约定（契约 C5，防东西镜像）：+Y = 天顶、−Z = 正北、+X = 正东；
  * 方位角 Az 北起经东（N=0°，E=90°）。星穹投影/辐射点/流量链一律经 M1
  * 纯函数（utils/meteorShower.ts），组件内不内联球面公式（契约 C1 只消费）。
@@ -32,7 +42,7 @@
  * HUD 由 500 ms interval 经 M1 纯函数读 ref 计算（地方时/辐射点高度角）。
  *
  * 地面剪影登记：暗色圆盘置于 y = −1.7（视觉上与需求 y=0 等价——地平线角
- * 偏差 atan(1.7/3000) ≈ 0.03°）；下沉理由：环顾相机为反转轨道范式（target
+ * 偏差 atan(1.7/10000) ≈ 0.01°）；下沉理由：环顾相机为反转轨道范式（target
  * 固定原点、最低点 y = −1.5），圆盘严格置 y=0 会遮挡整个天空。
  *
  * 触控板手势（方案 A，M2 追加）：双指滚动 = 环顾（wheel deltaX/deltaY 双轴）、
@@ -60,6 +70,7 @@ import type { YaleBrightStar } from '@/utils/bakedData';
 import { labEntryForId, LAB_PAGE_PATH } from '@/utils/lab';
 import {
   AFTERGLOW_FADE_FIREBALL_SEC,
+  AIM_DURATION_SEC,
   BURN_LAYER_BOTTOM_KM,
   BURN_LAYER_HORIZONTAL_RADIUS_KM,
   BURN_LAYER_TOP_KM,
@@ -67,6 +78,7 @@ import {
   CAMERA_RADIUS_MIN_UNITS,
   EPOCH_LOCAL_HOURS,
   FASTFORWARD_LEAD_REAL_SEC,
+  FOLLOW_DISTANCE_DEFAULT_KM,
   FOLLOW_LINGER_REAL_SEC,
   FOLLOW_SLOWMO_TIMESCALE,
   KAPPA_CYGNIDS,
@@ -81,9 +93,10 @@ import {
   equatorialToHorizontalMatrix,
   equatorialUnitVector,
   fluxFraction,
-  followCameraPose,
+  followOrbitPose,
   formatClockHHMM,
   formatDurationClock,
+  groundAimPosition,
   horizontalFromEquatorial,
   localClockHours,
   localSiderealTime,
@@ -91,6 +104,7 @@ import {
   nextIgnition,
   pickDemoSlot,
   sceneDirFromAltAz,
+  spaceAimPosition,
   visibleHourlyRate,
   type MeteorSlot,
   type NextIgnitionEvent,
@@ -99,7 +113,10 @@ import {
   LAB_FOV_DEFAULT_DEG,
   LAB_POLAR_MAX_RAD,
   LAB_POLAR_MIN_RAD,
+  clampFollowDistance,
+  clampFollowElevation,
   clampLabPolar,
+  followOrbitDelta,
   fovPointScaleFactor,
   pinchFovDeg,
   safariGestureFovDeg,
@@ -110,6 +127,8 @@ import { blackbodyRGB } from '@/utils/starPhysics';
 import type { MessageKey } from '@/i18n';
 import { MeteorField } from '@/components/Lab/MeteorField';
 import { AfterglowField } from '@/components/Lab/AfterglowField';
+import { MeteorHeadDetail } from '@/components/Lab/MeteorHeadDetail';
+import { LabEarth } from '@/components/Lab/LabEarth';
 import { RadiantMarker } from '@/components/Lab/RadiantMarker';
 import {
   LabControlPanel,
@@ -118,6 +137,7 @@ import {
 } from '@/components/Lab/LabControlPanel';
 import {
   DEFAULT_LAB_CONTROLS,
+  type LabAimState,
   type LabCameraPose,
   type LabControlState,
   type LabDemoState,
@@ -140,6 +160,16 @@ const INITIAL_VIEW_DIR = sceneDirFromAltAz({ altRad: 40 * DEG, azRad: 25 * DEG }
 
 /** 相机初始轨道半径（场景单位，钳制域 [0.1, 1.5] 内） */
 const INITIAL_CAMERA_RADIUS = 1.2;
+
+/**
+ * 相机近平面（场景单位，按视角档切换——M3.6-3 深度精度登记）：
+ * 地面/跟随档 0.05（近观流星 0.6 km 不裁剪）；太空档 2（真实地球加入后
+ * 观察距离达 ~7000 km，near=0.05 时 24-bit 深度在该距离分辨率 ~60 km >
+ * 云层高 8 km，会引发表面/云层 z-fighting；near=2 时分辨率 ~1.5 km ✓，
+ * 太空档相机距一切目标 ≥150 km，near=2 无可见裁剪）。
+ */
+const GROUND_CAMERA_NEAR_UNITS = 0.05;
+const SPACE_CAMERA_NEAR_UNITS = 2;
 
 /** 初始相机位置：反转轨道范式——相机在视线反方向（经原点望向天空） */
 const INITIAL_CAMERA_POSITION: [number, number, number] = [
@@ -209,8 +239,9 @@ function LabTimeDriver({ refs }: { refs: LabFrameRefs }): null {
 }
 
 /**
- * 相机位姿桥（M3.5-3）：每帧 mutate cameraPoseRef（勿 setState，零 GC）——
- * DOM 层演示按钮读取喂 pickDemoSlot（保证演示流星出现在当前视野内）。
+ * 相机位姿桥（M3.5-3 + M3.6-1 视锥扩展）：每帧 mutate cameraPoseRef
+ * （勿 setState，零 GC）——DOM 层演示按钮读取喂 pickDemoSlot v2
+ * （position/viewDir/upDir/fovY/aspect 构成视锥判定基）。
  */
 function CameraPoseBridge({ refs }: { refs: LabFrameRefs }): null {
   const camera = useThree((s) => s.camera);
@@ -219,13 +250,151 @@ function CameraPoseBridge({ refs }: { refs: LabFrameRefs }): null {
     pose.position[0] = camera.position.x;
     pose.position[1] = camera.position.y;
     pose.position[2] = camera.position.z;
-    // 视线方向 = 相机 −Z 世界方向（matrixWorld 第 3 列取反）
     const e = camera.matrixWorld.elements;
+    // 视线方向 = 相机 −Z 世界方向（matrixWorld 第 3 列取反）
     pose.viewDir[0] = -e[8];
     pose.viewDir[1] = -e[9];
     pose.viewDir[2] = -e[10];
+    // 上方向 = 相机 +Y 世界方向（matrixWorld 第 2 列，M3.6-1）
+    pose.upDir[0] = e[4];
+    pose.upDir[1] = e[5];
+    pose.upDir[2] = e[6];
+    const cam = camera as THREE.PerspectiveCamera;
+    pose.fovYRad = (cam.fov * Math.PI) / 180;
+    pose.aspect = cam.aspect;
   });
   return null;
+}
+
+/**
+ * 演示自动运镜 rig（M3.6-1，决策 A1）：aimRef 存在时每帧对相机做
+ * "方向球面插值 + 半径线性插值"（smoothstep 缓动，~0.6 s），到位后
+ * 清除 aimRef 并回调 DOM 层注入演示。运镜期间 OrbitControls 由父级
+ * 卸载（防 damping 争抢相机），交互事件路径零 buffer 上传。
+ */
+function AimRig({
+  refs,
+  onDone,
+}: {
+  refs: LabFrameRefs;
+  onDone: (slotIndex: number) => void;
+}): null {
+  const camera = useThree((s) => s.camera);
+  // 帧临时向量（挂载期复用，渲染循环零 GC）
+  const tmp = useMemo(
+    () => ({ from: new THREE.Vector3(), to: new THREE.Vector3(), pos: new THREE.Vector3() }),
+    []
+  );
+
+  useFrame((_, delta) => {
+    const aim = refs.aimRef.current;
+    if (!aim) return;
+    aim.elapsedSec += delta;
+    const k = Math.min(aim.elapsedSec / AIM_DURATION_SEC, 1);
+    const ease = k * k * (3 - 2 * k); // smoothstep 缓动（平滑起止）
+    tmp.from.set(aim.fromOffset[0], aim.fromOffset[1], aim.fromOffset[2]);
+    tmp.to.set(aim.toOffset[0], aim.toOffset[1], aim.toOffset[2]);
+    const rFrom = tmp.from.length();
+    const rTo = tmp.to.length();
+    tmp.from.normalize();
+    tmp.to.normalize();
+    // 单位方向球面插值（大圆路径；共线退化时直接取终点方向）
+    const dot = Math.min(1, Math.max(-1, tmp.from.dot(tmp.to)));
+    const angle = Math.acos(dot);
+    if (angle > 1e-6) {
+      const sinA = Math.sin(angle);
+      tmp.pos
+        .copy(tmp.from)
+        .multiplyScalar(Math.sin((1 - ease) * angle) / sinA)
+        .addScaledVector(tmp.to, Math.sin(ease * angle) / sinA);
+    } else {
+      tmp.pos.copy(tmp.to);
+    }
+    tmp.pos.multiplyScalar(rFrom + (rTo - rFrom) * ease);
+    camera.position.set(
+      aim.center[0] + tmp.pos.x,
+      aim.center[1] + tmp.pos.y,
+      aim.center[2] + tmp.pos.z
+    );
+    camera.lookAt(aim.center[0], aim.center[1], aim.center[2]);
+    if (k >= 1) {
+      refs.aimRef.current = null;
+      onDone(aim.slotIndex);
+    }
+  });
+  return null;
+}
+
+/**
+ * 跟随环绕手势（M3.6-2）：跟随期间拖拽 = 绕流星头部环绕（方位 360°
+ * 无限制、仰角钳制 ±75°）、滚轮 = 距离缩放（[0.6, 6] km）。换算/钳制
+ * 全部走 utils/labGestures 纯函数；环绕参数 mutate followRef（交互事件
+ * 路径），FollowCameraRig 每帧消费。仅 followActive 时由父级挂载。
+ */
+function FollowOrbitGestures({ refs }: { refs: LabFrameRefs }): null {
+  const gl = useThree((s) => s.gl);
+
+  useEffect(() => {
+    const el = gl.domElement;
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    const onPointerDown = (e: PointerEvent): void => {
+      if (!refs.followRef.current) return;
+      dragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      el.setPointerCapture(e.pointerId);
+    };
+    const onPointerMove = (e: PointerEvent): void => {
+      const follow = refs.followRef.current;
+      if (!dragging || !follow) return;
+      const { dAzimuthRad, dElevationRad } = followOrbitDelta(
+        e.clientX - lastX,
+        e.clientY - lastY,
+        el.clientHeight
+      );
+      lastX = e.clientX;
+      lastY = e.clientY;
+      follow.azimuthRad += dAzimuthRad;
+      follow.elevationRad = clampFollowElevation(follow.elevationRad + dElevationRad);
+    };
+    const onPointerUp = (e: PointerEvent): void => {
+      dragging = false;
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+    };
+    const onWheel = (e: WheelEvent): void => {
+      const follow = refs.followRef.current;
+      if (!follow) return;
+      e.preventDefault();
+      follow.distanceKm = clampFollowDistance(follow.distanceKm, e.deltaY);
+    };
+
+    el.addEventListener('pointerdown', onPointerDown);
+    el.addEventListener('pointermove', onPointerMove);
+    el.addEventListener('pointerup', onPointerUp);
+    el.addEventListener('pointercancel', onPointerUp);
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      el.removeEventListener('pointerdown', onPointerDown);
+      el.removeEventListener('pointermove', onPointerMove);
+      el.removeEventListener('pointerup', onPointerUp);
+      el.removeEventListener('pointercancel', onPointerUp);
+      el.removeEventListener('wheel', onWheel);
+    };
+  }, [gl, refs]);
+
+  return null;
+}
+
+/** 按视角档设置相机近平面（深度精度登记见常量注释；幂等，仅变更时重算投影） */
+function applyCameraNear(camera: THREE.Camera, nearUnits: number): void {
+  const cam = camera as THREE.PerspectiveCamera;
+  if (cam.near !== nearUnits) {
+    cam.near = nearUnits;
+    cam.updateProjectionMatrix();
+  }
 }
 
 /** 视角档预设机位（切档/跟随结束时相机复位，交互事件路径） */
@@ -233,9 +402,11 @@ function applyViewPreset(camera: THREE.Camera, viewMode: LabViewMode): void {
   if (viewMode === 'space') {
     camera.position.set(...SPACE_CAMERA_PRESET_UNITS);
     camera.lookAt(...SPACE_VIEW_TARGET_UNITS);
+    applyCameraNear(camera, SPACE_CAMERA_NEAR_UNITS);
   } else {
     camera.position.set(...INITIAL_CAMERA_POSITION);
     camera.lookAt(0, 0, 0);
+    applyCameraNear(camera, GROUND_CAMERA_NEAR_UNITS);
   }
 }
 
@@ -262,11 +433,13 @@ interface FollowCameraRigProps {
 }
 
 /**
- * 跟随视角状态机（M3.5-6）：每帧经 followCameraPose（M1 位移公式 CPU 镜像）
- * 写相机贴随流星头部；烧尽（elapsed > lifetime，位姿钳制在烧尽点）后驻留
- * FOLLOW_LINGER_REAL_SEC 真实秒展示余迹，随后自动复位相机到当前视角档预设
- * 并回调 DOM 层还原。endRequested（ESC/退出按钮/页签切换）随时中止。
- * 跟随期间 OrbitControls 由父级卸载（避免 damping 每帧争抢相机）。
+ * 跟随视角状态机（M3.5-6 + M3.6-2 环绕升级）：每帧经 followOrbitPose
+ * （M1 位移公式 CPU 镜像 + 以头部为中心的环绕正交基）写相机——默认
+ * 纯侧视且视线水平，方位/仰角/距离由 FollowOrbitGestures 手势 mutate。
+ * 烧尽（elapsed > lifetime，位姿钳制在烧尽点）后驻留 FOLLOW_LINGER_REAL_SEC
+ * 真实秒展示余迹，随后自动复位相机到当前视角档预设并回调 DOM 层还原。
+ * endRequested（ESC/退出按钮/页签切换）随时中止。跟随期间 OrbitControls
+ * 由父级卸载（避免 damping 每帧争抢相机）。
  */
 function FollowCameraRig({ refs, slots, viewMode, onBurnout, onEnd }: FollowCameraRigProps): null {
   const camera = useThree((s) => s.camera);
@@ -303,13 +476,19 @@ function FollowCameraRig({ refs, slots, viewMode, onBurnout, onEnd }: FollowCame
     );
     const dir = sceneDirFromAltAz(radiant);
     const elapsed = refs.timeSecRef.current - follow.startTimeSec;
-    const pose = followCameraPose(
+    const pose = followOrbitPose(
       slot.startPos,
       slot.dispCoefs,
       slot.lifetimeSec,
       [-dir[0], -dir[1], -dir[2]],
-      elapsed
+      elapsed,
+      follow.azimuthRad,
+      follow.elevationRad,
+      follow.distanceKm
     );
+    // 跟随近观（最近 0.6 km）强制小近平面（太空档进入跟随时自动切换；
+    // 幂等函数，结束时 applyViewPreset 按档还原）
+    applyCameraNear(camera, GROUND_CAMERA_NEAR_UNITS);
     camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
     camera.lookAt(pose.target[0], pose.target[1], pose.target[2]);
 
@@ -441,7 +620,7 @@ function StarDome({ stars, refs }: StarDomeProps): JSX.Element {
   });
 
   // 几何包围球是单位球（attribute 为单位向量，真实位置由 shader 放到半径
-  // 3000 处），必须关 frustum culling 防止整批被误剔除
+  // 10000 处），必须关 frustum culling 防止整批被误剔除
   return <points geometry={geometry} material={material} frustumCulled={false} />;
 }
 
@@ -553,6 +732,7 @@ export function MeteorShowerLab(): JSX.Element {
   const [settings, setSettings] = useState<LabControlState>(DEFAULT_LAB_CONTROLS);
   const [viewMode, setViewMode] = useState<LabViewMode>('ground');
   const [followActive, setFollowActive] = useState(false);
+  const [aimActive, setAimActive] = useState(false);
   const [vaporizedVisible, setVaporizedVisible] = useState(false);
   const [hud, setHud] = useState<LabHudState>({
     clockText: '--:--',
@@ -571,12 +751,16 @@ export function MeteorShowerLab(): JSX.Element {
   showerRef.current = shower;
   const demoRef = useRef<LabDemoState | null>(null);
   const followRef = useRef<LabFollowState | null>(null);
+  const aimRef = useRef<LabAimState | null>(null);
   const cameraPoseRef = useRef<LabCameraPose>({
     position: [...INITIAL_CAMERA_POSITION],
     viewDir: [...INITIAL_VIEW_DIR],
+    upDir: [0, 1, 0],
+    fovYRad: (LAB_FOV_DEFAULT_DEG * Math.PI) / 180,
+    aspect: 16 / 9, // 首帧前占位；CameraPoseBridge 每帧覆写真实值
   });
   const refs: LabFrameRefs = useMemo(
-    () => ({ timeSecRef, settingsRef, showerRef, demoRef, followRef, cameraPoseRef }),
+    () => ({ timeSecRef, settingsRef, showerRef, demoRef, followRef, aimRef, cameraPoseRef }),
     []
   );
 
@@ -591,13 +775,23 @@ export function MeteorShowerLab(): JSX.Element {
 
   const handleShowerChange = (id: MeteorShowerId): void => {
     if (id === showerId) return;
-    // 页签切换强制结束演示/跟随（新雨槽位拟合系数不同，旧下标失义）
+    // 页签切换强制结束演示/跟随/运镜（新雨槽位拟合系数不同，旧下标失义）
     demoRef.current = null;
+    aimRef.current = null;
+    setAimActive(false);
     requestFollowEnd();
     setVaporizedVisible(false);
     // 换历元：uTime 归零对齐新历元起点（交互事件路径，非每帧）
     timeSecRef.current = 0;
     setShowerId(id);
+  };
+
+  /** 视角档切换：进行中的自动运镜随即取消（目标机位随档失义，M3.6-1） */
+  const handleViewModeChange = (mode: LabViewMode): void => {
+    if (mode === viewMode) return;
+    aimRef.current = null;
+    setAimActive(false);
+    setViewMode(mode);
   };
 
   /** 当前时刻流量链快照（快进/倒计时共用，全部 M1/M3.5 纯函数） */
@@ -632,28 +826,9 @@ export function MeteorShowerLab(): JSX.Element {
     }
   };
 
-  /** 演示触发（方案 B，时间轴外注入；followOnDemo 勾选时联动进入跟随） */
-  const handleDemo = (fireballOnly: boolean): void => {
-    if (followRef.current) return;
+  /** 演示注入（挑选完成后的实际注入；直接入画与 aim 到位两条路径共用） */
+  const injectDemo = (slotIndex: number): void => {
     const s = settingsRef.current;
-    const sh = showerRef.current;
-    const pose = cameraPoseRef.current;
-    const lst = localSiderealTime(sh.epochLst0Deg, s.hourOffset, timeSecRef.current / 3600);
-    const radiant = horizontalFromEquatorial(
-      sh.radiantRaDeg,
-      sh.radiantDecDeg,
-      s.observerLat,
-      lst
-    );
-    const dir = sceneDirFromAltAz(radiant);
-    const slotIndex = pickDemoSlot(
-      slots,
-      [-dir[0], -dir[1], -dir[2]],
-      pose.position,
-      pose.viewDir,
-      fireballOnly
-    );
-    if (slotIndex < 0) return;
     const startTimeSec = timeSecRef.current;
     demoRef.current = {
       slotIndex,
@@ -670,6 +845,10 @@ export function MeteorShowerLab(): JSX.Element {
         startTimeSec,
         savedTimeScale: effectiveTimeScale,
         endRequested: false,
+        // 环绕参数默认：纯侧视、视线水平、距离 1.5 km（M3.6-2；退出不保留）
+        azimuthRad: 0,
+        elevationRad: 0,
+        distanceKm: FOLLOW_DISTANCE_DEFAULT_KM,
       };
       setFollowActive(true);
       // 慢动作 ×0.1（timeScale 本为用户控件，滑杆如实显示，非时间伪造）
@@ -677,6 +856,61 @@ export function MeteorShowerLab(): JSX.Element {
     } else if (s.timeScale === 0) {
       setSettings((prev) => ({ ...prev, timeScale: 1 }));
     }
+  };
+
+  /**
+   * 演示触发（方案 B，时间轴外注入 + M3.6-1 100% 入画保障）：
+   * pickDemoSlot v2 视锥感知挑选——有"全轨迹入画"候选立即注入；无候选
+   * 时写 aimRef 启动 ~0.6 s 自动运镜（AimRig 球面插值到 aim 目标机位后
+   * 经 handleAimDone 注入），运镜期间演示/快进按钮禁用。
+   */
+  const handleDemo = (fireballOnly: boolean): void => {
+    if (followRef.current || aimRef.current) return;
+    const s = settingsRef.current;
+    const sh = showerRef.current;
+    const pose = cameraPoseRef.current;
+    const lst = localSiderealTime(sh.epochLst0Deg, s.hourOffset, timeSecRef.current / 3600);
+    const radiant = horizontalFromEquatorial(
+      sh.radiantRaDeg,
+      sh.radiantDecDeg,
+      s.observerLat,
+      lst
+    );
+    const dir = sceneDirFromAltAz(radiant);
+    const pick = pickDemoSlot(slots, [-dir[0], -dir[1], -dir[2]], pose, fireballOnly);
+    if (!pick) return;
+    if (!pick.needsAim) {
+      injectDemo(pick.slotIndex);
+      return;
+    }
+    // 自动运镜保底（决策 A1）：目标机位 = 两档 aim 纯函数（保持当前轨道半径/距离）
+    const center: [number, number, number] =
+      viewMode === 'ground' ? [0, 0, 0] : [...SPACE_VIEW_TARGET_UNITS];
+    const fromOffset: [number, number, number] = [
+      pose.position[0] - center[0],
+      pose.position[1] - center[1],
+      pose.position[2] - center[2],
+    ];
+    const radius = Math.hypot(fromOffset[0], fromOffset[1], fromOffset[2]);
+    if (!(radius > 0)) return; // 相机与轨道中心重合（防御，正常不可达）
+    const aimPos =
+      viewMode === 'ground'
+        ? groundAimPosition(pick.midPoint, radius)
+        : spaceAimPosition(pick.midPoint, center, radius);
+    aimRef.current = {
+      slotIndex: pick.slotIndex,
+      center,
+      fromOffset,
+      toOffset: [aimPos[0] - center[0], aimPos[1] - center[1], aimPos[2] - center[2]],
+      elapsedSec: 0,
+    };
+    setAimActive(true);
+  };
+
+  /** 自动运镜到位（AimRig 回调）：注入演示并恢复按钮/OrbitControls */
+  const handleAimDone = (slotIndex: number): void => {
+    setAimActive(false);
+    injectDemo(slotIndex);
   };
 
   /** 跟随结束（rig 已复位相机）：还原 timeScale 与 OrbitControls 挂载 */
@@ -760,7 +994,7 @@ export function MeteorShowerLab(): JSX.Element {
         camera={{
           position: INITIAL_CAMERA_POSITION,
           fov: LAB_FOV_DEFAULT_DEG,
-          near: 0.05,
+          near: GROUND_CAMERA_NEAR_UNITS,
           far: STAR_DOME_RADIUS_UNITS * 2.5,
         }}
       >
@@ -768,6 +1002,7 @@ export function MeteorShowerLab(): JSX.Element {
         <LabTimeDriver refs={refs} />
         <CameraPoseBridge refs={refs} />
         <ViewModeRig viewMode={viewMode} />
+        <AimRig refs={refs} onDone={handleAimDone} />
         <FollowCameraRig
           refs={refs}
           slots={slots}
@@ -775,24 +1010,36 @@ export function MeteorShowerLab(): JSX.Element {
           onBurnout={handleBurnout}
           onEnd={handleFollowEnd}
         />
+        {followActive && <FollowOrbitGestures refs={refs} />}
         {stars && <StarDome stars={stars} refs={refs} />}
         {/* 流星 + 余迹：与星场共 3 个粒子系统 draw call（§4.1，禁止合并） */}
         <MeteorField slots={slots} refs={refs} />
         <AfterglowField slots={slots} refs={refs} />
+        {/* 近观头部细节层（M3.6-4③）：常驻挂载、仅演示/跟随期间 visible
+            （+1 draw call 登记——"行星近观 4K 细节层"的流星对应物） */}
+        <MeteorHeadDetail slots={slots} refs={refs} />
         {settings.showRadiant && hud.radiantAltDeg > 0 && (
           <RadiantMarker refs={refs} labelKey={RADIANT_LABEL_KEYS[showerId]} />
         )}
         {/* 燃烧层参考盘（M3.5-5）：仅太空档 + 开关（默认开）；非粒子系统 */}
         {viewMode === 'space' && settings.showBurnLayer && <BurnLayerReference />}
-        <GroundDisk />
-        {/* 相机控制（跟随期间整体卸载，防 damping 与 FollowCameraRig 争抢相机；
-            结束时 rig 已复位相机，重挂载的 OrbitControls 从当前位姿接管）。
+        {/* 真实地球（M3.6-3）：常驻挂载 + visible 门控（太空档/跟随期间可见；
+            纹理页面挂载即低优先级预载，切档零等待） */}
+        <LabEarth refs={refs} visible={viewMode === 'space' || followActive} />
+        {/* 地面剪影盘：仅地面档且非跟随（贴地曲率不可辨；跟随期间隐藏防
+            平面盘遮挡真实地球夜面——M3.6-3 登记差异） */}
+        {viewMode === 'ground' && !followActive && <GroundDisk />}
+        {/* 相机控制（跟随/自动运镜期间整体卸载，防 damping 与
+            FollowCameraRig/AimRig 争抢相机；结束时相机已就位，重挂载的
+            OrbitControls 从当前位姿接管）。
             地面档（§2）：环顾式仰视——target 原点、半径 0.1–1.5、禁平移；
             polar 域取 labGestures 常量（与 wheel 环顾钳制同一事实源）；
             enableZoom 关闭（视差 <0.05%，缩放语义由 TrackpadLookControls FOV 承载）。
             太空档（M3.5-4，key remount）：target 燃烧层中心 (0,97,0)、半径
-            150–1500、polar ≤ π/2 防穿地；滚轮 dolly 缩放距离。 */}
+            150–3000（M3.6 决策 D：拉远可见完整地平弧）、polar ≤ π/2 防穿地；
+            滚轮 dolly 缩放距离。 */}
         {!followActive &&
+          !aimActive &&
           (viewMode === 'ground' ? (
             <OrbitControls
               key="ground"
@@ -822,7 +1069,7 @@ export function MeteorShowerLab(): JSX.Element {
               dampingFactor={0.12}
             />
           ))}
-        {viewMode === 'ground' && !followActive && <TrackpadLookControls />}
+        {viewMode === 'ground' && !followActive && !aimActive && <TrackpadLookControls />}
         {/* 后期：Bloom + ACES ToneMapping（DevPreviewHarness 同配置；
             火流星末端闪爆 HDR ×15 由 Bloom 拾取，§4.4） */}
         <EffectComposer multisampling={4}>
@@ -849,10 +1096,11 @@ export function MeteorShowerLab(): JSX.Element {
         onSettingsChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
         hud={hud}
         viewMode={viewMode}
-        onViewModeChange={setViewMode}
+        onViewModeChange={handleViewModeChange}
         onFastForward={handleFastForward}
         onDemo={handleDemo}
         followActive={followActive}
+        aimActive={aimActive}
       />
 
       {/* 跟随视角：退出按钮（ESC 等价，§M3.5-6） */}

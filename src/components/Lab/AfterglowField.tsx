@@ -49,8 +49,11 @@ import type { LabFrameRefs } from '@/components/Lab/labTypes';
 /** 粒子路径抖动/渐隐时长烘焙种子（确定性） */
 const AFTERGLOW_SEED = 0xaf7e91;
 
-/** 3D 值噪声（SunCutaway.tsx 现成片段搬运，与 utils/stellarSurface 镜像一致） */
-const NOISE_GLSL = /* glsl */ `
+/**
+ * 3D 值噪声（SunCutaway.tsx 现成片段搬运，与 utils/stellarSurface 镜像一致；
+ * M3.6-4 起被 MeteorField 片元闪烁与 MeteorHeadDetail 等离子体 fbm 复用导出）
+ */
+export const NOISE_GLSL = /* glsl */ `
   float hash3(vec3 p) {
     return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
   }
