@@ -120,6 +120,7 @@
 - 测试覆盖率 gate：**≥90%**（语句/分支/函数/行，CI 强制，低于即失败）
 - 物理计算函数必须有完整测试
 - 提交前必跑四件套：`npm test` / `npm run type-check` / `npm run lint` / （涉及构建路径时）`npm run build`
+- **纯文档改动豁免四件套**：改动仅涉及 Markdown 文档（README、CHANGELOG、docs/、AGENTS.md 等）、不触碰任何代码/配置/数据文件时，提交前无需跑四件套。注意：`.ts/.tsx/.json/.mjs` 等被构建或测试消费的文件不属于纯文档，照常必跑
 
 ### 集成测试
 - 关键用户交互流程需要集成测试
