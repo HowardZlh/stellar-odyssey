@@ -70,9 +70,14 @@ export function BodyCycleSwitcher(): JSX.Element | null {
   // 黑子群/日珥科普卡片（HudInfo，底部居中弹出）可见时上移让位，避免重叠
   const selectedSolarFeature = useSimulationStore((s) => s.selectedSolarFeature);
   // U2-3：L3/L4 巡游为支持者专属——无权益时按钮置灰 + 锁标 + tooltip；
-  // 保持可点击（点击经 cycleScopeBody gate 弹锁定提示，非静默禁用）
+  // 保持可点击（点击经 cycleScopeBody gate 弹锁定提示，非静默禁用）。
+  // A3：tour 限免窗口期内锁标随 gate 结果消失（消费派生布尔，渲染期
+  // 零时钟纪律；窗口跨界 ≤30s 显隐宽限登记于 store）
   const cycleLocked = useSimulationStore(
-    (s) => (s.cycleScope === 'galaxy' || s.cycleScope === 'universe') && s.entitlement === null,
+    (s) =>
+      (s.cycleScope === 'galaxy' || s.cycleScope === 'universe') &&
+      s.entitlement === null &&
+      !s.remoteTourFreeActive,
   );
   const { scope, name, position, cycleEnabled } = useCycleCurrentBody();
 

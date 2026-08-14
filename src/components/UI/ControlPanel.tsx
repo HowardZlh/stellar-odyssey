@@ -245,7 +245,11 @@ function ControlPanelSections(): JSX.Element {
   const requestDemoEvent = useSimulationStore((s) => s.requestDemoEvent);
   const demoRemaining = useSimulationStore((s) => s.demoRemainingToday);
   const entitlementDays = useSimulationStore((s) => s.entitlementRemainingDays);
-  const demoQuotaExhausted = entitlement === null && demoRemaining === 0;
+  // A3：demo 限免窗口期内配额尽锁态随 gate 结果解除（演示不计次，
+  // 消费派生布尔，渲染期零时钟纪律）
+  const remoteDemoFreeActive = useSimulationStore((s) => s.remoteDemoFreeActive);
+  const demoQuotaExhausted =
+    entitlement === null && demoRemaining === 0 && !remoteDemoFreeActive;
   // 配额锁态 tooltip（复用配额版锁定提示正文，BodyCycleSwitcher 同形态）
   const demoLockedTooltip = demoQuotaExhausted ? tr('unlock.lockedQuotaBody') : undefined;
 

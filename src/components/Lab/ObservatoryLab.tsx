@@ -1,7 +1,7 @@
 'use client';
 
 import type { JSX } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useLocale, useT, useTf } from '@/hooks/useI18n';
@@ -18,9 +18,9 @@ import {
   observatoryAccessUpdate,
   observatoryFreeWindowActive,
   observatoryRemaining,
-  resolveObservatoryGateConfig,
   type ObservatoryAccessResult,
 } from '@/utils/observatoryGate';
+import { resolveRemoteObservatoryGateConfig } from '@/utils/remoteGateConfigClient';
 import {
   persistObservatoryQuota,
   readStoredObservatoryQuota,
@@ -77,9 +77,16 @@ function ObservatoryGallery({ unknownBodyId }: { unknownBodyId: string | null })
   const setLocale = useSimulationStore((s) => s.setLocale);
   const entitlement = useSimulationStore((s) => s.entitlement);
   const [banner, setBanner] = useState<GateBanner | null>(null);
-  const config = resolveObservatoryGateConfig();
+  // A3：远程 observatory 域覆盖注入（订阅 store——本组件为 DOM 层非 3D
+  // 场景；引用仅在 applyRemoteGateConfig 时更换，useMemo 防逐渲染重解析）
+  const remoteObservatory = useSimulationStore((s) => s.remoteGateConfig.observatory);
+  const config = useMemo(
+    () => resolveRemoteObservatoryGateConfig(remoteObservatory),
+    [remoteObservatory],
+  );
 
-  // 额度横幅：entitlement 恢复/变更后重算（读时钟与 localStorage，effect 内完成）
+  // 额度横幅：entitlement 恢复/远程配置注入后重算（读时钟与 localStorage，
+  // effect 内完成；限免文案/剩余额度随注入配置自动正确）
   useEffect(() => {
     const now = Date.now();
     const { remaining, premiumRemaining } = observatoryRemaining(
@@ -94,9 +101,7 @@ function ObservatoryGallery({ unknownBodyId }: { unknownBodyId: string | null })
       remaining,
       premiumRemaining,
     });
-    // config 为模块级默认配置解析结果（无参调用恒等），不入依赖
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entitlement]);
+  }, [entitlement, config]);
 
   return (
     <main className="hud-scroll fixed inset-0 overflow-y-auto bg-space-dark pb-[calc(2.5rem+env(safe-area-inset-bottom))] pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] pt-[max(2.5rem,env(safe-area-inset-top))] text-gray-200">
@@ -277,7 +282,12 @@ function ObservatoryScene({ entry }: { entry: PreviewEntry }): JSX.Element {
   useEffect(() => {
     if (consumedForRef.current === entry.bodyId) return;
     consumedForRef.current = entry.bodyId;
-    const config = resolveObservatoryGateConfig();
+    // A3：远程 observatory 域覆盖注入（进入时刻快照，effect 内 getState；
+    // 缓存配置在 useUnlockInit 挂载 effect 已同步应用——先于本 effect 执行，
+    // ObservatoryLab 的 restored 时序登记同样保证）
+    const config = resolveRemoteObservatoryGateConfig(
+      useSimulationStore.getState().remoteGateConfig.observatory,
+    );
     const entitled = useSimulationStore.getState().entitlement !== null;
     const decision = observatoryAccessUpdate(
       config,

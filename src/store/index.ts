@@ -63,6 +63,11 @@ import { UNLOCK_PUBLIC_KEY_HEX } from '@/data/unlockPublicKey';
 import { FREE_DEMO_DAILY_LIMIT, demoQuotaRemaining, demoQuotaUpdate } from '@/utils/demoQuota';
 import type { DemoQuotaState } from '@/utils/demoQuota';
 import type { UnlockEntitlement } from '@/utils/premiumGate';
+import {
+  remoteFreeWindowActive,
+  sanitizeRemoteGateConfig,
+} from '@/utils/remoteGateConfig';
+import type { RemoteGateConfigV1 } from '@/utils/remoteGateConfig';
 import { tokenRemainingDays, verifyToken } from '@/utils/unlockToken';
 import type { VerifyTokenResult } from '@/utils/unlockToken';
 import {
@@ -373,6 +378,21 @@ export interface SimulationState {
   demoRemainingToday: number;
   /** 权益剩余天数（派生字段，null=免费态；天粒度，30s tick 低频刷新） */
   entitlementRemainingDays: number | null;
+  /**
+   * 远程门控配置（A3，§0.11 schema v1；初始 `{ v: 1 }` = 全部回退代码
+   * 默认值）。会话级快照：启动经 useUnlockInit 读缓存 + 异步拉取写入
+   * （applyRemoteGateConfig 消毒单点），不新增 interval（HTTP 5 分钟
+   * 缓存已够，登记）。3D 场景组件不订阅本字段（帧循环 getState 纪律）。
+   */
+  remoteGateConfig: RemoteGateConfigV1;
+  /**
+   * L3/L4 巡游限免窗口生效中（派生字段，渲染纯度纪律：BodyCycleSwitcher
+   * 锁标选择器消费，渲染期不读时钟；由 applyRemoteGateConfig +
+   * entitlementTick 维护——窗口跨界最长 30 秒宽限，与权益到期同口径登记）
+   */
+  remoteTourFreeActive: boolean;
+  /** 演示限免窗口生效中（派生字段，ControlPanel 配额尽锁态消费；维护口径同上） */
+  remoteDemoFreeActive: boolean;
 
   // actions
   tick: (realDeltaSeconds: number) => void;
@@ -402,6 +422,13 @@ export interface SimulationState {
   restoreUnlockState: (nowSec?: number) => void;
   /** 权益到期检查（30s 轻量 interval）：exp ≤ now → 降级免费态 + 清 persist */
   entitlementTick: (nowSec?: number) => void;
+  /**
+   * 应用远程门控配置（A3：useUnlockInit 缓存恢复/拉取成功两路共用）：
+   * 入参 unknown 经 `sanitizeRemoteGateConfig` 消毒单点写入（调用方免
+   * 消毒，幂等），并重算派生字段（demoRemainingToday 注入远程 dailyLimit
+   * + 两个限免窗口布尔）。nowMs 缺省当前时钟（测试注入用参数）。
+   */
+  applyRemoteGateConfig: (config: unknown, nowMs?: number) => void;
   /**
    * 手动演示配额申请（U2-3，四类手动演示共用）：有权益直通 true；
    * 无权益消耗当日配额（跨自然日重置 + persist），配额尽 → false +
@@ -813,6 +840,9 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   lockedHintSeenBodyIds: [],
   demoRemainingToday: FREE_DEMO_DAILY_LIMIT,
   entitlementRemainingDays: null,
+  remoteGateConfig: { v: 1 },
+  remoteTourFreeActive: false,
+  remoteDemoFreeActive: false,
 
   setLaunchParams: (params) => set({ launch: params }),
 
@@ -836,7 +866,14 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   restoreUnlockState: (nowSec = Date.now() / 1000) => {
     const quota = readStoredDemoQuota();
     if (quota !== null) {
-      set({ demoQuota: quota, demoRemainingToday: demoQuotaRemaining(quota, nowSec * 1000) });
+      set({
+        demoQuota: quota,
+        demoRemainingToday: demoQuotaRemaining(
+          quota,
+          nowSec * 1000,
+          get().remoteGateConfig.demo?.dailyLimit,
+        ),
+      });
     }
     const token = readStoredUnlockToken();
     if (token === null) return;
@@ -855,11 +892,33 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   entitlementTick: (nowSec = Date.now() / 1000) => {
     const state = get();
     const updates: Partial<
-      Pick<SimulationState, 'entitlement' | 'entitlementRemainingDays' | 'demoRemainingToday'>
+      Pick<
+        SimulationState,
+        | 'entitlement'
+        | 'entitlementRemainingDays'
+        | 'demoRemainingToday'
+        | 'remoteTourFreeActive'
+        | 'remoteDemoFreeActive'
+      >
     > = {};
-    // 派生字段低频刷新（跨自然日配额恢复 / 剩余天数天粒度递减）
-    const remaining = demoQuotaRemaining(state.demoQuota, nowSec * 1000);
+    // 派生字段低频刷新（跨自然日配额恢复 / 剩余天数天粒度递减 /
+    // 限免窗口跨界——A3 登记：窗口起止生效最长 30 秒宽限，权益到期同口径）
+    const remaining = demoQuotaRemaining(
+      state.demoQuota,
+      nowSec * 1000,
+      state.remoteGateConfig.demo?.dailyLimit,
+    );
     if (remaining !== state.demoRemainingToday) updates.demoRemainingToday = remaining;
+    const tourFree = remoteFreeWindowActive(
+      state.remoteGateConfig.tour?.freeWindow,
+      nowSec * 1000,
+    );
+    if (tourFree !== state.remoteTourFreeActive) updates.remoteTourFreeActive = tourFree;
+    const demoFree = remoteFreeWindowActive(
+      state.remoteGateConfig.demo?.freeWindow,
+      nowSec * 1000,
+    );
+    if (demoFree !== state.remoteDemoFreeActive) updates.remoteDemoFreeActive = demoFree;
     if (state.entitlement !== null) {
       if (state.entitlement.expSec <= nowSec) {
         // 到期降级免费态 + 清 persist
@@ -874,11 +933,29 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     if (Object.keys(updates).length > 0) set(updates);
   },
 
+  applyRemoteGateConfig: (config, nowMs = Date.now()) => {
+    const clean = sanitizeRemoteGateConfig(config);
+    set({
+      remoteGateConfig: clean,
+      demoRemainingToday: demoQuotaRemaining(get().demoQuota, nowMs, clean.demo?.dailyLimit),
+      remoteTourFreeActive: remoteFreeWindowActive(clean.tour?.freeWindow, nowMs),
+      remoteDemoFreeActive: remoteFreeWindowActive(clean.demo?.freeWindow, nowMs),
+    });
+  },
+
   requestDemoEvent: (nowMs = Date.now()) => {
     const state = get();
     // 有权益不限次（entitlementTick 维护 entitlement 时效，见字段登记）
     if (state.entitlement !== null) return true;
-    const result = demoQuotaUpdate(state.demoQuota, nowMs);
+    // A3：demo 限免窗口期内放行不计次（观察站免费期同口径，配额零触碰）
+    if (remoteFreeWindowActive(state.remoteGateConfig.demo?.freeWindow, nowMs)) {
+      return true;
+    }
+    const result = demoQuotaUpdate(
+      state.demoQuota,
+      nowMs,
+      state.remoteGateConfig.demo?.dailyLimit,
+    );
     persistDemoQuota(result.state);
     if (result.allowed) {
       set({ demoQuota: result.state, demoRemainingToday: result.remaining });
@@ -1192,8 +1269,14 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       const scope = state.cycleScope;
       // U2-3 巡游 gate：L3/L4 域为支持者专属（kiosk 复用本 action 同受限，
       // 裁决 §0.4 不豁免）；无权益 → 不切换 + 巡游版锁定提示（不节流——
-      // 显式操作反馈）。L1/L2 域零变化。
-      if ((scope === 'galaxy' || scope === 'universe') && state.entitlement === null) {
+      // 显式操作反馈）。L1/L2 域零变化。A3 叠加：tour 限免窗口期内旁路
+      // （action 时刻精确判定；锁标 UI 消费派生 remoteTourFreeActive，
+      // 窗口跨界 ≤30s 显隐宽限登记）。
+      if (
+        (scope === 'galaxy' || scope === 'universe') &&
+        state.entitlement === null &&
+        !remoteFreeWindowActive(state.remoteGateConfig.tour?.freeWindow, Date.now())
+      ) {
         return { lockedHint: { context: 'cycle' as const, bodyId: null } };
       }
       const followingInScope =
