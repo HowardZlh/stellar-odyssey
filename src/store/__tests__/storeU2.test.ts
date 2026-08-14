@@ -21,10 +21,12 @@ jest.mock("@/data/unlockPublicKey", () => ({
 
 import { useSimulationStore } from "@/store";
 import { FREE_DEMO_DAILY_LIMIT, localDateKey } from "@/utils/demoQuota";
+import { emptyRevocationList } from "@/utils/revocationList";
 import { signToken } from "@/utils/unlockToken";
 import type { UnlockTokenPayload } from "@/utils/unlockToken";
 import {
   DEMO_QUOTA_STORAGE_KEY,
+  REVOCATIONS_STORAGE_KEY,
   UNLOCK_TOKEN_STORAGE_KEY,
 } from "@/utils/unlockStorage";
 
@@ -66,8 +68,20 @@ function resetStore(): void {
     lockedHintSeenBodyIds: [],
     demoRemainingToday: FREE_DEMO_DAILY_LIMIT,
     entitlementRemainingDays: null,
+    entitlementTokenHash: null,
+    entitlementRevoked: false,
+    revocationCheckPending: false,
+    revocationListReady: false,
+    revocationCheckFailed: false,
+    revocationList: emptyRevocationList(),
   });
   window.localStorage.clear();
+  // A6：缓存空吊销名单——restore 走缓存软化同步比对路径（无缓存的
+  // 挂起恢复分支由 storeA6.test 专测）
+  window.localStorage.setItem(
+    REVOCATIONS_STORAGE_KEY,
+    JSON.stringify(emptyRevocationList()),
+  );
 }
 
 describe("U2-1 权益写入/恢复/到期降级/清除", () => {

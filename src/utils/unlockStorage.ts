@@ -10,6 +10,7 @@
  */
 import type { DemoQuotaState } from "@/utils/demoQuota";
 import type { RemoteGateConfigV1 } from "@/utils/remoteGateConfig";
+import type { RevocationListV1 } from "@/utils/revocationList";
 
 /** 解锁 token 持久化键（登记） */
 export const UNLOCK_TOKEN_STORAGE_KEY = "stellar-odyssey:unlockToken";
@@ -19,6 +20,9 @@ export const DEMO_QUOTA_STORAGE_KEY = "stellar-odyssey:demoQuota";
 
 /** 远程门控配置缓存键（A3-1 登记，stale-while-revalidate 快照） */
 export const GATE_CONFIG_STORAGE_KEY = "stellar-odyssey:gateConfig";
+
+/** 吊销名单缓存键（A6-3 登记，缓存软化 fail-closed 核对快照） */
+export const REVOCATIONS_STORAGE_KEY = "stellar-odyssey:revocations";
 
 /** 读取持久化 token 原始串（无存值/存取异常 → null） */
 export function readStoredUnlockToken(): string | null {
@@ -86,6 +90,30 @@ export function readStoredGateConfig(): unknown {
 export function persistGateConfig(config: RemoteGateConfigV1): void {
   try {
     window.localStorage.setItem(GATE_CONFIG_STORAGE_KEY, JSON.stringify(config));
+  } catch {
+    // 隐私模式/配额异常：忽略
+  }
+}
+
+/**
+ * 读取吊销名单缓存（A6-3）：返回解析后的 unknown 原值——消毒由调用方
+ * 经 `sanitizeRevocationList` 单点完成（§0.15 纪律，本层不做形状判定）；
+ * 无存值/JSON 解析失败/存取异常 → null（= 无缓存，缓存软化分支依据）。
+ */
+export function readStoredRevocations(): unknown {
+  try {
+    const raw = window.localStorage.getItem(REVOCATIONS_STORAGE_KEY);
+    if (raw === null) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** 持久化吊销名单（消毒后形态；存取异常静默忽略） */
+export function persistRevocations(list: RevocationListV1): void {
+  try {
+    window.localStorage.setItem(REVOCATIONS_STORAGE_KEY, JSON.stringify(list));
   } catch {
     // 隐私模式/配额异常：忽略
   }

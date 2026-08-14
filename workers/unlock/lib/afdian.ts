@@ -52,6 +52,65 @@ export function buildAfdianQueryOrderRequest(
   };
 }
 
+/**
+ * query-order **分页形态**请求构造（A6-2 退款巡检消费，§0.13 锚点）：
+ * params = `{ page }`（按页拉全量订单，最新在前——stock_analysis
+ * run_refund_sync 先例）；签名算法与单号形态同族复用。
+ */
+export function buildAfdianQueryOrderPageRequest(
+  userId: string,
+  token: string,
+  page: number,
+  epochSec: number,
+): { url: string; body: string } {
+  const params = JSON.stringify({ page });
+  const sign = md5hex(`${token}params${params}ts${epochSec}user_id${userId}`);
+  return {
+    url: AFDIAN_QUERY_ORDER_URL,
+    body: JSON.stringify({ user_id: userId, params, ts: epochSec, sign }),
+  };
+}
+
+/** 分页巡检所需的最小订单字段（订单号 + 支付状态） */
+export interface AfdianPagedOrder {
+  readonly orderId: string;
+  /** 支付状态（2 = 已支付；≠2 = 疑似退款/未支付，巡检登记依据） */
+  readonly status: number;
+}
+
+/** 分页响应解析结果 */
+export type AfdianPageResult =
+  | { readonly kind: "ok"; readonly orders: readonly AfdianPagedOrder[] }
+  | { readonly kind: "upstream_error" };
+
+/**
+ * query-order 分页响应解析（防御式）：`ec !== 200` / `data.list` 非数组
+ * → upstream_error；条目缺 out_trade_no（非字符串）→ 丢弃该条；
+ * status 非法归 NaN（`≠2` 判定按疑似处理由调用方裁决——巡检侧要求
+ * KV 存在兑换记录才登记，误报由此收敛）。
+ */
+export function parseAfdianQueryOrderPageResponse(
+  raw: unknown,
+): AfdianPageResult {
+  if (typeof raw !== "object" || raw === null) return { kind: "upstream_error" };
+  const rec = raw as Record<string, unknown>;
+  if (rec.ec !== 200) return { kind: "upstream_error" };
+  const data = rec.data;
+  if (typeof data !== "object" || data === null) {
+    return { kind: "upstream_error" };
+  }
+  const list = (data as Record<string, unknown>).list;
+  if (!Array.isArray(list)) return { kind: "upstream_error" };
+  const orders: AfdianPagedOrder[] = [];
+  for (const item of list) {
+    if (typeof item !== "object" || item === null) continue;
+    const o = item as Record<string, unknown>;
+    if (typeof o.out_trade_no !== "string" || o.out_trade_no === "") continue;
+    orders.push({ orderId: o.out_trade_no, status: Number(o.status) });
+  }
+  return { kind: "ok", orders };
+}
+
 /** 商品单份数解析：sku_detail 各项 count 合计（缺失/非法回退 1） */
 function parseGoodsCount(skuDetail: unknown): number {
   if (!Array.isArray(skuDetail)) return 1;

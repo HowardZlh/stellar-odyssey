@@ -59,9 +59,13 @@ export function redeemErrorMessageKey(code: string): MessageKey {
   }
 }
 
-/** verifyToken 拒绝原因 → 提示 i18n 键（格式/签名/过期分开提示，§U3-2） */
+/**
+ * applyUnlockToken 拒绝原因 → 提示 i18n 键（格式/签名/过期分开提示，
+ * §U3-2；A6-3 扩展：'revoked' = 命中吊销名单（裁决 ⑤ 命中文案）、
+ * 'unverified' = 核验失败态 fail-closed 拒绝（裁决 ⑥ 网络提示））
+ */
 export function tokenErrorMessageKey(
-  reason: "format" | "signature" | "expired",
+  reason: "format" | "signature" | "expired" | "revoked" | "unverified",
 ): MessageKey {
   switch (reason) {
     case "format":
@@ -70,6 +74,10 @@ export function tokenErrorMessageKey(
       return "unlock.tokenErrSignature";
     case "expired":
       return "unlock.tokenErrExpired";
+    case "revoked":
+      return "unlock.revokedNotice";
+    case "unverified":
+      return "unlock.revokeCheckFailed";
   }
 }
 

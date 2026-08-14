@@ -104,7 +104,7 @@ export const en: I18nDict = {
     benefitDemo: 'Unlimited event demos: flares / CMEs / supernovae / galaxy-merger preview',
     refundTitle: 'Refunds & notes',
     refundPolicy:
-      'Unredeemed orders can be refunded to the original payment method by email request; redeemed orders are non-refundable; no invoices are provided. Access does not auto-renew upon expiry.',
+      'Unredeemed orders are fully refundable; if a redeemed order is refunded, its unlock credential will be invalidated accordingly. No invoices are provided; access does not auto-renew upon expiry.',
     channelsSection: 'Purchase & redeem',
     afdianTitle: 'Afdian (automatic)',
     afdianGuide:
@@ -153,6 +153,10 @@ export const en: I18nDict = {
     tokenErrSignature: 'Token signature verification failed — do not modify the token and retry',
     tokenErrExpired: 'This token has expired — purchase any tier to renew',
     tokenActivated: 'Access activated!',
+    revokedNotice:
+      'This credential has quietly dimmed with the refund. The stars remain where you left them — whenever you wish to set sail again, the unlock page keeps a light on for you.',
+    revokeCheckFailed:
+      'Unable to verify credential status. Please check your network connection and try again.',
     lockedTitle: 'Supporter-only content',
     lockedDetailBody: 'This close-up detail is supporter-only. Unlock to view it up close.',
     lockedCycleBody:

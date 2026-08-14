@@ -34,12 +34,16 @@ export function LockedHintCard(): JSX.Element | null {
 
   if (lockedHint === null) return null;
 
+  // A6-3：'revoked' = 凭证吊销命中（裁决 ⑤ 文艺文案原文；主应用侧命中
+  // 提示落点登记——复用本卡片，「前往解锁」按钮即"前往解锁页"入口）
   const body =
     lockedHint.context === "detail"
       ? tr("unlock.lockedDetailBody")
       : lockedHint.context === "cycle"
         ? tr("unlock.lockedCycleBody")
-        : tr("unlock.lockedQuotaBody");
+        : lockedHint.context === "revoked"
+          ? tr("unlock.revokedNotice")
+          : tr("unlock.lockedQuotaBody");
 
   return (
     /* 独立定位：底部居中（避让顶部事件通知列与底部巡游控件） */

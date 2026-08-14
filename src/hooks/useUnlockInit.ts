@@ -25,7 +25,15 @@ import {
   parseGateConfigResponse,
   resolveGateConfigApiUrl,
 } from "@/utils/remoteGateConfigClient";
-import { persistGateConfig, readStoredGateConfig } from "@/utils/unlockStorage";
+import {
+  parseRevocationsResponse,
+  resolveRevocationsApiUrl,
+} from "@/utils/revocationListClient";
+import {
+  persistGateConfig,
+  persistRevocations,
+  readStoredGateConfig,
+} from "@/utils/unlockStorage";
 import { useSimulationStore } from "@/store";
 
 /** 权益到期检查周期（毫秒，登记：到期最长 30 秒宽限——弱门口径内可接受） */
@@ -36,6 +44,11 @@ export const ENTITLEMENT_TICK_INTERVAL_MS = 30_000;
  * `NEXT_PUBLIC_UNLOCK_API_BASE` 覆写，如 wrangler dev 的 8787）
  */
 const GATE_CONFIG_API_URL = resolveGateConfigApiUrl(
+  process.env.NEXT_PUBLIC_UNLOCK_API_BASE,
+);
+
+/** 吊销名单拉取 URL（同基址，A6-3） */
+const REVOCATIONS_API_URL = resolveRevocationsApiUrl(
   process.env.NEXT_PUBLIC_UNLOCK_API_BASE,
 );
 
@@ -63,6 +76,37 @@ export async function refreshRemoteGateConfig(): Promise<void> {
   }
 }
 
+/**
+ * 异步拉取吊销名单并核对（A6-3，fetch IO 壳层；会话内启动一次 + Worker
+ * 侧 HTTP 5 分钟缓存——吊销约 5 分钟生效，裁决 ④）：
+ * - 成功（含 KV 无记录的空名单）→ 写缓存 + store 核对
+ *   （applyRevocationList 内消毒 + 挂起恢复补跑/即时比对）；
+ * - 失败（网络/HTTP 非 2xx/非 JSON/形状不符/not_configured）→
+ *   store.revocationFetchFailed()（缓存软化 fail-closed：有缓存已放行
+ *   静默，无缓存降免费态 + 网络提示）+ console.warn。
+ */
+export async function refreshRevocationList(): Promise<void> {
+  try {
+    const res = await fetch(REVOCATIONS_API_URL);
+    if (!res.ok) {
+      console.warn("[unlock] 吊销名单拉取失败（HTTP 非 2xx）");
+      useSimulationStore.getState().revocationFetchFailed();
+      return;
+    }
+    const parsed = parseRevocationsResponse(await res.json());
+    if (parsed === null) {
+      console.warn("[unlock] 吊销名单响应形状不符（含 not_configured）");
+      useSimulationStore.getState().revocationFetchFailed();
+      return;
+    }
+    persistRevocations(parsed);
+    useSimulationStore.getState().applyRevocationList(parsed);
+  } catch {
+    console.warn("[unlock] 吊销名单拉取失败（网络异常）");
+    useSimulationStore.getState().revocationFetchFailed();
+  }
+}
+
 /** 权益初始化 + 远程门控配置接入 + 到期检查（应用根组件挂载时一次） */
 export function useUnlockInit(): void {
   useEffect(() => {
@@ -76,6 +120,10 @@ export function useUnlockInit(): void {
       useSimulationStore.getState().applyRemoteGateConfig(cached);
     }
     void refreshRemoteGateConfig();
+
+    // A6：吊销名单——restore 已同步用缓存比对（有缓存零等待恢复权益），
+    // 此处异步拉取刷新/补恢复（挂载序列登记：gate-config 拉取旁追加）
+    void refreshRevocationList();
 
     // `?token=` 注入：验签通过即激活并 persist；失败静默降级免费态
     const token = parseLaunchParams(window.location.search).token;
