@@ -19,6 +19,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useSimulationStore } from '@/store';
+import { boostSaturationColors } from '@/utils/colorBoost';
 import { createSeededRandom } from '@/utils/random';
 import { sampleStarColor } from '@/utils/starPopulation';
 import { twinkleAmplitude, twinkleFrequencyHz, twinkleLevelGain } from '@/utils/starTwinkle';
@@ -83,7 +84,7 @@ export function Starfield({
 }: StarfieldProps): JSX.Element {
   const lastGainRef = useRef(-1);
 
-  const { geometry, material } = useMemo(() => {
+  const { geometry, material, colorVariants } = useMemo(() => {
     const rand = createSeededRandom(seed);
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
@@ -118,9 +119,22 @@ export function Starfield({
       amps[i] = twinkleAmplitude(falloff, rand());
     }
 
+    // SC5 星系色彩增强：物理基色（SC4-1 采样输出 × 距离衰减）与饱和提升
+    // 显示色双缓存（boostSaturation 对色度线性 → 与 falloff 增益可交换，
+    // 衰减语义不变）；attribute 持独立副本，切换仅整段重写 color
+    const variants = { base: colors, boosted: boostSaturationColors(colors) };
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.setAttribute(
+      'color',
+      new THREE.BufferAttribute(
+        (useSimulationStore.getState().colorBoostEnabled
+          ? variants.boosted
+          : variants.base
+        ).slice(),
+        3,
+      ),
+    );
     geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
     geo.setAttribute('aFreq', new THREE.BufferAttribute(freqs, 1));
     geo.setAttribute('aAmp', new THREE.BufferAttribute(amps, 1));
@@ -137,8 +151,19 @@ export function Starfield({
       transparent: true,
       depthWrite: false,
     });
-    return { geometry: geo, material: mat };
+    return { geometry: geo, material: mat, colorVariants: variants };
   }, [count, innerRadius, outerRadius, seed]);
+
+  // SC5：星系色彩增强开关切换 → color attribute 按模式整段重写
+  // （双缓存一次性 CPU 写入，位置/闪烁参数 buffer 不重建）
+  const colorBoostEnabled = useSimulationStore((s) => s.colorBoostEnabled);
+  useEffect(() => {
+    const attr = geometry.getAttribute('color') as THREE.BufferAttribute;
+    (attr.array as Float32Array).set(
+      colorBoostEnabled ? colorVariants.boosted : colorVariants.base,
+    );
+    attr.needsUpdate = true;
+  }, [colorBoostEnabled, geometry, colorVariants]);
 
   useEffect(() => {
     return () => {

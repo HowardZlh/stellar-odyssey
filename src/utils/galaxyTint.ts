@@ -20,8 +20,9 @@
 
 import { GALAXY_BV_COLOR_INDEX } from '@/data/galaxies';
 import type { GalaxyMorphology } from '@/types';
+import { boostSaturation, linear01ToSrgb } from '@/utils/colorBoost';
 import { isImageDrivenGalaxy } from '@/utils/galaxyNearView';
-import { bvToTeffK } from '@/utils/pleiadesCatalog';
+import { bvToTeffK, srgbToLinear01 } from '@/utils/pleiadesCatalog';
 import { blackbodyRGB } from '@/utils/starPhysics';
 
 /** SC4 前历史色调：椭圆星系（暖黄白） */
@@ -39,12 +40,26 @@ function hex2(c01: number): string {
 /**
  * B−V 色指数 → sRGB hex 色调（B−V 越大色温越低越偏红黄，逐段单调）
  *
+ * SC5：`enhanced = true` 时黑体色经线性域 `boostSaturation` 饱和提升
+ * （sRGB → 线性 → 绕亮度轴 chroma ×k → 回 sRGB；微弱，全域一致性目的）；
+ * 缺省 false = SC4-2 输出零回归。
+ *
  * @param bv B−V 色指数（须为有限数，`bvToTeffK` 域内钳制）
  * @throws RangeError 当 bv 非有限数（由 `bvToTeffK` 抛出）
  */
-export function bvTintHex(bv: number): string {
+export function bvTintHex(bv: number, enhanced = false): string {
   const c = blackbodyRGB(bvToTeffK(bv));
-  return `#${hex2(c.r)}${hex2(c.g)}${hex2(c.b)}`;
+  if (!enhanced) {
+    return `#${hex2(c.r)}${hex2(c.g)}${hex2(c.b)}`;
+  }
+  const boosted = boostSaturation({
+    r: srgbToLinear01(c.r),
+    g: srgbToLinear01(c.g),
+    b: srgbToLinear01(c.b),
+  });
+  return `#${hex2(linear01ToSrgb(boosted.r))}${hex2(linear01ToSrgb(boosted.g))}${hex2(
+    linear01ToSrgb(boosted.b),
+  )}`;
 }
 
 /** 按形态返回 SC4 前历史双色（程序化 canvas 原口径） */
@@ -57,10 +72,19 @@ export function legacyGalaxyTintHex(morphology: GalaxyMorphology): string {
  *
  * 影像贴图星系（R5-1）与未登记 B−V 的星系返回历史双色（零改动）；
  * 其余按文献 B−V 转黑体色调。
+ *
+ * SC5：`enhanced = true`（「星系色彩增强」默认态）时仅 B−V 黑体色路径
+ * 过饱和提升；历史双色回退路径（影像贴图星系兜底 / 未登记 B−V）**两模式
+ * 同款不参与开关**——其无物理版本可回退，且影像贴图星系零改动为 SC4-2
+ * 红线（范围登记）。
  */
-export function galaxySpriteTintHex(id: string, morphology: GalaxyMorphology): string {
+export function galaxySpriteTintHex(
+  id: string,
+  morphology: GalaxyMorphology,
+  enhanced = false,
+): string {
   if (isImageDrivenGalaxy(id)) return legacyGalaxyTintHex(morphology);
   const bv = GALAXY_BV_COLOR_INDEX[id];
   if (bv === undefined) return legacyGalaxyTintHex(morphology);
-  return bvTintHex(bv);
+  return bvTintHex(bv, enhanced);
 }

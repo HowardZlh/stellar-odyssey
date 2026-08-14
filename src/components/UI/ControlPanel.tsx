@@ -209,6 +209,9 @@ function ControlPanelSections(): JSX.Element {
   const setShowPerformance = useSimulationStore((s) => s.setShowPerformance);
   const bloomEnabled = useSimulationStore((s) => s.bloomEnabled);
   const setBloomEnabled = useSimulationStore((s) => s.setBloomEnabled);
+  // SC5：星系色彩增强（默认开；关闭回 SC1~SC4 真实观测色调，全域全视角）
+  const colorBoostEnabled = useSimulationStore((s) => s.colorBoostEnabled);
+  const setColorBoostEnabled = useSimulationStore((s) => s.setColorBoostEnabled);
   const mergePreviewActive = useSimulationStore((s) => s.mergePreviewActive);
   const mergePreviewReturnSimDays = useSimulationStore((s) => s.mergePreviewReturnSimDays);
   const startMergePreview = useSimulationStore((s) => s.startMergePreview);
@@ -553,6 +556,16 @@ function ControlPanelSections(): JSX.Element {
             )}
           </>
         )}
+        {/* SC5：全域星系色彩增强（默认勾选；无视角域门控——星场/银河系/
+            2MRS/程序化星系全层生效） */}
+        <PanelToggle
+          checked={colorBoostEnabled}
+          onChange={setColorBoostEnabled}
+          label={tr('controlPanel.colorBoost')}
+        />
+        <p className="mb-1 pl-5 text-[10px] leading-4 text-gray-500 max-md:text-xs max-md:leading-5">
+          {tr('controlPanel.colorBoostNote')}
+        </p>
         <PanelToggle
           checked={bloomEnabled}
           onChange={setBloomEnabled}

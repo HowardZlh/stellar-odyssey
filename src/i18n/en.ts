@@ -411,6 +411,9 @@ export const en: I18nDict = {
     expandGainAria: 'Vertical expansion gain (1–6)',
     realScale: 'Real-scale mode (true body sizes)',
     sunCutaway: 'Sun interior cutaway (quarter-section view)',
+    colorBoost: 'Enhanced galaxy colors',
+    colorBoostNote:
+      'Boosts red-yellow / blue-white color contrast to make star and galaxy types easier to tell apart; when off, colors follow the real observed palette (weaker contrast, yellowish white)',
     bloom: 'Bloom effect (can be disabled on low-end devices)',
     performance: 'Performance monitor (FPS/memory)',
     kioskSection: 'Kiosk mode',

@@ -11,6 +11,7 @@ import { LOCAL_GROUP_GALAXIES, MILKY_WAY } from "@/data/galaxies";
 import { isGalaxyAnchoredFocusId } from "@/data/specialBodies";
 import { useSimulationStore } from "@/store";
 import { DEG_TO_RAD } from "@/utils/physics";
+import { boostSaturationColors } from "@/utils/colorBoost";
 import { SCENE_UNITS_PER_LY, trapezoidWeight } from "@/utils/scale";
 import {
   ARM_PATTERN_SPEED_RAD_PER_MYR,
@@ -153,7 +154,7 @@ export function Galaxy(): JSX.Element {
   const tiltRad = ECLIPTIC_GALACTIC_TILT_DEG * DEG_TO_RAD;
 
   // ---------- 银盘粒子（确定性生成 + 较差自转着色器） ----------
-  const { diskGeometry, diskMaterial } = useMemo(() => {
+  const { diskGeometry, diskMaterial, diskColors } = useMemo(() => {
     const particles = generateGalaxyDiskParticles({
       // M2-3 按设备档降档（40,000 / 24,000 / 12,000；qualityTier.ts 唯一
       // 事实源；deviceTier 启动同步写入，mount 期读取即终值）
@@ -187,7 +188,23 @@ export function Galaxy(): JSX.Element {
       "aWarpLy",
       new THREE.BufferAttribute(particles.warpsLy, 1),
     );
-    geo.setAttribute("aColor", new THREE.BufferAttribute(particles.colors, 3));
+    // SC5 星系色彩增强：物理基色（SC1/SC2 生成器输出）与饱和提升显示色
+    // （boostSaturationColors，色相/亮度不变）双缓存；attribute 持独立
+    // 副本，开关切换仅整段重写 aColor（位置/相位等 buffer 不重建）
+    const colors = {
+      base: particles.colors,
+      boosted: boostSaturationColors(particles.colors),
+    };
+    geo.setAttribute(
+      "aColor",
+      new THREE.BufferAttribute(
+        (useSimulationStore.getState().colorBoostEnabled
+          ? colors.boosted
+          : colors.base
+        ).slice(),
+        3,
+      ),
+    );
     geo.setAttribute("aSize", new THREE.BufferAttribute(particles.sizes, 1));
     geo.setAttribute("aBar", new THREE.BufferAttribute(particles.barFlags, 1));
     geo.boundingSphere = new THREE.Sphere(
@@ -335,11 +352,11 @@ export function Galaxy(): JSX.Element {
         }
       `,
     });
-    return { diskGeometry: geo, diskMaterial: mat };
+    return { diskGeometry: geo, diskMaterial: mat, diskColors: colors };
   }, []);
 
   // ---------- R2-9：3D 恒星银晕 + 球状星团（静态粒子，零逐帧更新） ----------
-  const { haloGeometry, haloMaterial, clusterGeometry, clusterMaterial } =
+  const { haloGeometry, haloMaterial, clusterGeometry, clusterMaterial, haloColors } =
     useMemo(() => {
       /** 静态粒子集 → BufferGeometry（光年 → 场景单位一次性换算） */
       const buildGeometry = (set: {
@@ -413,13 +430,49 @@ export function Galaxy(): JSX.Element {
           radiusLy: M13_EXCLUSION_RADIUS_LY,
         },
       });
+      // SC5：银晕粒子物理基色/饱和提升显示色双缓存（同银盘范式）；
+      // 球状星团不参与开关（SC5-2 范围登记：作用域 = 盘/棒/核球/银晕）
+      const haloColorVariants = {
+        base: halo.colors,
+        boosted: boostSaturationColors(halo.colors),
+      };
+      const haloGeo = buildGeometry(halo);
+      haloGeo.setAttribute(
+        "aColor",
+        new THREE.BufferAttribute(
+          (useSimulationStore.getState().colorBoostEnabled
+            ? haloColorVariants.boosted
+            : haloColorVariants.base
+          ).slice(),
+          3,
+        ),
+      );
       return {
-        haloGeometry: buildGeometry(halo),
+        haloGeometry: haloGeo,
         haloMaterial: buildMaterial(),
         clusterGeometry: buildGeometry(clusters),
         clusterMaterial: buildMaterial(),
+        haloColors: haloColorVariants,
       };
     }, []);
+
+  // SC5：星系色彩增强开关切换 → 银盘/银晕 aColor 按模式整段重写
+  // （双缓存一次性 CPU 写入 + needsUpdate，位置 buffer 不重建、帧循环零开销）
+  const colorBoostEnabled = useSimulationStore((s) => s.colorBoostEnabled);
+  useEffect(() => {
+    const rewrite = (
+      geo: THREE.BufferGeometry,
+      variants: { base: Float32Array; boosted: Float32Array },
+    ): void => {
+      const attr = geo.getAttribute("aColor") as THREE.BufferAttribute;
+      (attr.array as Float32Array).set(
+        colorBoostEnabled ? variants.boosted : variants.base,
+      );
+      attr.needsUpdate = true;
+    };
+    rewrite(diskGeometry, diskColors);
+    rewrite(haloGeometry, haloColors);
+  }, [colorBoostEnabled, diskGeometry, diskColors, haloGeometry, haloColors]);
 
   // ---------- 中心辉光（多层）与银心标记 ----------
   const glowTextures = useMemo(() => {

@@ -114,6 +114,12 @@ export interface SimulationState {
   showGalaxyCatalog: boolean;
   /** 费米气泡显示（R5-6：银心上下双极体积辉光，Su et al. 2010 登记） */
   showFermiBubbles: boolean;
+  /**
+   * 星系色彩增强（SC5，默认开）：2MRS 点云 S 曲线对比拉伸 + 银河系/
+   * 星场/程序化星系粒子饱和提升（生成期 CPU 后处理，utils/colorBoost）；
+   * 关闭 = SC1~SC4 真实物理色零回归。会话级，与其他显示开关一致不持久化。
+   */
+  colorBoostEnabled: boolean;
   /** 音效开关 */
   audioEnabled: boolean;
   /** 音量（0-1） */
@@ -461,6 +467,7 @@ export interface SimulationState {
   setShowVelocityVectors: (show: boolean) => void;
   setShowGalaxyCatalog: (show: boolean) => void;
   setShowFermiBubbles: (show: boolean) => void;
+  setColorBoostEnabled: (enabled: boolean) => void;
   setAudioEnabled: (enabled: boolean) => void;
   toggleAudio: () => void;
   setAudioVolume: (volume: number) => void;
@@ -736,6 +743,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   showVelocityVectors: true,
   showGalaxyCatalog: true,
   showFermiBubbles: true,
+  colorBoostEnabled: true,
   audioEnabled: false,
   audioVolume: 0.8,
   audioResumeFailed: false,
@@ -1121,6 +1129,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   setShowVelocityVectors: (show) => set({ showVelocityVectors: show }),
   setShowGalaxyCatalog: (show) => set({ showGalaxyCatalog: show }),
   setShowFermiBubbles: (show) => set({ showFermiBubbles: show }),
+  setColorBoostEnabled: (enabled) => set({ colorBoostEnabled: enabled }),
 
   setAudioEnabled: (enabled) => set({ audioEnabled: enabled }),
 

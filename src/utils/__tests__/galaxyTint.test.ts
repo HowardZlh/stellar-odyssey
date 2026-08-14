@@ -87,6 +87,43 @@ describe('SC4-2 galaxySpriteTintHex（GalaxyObject 程序化贴图色调唯一�
   });
 });
 
+describe('SC5 星系色彩增强（程序化星系 canvas 色调路径）', () => {
+  it('关闭态零回归：缺省与 enhanced=false 与 SC4-2 输出逐字一致', () => {
+    for (const [id, bv] of Object.entries(GALAXY_BV_COLOR_INDEX)) {
+      const g = LOCAL_GROUP_GALAXIES.find((x) => x.id === id);
+      expect(galaxySpriteTintHex(id, g!.morphology, false)).toBe(bvTintHex(bv));
+      expect(galaxySpriteTintHex(id, g!.morphology)).toBe(bvTintHex(bv));
+    }
+    expect(bvTintHex(0.75, false)).toBe(bvTintHex(0.75));
+  });
+
+  it('增强态：B−V 路径饱和提升（R−B 色差放大、色相取向不变）', () => {
+    for (const [id, bv] of Object.entries(GALAXY_BV_COLOR_INDEX)) {
+      const g = LOCAL_GROUP_GALAXIES.find((x) => x.id === id);
+      const enhanced = galaxySpriteTintHex(id, g!.morphology, true);
+      expect(enhanced).toBe(bvTintHex(bv, true));
+      const base = parseHex(bvTintHex(bv));
+      const boosted = parseHex(enhanced);
+      // 登记 B−V 均为暖色（R>B）→ 增强后 R−B 色差不减且严格增大
+      expect(boosted.r - boosted.b).toBeGreaterThan(base.r - base.b);
+      expect(boosted.r).toBeGreaterThan(boosted.b);
+    }
+  });
+
+  it('历史双色回退路径两模式同款（影像贴图星系/未登记 B−V 不参与开关）', () => {
+    for (const id of IMAGE_DRIVEN_GALAXY_IDS) {
+      const g = LOCAL_GROUP_GALAXIES.find((x) => x.id === id);
+      expect(galaxySpriteTintHex(id, g!.morphology, true)).toBe(
+        legacyGalaxyTintHex(g!.morphology),
+      );
+    }
+    expect(galaxySpriteTintHex('unknown-galaxy', 'elliptical', true)).toBe(
+      LEGACY_ELLIPTICAL_TINT_HEX,
+    );
+    expect(galaxySpriteTintHex('unknown-galaxy', 'spiral', true)).toBe(LEGACY_DISK_TINT_HEX);
+  });
+});
+
 describe('SC4-2 GALAXY_BV_COLOR_INDEX 登记表完备性', () => {
   it('登记键恰为全部无影像贴图的本星系群配置星系（不多不少）', () => {
     const programmatic = LOCAL_GROUP_GALAXIES.filter((g) => !isImageDrivenGalaxy(g.id)).map(
