@@ -10,7 +10,9 @@
 import type { GalaxyCatalogData } from '../bakedData';
 import { enhanceCatalogT01 } from '../colorBoost';
 import {
+  CATALOG_JK_BLUE_BOOST_SRGB,
   CATALOG_JK_BLUE_SRGB,
+  CATALOG_JK_RED_BOOST_SRGB,
   CATALOG_JK_RED_SRGB,
   MORPH_TIER_COLORS_SRGB,
   buildCatalogLodAttributes,
@@ -35,22 +37,31 @@ describe('SC5 catalogColorFromJkTier 增强模式（S 曲线对比拉伸）', ()
     }
   });
 
-  it('增强色 = 同一插值公式在 enhanceCatalogT01(t) 处取值（同管线同源）', () => {
+  it('增强色 = 增强态专属端点在 enhanceCatalogT01(t) 处插值（同管线同源，二轮调参）', () => {
     for (let jk = 0; jk <= JK_QUANT_MAX_TIER; jk += 7) {
       const enhanced = catalogColorFromJkTier(jk, 1, true);
       const t = enhanceCatalogT01(jk / JK_QUANT_MAX_TIER);
       for (let c = 0; c < 3; c += 1) {
         expect(enhanced[c]).toBeCloseTo(
-          CATALOG_JK_BLUE_SRGB[c] + (CATALOG_JK_RED_SRGB[c] - CATALOG_JK_BLUE_SRGB[c]) * t,
+          CATALOG_JK_BLUE_BOOST_SRGB[c] +
+            (CATALOG_JK_RED_BOOST_SRGB[c] - CATALOG_JK_BLUE_BOOST_SRGB[c]) * t,
           12,
         );
       }
     }
   });
 
-  it('增强保持端点与单调性：档 0/98 两端不变、R/B 严格单调、排序无损', () => {
-    expect(catalogColorFromJkTier(0, 1, true)).toEqual(CATALOG_JK_BLUE_SRGB);
-    expect(catalogColorFromJkTier(JK_QUANT_MAX_TIER, 1, true)).toEqual(CATALOG_JK_RED_SRGB);
+  it('增强端点色拉开且取向不变：蓝端更蓝、红端更橙（R/B 对比空间扩大）', () => {
+    // 蓝端：R 更低、B 保持 1 → 更蓝；红端：G/B 更低 → 更橙
+    expect(CATALOG_JK_BLUE_BOOST_SRGB[0]).toBeLessThan(CATALOG_JK_BLUE_SRGB[0]);
+    expect(CATALOG_JK_BLUE_BOOST_SRGB[2]).toBeGreaterThanOrEqual(CATALOG_JK_BLUE_SRGB[2]);
+    expect(CATALOG_JK_RED_BOOST_SRGB[2]).toBeLessThan(CATALOG_JK_RED_SRGB[2]);
+    expect(CATALOG_JK_RED_BOOST_SRGB[0]).toBeGreaterThanOrEqual(CATALOG_JK_RED_SRGB[0]);
+  });
+
+  it('增强保持端点与单调性：档 0/98 = 增强端点色、R/B 严格单调、排序无损', () => {
+    expect(catalogColorFromJkTier(0, 1, true)).toEqual(CATALOG_JK_BLUE_BOOST_SRGB);
+    expect(catalogColorFromJkTier(JK_QUANT_MAX_TIER, 1, true)).toEqual(CATALOG_JK_RED_BOOST_SRGB);
     let prevRatio = 0;
     for (let jk = 0; jk <= JK_QUANT_MAX_TIER; jk += 1) {
       const [r, , b] = catalogColorFromJkTier(jk, 2, true);

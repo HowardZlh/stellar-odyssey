@@ -26,10 +26,13 @@ export const CATALOG_ENHANCE_CENTER = 0.38;
 export const CATALOG_ENHANCE_GAIN = 8;
 
 /**
- * 粒子层饱和度提升系数 k（≈1.4，绕 Rec.709 亮度轴 chroma ×k；
- * 色相/亮度不变，钳制 [0,1]）
+ * 粒子层饱和度提升系数 k（绕 Rec.709 亮度轴 chroma ×k；色相/亮度不变，
+ * 钳制 [0,1]）。调参登记：初值 1.4（需求量级）经用户目验反馈"开关差异
+ * 不可辨"调强至 2.0（2026-08-14 二轮，方案 B）——密集区加性混合白化
+ * 不受 k 影响（总和钳制），k 主要作用于稀疏区单粒子色度，需更大系数
+ * 才可辨。
  */
-export const COLOR_BOOST_SATURATION_K = 1.4;
+export const COLOR_BOOST_SATURATION_K = 2.0;
 
 /** logistic σ(x) = 1/(1+e^−x) */
 function logistic(x: number): number {

@@ -18,10 +18,10 @@ import {
 import { srgbToLinear01 } from '../starPopulation';
 
 describe('SC5 enhanceCatalogT01（2MRS 插值参数 S 曲线对比拉伸）', () => {
-  it('常量登记：center = 0.38（实测中位档 37/98）、gain = 8、k = 1.4', () => {
+  it('常量登记：center = 0.38（实测中位档 37/98）、gain = 8、k = 2.0（二轮调强）', () => {
     expect(CATALOG_ENHANCE_CENTER).toBe(0.38);
     expect(CATALOG_ENHANCE_GAIN).toBe(8);
-    expect(COLOR_BOOST_SATURATION_K).toBe(1.4);
+    expect(COLOR_BOOST_SATURATION_K).toBe(2.0);
   });
 
   it('端点精确固定：t\'(0) = 0、t\'(1) = 1', () => {

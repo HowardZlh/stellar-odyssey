@@ -220,13 +220,26 @@ export const CATALOG_JK_BLUE_SRGB: readonly [number, number, number] = [0.76, 0.
 export const CATALOG_JK_RED_SRGB: readonly [number, number, number] = [1.0, 0.78, 0.5];
 
 /**
+ * SC5 增强态专属端点色（sRGB）：蓝端更蓝、红端更橙。
+ *
+ * 调参登记（2026-08-14 二轮，用户目验反馈"开关差异不可辨"后方案 B）：
+ * 物理端点为低饱和粉彩色（观测口径），S 曲线仅在其区间内重分布 t、
+ * 中位不动点又使主体色调不变——增强态改用拉开的端点色直接扩大色彩
+ * 对比空间（逐通道单调性与 R/B 严格递增保持，单测断言）；关闭态
+ * 仍消费物理端点（零回归不受影响）。
+ */
+export const CATALOG_JK_BLUE_BOOST_SRGB: readonly [number, number, number] = [0.55, 0.74, 1.0];
+export const CATALOG_JK_RED_BOOST_SRGB: readonly [number, number, number] = [1.0, 0.62, 0.26];
+
+/**
  * J−K 量化档 → 色调（sRGB，纯函数）：0–98 在蓝白 ↔ 红黄端点间线性平滑
  * 插值（逐通道单调 → J−K 增即色温降）；99 = 未知档回退形态档 3 色
  * （旧行为即回退路径）。
  *
  * SC5：`enhanced = true` 时插值参数 t 先过 `enhanceCatalogT01` S 曲线
- * 对比拉伸（「星系色彩增强」默认态；缺省 false = SC3 物理映射零回归）。
- * 未知档回退不参与增强（两模式同款，§SC5-2 登记）。
+ * 对比拉伸，且改用增强态专属拉开端点色（蓝端更蓝/红端更橙，二轮调参
+ * 登记见常量注释）；缺省 false = SC3 物理映射零回归。未知档回退不参与
+ * 增强（两模式同款，§SC5-2 登记）。
  */
 export function catalogColorFromJkTier(
   jkTier: number,
@@ -241,10 +254,12 @@ export function catalogColorFromJkTier(
   }
   const raw = jkTier / JK_QUANT_MAX_TIER;
   const t = enhanced ? enhanceCatalogT01(raw) : raw;
+  const blue = enhanced ? CATALOG_JK_BLUE_BOOST_SRGB : CATALOG_JK_BLUE_SRGB;
+  const red = enhanced ? CATALOG_JK_RED_BOOST_SRGB : CATALOG_JK_RED_SRGB;
   return [
-    CATALOG_JK_BLUE_SRGB[0] + (CATALOG_JK_RED_SRGB[0] - CATALOG_JK_BLUE_SRGB[0]) * t,
-    CATALOG_JK_BLUE_SRGB[1] + (CATALOG_JK_RED_SRGB[1] - CATALOG_JK_BLUE_SRGB[1]) * t,
-    CATALOG_JK_BLUE_SRGB[2] + (CATALOG_JK_RED_SRGB[2] - CATALOG_JK_BLUE_SRGB[2]) * t,
+    blue[0] + (red[0] - blue[0]) * t,
+    blue[1] + (red[1] - blue[1]) * t,
+    blue[2] + (red[2] - blue[2]) * t,
   ];
 }
 
