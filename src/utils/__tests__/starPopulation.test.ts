@@ -28,7 +28,13 @@ import { BLACKBODY_TEFF_MIN_K, BLACKBODY_TEFF_MAX_K } from '../starPhysics';
 import { createSeededRandom } from '../random';
 import { ARM_OLD_DISK_BASE_FRACTION, generateGalaxyDiskParticles } from '../galaxy';
 
-const POPULATIONS: readonly StarPopulation[] = ['youngDisk', 'oldDisk', 'bulge', 'halo'];
+const POPULATIONS: readonly StarPopulation[] = [
+  'youngDisk',
+  'oldDisk',
+  'bulge',
+  'halo',
+  'fieldStars',
+];
 
 /** 采样 n 次求线性 RGB 均值（确定性种子） */
 function meanColor(
@@ -50,7 +56,7 @@ function meanColor(
 }
 
 describe('SC1 星族权重表（唯一事实源）', () => {
-  it('四预设权重之和均为 1（归一性）', () => {
+  it('全预设（含 SC4 fieldStars）权重之和均为 1（归一性）', () => {
     for (const pop of POPULATIONS) {
       const sum = STAR_POPULATION_BUCKETS[pop].reduce((acc, b) => acc + b.weight, 0);
       expect(sum).toBeCloseTo(1, 9);
@@ -112,6 +118,24 @@ describe('SC1 sampleStarColor（发光加权采样 → 线性 RGB）', () => {
       const c = sampleStarColor('bulge', rng);
       expect(c.r).toBeGreaterThan(c.b);
     }
+  });
+
+  it('fieldStars（SC4-1 背景星场）为蓝白/红黄混合场：蓝端占比 25%–55%，红度介于 youngDisk 与 bulge 之间', () => {
+    const rng = createSeededRandom(47);
+    let blue = 0;
+    const n = 4000;
+    for (let i = 0; i < n; i += 1) {
+      const c = sampleStarColor('fieldStars', rng);
+      if (c.b > c.r) blue += 1;
+    }
+    // Ledrew 2001 视星口径：B/A 主序与 K/M 巨星并重，两端均显著存在
+    expect(blue / n).toBeGreaterThan(0.25);
+    expect(blue / n).toBeLessThan(0.55);
+    const field = meanColor('fieldStars', 4000, 7);
+    const young = meanColor('youngDisk', 4000, 7);
+    const bulge = meanColor('bulge', 4000, 7);
+    expect(field.r - field.b).toBeGreaterThan(young.r - young.b);
+    expect(field.r - field.b).toBeLessThan(bulge.r - bulge.b);
   });
 
   it('halo 含少量蓝水平支（B > R 样本占比落在 5%–25%）', () => {

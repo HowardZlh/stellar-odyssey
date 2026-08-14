@@ -20,11 +20,9 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useSimulationStore } from '@/store';
 import { createSeededRandom } from '@/utils/random';
+import { sampleStarColor } from '@/utils/starPopulation';
 import { twinkleAmplitude, twinkleFrequencyHz, twinkleLevelGain } from '@/utils/starTwinkle';
 import { UNIVERSE_RENDER_ORDER } from '@/utils/universeRenderOrder';
-
-/** 恒星温度色板（O/B 蓝 → M 红，需求 4.1/4.2） */
-const STAR_COLORS = ['#9bb0ff', '#aabfff', '#cad7ff', '#f8f7ff', '#fff4ea', '#ffd2a1', '#ffcc6f'];
 
 interface StarfieldProps {
   count?: number;
@@ -92,7 +90,6 @@ export function Starfield({
     const phases = new Float32Array(count);
     const freqs = new Float32Array(count);
     const amps = new Float32Array(count);
-    const color = new THREE.Color();
 
     for (let i = 0; i < count; i += 1) {
       // 球壳内均匀分布
@@ -105,12 +102,15 @@ export function Starfield({
       positions[i * 3 + 1] = r * Math.cos(phi);
       positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
 
-      // 温度色板 + 距离衰减
-      color.set(STAR_COLORS[Math.floor(rand() * STAR_COLORS.length)]);
+      // SC4-1：星族采样器统一颜色出口（fieldStars 预设 = 太阳邻域视星
+      // 发光加权口径，与 SC1 银盘同源；线性 RGB 顶点色）+ 距离衰减保留。
+      // 登记：采样固定消耗 rng 3 个数（原色板抽样为 1）——位置通道在
+      // 颜色之前抽取不受影响，闪烁参数随机流后移属预期（参数语义不变）
+      const c = sampleStarColor('fieldStars', rand);
       const falloff = 1 - (0.6 * (r - innerRadius)) / (outerRadius - innerRadius);
-      colors[i * 3] = color.r * falloff;
-      colors[i * 3 + 1] = color.g * falloff;
-      colors[i * 3 + 2] = color.b * falloff;
+      colors[i * 3] = c.r * falloff;
+      colors[i * 3 + 1] = c.g * falloff;
+      colors[i * 3 + 2] = c.b * falloff;
 
       // 闪烁参数（确定性预生成）：亮星幅度略大、暗星微弱
       phases[i] = rand();

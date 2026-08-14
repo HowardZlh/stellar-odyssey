@@ -55,6 +55,7 @@ import {
   resetGalaxyNearViewHolders,
 } from '@/utils/galaxyNearView';
 import { isDustVolumeGalaxy } from '@/utils/galaxyDustVolume';
+import { galaxySpriteTintHex } from '@/utils/galaxyTint';
 import { UNIVERSE_RENDER_ORDER } from '@/utils/universeRenderOrder';
 import { useDetailLayer } from '@/hooks/useDetailLayer';
 import { useGalaxyCatalog } from '@/hooks/useGalaxyCatalog';
@@ -145,9 +146,11 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
     // M31/M33 专属形态（P6 §3.4，与通用旋涡星系区分）
     const variant =
       galaxy.id === 'm31' ? 'm31' : galaxy.id === 'm33' ? 'm33' : undefined;
+    // SC4-2：程序化回退贴图色调按各星系真实 B−V 文献值转黑体色
+    // （utils/galaxyTint 唯一出口；影像贴图星系与未登记者保持历史双色）
     const canvas = createGalaxySpriteCanvas(
       galaxy.morphology,
-      galaxy.morphology === 'elliptical' ? '#ffe2b8' : '#cfd8ff',
+      galaxySpriteTintHex(galaxy.id, galaxy.morphology),
       256,
       20260722,
       variant,

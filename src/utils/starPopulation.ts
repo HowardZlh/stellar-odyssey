@@ -25,7 +25,10 @@
  * - bulge：核球/棒 = 老年星族 II——K/M 红黄 + 红巨星，**禁 O/B**
  *   （核球恒星形成早已停止，无大质量年轻星）；
  * - halo：银晕贫金属老年星——红黄巨星为主 + 少量蓝水平支星
- *   （BHB：贫金属球状星团/银晕特征星族，HST 银晕测光近似）。
+ *   （BHB：贫金属球状星团/银晕特征星族，HST 银晕测光近似）；
+ * - fieldStars：背景星场（SC4-1）= 太阳邻域**视星**（视亮度选择效应下的
+ *   可见星）——B/A 主序与 K/M 巨星并重（Ledrew 2001, JRASC 95：肉眼星表
+ *   口径），介于 youngDisk（偏蓝）与 oldDisk（偏黄）之间的混合场。
  *
  * 各光谱型桶 Teff 区间取 MK 光谱分类主序代表域（Habets & Heintze 1981
  * 量级；巨星/超巨星桶按其光球温度域单列），域端点在 `blackbodyRGB`
@@ -49,8 +52,8 @@ export function srgbToLinear01(c: number): number {
   return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
 }
 
-/** 星族预设标识（SC1 三预设 + 银晕） */
-export type StarPopulation = 'youngDisk' | 'oldDisk' | 'bulge' | 'halo';
+/** 星族预设标识（SC1 三预设 + 银晕 + SC4 背景星场） */
+export type StarPopulation = 'youngDisk' | 'oldDisk' | 'bulge' | 'halo' | 'fieldStars';
 
 /** 光谱型桶：采样权重 + 桶内 Teff 抽样区间（K） */
 export interface SpectralBucket {
@@ -139,6 +142,18 @@ export const STAR_POPULATION_BUCKETS: Readonly<
     { name: 'M', weight: 0.1, ...M },
     { name: 'redGiant', weight: 0.38, ...RED_GIANT },
     { name: 'blueHorizontalBranch', weight: 0.12, ...BLUE_HORIZONTAL_BRANCH },
+  ],
+  // 背景星场（SC4-1）：太阳邻域视星（视亮度选择效应），B/A 主序 +
+  // K/M 巨星并重（Ledrew 2001 肉眼星表口径；红超巨星少量点缀如参宿四）
+  fieldStars: [
+    { name: 'B', weight: 0.16, ...B },
+    { name: 'A', weight: 0.22, ...A },
+    { name: 'F', weight: 0.16, ...F },
+    { name: 'G', weight: 0.1, ...G },
+    { name: 'K', weight: 0.12, ...K },
+    { name: 'M', weight: 0.02, ...M },
+    { name: 'redGiant', weight: 0.2, ...RED_GIANT },
+    { name: 'redSupergiant', weight: 0.02, ...RED_SUPERGIANT },
   ],
 };
 
