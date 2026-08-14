@@ -63,20 +63,37 @@ import { UNLOCK_PUBLIC_KEY_HEX } from '@/data/unlockPublicKey';
 import { FREE_DEMO_DAILY_LIMIT, demoQuotaRemaining, demoQuotaUpdate } from '@/utils/demoQuota';
 import type { DemoQuotaState } from '@/utils/demoQuota';
 import type { UnlockEntitlement } from '@/utils/premiumGate';
+import {
+  remoteFreeWindowActive,
+  sanitizeRemoteGateConfig,
+} from '@/utils/remoteGateConfig';
+import type { RemoteGateConfigV1 } from '@/utils/remoteGateConfig';
+import {
+  emptyRevocationList,
+  revocationHit,
+  sanitizeRevocationList,
+  unlockTokenHash,
+} from '@/utils/revocationList';
+import type { RevocationListV1 } from '@/utils/revocationList';
 import { tokenRemainingDays, verifyToken } from '@/utils/unlockToken';
 import type { VerifyTokenResult } from '@/utils/unlockToken';
 import {
   persistDemoQuota,
   persistUnlockToken,
   readStoredDemoQuota,
+  readStoredRevocations,
   readStoredUnlockToken,
 } from '@/utils/unlockStorage';
 
 /** 移动布局底部面板标识（M3：底部标签栏三入口，互斥打开） */
 export type MobilePanel = 'help' | 'controls' | 'contact';
 
-/** 锁定提示场景（U2-4）：细节层命中 / 巡游被拦 / 演示配额用尽 */
-export type LockedHintContext = 'detail' | 'cycle' | 'quota';
+/**
+ * 锁定提示场景（U2-4）：细节层命中 / 巡游被拦 / 演示配额用尽 /
+ * 凭证被吊销（A6-3：主应用侧命中提示落点登记——复用既有锁定提示 HUD，
+ * 文案为裁决 ⑤ 原文 +「前往解锁」按钮）
+ */
+export type LockedHintContext = 'detail' | 'cycle' | 'quota' | 'revoked';
 
 /** 锁定提示卡片状态（U2-4 非阻断 HUD；null=隐藏） */
 export interface LockedHint {
@@ -84,6 +101,16 @@ export interface LockedHint {
   /** 命中天体 id（detail 场景；cycle/quota 为 null） */
   bodyId: string | null;
 }
+
+/**
+ * applyUnlockToken 结果（A6-3 扩展）：verifyToken 三原因之外新增
+ * - 'revoked'：验签通过但命中吊销名单（裁决 ⑤ 命中文案）；
+ * - 'unverified'：核验失败态下拒绝激活（拉取失败 + 无缓存名单的
+ *   fail-closed 分支，裁决 ⑥ 网络提示）。
+ */
+export type ApplyUnlockTokenResult =
+  | VerifyTokenResult
+  | { readonly ok: false; readonly reason: 'revoked' | 'unverified' };
 
 export interface SimulationState {
   /** 模拟时间：J2000 历元起天数（初始为真实当前日期，需求 3.1.1 真实日期模式） */
@@ -373,6 +400,57 @@ export interface SimulationState {
   demoRemainingToday: number;
   /** 权益剩余天数（派生字段，null=免费态；天粒度，30s tick 低频刷新） */
   entitlementRemainingDays: number | null;
+  /**
+   * 远程门控配置（A3，§0.11 schema v1；初始 `{ v: 1 }` = 全部回退代码
+   * 默认值）。会话级快照：启动经 useUnlockInit 读缓存 + 异步拉取写入
+   * （applyRemoteGateConfig 消毒单点），不新增 interval（HTTP 5 分钟
+   * 缓存已够，登记）。3D 场景组件不订阅本字段（帧循环 getState 纪律）。
+   */
+  remoteGateConfig: RemoteGateConfigV1;
+  /**
+   * L3/L4 巡游限免窗口生效中（派生字段，渲染纯度纪律：BodyCycleSwitcher
+   * 锁标选择器消费，渲染期不读时钟；由 applyRemoteGateConfig +
+   * entitlementTick 维护——窗口跨界最长 30 秒宽限，与权益到期同口径登记）
+   */
+  remoteTourFreeActive: boolean;
+  /** 演示限免窗口生效中（派生字段，ControlPanel 配额尽锁态消费；维护口径同上） */
+  remoteDemoFreeActive: boolean;
+  /**
+   * 吊销名单（A6-3，§0.15 schema；初始空名单）。会话级快照：启动经
+   * restoreUnlockState 读缓存 + useUnlockInit 异步拉取一次写入
+   * （applyRevocationList 消毒单点）；entitlementTick 只比对本字段
+   * **不发新请求**（防请求风暴，裁决 ④）。
+   */
+  revocationList: RevocationListV1;
+  /**
+   * 当前权益 token 的 sha256 哈希（吊销核对键；null=免费态）。由
+   * applyUnlockToken / restoreUnlockState 写入，tick 逐次比对零 IO。
+   */
+  entitlementTokenHash: string | null;
+  /**
+   * 启动恢复被挂起（缓存软化 fail-closed，裁决 ④）：本地有合法 token
+   * 但无任何缓存名单——权益暂不恢复，待 applyRevocationList（拉取成功）
+   * 补恢复，或 revocationFetchFailed（拉取失败）降免费态 + 网络提示。
+   */
+  revocationCheckPending: boolean;
+  /**
+   * 名单可用门闩（本会话已凭缓存或拉取获得过名单）：revocationFetchFailed
+   * 仅在未就绪时置失败态——曾联网核验过的设备离线不误伤（缓存软化）。
+   */
+  revocationListReady: boolean;
+  /**
+   * 核验失败态（拉取失败 + 无任何名单来源）：/unlock 页状态区渲染网络
+   * 提示（裁决 ⑥），且 applyUnlockToken 拒绝新激活（fail-closed——
+   * 覆盖无痕断网粘贴场景）。会话级：刷新页面重试（不新增重试
+   * interval，登记）。
+   */
+  revocationCheckFailed: boolean;
+  /**
+   * 凭证已被吊销（命中名单后置位）：/unlock 页状态区渲染命中文案
+   * （裁决 ⑤）；主应用侧同时弹 lockedHint('revoked')。重新成功激活
+   * 其他 token 或清除权益后复位。
+   */
+  entitlementRevoked: boolean;
 
   // actions
   tick: (realDeltaSeconds: number) => void;
@@ -391,17 +469,47 @@ export interface SimulationState {
    * 应用解锁 token（U2-1）：本地验签（签名 + exp 双验）通过 → 写入
    * entitlement + persist；返回验签结果供 UI 报错（U3 粘贴框消费）。
    * nowSec 缺省取当前时钟（测试注入用参数）。
+   * A6-3 叠加吊销核对：验签通过后比对**当前已知名单**（缓存/会话拉取
+   * 快照，不发新请求）——命中 → reason 'revoked'；核验失败态
+   * （revocationCheckFailed）→ reason 'unverified'（fail-closed）。
+   * 过期 token 在验签阶段短路（expired），不查名单（登记）。
    */
-  applyUnlockToken: (token: string, nowSec?: number) => VerifyTokenResult;
+  applyUnlockToken: (token: string, nowSec?: number) => ApplyUnlockTokenResult;
   /** 清除权益（U3 清除按钮/到期降级共用）：置空 + 清 persist */
   clearEntitlement: () => void;
   /**
    * 启动恢复（U2-1，useUnlockInit 挂载时一次）：localStorage 读 token
    * 验签通过注入 entitlement（过期/非法即清除存值）+ 恢复演示配额。
+   * A6-3 缓存软化时序（裁决 ④）：有缓存名单 → 同步比对零等待恢复
+   * （命中即吊销）；无缓存 → 权益暂不恢复（revocationCheckPending），
+   * 待异步拉取结果补恢复或降免费态。
    */
   restoreUnlockState: (nowSec?: number) => void;
-  /** 权益到期检查（30s 轻量 interval）：exp ≤ now → 降级免费态 + 清 persist */
+  /**
+   * 权益到期检查（30s 轻量 interval）：exp ≤ now → 降级免费态 + 清
+   * persist；A6-3 叠加吊销比对（只查已缓存名单，零请求零 IO）。
+   */
   entitlementTick: (nowSec?: number) => void;
+  /**
+   * 应用吊销名单（A6-3：useUnlockInit 拉取成功时调用）：入参 unknown
+   * 经 `sanitizeRevocationList` 消毒单点写入；随即核对——挂起恢复补跑
+   * （revocationCheckPending 分支）或对当前权益即时比对（命中 → 清除 +
+   * 命中文案）。nowSec 缺省当前时钟（测试注入用参数）。
+   */
+  applyRevocationList: (raw: unknown, nowSec?: number) => void;
+  /**
+   * 吊销名单拉取失败上报（A6-3 缓存软化 fail-closed，裁决 ④）：
+   * 挂起恢复中（无缓存新设备）→ 降免费态 + 网络提示；已凭缓存放行/
+   * 无挂起 → 静默（曾联网核验过的设备离线不误伤）。
+   */
+  revocationFetchFailed: () => void;
+  /**
+   * 应用远程门控配置（A3：useUnlockInit 缓存恢复/拉取成功两路共用）：
+   * 入参 unknown 经 `sanitizeRemoteGateConfig` 消毒单点写入（调用方免
+   * 消毒，幂等），并重算派生字段（demoRemainingToday 注入远程 dailyLimit
+   * + 两个限免窗口布尔）。nowMs 缺省当前时钟（测试注入用参数）。
+   */
+  applyRemoteGateConfig: (config: unknown, nowMs?: number) => void;
   /**
    * 手动演示配额申请（U2-3，四类手动演示共用）：有权益直通 true；
    * 无权益消耗当日配额（跨自然日重置 + persist），配额尽 → false +
@@ -813,59 +921,217 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   lockedHintSeenBodyIds: [],
   demoRemainingToday: FREE_DEMO_DAILY_LIMIT,
   entitlementRemainingDays: null,
+  remoteGateConfig: { v: 1 },
+  remoteTourFreeActive: false,
+  remoteDemoFreeActive: false,
+  revocationList: emptyRevocationList(),
+  entitlementTokenHash: null,
+  revocationCheckPending: false,
+  revocationListReady: false,
+  revocationCheckFailed: false,
+  entitlementRevoked: false,
 
   setLaunchParams: (params) => set({ launch: params }),
 
   applyUnlockToken: (token, nowSec = Date.now() / 1000) => {
     const result = verifyToken(token, UNLOCK_PUBLIC_KEY_HEX, nowSec);
-    if (result.ok) {
-      persistUnlockToken(token);
-      set({
-        entitlement: { tier: result.payload.tier, expSec: result.payload.exp },
-        entitlementRemainingDays: tokenRemainingDays(result.payload.exp, nowSec),
-      });
+    if (!result.ok) return result;
+    // A6-3 吊销核对（过期 token 已在上方短路，不查名单）：
+    // 核验失败态（拉取失败 + 无缓存）→ fail-closed 拒绝激活（裁决 ④⑥）
+    if (get().revocationCheckFailed) {
+      return { ok: false, reason: 'unverified' };
     }
+    const hash = unlockTokenHash(token);
+    if (revocationHit(get().revocationList, hash)) {
+      return { ok: false, reason: 'revoked' };
+    }
+    persistUnlockToken(token);
+    set({
+      entitlement: { tier: result.payload.tier, expSec: result.payload.exp },
+      entitlementRemainingDays: tokenRemainingDays(result.payload.exp, nowSec),
+      entitlementTokenHash: hash,
+      entitlementRevoked: false,
+      revocationCheckPending: false,
+    });
     return result;
   },
 
   clearEntitlement: () => {
     persistUnlockToken(null);
-    set({ entitlement: null, entitlementRemainingDays: null });
+    set({
+      entitlement: null,
+      entitlementRemainingDays: null,
+      entitlementTokenHash: null,
+      entitlementRevoked: false,
+      revocationCheckPending: false,
+    });
   },
 
   restoreUnlockState: (nowSec = Date.now() / 1000) => {
     const quota = readStoredDemoQuota();
     if (quota !== null) {
-      set({ demoQuota: quota, demoRemainingToday: demoQuotaRemaining(quota, nowSec * 1000) });
+      set({
+        demoQuota: quota,
+        demoRemainingToday: demoQuotaRemaining(
+          quota,
+          nowSec * 1000,
+          get().remoteGateConfig.demo?.dailyLimit,
+        ),
+      });
+    }
+    // A6-3：缓存名单先行装载（无 token 也装载——后续粘贴激活同受核对）
+    const cachedRaw = readStoredRevocations();
+    const cachedList =
+      cachedRaw === null ? null : sanitizeRevocationList(cachedRaw);
+    if (cachedList !== null) {
+      set({ revocationList: cachedList, revocationListReady: true });
     }
     const token = readStoredUnlockToken();
     if (token === null) return;
     const result = verifyToken(token, UNLOCK_PUBLIC_KEY_HEX, nowSec);
-    if (result.ok) {
+    if (!result.ok) {
+      // 过期/非法存值即清除（下次启动零验签开销；过期短路不查名单）
+      persistUnlockToken(null);
+      return;
+    }
+    if (cachedList === null) {
+      // 缓存软化 fail-closed（裁决 ④）：无任何缓存名单 → 权益暂不恢复，
+      // 待 applyRevocationList（拉取成功补恢复）/ revocationFetchFailed
+      // （降免费态 + 网络提示）裁决
+      set({ revocationCheckPending: true });
+      return;
+    }
+    const hash = unlockTokenHash(token);
+    if (revocationHit(cachedList, hash)) {
+      // 命中吊销：清除本地 token + 命中文案（裁决 ⑤，主应用经 lockedHint）
+      persistUnlockToken(null);
+      set({
+        entitlement: null,
+        entitlementRemainingDays: null,
+        entitlementTokenHash: null,
+        entitlementRevoked: true,
+        lockedHint: { context: 'revoked', bodyId: null },
+      });
+      return;
+    }
+    set({
+      entitlement: { tier: result.payload.tier, expSec: result.payload.exp },
+      entitlementRemainingDays: tokenRemainingDays(result.payload.exp, nowSec),
+      entitlementTokenHash: hash,
+    });
+  },
+
+  applyRevocationList: (raw, nowSec = Date.now() / 1000) => {
+    const list = sanitizeRevocationList(raw);
+    const state = get();
+    set({
+      revocationList: list,
+      revocationListReady: true,
+      revocationCheckFailed: false,
+    });
+    if (state.revocationCheckPending) {
+      // 挂起恢复补跑（restore 时无缓存名单的 token 现在完成核对）
+      set({ revocationCheckPending: false });
+      const token = readStoredUnlockToken();
+      if (token === null) return;
+      const result = verifyToken(token, UNLOCK_PUBLIC_KEY_HEX, nowSec);
+      if (!result.ok) {
+        persistUnlockToken(null);
+        return;
+      }
+      const hash = unlockTokenHash(token);
+      if (revocationHit(list, hash)) {
+        persistUnlockToken(null);
+        set({
+          entitlementRevoked: true,
+          lockedHint: { context: 'revoked', bodyId: null },
+        });
+        return;
+      }
       set({
         entitlement: { tier: result.payload.tier, expSec: result.payload.exp },
         entitlementRemainingDays: tokenRemainingDays(result.payload.exp, nowSec),
+        entitlementTokenHash: hash,
       });
-    } else {
-      // 过期/非法存值即清除（下次启动零验签开销）
-      persistUnlockToken(null);
+      return;
     }
+    // 已激活权益的即时比对（拉取到新名单当场生效，不等 30s tick）
+    if (
+      state.entitlement !== null &&
+      state.entitlementTokenHash !== null &&
+      revocationHit(list, state.entitlementTokenHash)
+    ) {
+      persistUnlockToken(null);
+      set({
+        entitlement: null,
+        entitlementRemainingDays: null,
+        entitlementTokenHash: null,
+        entitlementRevoked: true,
+        lockedHint: { context: 'revoked', bodyId: null },
+      });
+    }
+  },
+
+  revocationFetchFailed: () => {
+    if (!get().revocationListReady) {
+      // 失败 + 无任何名单来源（新设备/无痕首次）：挂起的权益不恢复 +
+      // 网络提示；后续粘贴激活同被 fail-closed 拒绝（裁决 ④⑥）
+      set({ revocationCheckPending: false, revocationCheckFailed: true });
+    }
+    // 失败 + 有缓存：restore 已凭缓存比对放行，静默（缓存软化）
   },
 
   entitlementTick: (nowSec = Date.now() / 1000) => {
     const state = get();
     const updates: Partial<
-      Pick<SimulationState, 'entitlement' | 'entitlementRemainingDays' | 'demoRemainingToday'>
+      Pick<
+        SimulationState,
+        | 'entitlement'
+        | 'entitlementRemainingDays'
+        | 'entitlementTokenHash'
+        | 'demoRemainingToday'
+        | 'remoteTourFreeActive'
+        | 'remoteDemoFreeActive'
+      >
     > = {};
-    // 派生字段低频刷新（跨自然日配额恢复 / 剩余天数天粒度递减）
-    const remaining = demoQuotaRemaining(state.demoQuota, nowSec * 1000);
+    // 派生字段低频刷新（跨自然日配额恢复 / 剩余天数天粒度递减 /
+    // 限免窗口跨界——A3 登记：窗口起止生效最长 30 秒宽限，权益到期同口径）
+    const remaining = demoQuotaRemaining(
+      state.demoQuota,
+      nowSec * 1000,
+      state.remoteGateConfig.demo?.dailyLimit,
+    );
     if (remaining !== state.demoRemainingToday) updates.demoRemainingToday = remaining;
+    const tourFree = remoteFreeWindowActive(
+      state.remoteGateConfig.tour?.freeWindow,
+      nowSec * 1000,
+    );
+    if (tourFree !== state.remoteTourFreeActive) updates.remoteTourFreeActive = tourFree;
+    const demoFree = remoteFreeWindowActive(
+      state.remoteGateConfig.demo?.freeWindow,
+      nowSec * 1000,
+    );
+    if (demoFree !== state.remoteDemoFreeActive) updates.remoteDemoFreeActive = demoFree;
     if (state.entitlement !== null) {
       if (state.entitlement.expSec <= nowSec) {
         // 到期降级免费态 + 清 persist
         persistUnlockToken(null);
         updates.entitlement = null;
         updates.entitlementRemainingDays = null;
+        updates.entitlementTokenHash = null;
+      } else if (
+        state.entitlementTokenHash !== null &&
+        revocationHit(state.revocationList, state.entitlementTokenHash)
+      ) {
+        // A6-3：吊销比对（只查已缓存名单，零请求——裁决 ④）
+        persistUnlockToken(null);
+        updates.entitlement = null;
+        updates.entitlementRemainingDays = null;
+        updates.entitlementTokenHash = null;
+        set({
+          entitlementRevoked: true,
+          lockedHint: { context: 'revoked', bodyId: null },
+        });
       } else {
         const days = tokenRemainingDays(state.entitlement.expSec, nowSec);
         if (days !== state.entitlementRemainingDays) updates.entitlementRemainingDays = days;
@@ -874,11 +1140,29 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     if (Object.keys(updates).length > 0) set(updates);
   },
 
+  applyRemoteGateConfig: (config, nowMs = Date.now()) => {
+    const clean = sanitizeRemoteGateConfig(config);
+    set({
+      remoteGateConfig: clean,
+      demoRemainingToday: demoQuotaRemaining(get().demoQuota, nowMs, clean.demo?.dailyLimit),
+      remoteTourFreeActive: remoteFreeWindowActive(clean.tour?.freeWindow, nowMs),
+      remoteDemoFreeActive: remoteFreeWindowActive(clean.demo?.freeWindow, nowMs),
+    });
+  },
+
   requestDemoEvent: (nowMs = Date.now()) => {
     const state = get();
     // 有权益不限次（entitlementTick 维护 entitlement 时效，见字段登记）
     if (state.entitlement !== null) return true;
-    const result = demoQuotaUpdate(state.demoQuota, nowMs);
+    // A3：demo 限免窗口期内放行不计次（观察站免费期同口径，配额零触碰）
+    if (remoteFreeWindowActive(state.remoteGateConfig.demo?.freeWindow, nowMs)) {
+      return true;
+    }
+    const result = demoQuotaUpdate(
+      state.demoQuota,
+      nowMs,
+      state.remoteGateConfig.demo?.dailyLimit,
+    );
     persistDemoQuota(result.state);
     if (result.allowed) {
       set({ demoQuota: result.state, demoRemainingToday: result.remaining });
@@ -1192,8 +1476,14 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       const scope = state.cycleScope;
       // U2-3 巡游 gate：L3/L4 域为支持者专属（kiosk 复用本 action 同受限，
       // 裁决 §0.4 不豁免）；无权益 → 不切换 + 巡游版锁定提示（不节流——
-      // 显式操作反馈）。L1/L2 域零变化。
-      if ((scope === 'galaxy' || scope === 'universe') && state.entitlement === null) {
+      // 显式操作反馈）。L1/L2 域零变化。A3 叠加：tour 限免窗口期内旁路
+      // （action 时刻精确判定；锁标 UI 消费派生 remoteTourFreeActive，
+      // 窗口跨界 ≤30s 显隐宽限登记）。
+      if (
+        (scope === 'galaxy' || scope === 'universe') &&
+        state.entitlement === null &&
+        !remoteFreeWindowActive(state.remoteGateConfig.tour?.freeWindow, Date.now())
+      ) {
         return { lockedHint: { context: 'cycle' as const, bodyId: null } };
       }
       const followingInScope =

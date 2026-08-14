@@ -21,12 +21,24 @@ routes = [
   { pattern = "stellar.guushu.com/api/*", zone_name = "guushu.com" }
 ]
 
+# A6 退款巡检 cron（每 3 小时；Workers Free 支持，每账户 5 排程限额本项目用 1）
+[triggers]
+crons = ["0 */3 * * *"]
+
 # U6 档位 ↔ 爱发电 plan_id 映射（非机密，商品/方案页 URL 可见）。
 # 三者**全部填写**后启用「按商品强制归档」（命中即归档、未命中拒绝，
 # 折扣/特价/会员优惠安全）；任一为空整体回退纯金额判定（老行为）。
 # 获取路径与部署步骤见 docs/internal/UNLOCK_OPS.md §2；本地联调在
 # workers/unlock/.dev.vars 填同名变量（已 .gitignore，勿提交）。
+#
+# A6 退款巡检 vars：
+# - REFUND_LOOKBACK_DAYS：回看窗口天数（订单号内嵌日期截断）；
+# - REFUND_AUTO_REVOKE：自动吊销开关——**默认空 = 模式 A 只检测登记**；
+#   置 "1" 后疑似退款单命中即写 revoke:list。检测口径（status != 2）
+#   未经第一笔真实退款单校准前**禁止开启**（REQUIREMENTS_UNLOCK §A6 裁决 ⑧）。
 [vars]
 UNLOCK_PLAN_ID_WEEK = ""
 UNLOCK_PLAN_ID_MONTH = ""
 UNLOCK_PLAN_ID_YEAR = ""
+REFUND_LOOKBACK_DAYS = "15"
+REFUND_AUTO_REVOKE = ""

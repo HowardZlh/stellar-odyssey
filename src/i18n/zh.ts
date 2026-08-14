@@ -132,7 +132,7 @@ export const zh = {
     benefitDemo: '事件演示不限次：耀斑 / CME / 超新星 / 星系合并预览',
     refundTitle: '退款与说明',
     refundPolicy:
-      '未兑换订单可发邮件申请原路退回；已兑换不退；不提供发票。到期后不自动续费。',
+      '未兑换的订单可全额退款；已兑换订单如发生退款，对应解锁凭证将同步失效。不提供发票；到期后不自动续费。',
     /** 三通道兑换区 */
     channelsSection: '购买与兑换',
     afdianTitle: '爱发电（自动兑换）',
@@ -178,6 +178,13 @@ export const zh = {
     tokenErrSignature: 'token 签名校验失败，请勿改动 token 内容后重试',
     tokenErrExpired: 'token 已过期，可重新购买任意档位续期',
     tokenActivated: '权益已激活！',
+    /**
+     * A6-3 吊销链路提示（裁决 ⑤⑥ 原文照录，勿改写；双轨红线：零
+     * "捐赠/赞助"字样，链接仅指 /unlock——组件层按钮复用 lockedGoUnlock）
+     */
+    revokedNotice:
+      '这枚凭证已随退款静静熄灭。星海别来无恙，四万个星系仍在原处等你——愿意再度启程时，解锁页的门始终为你亮着。',
+    revokeCheckFailed: '未能核验凭证状态，请检查网络连接后重试。',
     /**
      * U2 主应用门控（锁定提示 HUD / ControlPanel 入口 / 巡游控件）。
      * panelStatusFree/panelStatusActive 为面板紧凑态状态行（与上方

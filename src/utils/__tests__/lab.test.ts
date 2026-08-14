@@ -7,6 +7,8 @@ import {
   LAB_REGISTRY,
   labEntryForId,
   labScenePath,
+  OBSERVATORY_PAGE_PATH,
+  observatoryBodyPath,
   registeredLabEntries,
   validateLabEntry,
   type LabEntry,
@@ -90,5 +92,19 @@ describe('查找与路径', () => {
     expect(LAB_PAGE_PATH).toBe('/lab');
     expect(labScenePath(VALID_ENTRY)).toBe('/lab/meteor-shower');
     expect(labScenePath(LAB_REGISTRY.get('observatory')!)).toBe('/lab/observatory');
+  });
+
+  it('OBSERVATORY_PAGE_PATH 与画廊场景路径同源', () => {
+    expect(OBSERVATORY_PAGE_PATH).toBe('/lab/observatory');
+    expect(OBSERVATORY_PAGE_PATH).toBe(labScenePath(LAB_REGISTRY.get('observatory')!));
+  });
+
+  it('observatoryBodyPath 生成路径形态 /lab/observatory/<id>', () => {
+    expect(observatoryBodyPath('betelgeuse')).toBe('/lab/observatory/betelgeuse');
+    expect(observatoryBodyPath('blackhole-test')).toBe('/lab/observatory/blackhole-test');
+  });
+
+  it('observatoryBodyPath 对异常字符做 URL 编码（防御性）', () => {
+    expect(observatoryBodyPath('a b/c')).toBe('/lab/observatory/a%20b%2Fc');
   });
 });

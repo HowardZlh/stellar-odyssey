@@ -29,6 +29,8 @@ import {
 } from '@/utils/detailLayer';
 import { advanceFrameTransition } from '@/utils/galacticFrame';
 import { premiumDetailGateUpdate } from '@/utils/premiumGate';
+import { remoteFreeWindowActive } from '@/utils/remoteGateConfig';
+import { remotePremiumBodyIdSet } from '@/utils/remoteGateConfigClient';
 import { useSimulationStore } from '@/store';
 
 /** 保留策略（R2-7 退出即释放 / R2-8 LRU 保留） */
@@ -97,12 +99,23 @@ export function useDetailLayer(
     // U2-2 权益叠加判定（纯函数）：免费天体/有效权益原样透传（现状零
     // 差异，detailGateUpdate 本体零改动）；付费天体无权益 → 强制
     // inactive（沿用下方既有淡出路径）+ 锁定命中上报（帧级防抖 +
-    // store 会话级同天体节流）
+    // store 会话级同天体节流）。A3 叠加：远程 detail 域经 getState 读取
+    // （3D 场景不订阅纪律）——白名单整表替换（Set 按数组身份 memo，
+    // 逐帧零分配）+ 限免窗口旁路；未配置（undefined，主流情形）零开销
+    // 透传（options 不分配，行为与现状全等）。
+    const nowMs = Date.now();
+    const remoteDetail = state.remoteGateConfig.detail;
     const premiumGate = premiumDetailGateUpdate(
       gate.active,
       state.entitlement,
       spec.bodyId,
-      Date.now() / 1000,
+      nowMs / 1000,
+      remoteDetail === undefined
+        ? undefined
+        : {
+            premiumBodyIds: remotePremiumBodyIdSet(remoteDetail.premiumBodyIds),
+            freeWindowActive: remoteFreeWindowActive(remoteDetail.freeWindow, nowMs),
+          },
     );
     if (premiumGate.lockedHit) {
       if (!lockedReportedRef.current) {

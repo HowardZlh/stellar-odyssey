@@ -92,9 +92,10 @@ Your unlock credential is a three-segment string starting with `SO1.` (a time-li
 
 ## Refund policy
 
-- **Unredeemed** orders: email [stevenzearo@163.com](mailto:stevenzearo@163.com) to request a refund
-  to the original payment method.
-- **Redeemed** orders: non-refundable.
+- **Unredeemed** orders are fully refundable: email [stevenzearo@163.com](mailto:stevenzearo@163.com)
+  to request a refund to the original payment method.
+- If a **redeemed** order is refunded, its unlock credential will be **invalidated accordingly**
+  (takes effect within about 5 minutes on connected devices).
 - No invoices are provided.
 
 ## FAQ
@@ -124,6 +125,8 @@ Log in to the Afdian app or website, go to "My → Orders", find the order, and 
 | Malformed token | Make sure you copied it in full: starts with `SO1.`, three segments, no line breaks or truncation |
 | Token signature verification failed | The token content was modified — re-copy it in full from the source (copy button / reply email / direct link) |
 | This token has expired | Access has ended — purchase any tier to renew |
+| This credential has quietly dimmed with the refund | The order behind this token was refunded and the credential was invalidated — purchase any tier whenever you wish to set sail again |
+| Unable to verify credential status | First-time activation on a device requires a one-off online check — check your network connection and retry |
 
 **Q: What does "Clear access" do? Does it refund?**
 "Clear access" on the unlock page only removes the activated token from this browser (e.g., tidying

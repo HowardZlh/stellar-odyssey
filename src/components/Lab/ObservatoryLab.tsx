@@ -1,7 +1,7 @@
 'use client';
 
 import type { JSX } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useLocale, useT, useTf } from '@/hooks/useI18n';
@@ -18,23 +18,31 @@ import {
   observatoryAccessUpdate,
   observatoryFreeWindowActive,
   observatoryRemaining,
-  resolveObservatoryGateConfig,
   type ObservatoryAccessResult,
 } from '@/utils/observatoryGate';
+import { resolveRemoteObservatoryGateConfig } from '@/utils/remoteGateConfigClient';
 import {
   persistObservatoryQuota,
   readStoredObservatoryQuota,
 } from '@/utils/observatoryStorage';
-import { LAB_PAGE_PATH } from '@/utils/lab';
+import {
+  LAB_PAGE_PATH,
+  OBSERVATORY_PAGE_PATH,
+  observatoryBodyPath,
+} from '@/utils/lab';
 import { UNLOCK_PAGE_PATH } from '@/utils/unlockPage';
 
 /**
  * 天体观察站主组件（O1，REQUIREMENTS_OBSERVATORY.md）
  *
- * `/lab/observatory` 单页两形态（静态导出限制下经 `?body=<id>` 分流）：
- * - 无 `?body` / 未注册 id → 画廊页（23 个观察对象卡片 + 门控额度横幅）；
+ * 两形态（画廊 `/lab/observatory` 与单天体 `/lab/observatory/<id>` 两条
+ * 路由共用本组件，经 bodyId prop 分流；旧 `?body=<id>` 查询串由画廊页
+ * 兼容解析）：
+ * - bodyId 为 null / 未注册 id → 画廊页（观察对象卡片 + 门控额度横幅）；
  * - 已注册 id → 门控判定（`observatoryAccessUpdate` 纯函数 + localStorage
  *   持久化，每次进入都计次）→ 放行挂载观察工位 / 拒绝显示锁定提示。
+ * 画廊 ↔ 观察为跨路由段导航（`observatoryBodyPath` 路径形态），软/硬
+ * 导航均正确重挂载。
  *
  * 权益恢复经 useUnlockInit（挂载一次 restore + 30s 到期 tick，与主应用
  * 同源）；门控判定在 effect 中读取 `getState().entitlement`（restore 先于
@@ -77,9 +85,16 @@ function ObservatoryGallery({ unknownBodyId }: { unknownBodyId: string | null })
   const setLocale = useSimulationStore((s) => s.setLocale);
   const entitlement = useSimulationStore((s) => s.entitlement);
   const [banner, setBanner] = useState<GateBanner | null>(null);
-  const config = resolveObservatoryGateConfig();
+  // A3：远程 observatory 域覆盖注入（订阅 store——本组件为 DOM 层非 3D
+  // 场景；引用仅在 applyRemoteGateConfig 时更换，useMemo 防逐渲染重解析）
+  const remoteObservatory = useSimulationStore((s) => s.remoteGateConfig.observatory);
+  const config = useMemo(
+    () => resolveRemoteObservatoryGateConfig(remoteObservatory),
+    [remoteObservatory],
+  );
 
-  // 额度横幅：entitlement 恢复/变更后重算（读时钟与 localStorage，effect 内完成）
+  // 额度横幅：entitlement 恢复/远程配置注入后重算（读时钟与 localStorage，
+  // effect 内完成；限免文案/剩余额度随注入配置自动正确）
   useEffect(() => {
     const now = Date.now();
     const { remaining, premiumRemaining } = observatoryRemaining(
@@ -94,9 +109,7 @@ function ObservatoryGallery({ unknownBodyId }: { unknownBodyId: string | null })
       remaining,
       premiumRemaining,
     });
-    // config 为模块级默认配置解析结果（无参调用恒等），不入依赖
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entitlement]);
+  }, [entitlement, config]);
 
   return (
     <main className="hud-scroll fixed inset-0 overflow-y-auto bg-space-dark pb-[calc(2.5rem+env(safe-area-inset-bottom))] pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] pt-[max(2.5rem,env(safe-area-inset-top))] text-gray-200">
@@ -204,7 +217,7 @@ function ObservatoryGallery({ unknownBodyId }: { unknownBodyId: string | null })
                   </p>
                 )}
                 <Link
-                  href={`${LAB_PAGE_PATH}/observatory?body=${id}`}
+                  href={observatoryBodyPath(id)}
                   className="mt-auto inline-flex min-h-11 items-center justify-center self-start rounded bg-space-accent/90 px-4 pt-0.5 text-xs text-black transition-colors hover:bg-space-accent"
                 >
                   {tr('lab.observatoryEnter')} →
@@ -258,7 +271,7 @@ function ObservatoryLocked({ result }: { result: ObservatoryAccessResult }): JSX
           {tr('unlock.lockedGoUnlock')}
         </a>
         <Link
-          href={`${LAB_PAGE_PATH}/observatory`}
+          href={OBSERVATORY_PAGE_PATH}
           className="inline-flex min-h-11 items-center px-2 text-xs text-space-accent hover:underline"
         >
           ← {tr('lab.observatoryBackToGallery')}
@@ -277,7 +290,12 @@ function ObservatoryScene({ entry }: { entry: PreviewEntry }): JSX.Element {
   useEffect(() => {
     if (consumedForRef.current === entry.bodyId) return;
     consumedForRef.current = entry.bodyId;
-    const config = resolveObservatoryGateConfig();
+    // A3：远程 observatory 域覆盖注入（进入时刻快照，effect 内 getState；
+    // 缓存配置在 useUnlockInit 挂载 effect 已同步应用——先于本 effect 执行，
+    // ObservatoryLab 的 restored 时序登记同样保证）
+    const config = resolveRemoteObservatoryGateConfig(
+      useSimulationStore.getState().remoteGateConfig.observatory,
+    );
     const entitled = useSimulationStore.getState().entitlement !== null;
     const decision = observatoryAccessUpdate(
       config,

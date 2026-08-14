@@ -15,7 +15,7 @@ import {
   usePerfSample,
   type CameraPreset,
 } from '@/components/dev/PreviewCanvas';
-import { LAB_PAGE_PATH } from '@/utils/lab';
+import { OBSERVATORY_PAGE_PATH } from '@/utils/lab';
 
 /**
  * 天体观察站观察工位（O1，REQUIREMENTS_OBSERVATORY.md §2）
@@ -89,7 +89,7 @@ export function ObservatoryHarness({ entry }: ObservatoryHarnessProps): JSX.Elem
       {/* 左上：返回导航 + 性能 HUD（safe-area 避让；移动端缩宽、来源长文案隐藏） */}
       <div className="absolute left-[max(1rem,env(safe-area-inset-left))] top-[max(1rem,env(safe-area-inset-top))] select-none space-y-2 max-sm:max-w-[70vw]">
         <a
-          href={`${LAB_PAGE_PATH}/observatory`}
+          href={OBSERVATORY_PAGE_PATH}
           className="inline-flex min-h-11 items-center rounded-lg bg-black/60 px-3 text-xs text-space-accent backdrop-blur hover:underline"
         >
           ← {tr('lab.observatoryBackToGallery')}

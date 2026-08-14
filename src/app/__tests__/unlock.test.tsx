@@ -25,7 +25,11 @@ import { SPONSOR_KOFI_URL } from '@/data/donationPlatforms';
 import { UNLOCK_TIERS } from '@/data/unlockPricing';
 import { useSimulationStore } from '@/store';
 import { formatExpiryDate } from '@/utils/unlockRedeem';
-import { UNLOCK_TOKEN_STORAGE_KEY } from '@/utils/unlockStorage';
+import { emptyRevocationList, unlockTokenHash } from '@/utils/revocationList';
+import {
+  REVOCATIONS_STORAGE_KEY,
+  UNLOCK_TOKEN_STORAGE_KEY,
+} from '@/utils/unlockStorage';
 import {
   bytesToHex,
   signToken,
@@ -86,19 +90,68 @@ function makeForgedToken(): string {
 
 const VALID_ORDER_ID = '20260812123456789012';
 
-/** mock fetch 一次 JSON 响应 */
+const REDEEM_API_URL = 'https://stellar.guushu.com/api/redeem';
+
+/**
+ * fetch mock（A6 后按 URL 分流）：/api/revocations（页面挂载即拉取）
+ * 默认回空名单成功；其余（redeem POST）按队列逐次出货——保持既有
+ * mockFetchJsonOnce 语义不受挂载期吊销拉取干扰。
+ */
+type FetchArm =
+  | { kind: 'json'; body: unknown }
+  | { kind: 'badJson' }
+  | { kind: 'reject' };
+const redeemQueue: FetchArm[] = [];
+let revocationsResponse: () => Promise<unknown> = async () => ({
+  ok: true,
+  list: {},
+});
+
+/** mock 一次 redeem JSON 响应（吊销拉取不占用队列） */
 function mockFetchJsonOnce(body: unknown): jest.Mock {
-  const fn = global.fetch as jest.Mock;
-  fn.mockResolvedValueOnce({ json: async (): Promise<unknown> => body });
-  return fn;
+  redeemQueue.push({ kind: 'json', body });
+  return global.fetch as jest.Mock;
 }
 
 beforeEach(() => {
-  global.fetch = jest.fn() as unknown as typeof fetch;
+  redeemQueue.length = 0;
+  revocationsResponse = async (): Promise<unknown> => ({ ok: true, list: {} });
+  global.fetch = jest.fn(async (url: unknown) => {
+    if (String(url).includes('/api/revocations')) {
+      return { ok: true, json: revocationsResponse };
+    }
+    const arm = redeemQueue.shift();
+    if (arm === undefined) throw new Error('unexpected fetch (queue empty)');
+    if (arm.kind === 'reject') throw new Error('offline');
+    if (arm.kind === 'badJson') {
+      return {
+        json: async (): Promise<unknown> => {
+          throw new Error('not json');
+        },
+      };
+    }
+    return { json: async (): Promise<unknown> => arm.body };
+  }) as unknown as typeof fetch;
+  // 缓存空吊销名单：restore 同步比对零等待恢复权益（缓存软化基线；
+  // 无缓存/拉取失败分支由 A6 专属用例单独覆盖）
+  window.localStorage.setItem(
+    REVOCATIONS_STORAGE_KEY,
+    JSON.stringify(emptyRevocationList()),
+  );
 });
 
 afterEach(() => {
-  useSimulationStore.setState({ locale: 'zh', entitlement: null });
+  useSimulationStore.setState({
+    locale: 'zh',
+    entitlement: null,
+    entitlementTokenHash: null,
+    entitlementRevoked: false,
+    revocationCheckPending: false,
+    revocationListReady: false,
+    revocationCheckFailed: false,
+    revocationList: emptyRevocationList(),
+    lockedHint: null,
+  });
   window.localStorage.clear();
   window.history.replaceState(null, '', '/unlock');
   mockViewport.isCompact = false;
@@ -110,7 +163,7 @@ describe('U3-1 页面骨架与档位表', () => {
     render(<UnlockPage />);
     expect(screen.getByRole('heading', { name: /支持者解锁/ })).toBeInTheDocument();
     expect(screen.getByText(/明码标价的限时访问对价/)).toBeInTheDocument();
-    expect(screen.getByText(/未兑换订单可发邮件申请原路退回；已兑换不退；不提供发票/)).toBeInTheDocument();
+    expect(screen.getByText(/未兑换的订单可全额退款；已兑换订单如发生退款，对应解锁凭证将同步失效/)).toBeInTheDocument();
     expect(screen.getByText(/当前为免费体验/)).toBeInTheDocument();
     // 权益说明：被解锁内容概览
     expect(screen.getByText(/全部近观细节层/)).toBeInTheDocument();
@@ -199,7 +252,11 @@ describe('U3-2 三通道兑换', () => {
     fireEvent.change(input, { target: { value: '123' } });
     fireEvent.click(screen.getByRole('button', { name: '兑换' }));
     expect(screen.getByRole('alert')).toHaveTextContent(/订单号应为 14-40 位数字/);
-    expect(global.fetch).not.toHaveBeenCalled();
+    // 不发兑换请求（挂载期吊销名单拉取不属兑换链路，按 URL 排除）
+    expect(global.fetch).not.toHaveBeenCalledWith(
+      REDEEM_API_URL,
+      expect.anything(),
+    );
   });
 
   it('兑换成功：POST 生产端点 → store applyUnlockToken → 激活态展示', async () => {
@@ -259,11 +316,7 @@ describe('U3-2 三通道兑换', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/未知错误/);
 
     // 非 JSON 响应体（json() 抛错）同样按未知错误提示
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      json: async (): Promise<unknown> => {
-        throw new Error('not json');
-      },
-    });
+    redeemQueue.push({ kind: 'badJson' });
     fireEvent.click(screen.getByRole('button', { name: '兑换' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/未知错误/);
   });
@@ -286,7 +339,7 @@ describe('U3-2 三通道兑换', () => {
 
   it('网络失败 → 可重试提示，重试成功', async () => {
     const token = makeToken();
-    (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+    redeemQueue.push({ kind: 'reject' });
     render(<UnlockPage />);
     fireEvent.change(screen.getByLabelText('爱发电订单号'), {
       target: { value: VALID_ORDER_ID },
@@ -451,7 +504,7 @@ describe('i18n zh/EN 切换', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Week Pass')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Buy on Afdian' })).toBeInTheDocument();
-    expect(screen.getByText(/non-refundable/)).toBeInTheDocument();
+    expect(screen.getByText(/invalidated accordingly/)).toBeInTheDocument();
     // intro 与状态区均含 "free experience"（i18n 文案二义），收紧为状态区句首
     expect(screen.getByText(/^You are on the free experience/)).toBeInTheDocument();
   });
@@ -463,5 +516,118 @@ describe('i18n zh/EN 切换', () => {
     expect(await screen.findByText(/Access active/)).toBeInTheDocument();
     expect(screen.getAllByText('Month Pass')).toHaveLength(2);
     expect(screen.getAllByText('31 days')).toHaveLength(2);
+  });
+});
+
+describe('A6-3 吊销链路页面状态区（裁决 ⑤⑥ 文案）', () => {
+  it('缓存名单命中存值 token → 免费态 + 命中文案（文艺文案渲染）', async () => {
+    const token = makeToken();
+    window.localStorage.setItem(UNLOCK_TOKEN_STORAGE_KEY, token);
+    window.localStorage.setItem(
+      REVOCATIONS_STORAGE_KEY,
+      JSON.stringify({
+        v: 1,
+        entries: [
+          { h: unlockTokenHash(token), exp: NOW_SEC + 31 * 86_400, at: 'now' },
+        ],
+      }),
+    );
+    render(<UnlockPage />);
+    expect(
+      await screen.findByText(/这枚凭证已随退款静静熄灭/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/当前为免费体验/)).toBeInTheDocument();
+    expect(screen.queryByText('✅ 权益已激活')).not.toBeInTheDocument();
+    // 命中即清除本地 token
+    expect(window.localStorage.getItem(UNLOCK_TOKEN_STORAGE_KEY)).toBeNull();
+  });
+
+  it('远程名单命中（缓存为空 → 拉取返回命中）→ 权益消失 + 命中文案', async () => {
+    const token = makeToken();
+    window.localStorage.setItem(UNLOCK_TOKEN_STORAGE_KEY, token);
+    revocationsResponse = async (): Promise<unknown> => ({
+      ok: true,
+      list: {
+        v: 1,
+        entries: [
+          { h: unlockTokenHash(token), exp: NOW_SEC + 31 * 86_400, at: 'now' },
+        ],
+      },
+    });
+    render(<UnlockPage />);
+    // 挂载时缓存为空名单 → 先恢复；拉取返回命中 → 即时吊销
+    expect(
+      await screen.findByText(/这枚凭证已随退款静静熄灭/),
+    ).toBeInTheDocument();
+    expect(window.localStorage.getItem(UNLOCK_TOKEN_STORAGE_KEY)).toBeNull();
+  });
+
+  it('无缓存 + 拉取失败 → 权益不恢复 + 网络提示（fail-closed，裁决 ④⑥）', async () => {
+    window.localStorage.removeItem(REVOCATIONS_STORAGE_KEY);
+    window.localStorage.setItem(UNLOCK_TOKEN_STORAGE_KEY, makeToken());
+    revocationsResponse = async (): Promise<unknown> => {
+      throw new Error('offline');
+    };
+    render(<UnlockPage />);
+    expect(
+      await screen.findByText(/未能核验凭证状态，请检查网络连接后重试/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('✅ 权益已激活')).not.toBeInTheDocument();
+    // 缓存软化：token 存值保留（联网恢复后刷新可复活）
+    expect(window.localStorage.getItem(UNLOCK_TOKEN_STORAGE_KEY)).not.toBeNull();
+  });
+
+  it('无缓存 + 拉取成功 → 挂起恢复补跑（权益补恢复）', async () => {
+    window.localStorage.removeItem(REVOCATIONS_STORAGE_KEY);
+    window.localStorage.setItem(UNLOCK_TOKEN_STORAGE_KEY, makeToken());
+    render(<UnlockPage />);
+    expect(await screen.findByText('✅ 权益已激活')).toBeInTheDocument();
+  });
+
+  it('核验失败态粘贴 token → 网络提示（fail-closed 拒绝激活）', async () => {
+    window.localStorage.removeItem(REVOCATIONS_STORAGE_KEY);
+    revocationsResponse = async (): Promise<unknown> => {
+      throw new Error('offline');
+    };
+    render(<UnlockPage />);
+    // 等挂载拉取失败落定（无 token：无网络提示渲染，但核验失败态已置位）
+    await waitFor(() => {
+      expect(
+        useSimulationStore.getState().revocationCheckFailed,
+      ).toBe(true);
+    });
+    fireEvent.change(screen.getByLabelText('解锁 token'), {
+      target: { value: makeToken() },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '激活' }));
+    // 状态区网络提示 + 粘贴框报错双落点（同一裁决 ⑥ 文案）
+    const alerts = screen.getAllByRole('alert');
+    expect(alerts.length).toBeGreaterThanOrEqual(1);
+    for (const alert of alerts) {
+      expect(alert).toHaveTextContent(/未能核验凭证状态，请检查网络连接后重试/);
+    }
+    expect(screen.queryByText('✅ 权益已激活')).not.toBeInTheDocument();
+  });
+
+  it('粘贴已吊销 token → 命中文案报错（不激活不 persist）', () => {
+    const token = makeToken();
+    window.localStorage.setItem(
+      REVOCATIONS_STORAGE_KEY,
+      JSON.stringify({
+        v: 1,
+        entries: [
+          { h: unlockTokenHash(token), exp: NOW_SEC + 31 * 86_400, at: 'now' },
+        ],
+      }),
+    );
+    render(<UnlockPage />);
+    fireEvent.change(screen.getByLabelText('解锁 token'), {
+      target: { value: token },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '激活' }));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      /这枚凭证已随退款静静熄灭/,
+    );
+    expect(window.localStorage.getItem(UNLOCK_TOKEN_STORAGE_KEY)).toBeNull();
   });
 });

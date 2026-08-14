@@ -29,6 +29,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { MessageKey } from '@/i18n';
 import { useLocaleInit, useT, useTf } from '@/hooks/useI18n';
+import { refreshRevocationList } from '@/hooks/useUnlockInit';
 import { useViewportKind } from '@/hooks/useViewportKind';
 import { useSimulationStore } from '@/store';
 import type { UnlockTier } from '@/data/unlockPricing';
@@ -86,6 +87,11 @@ export default function UnlockPage(): JSX.Element {
 
   // 权益态：store 单一事实源（U2-1 已交付；mount 时经 URL 注入 / 存值恢复）
   const entitlement = useSimulationStore((s) => s.entitlement);
+  // A6-3 吊销链路状态区（命中文案 / 核验失败网络提示，裁决 ⑤⑥）
+  const entitlementRevoked = useSimulationStore((s) => s.entitlementRevoked);
+  const revocationCheckFailed = useSimulationStore(
+    (s) => s.revocationCheckFailed,
+  );
 
   // 爱发电兑换表单
   const [orderInput, setOrderInput] = useState('');
@@ -105,10 +111,15 @@ export default function UnlockPage(): JSX.Element {
   // 微信二维码展开（donate 页先例）
   const [qrOpen, setQrOpen] = useState(false);
 
-  /** 激活收口：store applyUnlockToken（验签 + persist 由 store 承担） */
+  /** 激活收口：store applyUnlockToken（验签 + 吊销核对 + persist 由 store 承担） */
   function applyToken(
     raw: string,
-  ): { ok: true } | { ok: false; reason: 'format' | 'signature' | 'expired' } {
+  ):
+    | { ok: true }
+    | {
+        ok: false;
+        reason: 'format' | 'signature' | 'expired' | 'revoked' | 'unverified';
+      } {
     const result = useSimulationStore.getState().applyUnlockToken(raw.trim());
     if (!result.ok) return result;
     setCopyState('idle');
@@ -124,6 +135,9 @@ export default function UnlockPage(): JSX.Element {
   useEffect(() => {
     const store = useSimulationStore.getState();
     store.restoreUnlockState();
+    // A6：吊销名单异步拉取（restore 已同步用缓存比对；无缓存时挂起的
+    // 权益恢复由拉取结果补跑——useUnlockInit 同一 IO 壳共享）
+    void refreshRevocationList();
     const urlToken = parseLaunchParams(window.location.search).token;
     if (urlToken !== null) {
       const result = store.applyUnlockToken(urlToken);
@@ -289,9 +303,29 @@ export default function UnlockPage(): JSX.Element {
             {tr('unlock.statusSection')}
           </h2>
           {entitlement === null ? (
-            <p className="rounded-lg border border-white/10 bg-space-panel p-4 text-xs leading-5 text-gray-400 backdrop-blur">
-              {tr('unlock.statusFree')}
-            </p>
+            <div className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
+              {/* A6-3 吊销命中态（裁决 ⑤ 原文；已在解锁页，无需跳转按钮登记） */}
+              {entitlementRevoked && (
+                <p
+                  role="alert"
+                  className="mb-3 rounded border border-violet-400/40 bg-violet-950/30 p-3 text-xs leading-5 text-violet-200"
+                >
+                  🕯️ {tr('unlock.revokedNotice')}
+                </p>
+              )}
+              {/* A6-3 核验失败态（裁决 ⑥ 网络提示：拉取失败 + 无缓存名单） */}
+              {revocationCheckFailed && (
+                <p
+                  role="alert"
+                  className="mb-3 rounded border border-amber-400/40 bg-amber-950/30 p-3 text-xs leading-5 text-amber-200"
+                >
+                  {tr('unlock.revokeCheckFailed')}
+                </p>
+              )}
+              <p className="text-xs leading-5 text-gray-400">
+                {tr('unlock.statusFree')}
+              </p>
+            </div>
           ) : (
             <div className="rounded-lg border border-space-accent/40 bg-space-panel p-4 backdrop-blur">
               <p className="text-sm font-medium text-space-accent">

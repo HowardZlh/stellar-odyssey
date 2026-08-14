@@ -131,3 +131,17 @@ export function labScenePath(entry: LabEntry): string {
 
 /** 实验室首页路由路径（主界面入口/场景页返回链接同源常量） */
 export const LAB_PAGE_PATH = '/lab';
+
+/** 天体观察站画廊路由路径（画廊/观察页/锁定页返回链接同源常量） */
+export const OBSERVATORY_PAGE_PATH = `${LAB_PAGE_PATH}/observatory`;
+
+/**
+ * 单天体观察页路由路径（路径形态 `/lab/observatory/<id>`）
+ *
+ * 画廊「进入观察」链接与 `[body]` 路由 `generateStaticParams` 共用；
+ * 旧查询串形态 `?body=<id>` 仅作直达链接兼容（页面挂载时改写地址栏）。
+ * id 来自 PREVIEW_REGISTRY（安全字符集），encodeURIComponent 为防御。
+ */
+export function observatoryBodyPath(bodyId: string): string {
+  return `${OBSERVATORY_PAGE_PATH}/${encodeURIComponent(bodyId)}`;
+}
