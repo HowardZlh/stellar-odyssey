@@ -25,16 +25,24 @@ import {
   persistObservatoryQuota,
   readStoredObservatoryQuota,
 } from '@/utils/observatoryStorage';
-import { LAB_PAGE_PATH } from '@/utils/lab';
+import {
+  LAB_PAGE_PATH,
+  OBSERVATORY_PAGE_PATH,
+  observatoryBodyPath,
+} from '@/utils/lab';
 import { UNLOCK_PAGE_PATH } from '@/utils/unlockPage';
 
 /**
  * 天体观察站主组件（O1，REQUIREMENTS_OBSERVATORY.md）
  *
- * `/lab/observatory` 单页两形态（静态导出限制下经 `?body=<id>` 分流）：
- * - 无 `?body` / 未注册 id → 画廊页（23 个观察对象卡片 + 门控额度横幅）；
+ * 两形态（画廊 `/lab/observatory` 与单天体 `/lab/observatory/<id>` 两条
+ * 路由共用本组件，经 bodyId prop 分流；旧 `?body=<id>` 查询串由画廊页
+ * 兼容解析）：
+ * - bodyId 为 null / 未注册 id → 画廊页（观察对象卡片 + 门控额度横幅）；
  * - 已注册 id → 门控判定（`observatoryAccessUpdate` 纯函数 + localStorage
  *   持久化，每次进入都计次）→ 放行挂载观察工位 / 拒绝显示锁定提示。
+ * 画廊 ↔ 观察为跨路由段导航（`observatoryBodyPath` 路径形态），软/硬
+ * 导航均正确重挂载。
  *
  * 权益恢复经 useUnlockInit（挂载一次 restore + 30s 到期 tick，与主应用
  * 同源）；门控判定在 effect 中读取 `getState().entitlement`（restore 先于
@@ -209,7 +217,7 @@ function ObservatoryGallery({ unknownBodyId }: { unknownBodyId: string | null })
                   </p>
                 )}
                 <Link
-                  href={`${LAB_PAGE_PATH}/observatory?body=${id}`}
+                  href={observatoryBodyPath(id)}
                   className="mt-auto inline-flex min-h-11 items-center justify-center self-start rounded bg-space-accent/90 px-4 pt-0.5 text-xs text-black transition-colors hover:bg-space-accent"
                 >
                   {tr('lab.observatoryEnter')} →
@@ -263,7 +271,7 @@ function ObservatoryLocked({ result }: { result: ObservatoryAccessResult }): JSX
           {tr('unlock.lockedGoUnlock')}
         </a>
         <Link
-          href={`${LAB_PAGE_PATH}/observatory`}
+          href={OBSERVATORY_PAGE_PATH}
           className="inline-flex min-h-11 items-center px-2 text-xs text-space-accent hover:underline"
         >
           ← {tr('lab.observatoryBackToGallery')}
