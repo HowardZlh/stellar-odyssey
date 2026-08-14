@@ -24,8 +24,10 @@ import { parseOrderEpochSec } from "../orderTime";
 import {
   classifyOrder,
   handleRedeem,
+  isPlanMappingComplete,
   ORDER_ID_RE,
   type FetchLike,
+  type PlanTierMapping,
   type RedeemDeps,
   type UnlockKvLike,
 } from "../redeem";
@@ -48,6 +50,16 @@ const SECRETS = {
   afdianUserId: "test-user",
   afdianToken: "test-token",
   ed25519PrivateKeyHex: TEST_PRIVATE_KEY_HEX,
+};
+
+/** plan 映射未配置（U6 回退链态：既有金额判定用例语义零破坏） */
+const EMPTY_PLAN_TIERS: PlanTierMapping = { week: "", month: "", year: "" };
+
+/** plan 映射全配置（U6 强制归档态 fixture） */
+const PLAN_TIERS: PlanTierMapping = {
+  week: "plan-week-0001",
+  month: "plan-month-0002",
+  year: "plan-year-0003",
 };
 
 /** 爱发电订单 fixture（覆盖项按用例参数化） */
@@ -99,6 +111,7 @@ function makeDeps(overrides: Partial<RedeemDeps> = {}): RedeemDeps {
     fetchFn: makeFetch(afdianResponseFixture([afdianOrderFixture()])),
     secrets: SECRETS,
     nowSec: NOW_SEC,
+    planTiers: EMPTY_PLAN_TIERS,
     ...overrides,
   };
 }
@@ -174,7 +187,8 @@ describe("handleRedeem 成功签发", () => {
     expect(kv.put).toHaveBeenCalledTimes(1);
     expect(kv.put).toHaveBeenCalledWith(
       `order:${ORDER_ID}`,
-      JSON.stringify({ token: body.token, tier, exp: expectedExp }),
+      // U6：KV 值追加审计字段 planId（fixture 无 plan_id → 归空串）
+      JSON.stringify({ token: body.token, tier, exp: expectedExp, planId: "" }),
     );
     expect(fetchFn).toHaveBeenCalledTimes(1);
     expect(fetchFn.mock.calls[0][0]).toBe(AFDIAN_QUERY_ORDER_URL);
@@ -361,6 +375,116 @@ describe("handleRedeem 失败分支", () => {
 });
 
 // ---------------------------------------------------------------------------
+// handleRedeem U6：plan 映射强制归档（主流程接线）
+// ---------------------------------------------------------------------------
+
+describe("handleRedeem plan 映射（U6）", () => {
+  it("映射命中 + 8 折金额（¥70.4）→ 强制归档 year，KV 值含 planId 审计字段", async () => {
+    const kv = makeKv();
+    const fetchFn = makeFetch(
+      afdianResponseFixture([
+        afdianOrderFixture({
+          total_amount: "70.40",
+          product_type: 1,
+          sku_detail: [{ count: 1 }],
+          plan_id: PLAN_TIERS.year,
+        }),
+      ]),
+    );
+    const body = await handleRedeem(
+      ORDER_ID,
+      makeDeps({ kv, fetchFn, planTiers: PLAN_TIERS }),
+    );
+
+    const expectedExp = ORDER_SEC + 366 * 86_400;
+    expect(body).toEqual({
+      ok: true,
+      token: expect.stringMatching(/^SO1\./),
+      tier: "year",
+      expiresAt: expectedExp,
+    });
+    if (!body.ok) throw new Error("unreachable");
+    expect(kv.put).toHaveBeenCalledWith(
+      `order:${ORDER_ID}`,
+      JSON.stringify({
+        token: body.token,
+        tier: "year",
+        exp: expectedExp,
+        planId: PLAN_TIERS.year,
+      }),
+    );
+  });
+
+  it("映射命中 + 周卡 8 折（¥4.8，回退态会 amount_too_low）→ week 7 天", async () => {
+    const fetchFn = makeFetch(
+      afdianResponseFixture([
+        afdianOrderFixture({
+          total_amount: "4.80",
+          product_type: 1,
+          sku_detail: [{ count: 1 }],
+          plan_id: PLAN_TIERS.week,
+        }),
+      ]),
+    );
+    const body = await handleRedeem(
+      ORDER_ID,
+      makeDeps({ fetchFn, planTiers: PLAN_TIERS }),
+    );
+    expect(body).toMatchObject({ ok: true, tier: "week" });
+  });
+
+  it("映射全配置 + 赞助方案/未知 plan → plan_not_eligible，零 KV 写", async () => {
+    const kv = makeKv();
+    const fetchFn = makeFetch(
+      afdianResponseFixture([
+        afdianOrderFixture({ total_amount: "30.00", plan_id: "plan-sponsor-9999" }),
+      ]),
+    );
+    const body = await handleRedeem(
+      ORDER_ID,
+      makeDeps({ kv, fetchFn, planTiers: PLAN_TIERS }),
+    );
+    expect(body).toEqual({
+      ok: false,
+      error: "plan_not_eligible",
+      message: expect.stringContaining("不支持解锁兑换"),
+    });
+    expect(kv.put).not.toHaveBeenCalled();
+  });
+
+  it("映射任一未配置 → 回退纯金额判定（金额不足仍归 amount_too_low）", async () => {
+    const kv = makeKv();
+    const fetchFn = makeFetch(
+      afdianResponseFixture([
+        afdianOrderFixture({ total_amount: "4.80", plan_id: "plan-sponsor-9999" }),
+      ]),
+    );
+    const body = await handleRedeem(
+      ORDER_ID,
+      makeDeps({ kv, fetchFn, planTiers: { ...PLAN_TIERS, year: "" } }),
+    );
+    expect(body).toMatchObject({ ok: false, error: "amount_too_low" });
+    expect(kv.put).not.toHaveBeenCalled();
+  });
+
+  it("老格式 KV 存量记录（无 planId）幂等读照常返回（解析侧零改动）", async () => {
+    const stored = { token: "SO1.legacy.sig", tier: "week", exp: 1_760_000_000 };
+    const kv = makeKv({ [`order:${ORDER_ID}`]: JSON.stringify(stored) });
+    const body = await handleRedeem(
+      ORDER_ID,
+      makeDeps({ kv, planTiers: PLAN_TIERS }),
+    );
+    expect(body).toEqual({
+      ok: true,
+      token: stored.token,
+      tier: "week",
+      expiresAt: stored.exp,
+    });
+    expect(kv.put).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 纯函数：档位归档 classifyOrder
 // ---------------------------------------------------------------------------
 
@@ -372,36 +496,133 @@ describe("classifyOrder 档位归档", () => {
       months: 1,
       isGoods: false,
       goodsCount: 1,
+      planId: "",
       ...overrides,
     };
   }
 
   it("订阅单走 resolveTierFromAmount（总金额 + 月数）", () => {
-    expect(classifyOrder(order({ totalAmountCny: 30, months: 2 }))).toEqual({
+    expect(
+      classifyOrder(order({ totalAmountCny: 30, months: 2 }), EMPTY_PLAN_TIERS),
+    ).toEqual({
       tier: "month",
       days: 62,
     });
-    expect(classifyOrder(order({ totalAmountCny: 14, months: 1 }))).toEqual({
+    expect(
+      classifyOrder(order({ totalAmountCny: 14, months: 1 }), EMPTY_PLAN_TIERS),
+    ).toEqual({
       tier: "week",
       days: 7,
     });
-    expect(classifyOrder(order({ totalAmountCny: 5 }))).toBeNull();
+    expect(classifyOrder(order({ totalAmountCny: 5 }), EMPTY_PLAN_TIERS)).toBeNull();
   });
 
   it("商品单按单件金额归档 × 份数（防多份误判高档）", () => {
     expect(
       classifyOrder(
         order({ totalAmountCny: 18, isGoods: true, goodsCount: 3 }),
+        EMPTY_PLAN_TIERS,
       ),
     ).toEqual({ tier: "week", days: 21 });
     expect(
       classifyOrder(
         order({ totalAmountCny: 176, isGoods: true, goodsCount: 2 }),
+        EMPTY_PLAN_TIERS,
       ),
     ).toEqual({ tier: "year", days: 732 });
     expect(
-      classifyOrder(order({ totalAmountCny: 5, isGoods: true, goodsCount: 1 })),
+      classifyOrder(
+        order({ totalAmountCny: 5, isGoods: true, goodsCount: 1 }),
+        EMPTY_PLAN_TIERS,
+      ),
     ).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // U6：plan 映射强制归档（裁决 ①②）
+  // -------------------------------------------------------------------------
+
+  it.each([
+    // [说明, planId, 订单覆盖, 期望档位, 期望天数]——金额无关（原价/8 折/¥1 极端折扣）
+    ["week 原价 ¥6 ×1", PLAN_TIERS.week, { totalAmountCny: 6, isGoods: true }, "week", 7],
+    ["week 8 折 ¥4.8 ×1", PLAN_TIERS.week, { totalAmountCny: 4.8, isGoods: true }, "week", 7],
+    ["week ¥1 极端折扣 ×1", PLAN_TIERS.week, { totalAmountCny: 1, isGoods: true }, "week", 7],
+    [
+      "week 8 折 ×3 份叠加",
+      PLAN_TIERS.week,
+      { totalAmountCny: 14.4, isGoods: true, goodsCount: 3 },
+      "week",
+      21,
+    ],
+    ["month 原价 ¥15 ×1 月", PLAN_TIERS.month, { totalAmountCny: 15, months: 1 }, "month", 31],
+    ["month 8 折 ¥12 ×1 月", PLAN_TIERS.month, { totalAmountCny: 12, months: 1 }, "month", 31],
+    ["month ¥1 极端折扣 ×1 月", PLAN_TIERS.month, { totalAmountCny: 1, months: 1 }, "month", 31],
+    [
+      "month 8 折 ×3 月叠加",
+      PLAN_TIERS.month,
+      { totalAmountCny: 36, months: 3 },
+      "month",
+      93,
+    ],
+    ["year 原价 ¥88 ×1", PLAN_TIERS.year, { totalAmountCny: 88, isGoods: true }, "year", 366],
+    ["year 8 折 ¥70.4 ×1", PLAN_TIERS.year, { totalAmountCny: 70.4, isGoods: true }, "year", 366],
+    ["year ¥1 极端折扣 ×1", PLAN_TIERS.year, { totalAmountCny: 1, isGoods: true }, "year", 366],
+    [
+      "year 8 折 ×3 份叠加",
+      PLAN_TIERS.year,
+      { totalAmountCny: 211.2, isGoods: true, goodsCount: 3 },
+      "year",
+      1098,
+    ],
+  ])(
+    "映射命中强制归档（%s）→ %s",
+    (_label, planId, overrides, tier, days) => {
+      expect(
+        classifyOrder(order({ ...overrides, planId: planId as string }), PLAN_TIERS),
+      ).toEqual({ tier, days });
+    },
+  );
+
+  it("映射全配置：未命中 plan（赞助方案/未知/空串）→ null（plan_not_eligible）", () => {
+    // 赞助方案 plan：即使金额 ≥¥6 也不得兑出周卡（U6 堵模糊地带）
+    expect(
+      classifyOrder(order({ totalAmountCny: 30, planId: "plan-sponsor-9999" }), PLAN_TIERS),
+    ).toBeNull();
+    expect(
+      classifyOrder(order({ totalAmountCny: 88, planId: "unknown" }), PLAN_TIERS),
+    ).toBeNull();
+    // planId 空串（上游缺字段防御归空）不得命中任何映射
+    expect(
+      classifyOrder(order({ totalAmountCny: 88, planId: "" }), PLAN_TIERS),
+    ).toBeNull();
+  });
+
+  it.each([
+    ["week 空", { ...PLAN_TIERS, week: "" }],
+    ["month 空", { ...PLAN_TIERS, month: "" }],
+    ["year 空", { ...PLAN_TIERS, year: "" }],
+    ["month 仅空白", { ...PLAN_TIERS, month: "   " }],
+    ["全部缺失（undefined）", {}],
+  ])("映射未全配置（%s）→ 整体回退纯金额判定", (_label, planTiers) => {
+    // 未知 plan + 金额 ¥15 → 回退态按金额判 month（映射态会拒绝）
+    expect(
+      classifyOrder(
+        order({ totalAmountCny: 15, planId: "plan-sponsor-9999" }),
+        planTiers,
+      ),
+    ).toEqual({ tier: "month", days: 31 });
+    // 金额不足照旧 null（amount_too_low）
+    expect(
+      classifyOrder(order({ totalAmountCny: 5, planId: "plan-sponsor-9999" }), planTiers),
+    ).toBeNull();
+  });
+
+  it("isPlanMappingComplete：全非空 true；任一空/空白/缺失 false", () => {
+    expect(isPlanMappingComplete(PLAN_TIERS)).toBe(true);
+    expect(isPlanMappingComplete(EMPTY_PLAN_TIERS)).toBe(false);
+    expect(isPlanMappingComplete({ ...PLAN_TIERS, week: " " })).toBe(false);
+    expect(isPlanMappingComplete({ week: "a", month: "b" })).toBe(false);
+    expect(isPlanMappingComplete({})).toBe(false);
   });
 });
 
@@ -572,6 +793,7 @@ describe("parseAfdianQueryOrderResponse", () => {
         months: 2,
         isGoods: false,
         goodsCount: 1,
+        planId: "",
       },
     });
   });
@@ -589,6 +811,7 @@ describe("parseAfdianQueryOrderResponse", () => {
         months: 1,
         isGoods: false,
         goodsCount: 1,
+        planId: "",
       },
     });
   });
@@ -604,6 +827,20 @@ describe("parseAfdianQueryOrderResponse", () => {
     );
     if (result.kind !== "found") throw new Error("unreachable");
     expect(result.order.months).toBe(months);
+  });
+
+  it.each([
+    ["字符串原样保留", { plan_id: "plan-week-0001" }, "plan-week-0001"],
+    ["缺失归空串", {}, ""],
+    ["非字符串（数字）归空串", { plan_id: 123 }, ""],
+    ["非字符串（null）归空串", { plan_id: null }, ""],
+  ])("plan_id 防御解析（%s）", (_l, overrides, planId) => {
+    const result = parseAfdianQueryOrderResponse(
+      afdianResponseFixture([afdianOrderFixture(overrides)]),
+      ORDER_ID,
+    );
+    if (result.kind !== "found") throw new Error("unreachable");
+    expect(result.order.planId).toBe(planId);
   });
 
   it.each([

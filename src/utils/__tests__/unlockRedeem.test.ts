@@ -85,6 +85,8 @@ describe("redeemErrorMessageKey（§0.5 全部错误码 → i18n 键）", () => 
     ["already_redeemed_conflict", "unlock.errAlreadyRedeemed"],
     ["upstream_error", "unlock.errUpstream"],
     ["not_configured", "unlock.errNotConfigured"],
+    // U6 契约 v1.1 追加（按商品/方案归档，未映射订单拒绝）
+    ["plan_not_eligible", "unlock.errPlanNotEligible"],
   ] as const)("%s → %s", (code, key) => {
     expect(redeemErrorMessageKey(code)).toBe(key);
   });
@@ -102,6 +104,7 @@ describe("redeemErrorMessageKey（§0.5 全部错误码 → i18n 键）", () => 
       "already_redeemed_conflict",
       "upstream_error",
       "not_configured",
+      "plan_not_eligible",
       "unknown",
     ].map((code) => redeemErrorMessageKey(code));
     for (const key of keys) {

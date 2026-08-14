@@ -124,6 +124,8 @@ export const en: I18nDict = {
       'This order has already been redeemed (if switching devices, activate with your original token)',
     errUpstream: 'The order-lookup service is temporarily unavailable — please retry later',
     errNotConfigured: 'The redeem service is not yet live — please come back later or contact us by email',
+    errPlanNotEligible:
+      'The item in this order is not eligible for unlock redemption — please make sure you purchased an unlock tier item',
     errUnknown: 'Redeem failed (unknown error) — please retry later or contact us by email',
     errNetwork: 'Network request failed — please check your connection and retry',
     wechatTitle: 'WeChat tip code (manual)',

@@ -37,7 +37,7 @@ export function isValidAfdianOrderId(orderId: string): boolean {
   return /^\d{14,40}$/.test(orderId);
 }
 
-/** §0.5 冻结契约错误码 → 用户可读提示 i18n 键（未知码回退通用错误） */
+/** §0.5 契约错误码（v1.1 含 U6 plan_not_eligible）→ i18n 键（未知码回退通用错误） */
 export function redeemErrorMessageKey(code: string): MessageKey {
   switch (code) {
     case "invalid_order":
@@ -52,6 +52,8 @@ export function redeemErrorMessageKey(code: string): MessageKey {
       return "unlock.errUpstream";
     case "not_configured":
       return "unlock.errNotConfigured";
+    case "plan_not_eligible":
+      return "unlock.errPlanNotEligible";
     default:
       return "unlock.errUnknown";
   }

@@ -24,6 +24,11 @@ export interface AfdianOrder {
   readonly isGoods: boolean;
   /** 商品单购买份数（sku_detail count 合计，默认 1） */
   readonly goodsCount: number;
+  /**
+   * 商品/订阅方案 plan id（U6 强制归档依据；爱发电把商品与订阅统一
+   * 建模为 plan）。防御式：缺失/非字符串归空串（空串永不命中映射）。
+   */
+  readonly planId: string;
 }
 
 /** 验单解析结果三分支 */
@@ -98,6 +103,7 @@ export function parseAfdianQueryOrderResponse(
       // product_type: 0=订阅方案, 1=售卖商品（爱发电开放平台订单字段）
       isGoods: String(match.product_type ?? "0") === "1",
       goodsCount: parseGoodsCount(match.sku_detail),
+      planId: typeof match.plan_id === "string" ? match.plan_id : "",
     },
   };
 }

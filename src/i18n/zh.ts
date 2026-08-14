@@ -151,6 +151,7 @@ export const zh = {
     errAlreadyRedeemed: '该订单已被兑换过（如系本人换设备，请用原 token 激活）',
     errUpstream: '订单查询服务暂时不可用，请稍后重试',
     errNotConfigured: '兑换服务尚未开通，请稍后再来或邮件联系',
+    errPlanNotEligible: '该订单对应的商品不支持解锁兑换，请核对购买的是解锁档位商品',
     errUnknown: '兑换失败（未知错误），请稍后重试或邮件联系',
     errNetwork: '网络请求失败，请检查网络后重试',
     wechatTitle: '微信赞赏码（人工兑换）',
