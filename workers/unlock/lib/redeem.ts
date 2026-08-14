@@ -8,7 +8,8 @@
  *   订单号正则（不合法即拒，零 KV 访问）
  *   → KV 读 `order:<订单号>`（命中 → 幂等返回存量 token）
  *   → 爱发电 query-order 验单（status!==2 → order_not_paid）
- *   → 档位判定（商品单按单件归档防误判 + resolveTierFromAmount）
+ *   → 档位判定（U6 plan_id 映射强制归档优先；映射未全配置回退
+ *     商品单按单件归档防误判 + resolveTierFromAmount 金额链）
  *   → exp = 订单号前 14 位下单时间 + 档位天数
  *   → Ed25519 签发（与 U1 verifyToken 同一编码路径 signToken）
  *   → KV 写 `order:<订单号>`（永久，幂等重兑依据）
@@ -34,14 +35,15 @@ import {
 } from "./afdian";
 import { parseOrderEpochSec } from "./orderTime";
 
-/** §0.5 冻结的失败机器码 */
+/** §0.5 失败机器码（v1.1：U6 追加 plan_not_eligible，前端未知码回退兼容） */
 export type RedeemErrorCode =
   | "invalid_order"
   | "order_not_paid"
   | "amount_too_low"
   | "already_redeemed_conflict"
   | "upstream_error"
-  | "not_configured";
+  | "not_configured"
+  | "plan_not_eligible";
 
 /** §0.5 冻结的响应契约 */
 export type RedeemBody =
@@ -81,6 +83,26 @@ export interface RedeemSecrets {
   readonly ed25519PrivateKeyHex?: string;
 }
 
+/**
+ * 档位 ↔ 爱发电 plan_id 映射（U6，来自 wrangler `[vars]`，非机密）：
+ * 空串/缺失 = 未配置。三者**全部配置**才启用映射强制归档（裁决 ②），
+ * 任一未配置整体回退纯金额判定（部署安全，防漏配置全量拒绝）。
+ */
+export interface PlanTierMapping {
+  readonly week?: string;
+  readonly month?: string;
+  readonly year?: string;
+}
+
+/** plan 映射是否全配置（映射态判定唯一入口，classifyOrder 与错误码共用） */
+export function isPlanMappingComplete(planTiers: PlanTierMapping): boolean {
+  return (
+    (planTiers.week ?? "").trim() !== "" &&
+    (planTiers.month ?? "").trim() !== "" &&
+    (planTiers.year ?? "").trim() !== ""
+  );
+}
+
 /** 主流程注入依赖 */
 export interface RedeemDeps {
   readonly kv: UnlockKvLike | null;
@@ -88,6 +110,8 @@ export interface RedeemDeps {
   readonly secrets: RedeemSecrets;
   /** 当前 epoch 秒（token iat 与爱发电签名 ts 共用） */
   readonly nowSec: number;
+  /** 档位 plan_id 映射（U6，env vars 注入） */
+  readonly planTiers: PlanTierMapping;
 }
 
 /** 订单号格式（爱发电订单号 14-40 位数字，§0.5） */
@@ -106,7 +130,16 @@ function fail(error: RedeemErrorCode, message: string): RedeemBody {
 }
 
 /**
- * 档位归档（§0.6 平移，改三档）：
+ * 档位归档（U6：plan 映射层优先，金额判定降为回退链）：
+ *
+ * **映射全配置**（三 plan_id 均非空，裁决 ①②）：
+ * - planId 命中 → 强制归档**无视实付金额**（折扣/特价/会员优惠安全；
+ *   仅 status===2 已在主流程校验）：week/year（商品）= 档位天数 ×
+ *   goodsCount；month（订阅）= 31 × months；
+ * - 未命中（赞助方案/未知 plan）→ null（handleRedeem 按映射态归
+ *   `plan_not_eligible`，堵赞助单兑换）。
+ *
+ * **任一未配置** → 整体回退现行纯金额判定（§0.6 平移三档，部署安全）：
  * - 商品单（product_type===1）按**单件金额**归档防误判——如 3 份 ¥6 周卡
  *   合计 ¥18 不得被金额规则误判为月卡，而是周卡天数 × 份数；
  * - 订阅方案单按总金额 + 月数走 `resolveTierFromAmount`；
@@ -114,7 +147,24 @@ function fail(error: RedeemErrorCode, message: string): RedeemBody {
  */
 export function classifyOrder(
   order: AfdianOrder,
+  planTiers: PlanTierMapping,
 ): { tier: UnlockTier; days: number } | null {
+  if (isPlanMappingComplete(planTiers)) {
+    const planId = order.planId;
+    const tier: UnlockTier | null =
+      planId !== "" && planId === (planTiers.week ?? "").trim()
+        ? "week"
+        : planId !== "" && planId === (planTiers.month ?? "").trim()
+          ? "month"
+          : planId !== "" && planId === (planTiers.year ?? "").trim()
+            ? "year"
+            : null;
+    if (tier === null) return null;
+    if (tier === "month") {
+      return { tier, days: UNLOCK_TIERS.month.days * order.months };
+    }
+    return { tier, days: UNLOCK_TIERS[tier].days * order.goodsCount };
+  }
   if (order.isGoods) {
     const unitAmount = order.totalAmountCny / order.goodsCount;
     const resolved = resolveTierFromAmount(unitAmount, 1);
@@ -231,9 +281,15 @@ export async function handleRedeem(
     return fail("order_not_paid", "订单未完成支付。");
   }
 
-  // 5. 档位判定
-  const resolved = classifyOrder(result.order);
+  // 5. 档位判定（U6：映射全配置态下未命中 → plan_not_eligible，零 KV 写）
+  const resolved = classifyOrder(result.order, deps.planTiers);
   if (resolved === null) {
+    if (isPlanMappingComplete(deps.planTiers)) {
+      return fail(
+        "plan_not_eligible",
+        "该订单对应的商品不支持解锁兑换，请购买解锁档位商品。",
+      );
+    }
     return fail("amount_too_low", amountTooLowMessage());
   }
 
@@ -253,9 +309,11 @@ export async function handleRedeem(
     ch: "afdian",
   };
   const token = signToken(payload, privateKey);
+  // planId 为审计字段（U6：排查哪笔兑换来自哪个商品）；
+  // parseStoredRedemption 只解构 token/tier/exp，存量老记录无此字段不受影响
   await deps.kv.put(
     kvKey,
-    JSON.stringify({ token, tier: resolved.tier, exp }),
+    JSON.stringify({ token, tier: resolved.tier, exp, planId: result.order.planId }),
   );
   return { ok: true, token, tier: resolved.tier, expiresAt: exp };
 }

@@ -20,3 +20,13 @@ kv_namespaces = [
 routes = [
   { pattern = "stellar.guushu.com/api/*", zone_name = "guushu.com" }
 ]
+
+# U6 档位 ↔ 爱发电 plan_id 映射（非机密，商品/方案页 URL 可见）。
+# 三者**全部填写**后启用「按商品强制归档」（命中即归档、未命中拒绝，
+# 折扣/特价/会员优惠安全）；任一为空整体回退纯金额判定（老行为）。
+# 获取路径与部署步骤见 docs/internal/UNLOCK_OPS.md §2；本地联调在
+# workers/unlock/.dev.vars 填同名变量（已 .gitignore，勿提交）。
+[vars]
+UNLOCK_PLAN_ID_WEEK = ""
+UNLOCK_PLAN_ID_MONTH = ""
+UNLOCK_PLAN_ID_YEAR = ""

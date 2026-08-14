@@ -111,6 +111,7 @@ Log in to the Afdian app or website, go to "My → Orders", find the order, and 
 | Invalid order number | Afdian cannot find this order — make sure you copied the **order number** with no missing characters |
 | The order has not been paid | Payment hasn't completed — pay first, then redeem |
 | The order amount is below the lowest tier (¥6) | The paid amount is below the Week Pass price — pay the tier amount with a new order |
+| The item in this order is not eligible for unlock redemption | The order is not for an unlock tier item — only orders for the Stellar Odyssey Week/Month/Year Pass items/plans can be redeemed; please retry with an unlock tier order |
 | This order has already been redeemed | Idempotency guard: if switching devices, activate with your original token (redeeming again returns the same token — just paste the order number once more to retrieve it) |
 | The order-lookup service is temporarily unavailable | Upstream (Afdian) API hiccup — retry later |
 | The redeem service is not yet live | Server side not fully configured — come back later or contact us by email |

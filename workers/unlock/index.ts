@@ -10,12 +10,19 @@
 import { buildCorsHeaders, resolveCorsOrigin } from "./lib/cors";
 import { handleRedeem, type UnlockKvLike } from "./lib/redeem";
 
-/** Worker env 绑定（全部可缺省——未配置走 not_configured 降级） */
+/**
+ * Worker env 绑定（KV/secrets 可缺省——未配置走 not_configured 降级；
+ * UNLOCK_PLAN_ID_* 为 wrangler.toml `[vars]` 非机密映射，U6：任一为空
+ * 整体回退纯金额判定）
+ */
 export interface UnlockWorkerEnv {
   readonly UNLOCK_KV?: UnlockKvLike;
   readonly AFDIAN_USER_ID?: string;
   readonly AFDIAN_TOKEN?: string;
   readonly ED25519_PRIVATE_KEY?: string;
+  readonly UNLOCK_PLAN_ID_WEEK?: string;
+  readonly UNLOCK_PLAN_ID_MONTH?: string;
+  readonly UNLOCK_PLAN_ID_YEAR?: string;
 }
 
 const worker = {
@@ -66,6 +73,11 @@ const worker = {
         ed25519PrivateKeyHex: env.ED25519_PRIVATE_KEY,
       },
       nowSec: Math.floor(Date.now() / 1000),
+      planTiers: {
+        week: env.UNLOCK_PLAN_ID_WEEK,
+        month: env.UNLOCK_PLAN_ID_MONTH,
+        year: env.UNLOCK_PLAN_ID_YEAR,
+      },
     });
     return new Response(JSON.stringify(body), { status: 200, headers });
   },
