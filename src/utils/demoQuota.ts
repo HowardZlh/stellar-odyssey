@@ -43,17 +43,31 @@ function sanitizeUsed(used: number): number {
   return Math.floor(used);
 }
 
+/** limit 消毒（A1-2 参数化）：非正整数（远程配置脏值）回退代码默认 */
+function sanitizeLimit(limit: number): number {
+  if (!Number.isInteger(limit) || limit <= 0) return FREE_DEMO_DAILY_LIMIT;
+  return limit;
+}
+
 /**
  * 只读查询当日剩余次数（U2 UI 展示/按钮置灰用，不消耗额度）：
  * dateKey 与当日不符（含 null 状态）视为满额；`nowMs` 非有限数沿用
  * 现状态 dateKey（与 demoQuotaUpdate 同口径）。
+ *
+ * @param limit 每日限次（A1-2 远程配置注入点；缺省 = 代码默认，
+ *   非正整数消毒回退默认）
  */
-export function demoQuotaRemaining(state: DemoQuotaState | null, nowMs: number): number {
+export function demoQuotaRemaining(
+  state: DemoQuotaState | null,
+  nowMs: number,
+  limit: number = FREE_DEMO_DAILY_LIMIT,
+): number {
+  const cap = sanitizeLimit(limit);
   const today = Number.isFinite(nowMs)
     ? localDateKey(nowMs)
     : (state?.dateKey ?? localDateKey(0));
   const carried = state !== null && state.dateKey === today ? sanitizeUsed(state.used) : 0;
-  return Math.max(0, FREE_DEMO_DAILY_LIMIT - carried);
+  return Math.max(0, cap - carried);
 }
 
 /**
@@ -62,17 +76,22 @@ export function demoQuotaRemaining(state: DemoQuotaState | null, nowMs: number):
  * - 当日已用 < 限次 → 放行并计数 +1；否则拒绝（计数不再增长）；
  * - `nowMs` 非有限数（异常时钟）→ 沿用现状态的 dateKey 判定，不落入
  *   `NaN-NaN-NaN` 日键。
+ *
+ * @param limit 每日限次（A1-2 远程配置注入点；缺省 = 代码默认，
+ *   非正整数消毒回退默认）
  */
 export function demoQuotaUpdate(
   state: DemoQuotaState | null,
   nowMs: number,
+  limit: number = FREE_DEMO_DAILY_LIMIT,
 ): DemoQuotaUpdateResult {
+  const cap = sanitizeLimit(limit);
   const today = Number.isFinite(nowMs)
     ? localDateKey(nowMs)
     : (state?.dateKey ?? localDateKey(0));
   const carried =
     state !== null && state.dateKey === today ? sanitizeUsed(state.used) : 0;
-  if (carried >= FREE_DEMO_DAILY_LIMIT) {
+  if (carried >= cap) {
     return {
       state: { dateKey: today, used: carried },
       allowed: false,
@@ -83,6 +102,6 @@ export function demoQuotaUpdate(
   return {
     state: { dateKey: today, used },
     allowed: true,
-    remaining: FREE_DEMO_DAILY_LIMIT - used,
+    remaining: cap - used,
   };
 }

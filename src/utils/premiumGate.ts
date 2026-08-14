@@ -61,9 +61,17 @@ export const PREMIUM_DETAIL_BODY_IDS: ReadonlySet<string> = new Set([
   "sagittarius-dwarf",
 ]);
 
-/** bodyId 是否属于付费近观细节层（heliopause 等免费内容恒 false） */
-export function isPremiumDetailBody(bodyId: string): boolean {
-  return PREMIUM_DETAIL_BODY_IDS.has(bodyId);
+/**
+ * bodyId 是否属于付费近观细节层（heliopause 等免费内容恒 false）
+ *
+ * @param premiumBodyIds 白名单（A1-2 远程配置注入点：整表替换语义，
+ *   缺省 = 代码默认 24 项）
+ */
+export function isPremiumDetailBody(
+  bodyId: string,
+  premiumBodyIds: ReadonlySet<string> = PREMIUM_DETAIL_BODY_IDS,
+): boolean {
+  return premiumBodyIds.has(bodyId);
 }
 
 /** 已解锁权益（U2 store 持有形态；由 verifyToken 通过后的 payload 降维而来） */
@@ -74,7 +82,22 @@ export interface UnlockEntitlement {
 }
 
 /**
+ * 细节层门控可选参数（A1-2 远程配置注入点；缺省行为与旧版全等）
+ *
+ * 限免旁路形态登记（§A1-2 二选一）：调用方（A3）自行以
+ * `remoteFreeWindowActive(config.detail?.freeWindow, nowMs)` 判定后传入
+ * 布尔 `freeWindowActive`——本模块不引入时钟/freeWindow 判定第二副本。
+ */
+export interface PremiumGateOptions {
+  /** 白名单整表替换（缺省 = 代码默认 `PREMIUM_DETAIL_BODY_IDS` 24 项） */
+  readonly premiumBodyIds?: ReadonlySet<string>;
+  /** 细节层限免旁路（true = 期内全免，无视白名单与权益） */
+  readonly freeWindowActive?: boolean;
+}
+
+/**
  * 细节层权益门（U2 在 detailGateUpdate 前叠加调用）：
+ * - 限免旁路生效（`options.freeWindowActive === true`）→ 恒放行；
  * - 免费天体（不在白名单）→ 恒放行；
  * - 付费天体 → 需持有未过期权益（`expSec > nowSec`；expSec 非有限数判拒绝）。
  */
@@ -82,8 +105,10 @@ export function premiumGateAllows(
   entitlement: UnlockEntitlement | null,
   bodyId: string,
   nowSec: number,
+  options?: PremiumGateOptions,
 ): boolean {
-  if (!isPremiumDetailBody(bodyId)) return true;
+  if (options?.freeWindowActive === true) return true;
+  if (!isPremiumDetailBody(bodyId, options?.premiumBodyIds)) return true;
   if (entitlement === null) return false;
   return Number.isFinite(entitlement.expSec) && entitlement.expSec > nowSec;
 }
@@ -99,7 +124,7 @@ export interface PremiumDetailGateResult {
 /**
  * 细节层权益叠加判定（U2-2 纯函数本体，useDetailLayer 在
  * `detailGateUpdate` 之后串接）：
- * - 免费天体 / 有效权益：原判定结果原样透传（现状零差异）；
+ * - 免费天体 / 有效权益 / 限免旁路：原判定结果原样透传（现状零差异）；
  * - 付费天体且无有效权益：强制 inactive，原判定为激活时报告 lockedHit
  *   （细节层不挂载，沿用既有淡出路径）。
  */
@@ -108,8 +133,9 @@ export function premiumDetailGateUpdate(
   entitlement: UnlockEntitlement | null,
   bodyId: string,
   nowSec: number,
+  options?: PremiumGateOptions,
 ): PremiumDetailGateResult {
-  if (!gateActive || premiumGateAllows(entitlement, bodyId, nowSec)) {
+  if (!gateActive || premiumGateAllows(entitlement, bodyId, nowSec, options)) {
     return { active: gateActive, lockedHit: false };
   }
   return { active: false, lockedHit: true };
