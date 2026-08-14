@@ -176,13 +176,15 @@ describe('buildCatalogLodAttributes 抽稀（M2-3）', () => {
     const count = 10;
     const positionsMpc = new Float32Array(count * 3);
     const morphTiers = new Uint8Array(count);
+    const jkTiers = new Uint8Array(count);
     const brightness01 = new Float32Array(count);
     for (let i = 0; i < count; i += 1) {
       positionsMpc[i * 3] = 10 * (i + 1); // 10,20,...,100 Mpc
       morphTiers[i] = i % 3;
+      jkTiers[i] = (i * 11) % 100; // 覆盖 0–99（含未知档 99——i=9）
       brightness01[i] = i / count;
     }
-    return { count, positionsMpc, morphTiers, brightness01 };
+    return { count, positionsMpc, morphTiers, jkTiers, brightness01 };
   }
 
   it('缺省 keepFraction=1 与显式 1 逐字节一致（现状零回退）', () => {

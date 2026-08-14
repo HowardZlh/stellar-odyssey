@@ -44,6 +44,7 @@ import { NEAR_VIEW_EXIT_RATIO } from '@/utils/nearView';
 import { galaxyNearViewEnterDistanceUnits } from '@/utils/galaxyNearView';
 import { validateGalaxyCatalog, type GalaxyCatalogData } from '@/utils/bakedData';
 import {
+  JK_TIER_UNKNOWN,
   LY_PER_MPC,
   VIRGO_DEC_DEG,
   VIRGO_RA_DEG,
@@ -188,16 +189,19 @@ function makeCatalog(
 ): GalaxyCatalogData {
   const positionsMpc = new Float32Array(rows.length * 3);
   const morphTiers = new Uint8Array(rows.length);
+  const jkTiers = new Uint8Array(rows.length);
   const brightness01 = new Float32Array(rows.length);
   rows.forEach((r, i) => {
     positionsMpc[i * 3] = r.x;
     positionsMpc[i * 3 + 1] = r.y;
     positionsMpc[i * 3 + 2] = r.z;
     morphTiers[i] = r.tier;
-    // 与产物同口径：亮度经 w 打包量化
-    brightness01[i] = (packCatalogW(r.tier, r.b) - r.tier * 1000) / 999;
+    // virgoMemberPoints 走形态档色调（SC3 范围外登记），jk 档置未知档即可
+    jkTiers[i] = JK_TIER_UNKNOWN;
+    // 与产物同口径：亮度经 w 打包量化（bin V2）
+    brightness01[i] = packCatalogW(r.tier, JK_TIER_UNKNOWN, r.b) % 1000 / 999;
   });
-  return { count: rows.length, positionsMpc, morphTiers, brightness01 };
+  return { count: rows.length, positionsMpc, morphTiers, jkTiers, brightness01 };
 }
 
 describe('室女座团成员筛选（R5-3 目录子集，选择登记）', () => {

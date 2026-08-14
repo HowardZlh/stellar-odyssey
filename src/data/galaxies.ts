@@ -181,6 +181,30 @@ export const LOCAL_GROUP_GALAXIES: readonly GalaxyData[] = [
   },
 ] as const;
 
+/**
+ * 程序化贴图星系整体 B−V 色指数（SC4-2，REQUIREMENTS_STAR_COLORS §SC4-2）
+ *
+ * 仅登记**无 R5-1 真实影像贴图**的星系（m31/m33/lmc/smc 走影像贴图，
+ * 不在此表）；消费侧 `utils/galaxyTint.galaxySpriteTintHex` 经
+ * `bvToTeffK`（Ballesteros 2012）→ `blackbodyRGB`（Mitchell Charity）
+ * 转为程序化 canvas 色调。
+ *
+ * B−V 文献值登记（RC3 = de Vaucouleurs et al. 1991, Third Reference
+ * Catalogue of Bright Galaxies，总色指数 (B−V)_T，经 NED 检索）：
+ * - m32（NGC 221，cE）：0.88（RC3 (B−V)_T）
+ * - m110（NGC 205，dE）：0.85（RC3 (B−V)_T）
+ * - m87（NGC 4486，E0）：0.93（RC3 (B−V)_T）
+ * - sagittarius-dwarf（dSph）：0.75（近似登记：无 RC3 积分测光——
+ *   面亮度极低且被前景银盘遮蔽；按老年贫金属 K 巨星主导星族近似，
+ *   Mateo 1998, ARA&A 36 矮椭球星族综述口径）
+ */
+export const GALAXY_BV_COLOR_INDEX: Readonly<Record<string, number>> = {
+  m32: 0.88,
+  m110: 0.85,
+  m87: 0.93,
+  'sagittarius-dwarf': 0.75,
+};
+
 /** 室女座星系团（本星系群所在的最近大型星系团） */
 export const VIRGO_CLUSTER = {
   nameZh: '室女座星系团',

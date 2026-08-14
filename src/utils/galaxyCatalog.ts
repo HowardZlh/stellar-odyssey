@@ -35,7 +35,14 @@
  * 两级 LOD（§R5-3 B）：拉尼亚凯亚近域（≤ 80 Mpc ≈ 2.6 亿光年半径）
  * 软圆点适度增大 + 远景单像素两个 Points（各一次 draw call）。
  * 亮度档 → 顶点尺寸与颜色强度（加性混合下颜色强度等效 alpha）；
- * 形态档 → 色调（椭圆偏黄 / 旋涡偏蓝白 / 未知中性）。
+ * J−K 量化档 → 连续色调（SC3：J−K 大/早型 → 红黄、小/晚型 → 蓝白，
+ * 线性平滑插值）；未知档（Jcmag 缺失）回退形态档 3 色
+ * （椭圆偏黄 / 旋涡偏蓝白 / 未知中性）。
+ *
+ * SC5「星系色彩增强」（默认开）：插值参数 t 先过 colorBoost.
+ * enhanceCatalogT01 固定 S 曲线对比拉伸（中位档不动、两端红黄/蓝白
+ * 分层强化）；物理基色与增强显示色同循环双份构建（colors /
+ * colorsEnhanced），关闭开关 = 消费 colors（SC3 输出零回归）。
  */
 
 import type { Vec3 } from '@/types';
@@ -43,12 +50,15 @@ import type { GalaxyCatalogData } from '@/utils/bakedData';
 import { LOCAL_GROUP_GALAXIES } from '@/data/galaxies';
 import {
   ENTITY_GALAXY_SKY,
+  JK_QUANT_MAX_TIER,
+  JK_TIER_UNKNOWN,
   LY_PER_MPC,
   angularSeparationDeg,
   equatorialToGalacticUnit,
   supergalacticToGalactic,
 } from '@/utils/galaxyCatalogCore';
 import { cosmicDistanceToSceneUnits } from '@/utils/scale';
+import { enhanceCatalogT01 } from '@/utils/colorBoost';
 import { srgbToLinear01 } from '@/utils/pleiadesCatalog';
 import { catalogSampleStride } from '@/utils/qualityTier';
 
@@ -190,12 +200,68 @@ export function catalogDistanceToSceneUnits(distanceMpc: number): number {
   return cosmicDistanceToSceneUnits(distanceMpc * LY_PER_MPC);
 }
 
-/** 形态档基色（sRGB）：0 早型偏黄 / 1 晚型蓝白 / 2 未知中性暖灰 */
+/**
+ * 形态档基色（sRGB）：0 早型偏黄 / 1 晚型蓝白 / 2 未知中性暖灰。
+ * SC3 起降级为 J−K 未知档（jkTier = 99，Jcmag 缺失 ~0.09%）的回退路径——
+ * 主路径为 catalogColorFromJkTier 连续色调映射。
+ */
 export const MORPH_TIER_COLORS_SRGB: readonly [number, number, number][] = [
   [1.0, 0.85, 0.66],
   [0.78, 0.86, 1.0],
   [0.85, 0.83, 0.77],
 ];
+
+/**
+ * J−K 连续色调端点（sRGB，SC3）：量化档 0（J−K ≤ P1，最蓝/晚型）→ 蓝白，
+ * 档 98（J−K ≥ P99，最红/早型）→ 红黄（Huchra et al. 2012：早型 J−K 偏红、
+ * 晚型偏蓝，§0.3 登记）；端点色与原 3 档形态色调同族，观感连续升级。
+ */
+export const CATALOG_JK_BLUE_SRGB: readonly [number, number, number] = [0.76, 0.86, 1.0];
+export const CATALOG_JK_RED_SRGB: readonly [number, number, number] = [1.0, 0.78, 0.5];
+
+/**
+ * SC5 增强态专属端点色（sRGB）：蓝端更蓝、红端更橙。
+ *
+ * 调参登记（2026-08-14 二轮，用户目验反馈"开关差异不可辨"后方案 B）：
+ * 物理端点为低饱和粉彩色（观测口径），S 曲线仅在其区间内重分布 t、
+ * 中位不动点又使主体色调不变——增强态改用拉开的端点色直接扩大色彩
+ * 对比空间（逐通道单调性与 R/B 严格递增保持，单测断言）；关闭态
+ * 仍消费物理端点（零回归不受影响）。
+ */
+export const CATALOG_JK_BLUE_BOOST_SRGB: readonly [number, number, number] = [0.55, 0.74, 1.0];
+export const CATALOG_JK_RED_BOOST_SRGB: readonly [number, number, number] = [1.0, 0.62, 0.26];
+
+/**
+ * J−K 量化档 → 色调（sRGB，纯函数）：0–98 在蓝白 ↔ 红黄端点间线性平滑
+ * 插值（逐通道单调 → J−K 增即色温降）；99 = 未知档回退形态档 3 色
+ * （旧行为即回退路径）。
+ *
+ * SC5：`enhanced = true` 时插值参数 t 先过 `enhanceCatalogT01` S 曲线
+ * 对比拉伸，且改用增强态专属拉开端点色（蓝端更蓝/红端更橙，二轮调参
+ * 登记见常量注释）；缺省 false = SC3 物理映射零回归。未知档回退不参与
+ * 增强（两模式同款，§SC5-2 登记）。
+ */
+export function catalogColorFromJkTier(
+  jkTier: number,
+  morphTier: number,
+  enhanced = false,
+): readonly [number, number, number] {
+  if (!Number.isInteger(jkTier) || jkTier < 0 || jkTier > JK_TIER_UNKNOWN) {
+    throw new RangeError(`J−K 量化档必须为 [0,${JK_TIER_UNKNOWN}] 整数，收到 ${jkTier}`);
+  }
+  if (jkTier === JK_TIER_UNKNOWN) {
+    return MORPH_TIER_COLORS_SRGB[morphTier] ?? MORPH_TIER_COLORS_SRGB[2];
+  }
+  const raw = jkTier / JK_QUANT_MAX_TIER;
+  const t = enhanced ? enhanceCatalogT01(raw) : raw;
+  const blue = enhanced ? CATALOG_JK_BLUE_BOOST_SRGB : CATALOG_JK_BLUE_SRGB;
+  const red = enhanced ? CATALOG_JK_RED_BOOST_SRGB : CATALOG_JK_RED_SRGB;
+  return [
+    blue[0] + (red[0] - blue[0]) * t,
+    blue[1] + (red[1] - blue[1]) * t,
+    blue[2] + (red[2] - blue[2]) * t,
+  ];
+}
 
 /** 亮度档 → 颜色强度（加性混合下等效 alpha；暗端保底可见） */
 export function catalogIntensity01(brightness01: number): number {
@@ -224,8 +290,15 @@ export interface CatalogPointsAttributes {
   count: number;
   /** 场景坐标（count×3） */
   positions: Float32Array;
-  /** 线性空间颜色（count×3，含亮度强度） */
+  /** 线性空间物理基色（count×3，含亮度强度；SC3 输出 = 开关关闭态） */
   colors: Float32Array;
+  /**
+   * SC5 增强模式显示色（count×3，与 colors 同布局）：插值参数经
+   * `enhanceCatalogT01` S 曲线对比拉伸后的同管线输出（未知档回退
+   * 与 colors 逐字节一致）。开关切换时组件在两份缓存间一次性重写
+   * color attribute（位置 buffer 不重建）。
+   */
+  colorsEnhanced: Float32Array;
   /** 顶点尺寸（count，CSS px） */
   sizes: Float32Array;
 }
@@ -265,6 +338,7 @@ export function buildCatalogLodAttributes(
   const build = (indices: number[], near: boolean): CatalogPointsAttributes => {
     const positions = new Float32Array(indices.length * 3);
     const colors = new Float32Array(indices.length * 3);
+    const colorsEnhanced = new Float32Array(indices.length * 3);
     const sizes = new Float32Array(indices.length);
     for (let k = 0; k < indices.length; k += 1) {
       const i = indices[k];
@@ -279,14 +353,20 @@ export function buildCatalogLodAttributes(
       positions[k * 3 + 1] = p.y * units;
       positions[k * 3 + 2] = p.z * units;
       const b = data.brightness01[i];
-      const base = MORPH_TIER_COLORS_SRGB[data.morphTiers[i]] ?? MORPH_TIER_COLORS_SRGB[2];
+      const base = catalogColorFromJkTier(data.jkTiers[i], data.morphTiers[i]);
+      // SC5：增强显示色与物理基色同一循环同源构建（近域/远景/low 档
+      // 跨步三路径两模式各自一致——同索引同公式，单测断言）
+      const boosted = catalogColorFromJkTier(data.jkTiers[i], data.morphTiers[i], true);
       const intensity = catalogIntensity01(b);
       colors[k * 3] = srgbToLinear01(base[0]) * intensity;
       colors[k * 3 + 1] = srgbToLinear01(base[1]) * intensity;
       colors[k * 3 + 2] = srgbToLinear01(base[2]) * intensity;
+      colorsEnhanced[k * 3] = srgbToLinear01(boosted[0]) * intensity;
+      colorsEnhanced[k * 3 + 1] = srgbToLinear01(boosted[1]) * intensity;
+      colorsEnhanced[k * 3 + 2] = srgbToLinear01(boosted[2]) * intensity;
       sizes[k] = near ? catalogNearSizePx(b) : catalogFarSizePx(b);
     }
-    return { count: indices.length, positions, colors, sizes };
+    return { count: indices.length, positions, colors, colorsEnhanced, sizes };
   };
   return { near: build(nearIdx, true), far: build(farIdx, false) };
 }

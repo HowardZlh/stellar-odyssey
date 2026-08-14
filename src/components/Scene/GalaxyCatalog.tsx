@@ -70,11 +70,29 @@ function buildPoints(attrs: {
   count: number;
   positions: Float32Array;
   colors: Float32Array;
+  colorsEnhanced: Float32Array;
   sizes: Float32Array;
-}): { points: THREE.Points; material: THREE.ShaderMaterial; geometry: THREE.BufferGeometry } {
+}): {
+  points: THREE.Points;
+  material: THREE.ShaderMaterial;
+  geometry: THREE.BufferGeometry;
+  /** SC5：物理基色/增强显示色双缓存（开关切换仅重写 color attribute） */
+  attrs: { colors: Float32Array; colorsEnhanced: Float32Array };
+} {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(attrs.positions, 3));
-  geometry.setAttribute('color', new THREE.BufferAttribute(attrs.colors, 3));
+  // SC5：color attribute 持独立副本——切换开关时在 colors/colorsEnhanced
+  // 两份缓存间整段重写（一次性 CPU，位置 buffer 不重建）；初值按当前模式
+  geometry.setAttribute(
+    'color',
+    new THREE.BufferAttribute(
+      (useSimulationStore.getState().colorBoostEnabled
+        ? attrs.colorsEnhanced
+        : attrs.colors
+      ).slice(),
+      3,
+    ),
+  );
   geometry.setAttribute('aSize', new THREE.BufferAttribute(attrs.sizes, 1));
   const material = new THREE.ShaderMaterial({
     uniforms: {
@@ -93,7 +111,12 @@ function buildPoints(attrs: {
   // L4 透明层注册表（频闪修复）：哈勃膨胀每帧缩放组，深度键不再决定
   // 与 normal 混合层（尾迹/轨道线等）的先后——两级 draw call 同值可交换
   points.renderOrder = UNIVERSE_RENDER_ORDER.galaxyCatalog;
-  return { points, material, geometry };
+  return {
+    points,
+    material,
+    geometry,
+    attrs: { colors: attrs.colors, colorsEnhanced: attrs.colorsEnhanced },
+  };
 }
 
 /**
@@ -101,6 +124,9 @@ function buildPoints(attrs: {
  */
 export function GalaxyCatalog({ data }: GalaxyCatalogProps): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
+  // SC5：星系色彩增强开关（切换 = 两份颜色缓存间一次性重写 attribute，
+  // 布尔订阅仅开关翻转时重渲染；useMemo 键不含开关 → 位置 buffer 不重建）
+  const colorBoostEnabled = useSimulationStore((s) => s.colorBoostEnabled);
 
   const { near, far } = useMemo(() => {
     // M2-3：low 档均匀跨步抽稀 50%（qualityTier 档位表；high/medium 全量）；
@@ -109,6 +135,18 @@ export function GalaxyCatalog({ data }: GalaxyCatalogProps): JSX.Element {
     const lod = buildCatalogLodAttributes(data, keep);
     return { near: buildPoints(lod.near), far: buildPoints(lod.far) };
   }, [data]);
+
+  // SC5：开关切换 → 近域/远景两级 color attribute 按模式整段重写
+  // （物理基色 ↔ 增强显示色双缓存，<20ms 量级一次性 CPU，帧循环零开销）
+  useEffect(() => {
+    for (const level of [near, far]) {
+      const attr = level.geometry.getAttribute('color') as THREE.BufferAttribute;
+      (attr.array as Float32Array).set(
+        colorBoostEnabled ? level.attrs.colorsEnhanced : level.attrs.colors,
+      );
+      attr.needsUpdate = true;
+    }
+  }, [colorBoostEnabled, near, far]);
 
   useEffect(() => {
     return () => {

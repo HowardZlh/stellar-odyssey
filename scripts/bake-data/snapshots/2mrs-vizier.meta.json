@@ -1,7 +1,7 @@
 {
   "source": "2MASS Redshift Survey (2MRS)，Huchra et al. 2012, ApJS 199, 26；VizieR J/ApJS/199/26/table3（CDS）",
-  "query": "SELECT RAJ2000, DEJ2000, Kcmag, type, cz FROM \"J/ApJS/199/26/table3\" WHERE cz > 0 AND Kcmag IS NOT NULL",
-  "selectionCriteria": "cz > 0 且 Kcmag 非空（Ks ≤ 11.75 完备极限全量；蓝移条目无哈勃流距离剔除）",
-  "retrievedAt": "2026-07-30T08:19:04.546Z",
+  "query": "SELECT RAJ2000, DEJ2000, Jcmag, Kcmag, type, cz FROM \"J/ApJS/199/26/table3\" WHERE cz > 0 AND Kcmag IS NOT NULL",
+  "selectionCriteria": "cz > 0 且 Kcmag 非空（Ks ≤ 11.75 完备极限全量；蓝移条目无哈勃流距离剔除；Jcmag 允许缺失——SC3 补 J−K 色指数，缺失回退未知档）",
+  "retrievedAt": "2026-08-13T10:14:59.002Z",
   "license": "公开科学数据：引用 Huchra et al. (2012, ApJS 199, 26)；VizieR/CDS 数据使用规范"
 }

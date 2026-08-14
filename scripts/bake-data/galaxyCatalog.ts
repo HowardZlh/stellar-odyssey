@@ -5,16 +5,20 @@
  * - 2MASS Redshift Survey（2MRS）：Huchra et al. 2012, ApJS 199, 26
  *   （Ks ≤ 11.75 完备极限，~43,500 个 cz > 0 星系）；
  * - 获取方式（R4-5 二选一策略之"公开接口 + 提交快照"）：VizieR TAP
- *   （J/ApJS/199/26/table3）检索列 RAJ2000/DEJ2000/Kcmag/type/cz，
+ *   （J/ApJS/199/26/table3）检索列 RAJ2000/DEJ2000/Jcmag/Kcmag/type/cz
+ *   （SC3 起增补 Jcmag 以算 J−K 色指数；Jcmag 允许缺失 → 未知档回退），
  *   快照 gzip 提交于 snapshots/2mrs-vizier.csv.gz（`--fetch-2mrs` 重新拉取）；
  *   网络受限降级路径（按亮度截断至 ~2 万）本次未启用——快照即全量，登记。
  *
  * 坐标/失真/去重全部委托 src/utils/galaxyCatalogCore.ts 纯函数
  * （运行时与烘焙同源，禁止两套公式；三项失真登记见该文件头）。
  *
- * 产物布局（Float32 小端，~16 B/星系）：
- *   [MAGIC=21175, VERSION=1, N] + N × [sgx, sgy, sgz (Mpc 超星系笛卡尔), w]
- *   w = 形态档·1000 + round(亮度档·999)（整数值浮点，Float32 精确 → 幂等）
+ * 产物布局（Float32 小端，~16 B/星系；SC3 起 V2）：
+ *   [MAGIC=21175, VERSION=2, N] + N × [sgx, sgy, sgz (Mpc 超星系笛卡尔), w]
+ *   w = 形态档·100000 + J−K 量化档·1000 + round(亮度档·999)
+ *   （整数值浮点 ≤ 299,999 < 2²⁴，Float32 精确 → 幂等；编解码唯一出处
+ *   galaxyCatalogCore.packCatalogW / unpackCatalogW，J−K 量化见
+ *   jkTierFromColor——0–98 为 P1–P99 线性量化、99 = 缺失未知档）
  *
  * 自校验（失败退出非零）：条目数域 / 坐标有限与距离域 / w 域 /
  * 室女座团方向 6° 锥计数超密度比 ≥ 3（真实结构在数据中可验证）/
@@ -44,14 +48,19 @@ import {
   czToDistanceMpc,
   equatorialToSupergalacticUnit,
   galacticLatitudeDeg,
+  jkTierFromColor,
+  JK_QUANT_MAX_TIER,
+  JK_QUANT_P01,
+  JK_QUANT_P99,
+  JK_TIER_UNKNOWN,
   matchEntityGalaxy,
   morphTierFromType,
   packCatalogW,
 } from '../../src/utils/galaxyCatalogCore.ts';
 
-/** 产物魔数/版本（bin 头部；bakedData.validateGalaxyCatalog 同值） */
+/** 产物魔数/版本（bin 头部；bakedData.validateGalaxyCatalog 同值；SC3 起 V2） */
 export const GALAXY_CATALOG_MAGIC = 21175;
-export const GALAXY_CATALOG_VERSION = 1;
+export const GALAXY_CATALOG_VERSION = 2;
 
 const VIZIER_TAP_SYNC = 'http://tapvizier.cds.unistra.fr/TAPVizieR/tap/sync';
 const SNAPSHOT_CSV_GZ = '2mrs-vizier.csv.gz';
@@ -80,12 +89,14 @@ interface SnapshotMeta {
 interface CatalogRow {
   raDeg: number;
   decDeg: number;
+  /** J 星等（Jcmag，SC3；缺失为 NaN → J−K 未知档回退） */
+  jMag: number;
   kMag: number;
   type: string;
   czKmS: number;
 }
 
-/** 解析快照 CSV（type 列可能带引号与空格；无嵌套逗号） */
+/** 解析快照 CSV（type 列可能带引号与空格；无嵌套逗号；Jcmag 空值 → NaN） */
 export function parse2mrsCsv(csv: string): CatalogRow[] {
   const lines = csv.trim().split('\n');
   const header = lines[0].split(',');
@@ -96,14 +107,17 @@ export function parse2mrsCsv(csv: string): CatalogRow[] {
   };
   const iRa = col('RAJ2000');
   const iDec = col('DEJ2000');
+  const iJ = col('Jcmag');
   const iK = col('Kcmag');
   const iType = col('type');
   const iCz = col('cz');
   return lines.slice(1).map((line) => {
     const parts = line.split(',');
+    const jRaw = parts[iJ].trim();
     return {
       raDeg: Number(parts[iRa]),
       decDeg: Number(parts[iDec]),
+      jMag: jRaw === '' ? Number.NaN : Number(jRaw),
       kMag: Number(parts[iK]),
       type: parts[iType].replace(/^"|"$/g, ''),
       czKmS: Number(parts[iCz]),
@@ -130,8 +144,10 @@ export function bakeGalaxyCatalogFromRows(
   const dedupRemoved = new Map<string, number>();
   let droppedNearCz = 0;
   let droppedInvalid = 0;
+  let jkMissing = 0;
   const entries: Array<{ x: number; y: number; z: number; d: number; w: number }> = [];
   for (const row of rows) {
+    // 登记：jMag（Jcmag）缺失不剔除条目——J−K 回退未知档（jkTierFromColor → 99）
     if (
       !Number.isFinite(row.raDeg) ||
       !Number.isFinite(row.decDeg) ||
@@ -152,12 +168,14 @@ export function bakeGalaxyCatalogFromRows(
     }
     const d = czToDistanceMpc(row.czKmS);
     const u = equatorialToSupergalacticUnit(row.raDeg, row.decDeg);
+    const jkTier = jkTierFromColor(row.jMag, row.kMag);
+    if (jkTier === JK_TIER_UNKNOWN) jkMissing += 1;
     entries.push({
       x: Math.fround(u.x * d),
       y: Math.fround(u.y * d),
       z: Math.fround(u.z * d),
       d,
-      w: packCatalogW(morphTierFromType(row.type), brightness01FromKmag(row.kMag)),
+      w: packCatalogW(morphTierFromType(row.type), jkTier, brightness01FromKmag(row.kMag)),
     });
   }
 
@@ -233,11 +251,17 @@ export function bakeGalaxyCatalogFromRows(
     `galaxy-catalog.bin ${buffer.byteLength} B 超出 1 MB 上限`,
   );
 
+  // ---- 自校验：J−K 覆盖率（2MRS 为 2MASS 选源，J 光度近乎全量；
+  // 缺失占比异常升高说明快照列解析出错） ----
+  const jkMissingFrac = jkMissing / n;
+  assertBake(jkMissingFrac < 0.05, `J−K 缺失占比 ${(jkMissingFrac * 100).toFixed(2)}% ≥ 5%`);
+
   const dedupTotal = [...dedupRemoved.values()].reduce((s, v) => s + v, 0);
   console.log(
     `[bake-data] galaxy-catalog：${n} 星系（近距剔除 ${droppedNearCz}、无效 ${droppedInvalid}、` +
       `实体去重 ${dedupTotal}：${[...dedupRemoved.entries()].map(([k, v]) => `${k}×${v}`).join(' ') || '无'}）；` +
-      `室女座 ${VIRGO_CONE_RADIUS_DEG}° 锥 ${inCone} 条，超密度比 ${overdensity.toFixed(1)}×`,
+      `室女座 ${VIRGO_CONE_RADIUS_DEG}° 锥 ${inCone} 条，超密度比 ${overdensity.toFixed(1)}×；` +
+      `J−K 缺失 ${jkMissing}（${(jkMissingFrac * 100).toFixed(2)}%）`,
   );
 
   const metaProduct = {
@@ -246,6 +270,23 @@ export function bakeGalaxyCatalogFromRows(
       retrievedAt: snapshotMeta.retrievedAt,
       license: snapshotMeta.license,
       count: n,
+    },
+    format: {
+      version: GALAXY_CATALOG_VERSION,
+      layout:
+        '[MAGIC=21175, VERSION=2, N] + N×[sgx, sgy, sgz (Mpc 超星系笛卡尔), w]（Float32 小端）',
+      w: 'w = 形态档×100000 + J−K 量化档×1000 + round(亮度档×999)（整数值浮点 ≤ 299,999）',
+      morphTier: '0 = 早型（T ≤ 0）、1 = 晚型（1 ≤ T ≤ 19）、2 = 未知（T ≥ 20 或不可解析）',
+      jkTier:
+        `0–${JK_QUANT_MAX_TIER} = J−K 色指数按 [${JK_QUANT_P01}, ${JK_QUANT_P99}]（实际分布 P1–P99，` +
+        `Huchra et al. 2012）线性量化；${JK_TIER_UNKNOWN} = Jcmag 缺失未知档（消费侧回退形态档色调）`,
+      brightness: '0–999 = K_s 星等 [11.75, 4.0] 线性归一（亮端 → 999）',
+    },
+    jkColor: {
+      quantP01: JK_QUANT_P01,
+      quantP99: JK_QUANT_P99,
+      missingCount: jkMissing,
+      missingFraction: Math.round(jkMissingFrac * 1e5) / 1e5,
     },
     h0KmSMpc: H0_KM_S_MPC,
     czMinKmS: CZ_MIN_KM_S,
@@ -287,8 +328,10 @@ export function bakeGalaxyCatalog(snapshotDir: string): GalaxyCatalogBakeResult 
  * 行序经确定性排序后写入，快照本身可复现）
  */
 export async function refetch2mrsSnapshot(snapshotDir: string): Promise<void> {
+  // SC3：增补 Jcmag（消光/孔径修正 J 星等，与 Kcmag 同口径）算 J−K 色指数；
+  // WHERE 不变（Jcmag 允许 NULL → 未知档回退），行集与 V1 快照一致
   const query =
-    'SELECT RAJ2000, DEJ2000, Kcmag, type, cz FROM "J/ApJS/199/26/table3" ' +
+    'SELECT RAJ2000, DEJ2000, Jcmag, Kcmag, type, cz FROM "J/ApJS/199/26/table3" ' +
     'WHERE cz > 0 AND Kcmag IS NOT NULL';
   console.log('[bake-data] --fetch-2mrs：从 VizieR TAP 拉取 2MRS 目录…');
   const body = new URLSearchParams({
@@ -302,11 +345,12 @@ export async function refetch2mrsSnapshot(snapshotDir: string): Promise<void> {
   const csv = await res.text();
   const rows = parse2mrsCsv(csv);
   assertBake(rows.length >= 40000 && rows.length <= 60000, `TAP 返回 ${rows.length} 行，拒绝覆盖快照`);
-  // 确定性重排 + 重新序列化（最小列快照，字段原样保留数值精度）
+  // 确定性重排 + 重新序列化（最小列快照，字段原样保留数值精度；Jcmag 缺失写空）
   rows.sort((a, b) => a.raDeg - b.raDeg || a.decDeg - b.decDeg || a.czKmS - b.czKmS);
-  const lines = ['RAJ2000,DEJ2000,Kcmag,type,cz'];
+  const lines = ['RAJ2000,DEJ2000,Jcmag,Kcmag,type,cz'];
   for (const r of rows) {
-    lines.push(`${r.raDeg},${r.decDeg},${r.kMag},"${r.type}",${r.czKmS}`);
+    const j = Number.isFinite(r.jMag) ? `${r.jMag}` : '';
+    lines.push(`${r.raDeg},${r.decDeg},${j},${r.kMag},"${r.type}",${r.czKmS}`);
   }
   writeFileSync(
     join(snapshotDir, SNAPSHOT_CSV_GZ),
@@ -317,7 +361,8 @@ export async function refetch2mrsSnapshot(snapshotDir: string): Promise<void> {
       '2MASS Redshift Survey (2MRS)，Huchra et al. 2012, ApJS 199, 26；VizieR J/ApJS/199/26/table3（CDS）',
     query,
     selectionCriteria:
-      'cz > 0 且 Kcmag 非空（Ks ≤ 11.75 完备极限全量；蓝移条目无哈勃流距离剔除）',
+      'cz > 0 且 Kcmag 非空（Ks ≤ 11.75 完备极限全量；蓝移条目无哈勃流距离剔除；' +
+      'Jcmag 允许缺失——SC3 补 J−K 色指数，缺失回退未知档）',
     retrievedAt: new Date().toISOString(),
     license:
       '公开科学数据：引用 Huchra et al. (2012, ApJS 199, 26)；VizieR/CDS 数据使用规范',

@@ -19,12 +19,11 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useSimulationStore } from '@/store';
+import { boostSaturationColors } from '@/utils/colorBoost';
 import { createSeededRandom } from '@/utils/random';
+import { sampleStarColor } from '@/utils/starPopulation';
 import { twinkleAmplitude, twinkleFrequencyHz, twinkleLevelGain } from '@/utils/starTwinkle';
 import { UNIVERSE_RENDER_ORDER } from '@/utils/universeRenderOrder';
-
-/** 恒星温度色板（O/B 蓝 → M 红，需求 4.1/4.2） */
-const STAR_COLORS = ['#9bb0ff', '#aabfff', '#cad7ff', '#f8f7ff', '#fff4ea', '#ffd2a1', '#ffcc6f'];
 
 interface StarfieldProps {
   count?: number;
@@ -85,14 +84,13 @@ export function Starfield({
 }: StarfieldProps): JSX.Element {
   const lastGainRef = useRef(-1);
 
-  const { geometry, material } = useMemo(() => {
+  const { geometry, material, colorVariants } = useMemo(() => {
     const rand = createSeededRandom(seed);
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
     const phases = new Float32Array(count);
     const freqs = new Float32Array(count);
     const amps = new Float32Array(count);
-    const color = new THREE.Color();
 
     for (let i = 0; i < count; i += 1) {
       // 球壳内均匀分布
@@ -105,12 +103,15 @@ export function Starfield({
       positions[i * 3 + 1] = r * Math.cos(phi);
       positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
 
-      // 温度色板 + 距离衰减
-      color.set(STAR_COLORS[Math.floor(rand() * STAR_COLORS.length)]);
+      // SC4-1：星族采样器统一颜色出口（fieldStars 预设 = 太阳邻域视星
+      // 发光加权口径，与 SC1 银盘同源；线性 RGB 顶点色）+ 距离衰减保留。
+      // 登记：采样固定消耗 rng 3 个数（原色板抽样为 1）——位置通道在
+      // 颜色之前抽取不受影响，闪烁参数随机流后移属预期（参数语义不变）
+      const c = sampleStarColor('fieldStars', rand);
       const falloff = 1 - (0.6 * (r - innerRadius)) / (outerRadius - innerRadius);
-      colors[i * 3] = color.r * falloff;
-      colors[i * 3 + 1] = color.g * falloff;
-      colors[i * 3 + 2] = color.b * falloff;
+      colors[i * 3] = c.r * falloff;
+      colors[i * 3 + 1] = c.g * falloff;
+      colors[i * 3 + 2] = c.b * falloff;
 
       // 闪烁参数（确定性预生成）：亮星幅度略大、暗星微弱
       phases[i] = rand();
@@ -118,9 +119,22 @@ export function Starfield({
       amps[i] = twinkleAmplitude(falloff, rand());
     }
 
+    // SC5 星系色彩增强：物理基色（SC4-1 采样输出 × 距离衰减）与饱和提升
+    // 显示色双缓存（boostSaturation 对色度线性 → 与 falloff 增益可交换，
+    // 衰减语义不变）；attribute 持独立副本，切换仅整段重写 color
+    const variants = { base: colors, boosted: boostSaturationColors(colors) };
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.setAttribute(
+      'color',
+      new THREE.BufferAttribute(
+        (useSimulationStore.getState().colorBoostEnabled
+          ? variants.boosted
+          : variants.base
+        ).slice(),
+        3,
+      ),
+    );
     geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
     geo.setAttribute('aFreq', new THREE.BufferAttribute(freqs, 1));
     geo.setAttribute('aAmp', new THREE.BufferAttribute(amps, 1));
@@ -137,8 +151,19 @@ export function Starfield({
       transparent: true,
       depthWrite: false,
     });
-    return { geometry: geo, material: mat };
+    return { geometry: geo, material: mat, colorVariants: variants };
   }, [count, innerRadius, outerRadius, seed]);
+
+  // SC5：星系色彩增强开关切换 → color attribute 按模式整段重写
+  // （双缓存一次性 CPU 写入，位置/闪烁参数 buffer 不重建）
+  const colorBoostEnabled = useSimulationStore((s) => s.colorBoostEnabled);
+  useEffect(() => {
+    const attr = geometry.getAttribute('color') as THREE.BufferAttribute;
+    (attr.array as Float32Array).set(
+      colorBoostEnabled ? colorVariants.boosted : colorVariants.base,
+    );
+    attr.needsUpdate = true;
+  }, [colorBoostEnabled, geometry, colorVariants]);
 
   useEffect(() => {
     return () => {

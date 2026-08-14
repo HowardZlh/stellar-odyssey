@@ -55,6 +55,7 @@ import {
   resetGalaxyNearViewHolders,
 } from '@/utils/galaxyNearView';
 import { isDustVolumeGalaxy } from '@/utils/galaxyDustVolume';
+import { galaxySpriteTintHex } from '@/utils/galaxyTint';
 import { UNIVERSE_RENDER_ORDER } from '@/utils/universeRenderOrder';
 import { useDetailLayer } from '@/hooks/useDetailLayer';
 import { useGalaxyCatalog } from '@/hooks/useGalaxyCatalog';
@@ -141,13 +142,19 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
   // 加载完成前与失败时为 null → GalaxyNearViewLayer 参数化降级，登记）
   const imageMaps = useGalaxyImageMaps(nearMounted ? galaxy.id : null);
 
+  // SC5：星系色彩增强（B−V 黑体色调路径微弱饱和提升，全域一致性）；
+  // 开关切换 → 程序化 canvas 确定性再生成（256px 一次性 CPU，位置/
+  // 几何零改动；历史双色回退路径两模式同款，galaxyTint 登记）
+  const colorBoostEnabled = useSimulationStore((s) => s.colorBoostEnabled);
   const canvasTexture = useMemo(() => {
     // M31/M33 专属形态（P6 §3.4，与通用旋涡星系区分）
     const variant =
       galaxy.id === 'm31' ? 'm31' : galaxy.id === 'm33' ? 'm33' : undefined;
+    // SC4-2：程序化回退贴图色调按各星系真实 B−V 文献值转黑体色
+    // （utils/galaxyTint 唯一出口；影像贴图星系与未登记者保持历史双色）
     const canvas = createGalaxySpriteCanvas(
       galaxy.morphology,
-      galaxy.morphology === 'elliptical' ? '#ffe2b8' : '#cfd8ff',
+      galaxySpriteTintHex(galaxy.id, galaxy.morphology, colorBoostEnabled),
       256,
       20260722,
       variant,
@@ -155,7 +162,7 @@ function GalaxyObject({ galaxy }: GalaxyObjectProps): JSX.Element {
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
-  }, [galaxy.morphology, galaxy.id]);
+  }, [galaxy.morphology, galaxy.id, colorBoostEnabled]);
 
   useEffect(() => {
     return () => {

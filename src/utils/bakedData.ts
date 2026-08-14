@@ -345,6 +345,8 @@ export interface GalaxyCatalogData {
   positionsMpc: Float32Array;
   /** 形态档（N；0 早型/椭圆、1 晚型/旋涡、2 未知——galaxyCatalogCore 登记） */
   morphTiers: Uint8Array;
+  /** J−K 量化档（N；0–98 = P1–P99 线性量化、99 = 缺失未知档——SC3，galaxyCatalogCore 登记） */
+  jkTiers: Uint8Array;
   /** 亮度档（N；0–1，K_s 星等线性归一） */
   brightness01: Float32Array;
 }
@@ -352,8 +354,8 @@ export interface GalaxyCatalogData {
 /** galaxy-catalog.bin 魔数（2MRS Ks ≤ 11.75 极限；scripts/bake-data/galaxyCatalog.ts 同值） */
 export const GALAXY_CATALOG_MAGIC = 21175;
 
-/** galaxy-catalog.bin 版本号 */
-export const GALAXY_CATALOG_VERSION = 1;
+/** galaxy-catalog.bin 版本号（SC3 起只认 V2：w 含 J−K 量化档，V1 直接拒绝降级宇宙网） */
+export const GALAXY_CATALOG_VERSION = 2;
 
 /** 目录星系数域（烘焙自校验同判据） */
 const GALAXY_CATALOG_COUNT_MIN = 20000;
@@ -408,9 +410,10 @@ export function validateAntennae(raw: ArrayBuffer | null): AntennaeSnapshotsData
 }
 
 /**
- * 校验并解析真实巡天目录二进制（R5-3）：魔数/版本/星系数域/字节长度
- * 精确匹配/坐标有限且 |r| ≤ 800 Mpc/w 通道为 [0,2999] 整数且形态档 ≤ 2。
- * 布局登记见 scripts/bake-data/galaxyCatalog.ts 文件头。
+ * 校验并解析真实巡天目录二进制（R5-3；SC3 起 bin V2）：魔数/版本/星系数域/
+ * 字节长度精确匹配/坐标有限且 |r| ≤ 800 Mpc/w 通道为 [0,299999] 整数且
+ * 形态档 ≤ 2。w 解码与 galaxyCatalogCore.unpackCatalogW 同式（单测同源断言，
+ * 防两侧漂移）；布局登记见 scripts/bake-data/galaxyCatalog.ts 文件头。
  * 失败返回 null（消费方降级现状程序化宇宙网）。
  */
 export function validateGalaxyCatalog(raw: ArrayBuffer | null): GalaxyCatalogData | null {
@@ -430,6 +433,7 @@ export function validateGalaxyCatalog(raw: ArrayBuffer | null): GalaxyCatalogDat
   if (raw.byteLength !== (3 + count * 4) * 4) return null;
   const positionsMpc = new Float32Array(count * 3);
   const morphTiers = new Uint8Array(count);
+  const jkTiers = new Uint8Array(count);
   const brightness01 = new Float32Array(count);
   for (let i = 0; i < count; i += 1) {
     const x = data[3 + i * 4];
@@ -439,15 +443,17 @@ export function validateGalaxyCatalog(raw: ArrayBuffer | null): GalaxyCatalogDat
     if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null;
     const r = Math.hypot(x, y, z);
     if (r <= 0 || r > GALAXY_CATALOG_COORD_BOUND_MPC) return null;
-    if (!Number.isInteger(w) || w < 0 || w > 2999) return null;
-    const tier = Math.floor(w / 1000);
+    // w ≤ 299,999 已保证形态档 floor(w/1e5) ≤ 2（域校验即档位校验）
+    if (!Number.isInteger(w) || w < 0 || w > 299999) return null;
+    const tier = Math.floor(w / 100000);
     positionsMpc[i * 3] = x;
     positionsMpc[i * 3 + 1] = y;
     positionsMpc[i * 3 + 2] = z;
     morphTiers[i] = tier;
-    brightness01[i] = (w - tier * 1000) / 999;
+    jkTiers[i] = Math.floor((w - tier * 100000) / 1000);
+    brightness01[i] = (w % 1000) / 999;
   }
-  return { count, positionsMpc, morphTiers, brightness01 };
+  return { count, positionsMpc, morphTiers, jkTiers, brightness01 };
 }
 
 // ---------------------------------------------------------------------------

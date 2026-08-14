@@ -43,6 +43,30 @@ export const KMAG_FAINT = 11.75;
 /** 形态档（打包进 w 通道）：0 = 早型（椭圆/透镜，T ≤ 0），1 = 晚型（旋涡/不规则，1 ≤ T ≤ 19），2 = 未知（T ≥ 20 或不可解析） */
 export type MorphTier = 0 | 1 | 2;
 
+/**
+ * J−K 色指数量化区间（SC3，烘焙与消费同源常量）：
+ * 2MRS Jcmag−Kcmag 实际分布 P1–P99（快照 snapshots/2mrs-vizier.csv.gz 全量
+ * 有效行实测 P1 = 0.787 / P50 = 0.988 / P99 = 1.307，取整登记；
+ * Huchra et al. 2012, ApJS 199, 26——早型星系 J−K ≈ 0.9–1.0 偏红、
+ * 晚型偏蓝，§0.3 登记）；区间外线性钳制。
+ */
+export const JK_QUANT_P01 = 0.79;
+export const JK_QUANT_P99 = 1.31;
+
+/** J−K 量化档上界：0–98 为有效量化区（99 档），99 保留为缺失未知档 */
+export const JK_QUANT_MAX_TIER = 98;
+export const JK_TIER_UNKNOWN = 99;
+
+/**
+ * J/K 星等 → J−K 量化档（SC3）：0 = 最蓝（≤ P1）、98 = 最红（≥ P99）、
+ * 99 = J 星等缺失未知档（消费侧回退形态档 3 色，旧行为即回退路径）
+ */
+export function jkTierFromColor(jMag: number, kMag: number): number {
+  if (!Number.isFinite(jMag) || !Number.isFinite(kMag)) return JK_TIER_UNKNOWN;
+  const t = (jMag - kMag - JK_QUANT_P01) / (JK_QUANT_P99 - JK_QUANT_P01);
+  return Math.round(Math.min(1, Math.max(0, t)) * JK_QUANT_MAX_TIER);
+}
+
 const DEG = Math.PI / 180;
 
 // ---------------------------------------------------------------------------
@@ -197,24 +221,37 @@ export function morphTierFromType(typeStr: string): MorphTier {
   return 1;
 }
 
+/** w 通道上界（V2）：2×100000 + 99×1000 + 999 = 299,999 < 2²⁴（Float32 整数精确域） */
+export const CATALOG_W_MAX = 299999;
+
 /**
- * 形态档 + 亮度档 → w 通道（整数值浮点，Float32 精确表示，保证烘焙幂等）：
- * w = tier·1000 + round(b01·999) ∈ {0..2999}
+ * 形态档 + J−K 量化档 + 亮度档 → w 通道（bin V2，SC3；整数值浮点 ≤ 299,999
+ * < 2²⁴，Float32 精确表示，保证烘焙幂等）：
+ * w = tier·100000 + jkTier·1000 + round(b01·999)
+ * （编解码唯一出处——烘焙脚本与运行时校验共用，禁止两套公式）
  */
-export function packCatalogW(tier: MorphTier, brightness01: number): number {
+export function packCatalogW(tier: MorphTier, jkTier: number, brightness01: number): number {
+  if (!Number.isInteger(jkTier) || jkTier < 0 || jkTier > JK_TIER_UNKNOWN) {
+    throw new RangeError(`J−K 量化档必须为 [0,${JK_TIER_UNKNOWN}] 整数，收到 ${jkTier}`);
+  }
   if (!Number.isFinite(brightness01) || brightness01 < 0 || brightness01 > 1) {
     throw new RangeError(`亮度档必须在 [0,1]，收到 ${brightness01}`);
   }
-  return tier * 1000 + Math.round(brightness01 * 999);
+  return tier * 100000 + jkTier * 1000 + Math.round(brightness01 * 999);
 }
 
-/** w 通道 → {tier, brightness01}（packCatalogW 的逆） */
-export function unpackCatalogW(w: number): { tier: MorphTier; brightness01: number } {
-  if (!Number.isInteger(w) || w < 0 || w > 2999) {
-    throw new RangeError(`w 通道必须为 [0,2999] 整数，收到 ${w}`);
+/** w 通道 → {tier, jkTier, brightness01}（packCatalogW 的逆，V2） */
+export function unpackCatalogW(w: number): {
+  tier: MorphTier;
+  jkTier: number;
+  brightness01: number;
+} {
+  if (!Number.isInteger(w) || w < 0 || w > CATALOG_W_MAX) {
+    throw new RangeError(`w 通道必须为 [0,${CATALOG_W_MAX}] 整数，收到 ${w}`);
   }
-  const tier = Math.floor(w / 1000) as MorphTier;
-  return { tier, brightness01: (w - tier * 1000) / 999 };
+  const tier = Math.floor(w / 100000) as MorphTier;
+  const jkTier = Math.floor((w - tier * 100000) / 1000);
+  return { tier, jkTier, brightness01: (w % 1000) / 999 };
 }
 
 // ---------------------------------------------------------------------------

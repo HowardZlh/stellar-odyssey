@@ -3,10 +3,15 @@
  * 红移距离 / 亮度与形态档 / w 打包往返 / 实体星系去重 / 锥计数与超密度
  */
 import {
+  CATALOG_W_MAX,
   CZ_MIN_KM_S,
   DEDUP_MATCH_RADIUS_DEG,
   ENTITY_GALAXY_SKY,
   H0_KM_S_MPC,
+  JK_QUANT_MAX_TIER,
+  JK_QUANT_P01,
+  JK_QUANT_P99,
+  JK_TIER_UNKNOWN,
   KMAG_BRIGHT,
   KMAG_FAINT,
   LY_PER_MPC,
@@ -26,6 +31,7 @@ import {
   equatorialToSupergalacticUnit,
   equatorialUnit,
   galacticLatitudeDeg,
+  jkTierFromColor,
   matchEntityGalaxy,
   morphTierFromType,
   packCatalogW,
@@ -119,22 +125,57 @@ describe('亮度档 / 形态档 / w 打包', () => {
     expect(morphTierFromType('')).toBe(2);
   });
 
-  it('w 打包为整数值浮点（Float32 精确 → 幂等）且往返一致', () => {
+  it('w 打包（V2）为整数值浮点（Float32 精确 → 幂等）且三字段往返一致', () => {
     for (const tier of [0, 1, 2] as const) {
-      for (const b of [0, 0.25, 0.5, 0.999, 1]) {
-        const w = packCatalogW(tier, b);
-        expect(Number.isInteger(w)).toBe(true);
-        expect(Math.fround(w)).toBe(w);
-        const back = unpackCatalogW(w);
-        expect(back.tier).toBe(tier);
-        expect(back.brightness01).toBeCloseTo(b, 2);
+      for (const jk of [0, 42, JK_QUANT_MAX_TIER, JK_TIER_UNKNOWN]) {
+        for (const b of [0, 0.25, 0.5, 0.999, 1]) {
+          const w = packCatalogW(tier, jk, b);
+          expect(Number.isInteger(w)).toBe(true);
+          expect(Math.fround(w)).toBe(w);
+          const back = unpackCatalogW(w);
+          expect(back.tier).toBe(tier);
+          expect(back.jkTier).toBe(jk);
+          expect(back.brightness01).toBeCloseTo(b, 2);
+        }
       }
     }
-    expect(packCatalogW(2, 1)).toBe(2999);
-    expect(() => packCatalogW(0, 1.5)).toThrow(RangeError);
-    expect(() => unpackCatalogW(3000)).toThrow(RangeError);
+    // 上界 = 2×100000 + 99×1000 + 999 = 299,999 < 2²⁴（Float32 整数精确域）
+    expect(packCatalogW(2, JK_TIER_UNKNOWN, 1)).toBe(CATALOG_W_MAX);
+    expect(CATALOG_W_MAX).toBeLessThan(2 ** 24);
+    expect(() => packCatalogW(0, 0, 1.5)).toThrow(RangeError);
+    expect(() => packCatalogW(0, 100, 0.5)).toThrow(RangeError);
+    expect(() => packCatalogW(0, 1.5, 0.5)).toThrow(RangeError);
+    expect(() => packCatalogW(0, -1, 0.5)).toThrow(RangeError);
+    expect(() => unpackCatalogW(CATALOG_W_MAX + 1)).toThrow(RangeError);
     expect(() => unpackCatalogW(1.5)).toThrow(RangeError);
     expect(() => unpackCatalogW(-1)).toThrow(RangeError);
+  });
+
+  it('J−K 量化档：P1 → 0、P99 → 98、区间外钳制、缺失 → 99 未知档（SC3）', () => {
+    expect(jkTierFromColor(10 + JK_QUANT_P01, 10)).toBe(0);
+    expect(jkTierFromColor(10 + JK_QUANT_P99, 10)).toBe(JK_QUANT_MAX_TIER);
+    // 区间外钳制（比 P1 更蓝 / 比 P99 更红）
+    expect(jkTierFromColor(10, 10)).toBe(0);
+    expect(jkTierFromColor(13, 10)).toBe(JK_QUANT_MAX_TIER);
+    // 中位 P50 ≈ 0.988（快照实测）落在中段
+    const mid = jkTierFromColor(10.988, 10);
+    expect(mid).toBeGreaterThan(30);
+    expect(mid).toBeLessThan(60);
+    // 单调：J−K 增 → 档位不减
+    let prev = -1;
+    for (let jk = 0.7; jk <= 1.4; jk += 0.05) {
+      const tier = jkTierFromColor(10 + jk, 10);
+      expect(tier).toBeGreaterThanOrEqual(prev);
+      prev = tier;
+    }
+    // 缺失（J 或 K 非有限）→ 未知档
+    expect(jkTierFromColor(Number.NaN, 10)).toBe(JK_TIER_UNKNOWN);
+    expect(jkTierFromColor(10, Number.NaN)).toBe(JK_TIER_UNKNOWN);
+    expect(JK_TIER_UNKNOWN).toBe(99);
+    expect(JK_QUANT_MAX_TIER).toBe(98);
+    // 量化区间常量（快照实测 P1=0.787/P99=1.307 取整登记）
+    expect(JK_QUANT_P01).toBeCloseTo(0.79, 10);
+    expect(JK_QUANT_P99).toBeCloseTo(1.31, 10);
   });
 });
 

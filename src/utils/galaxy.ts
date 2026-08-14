@@ -73,6 +73,12 @@
 import type { Vec3 } from '@/types';
 import { normalizeAngle } from '@/utils/physics';
 import { createSeededRandom } from '@/utils/random';
+import {
+  applyBulgeRadialGradient,
+  applyOuterDiskGradient,
+  sampleStarColor,
+  srgbToLinear01,
+} from '@/utils/starPopulation';
 
 /** 银盘半径（光年）：银盘直径约 10 万光年 */
 export const GALACTIC_DISK_RADIUS_LY = 50000;
@@ -413,6 +419,15 @@ export interface GalaxyDiskParams {
   barAxisRatio?: number;
   /** 棒厚度（光年，缺省 GALACTIC_BAR_THICKNESS_LY） */
   barThicknessLy?: number;
+  /**
+   * 颜色模式（SC1）：缺省 `'starPopulation'` = 星族采样器发光加权连续
+   * 颜色（线性 RGB，银河系主盘）；`'legacyPalette'` = 7 色硬编码色板
+   * 均匀抽样（sRGB，SC1 前历史行为）——仅近观星系层
+   * （galaxyNearView.generateSpiralParticles）消费，保证该范围外层
+   * 输出逐字节零变化（§0.4 回归红线；随机数消耗序列亦须一致，
+   * 故整个颜色分支按历史代码原样保留）。
+   */
+  colorMode?: 'starPopulation' | 'legacyPalette';
 }
 
 /** 银盘粒子数组（结构化数组，供 InstancedMesh / Points 直接上传） */
@@ -435,11 +450,11 @@ export interface GalaxyDiskParticles {
 }
 
 /**
- * 恒星色板（≥7 色，按恒星光谱型近似色，需求 4.4 颜色混合）
- * 参考：Mitchell Charity, "What color are the stars?"（黑体色近似）
- * O/B 蓝 → A/F 白 → G 黄白 → K 橙 → M 红橙
+ * 恒星色板（SC1 降级登记）：7 色硬编码均匀抽样的历史路径，仅
+ * `colorMode: 'legacyPalette'`（近观星系层）消费——银河系主盘已切换
+ * 星族采样器（starPopulation.ts）。参考：Mitchell Charity 黑体色近似。
  */
-const STAR_PALETTE: readonly string[] = [
+const LEGACY_STAR_PALETTE: readonly string[] = [
   '#9bb0ff',
   '#aabfff',
   '#cad7ff',
@@ -449,11 +464,18 @@ const STAR_PALETTE: readonly string[] = [
   '#ffcc6f',
 ];
 
-/** 旋臂区域星云粉色（电离氢区示意色） */
-const NEBULA_PINK = '#ff9bb5';
+/** 核球暖黄色调（legacyPalette 路径专用；主盘核球经 bulge 星族采样） */
+const LEGACY_BULGE_COLOR = '#ffd9a0';
 
-/** 核球暖黄色调（老年恒星为主） */
-const BULGE_COLOR = '#ffd9a0';
+/**
+ * 旋臂区域星云粉色（电离氢区示意色）
+ *
+ * SC1 登记：主盘（starPopulation 模式）恒星颜色为线性 RGB，本常量在
+ * 生成期同步转线性（srgbToLinear01），保持全盘顶点色同一工作色彩
+ * 空间；8% 掺入机制原样保留（§SC1-2）。legacyPalette 路径仍用 sRGB
+ * 原值（历史行为逐字节保持）。
+ */
+const NEBULA_PINK = '#ff9bb5';
 
 /** 核球垂直方向压扁系数（核球比银盘厚、但仍略扁） */
 const BULGE_FLATTENING = 0.6;
@@ -465,10 +487,29 @@ const INTER_ARM_FRACTION = 0.2;
 const NEBULA_FRACTION = 0.08;
 
 /**
+ * 旋臂粒子基底混入 oldDisk（中老年黄橙）的比例（SC2-2）
+ *
+ * 参考图（NGC 4414）旋臂底色为盘面黄而非纯蓝——旋臂区域除年轻
+ * 星族 I 外仍以中老年盘星为主体（旋臂为密度波而非独立星群，
+ * Lin & Shu 1964 密度波理论口径）；蓝白年轻星以"串珠"形式点缀于
+ * 臂脊（shader vWave 密度波增亮 + HII 团块通道保持既有调制）。
+ * 口径：HII 粉（NEBULA_FRACTION）判定后的非粉旋臂粒子按该比例
+ * 抽 oldDisk 黄底，其余保持 youngDisk 蓝白串珠。
+ */
+export const ARM_OLD_DISK_BASE_FRACTION = 0.55;
+
+/**
  * 确定性生成银盘粒子（需求 4.4：粒子大小/密度中心到边缘渐变、≥6 种恒星颜色混合）
  *
+ * 颜色（SC1）：星族采样器 `sampleStarColor`（starPopulation.ts，发光加权
+ * Teff 采样 → blackbodyRGB 连续颜色，线性 RGB）——核球/棒 → bulge、
+ * 旋臂 → youngDisk、臂间 → oldDisk；HII 粉 8% 掺入保留。
+ * 颜色（SC2）：核球/棒叠加径向渐变（中心亮黄白 → 外缘暖橙）；旋臂
+ * 混入 `ARM_OLD_DISK_BASE_FRACTION` 黄底；盘粒子叠加外盘渐冷渐暗
+ * 梯度（径向因子均为 starPopulation.ts 纯函数，依据注释就地登记）。
+ *
  * - 核球（bulgeFraction 占比）：半径 bulgeRadiusLy 内三维近球状分布
- *   （略压扁），暖黄色调，高度分布比薄盘厚；
+ *   （略压扁），老年星族红黄色调，高度分布比薄盘厚；
  * - 盘粒子：半径 r = √rand·diskRadius（中心更密）；
  *   相位 = 臂序号·(2π/armCount) + spiralTightness·ln(1 + r/bulgeRadius)
  *          + 高斯抖动（Box-Muller）·armSpreadRad（对数螺旋臂），
@@ -512,9 +553,19 @@ export function generateGalaxyDiskParticles(params: GalaxyDiskParams): GalaxyDis
     barFlags: new Float32Array(n),
   };
 
-  const palette = STAR_PALETTE.map(hexToRgb);
-  const pink = hexToRgb(NEBULA_PINK);
-  const bulgeBase = hexToRgb(BULGE_COLOR);
+  // SC1：legacy 路径（近观星系层专用）保持 sRGB 历史行为；主盘
+  // starPopulation 模式 HII 粉转线性工作空间（与采样器输出同一色彩空间）
+  const legacy = params.colorMode === 'legacyPalette';
+  const legacyPalette = legacy ? LEGACY_STAR_PALETTE.map(hexToRgb) : [];
+  const legacyBulge = hexToRgb(LEGACY_BULGE_COLOR);
+  const pinkSrgb = hexToRgb(NEBULA_PINK);
+  const pink = legacy
+    ? pinkSrgb
+    : {
+        r: srgbToLinear01(pinkSrgb.r),
+        g: srgbToLinear01(pinkSrgb.g),
+        b: srgbToLinear01(pinkSrgb.b),
+      };
   const bulgeCount = Math.round(n * params.bulgeFraction);
   const barCount = Math.round(n * barFraction);
 
@@ -531,11 +582,23 @@ export function generateGalaxyDiskParticles(params: GalaxyDiskParams): GalaxyDis
       result.heightsLy[i] = gaussian(rand) * (barThicknessLy / 2) * 0.5;
       result.barFlags[i] = 1;
 
-      // 棒与核球同为老年星族暖黄色调
-      const brightness = 0.8 + 0.2 * rand();
-      result.colors[i * 3] = bulgeBase.r * brightness;
-      result.colors[i * 3 + 1] = bulgeBase.g * brightness;
-      result.colors[i * 3 + 2] = bulgeBase.b * brightness;
+      // SC1：棒与核球同为老年星族 II（bulge 预设，K/M 红黄 + 红巨星，
+      // 禁 O/B）；legacy 路径保持单色 + 亮度抖动（随机数消耗序列一致性）。
+      // SC2-1：叠加径向渐变（中心亮黄白 → 外缘暖橙，按棒半长归一）
+      if (legacy) {
+        const brightness = 0.8 + 0.2 * rand();
+        result.colors[i * 3] = legacyBulge.r * brightness;
+        result.colors[i * 3 + 1] = legacyBulge.g * brightness;
+        result.colors[i * 3 + 2] = legacyBulge.b * brightness;
+      } else {
+        const color = applyBulgeRadialGradient(
+          sampleStarColor('bulge', rand),
+          result.radiiLy[i] / barHalfLengthLy,
+        );
+        result.colors[i * 3] = color.r;
+        result.colors[i * 3 + 1] = color.g;
+        result.colors[i * 3 + 2] = color.b;
+      }
     } else if (i < bulgeCount) {
       // ---- 核球粒子：三维近球状分布（体积均匀 → 半径取立方根） ----
       const rr = params.bulgeRadiusLy * Math.cbrt(rand());
@@ -546,11 +609,23 @@ export function generateGalaxyDiskParticles(params: GalaxyDiskParams): GalaxyDis
       result.phases[i] = azimuth;
       result.heightsLy[i] = rr * cosPolar * BULGE_FLATTENING;
 
-      // 暖黄色调 + 亮度抖动
-      const brightness = 0.85 + 0.15 * rand();
-      result.colors[i * 3] = bulgeBase.r * brightness;
-      result.colors[i * 3 + 1] = bulgeBase.g * brightness;
-      result.colors[i * 3 + 2] = bulgeBase.b * brightness;
+      // SC1：核球老年星族 II 采样；legacy 同上。
+      // SC2-1：叠加径向渐变（按 3D 半径 rr / 核球半径归一，
+      // 中心亮黄白 → 外缘暖橙，applyBulgeRadialGradient 依据登记）
+      if (legacy) {
+        const brightness = 0.85 + 0.15 * rand();
+        result.colors[i * 3] = legacyBulge.r * brightness;
+        result.colors[i * 3 + 1] = legacyBulge.g * brightness;
+        result.colors[i * 3 + 2] = legacyBulge.b * brightness;
+      } else {
+        const color = applyBulgeRadialGradient(
+          sampleStarColor('bulge', rand),
+          rr / params.bulgeRadiusLy,
+        );
+        result.colors[i * 3] = color.r;
+        result.colors[i * 3 + 1] = color.g;
+        result.colors[i * 3 + 2] = color.b;
+      }
     } else {
       // ---- 盘粒子：中心更密（√rand），对数螺旋旋臂 ----
       const r = Math.sqrt(rand()) * params.diskRadiusLy;
@@ -577,14 +652,35 @@ export function generateGalaxyDiskParticles(params: GalaxyDiskParams): GalaxyDis
       // 恒在起始半径内位移为 0，仅盘粒子写入）
       result.warpsLy[i] = warpYLy(r, result.phases[i]);
 
-      // 颜色：恒星色板采样；旋臂区域掺入少量星云粉色
-      const color =
-        !isInterArm && rand() < NEBULA_FRACTION
+      // SC1 颜色：星族采样器（发光加权，starPopulation.ts 唯一事实源）——
+      // 臂间/弥散 → oldDisk（中老年 F/G/K 黄橙）；旋臂 HII 粉红团块
+      // 8% 机制原样保留。SC2-2 旋臂分层：非粉旋臂粒子按
+      // ARM_OLD_DISK_BASE_FRACTION 混入 oldDisk 黄底（参考图旋臂
+      // 底色为黄），其余保持 youngDisk 蓝白串珠。SC2-4：全部盘粒子
+      // 叠加外盘"渐冷渐暗"梯度（applyOuterDiskGradient，de Jong 1996）。
+      // legacy 路径 = 历史色板均匀抽样（近观星系层零变化）
+      if (legacy) {
+        const color =
+          !isInterArm && rand() < NEBULA_FRACTION
+            ? pink
+            : legacyPalette[Math.floor(rand() * legacyPalette.length)];
+        result.colors[i * 3] = color.r;
+        result.colors[i * 3 + 1] = color.g;
+        result.colors[i * 3 + 2] = color.b;
+      } else {
+        const rNorm = r / params.diskRadiusLy;
+        const isNebula = !isInterArm && rand() < NEBULA_FRACTION;
+        const base = isNebula
           ? pink
-          : palette[Math.floor(rand() * palette.length)];
-      result.colors[i * 3] = color.r;
-      result.colors[i * 3 + 1] = color.g;
-      result.colors[i * 3 + 2] = color.b;
+          : sampleStarColor(
+              isInterArm || rand() < ARM_OLD_DISK_BASE_FRACTION ? 'oldDisk' : 'youngDisk',
+              rand,
+            );
+        const color = applyOuterDiskGradient(base, rNorm);
+        result.colors[i * 3] = color.r;
+        result.colors[i * 3 + 1] = color.g;
+        result.colors[i * 3 + 2] = color.b;
+      }
     }
 
     // 大小：中心 2.5 → 边缘 1.0 线性递减（需求 4.4 中心到边缘渐变）；
@@ -653,22 +749,21 @@ export interface GalaxyHaloParams {
   flattening: number;
 }
 
-/** 银晕老年星族色板（红黄为主 + 少量蓝水平支星，HST 银晕测光近似） */
-const HALO_PALETTE: readonly (readonly [number, number, number])[] = [
-  [1.0, 0.85, 0.63],
-  [1.0, 0.76, 0.5],
-  [1.0, 0.93, 0.8],
-  [0.98, 0.97, 1.0],
-];
-
-/** 银晕蓝水平支星色（少量掺入） */
-const HALO_BLUE: readonly [number, number, number] = [0.72, 0.82, 1.0];
+/**
+ * 银晕远景暗淡增益区间（SC1 登记）：采样器输出（自带 [0.8, 1.0] 抖动）
+ * 之上再乘 [0.4, 0.85] 暗淡因子，组合亮度 ≈ [0.32, 0.85]，与 R2-9 现状
+ * （色板 × [0.35, 0.75]）观感接近——SC1-3 以颜色出口架构统一为目的。
+ */
+const HALO_DIM_GAIN_MIN = 0.4;
+const HALO_DIM_GAIN_SPAN = 0.45;
 
 /**
  * 确定性生成 3D 恒星银晕粒子（R2-9）：
  * - 半径按 n(r) ∝ r^-3.5 逆变换采样（内密外疏，中心聚集）；
  * - 方向球面均匀（cosθ 均匀），y 按 flattening 压扁；
- * - 颜色为暗淡老年星族（亮度 0.35–0.75），大小 0.9–1.6（小于盘粒子）。
+ * - 颜色经星族采样器 `halo` 预设（SC1-3：贫金属老年星红黄 + 12% 蓝
+ *   水平支，starPopulation.ts 唯一事实源）再乘远景暗淡增益，
+ *   大小 0.9–1.6（小于盘粒子）。
  */
 export function generateGalaxyHaloParticles(params: GalaxyHaloParams): StaticParticleSet {
   if (params.count <= 0 || !Number.isInteger(params.count)) {
@@ -690,11 +785,11 @@ export function generateGalaxyHaloParticles(params: GalaxyHaloParams): StaticPar
     positionsLy[i * 3] = r * sinPolar * Math.cos(azimuth);
     positionsLy[i * 3 + 1] = r * cosPolar * params.flattening;
     positionsLy[i * 3 + 2] = r * sinPolar * Math.sin(azimuth);
-    const c = rand() < 0.1 ? HALO_BLUE : HALO_PALETTE[Math.floor(rand() * HALO_PALETTE.length)];
-    const brightness = 0.35 + 0.4 * rand();
-    colors[i * 3] = c[0] * brightness;
-    colors[i * 3 + 1] = c[1] * brightness;
-    colors[i * 3 + 2] = c[2] * brightness;
+    const c = sampleStarColor('halo', rand);
+    const dim = HALO_DIM_GAIN_MIN + HALO_DIM_GAIN_SPAN * rand();
+    colors[i * 3] = c.r * dim;
+    colors[i * 3 + 1] = c.g * dim;
+    colors[i * 3 + 2] = c.b * dim;
     sizes[i] = 0.9 + 0.7 * rand();
   }
   return { count: n, positionsLy, colors, sizes };

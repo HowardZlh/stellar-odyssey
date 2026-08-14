@@ -483,6 +483,9 @@ export const zh = {
     expandGainAria: '垂直展开增益（1–6）',
     realScale: '真实比例模式（天体按真实大小）',
     sunCutaway: '太阳内部剖面（1/4 切除视图）',
+    colorBoost: '星系色彩增强',
+    colorBoostNote:
+      '增强红黄/蓝白色彩对比便于分辨恒星与星系类型；关闭后为真实观测色调（对比较弱，偏黄白）',
     bloom: '泛光效果（Bloom，低性能设备可关闭）',
     performance: '性能监控（FPS/内存）',
     kioskSection: '展馆模式',

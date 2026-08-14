@@ -489,6 +489,9 @@ function generateSpiralParticles(
     bulgeFraction: cfg.bulgeFraction,
     spiralTightness: cfg.spiralTightness,
     armSpreadRad: cfg.armSpreadRad,
+    // SC1 登记：近观星系层为范围外（§0.4 回归红线"零变化"），锁定
+    // 历史色板路径——银河系主盘的星族采样着色不影响本层逐字节输出
+    colorMode: 'legacyPalette',
   });
   const positionsLy = new Float32Array(disk.count * 3);
   for (let i = 0; i < disk.count; i += 1) {

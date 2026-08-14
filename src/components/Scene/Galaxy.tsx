@@ -11,6 +11,7 @@ import { LOCAL_GROUP_GALAXIES, MILKY_WAY } from "@/data/galaxies";
 import { isGalaxyAnchoredFocusId } from "@/data/specialBodies";
 import { useSimulationStore } from "@/store";
 import { DEG_TO_RAD } from "@/utils/physics";
+import { boostSaturationColors } from "@/utils/colorBoost";
 import { SCENE_UNITS_PER_LY, trapezoidWeight } from "@/utils/scale";
 import {
   ARM_PATTERN_SPEED_RAD_PER_MYR,
@@ -153,7 +154,7 @@ export function Galaxy(): JSX.Element {
   const tiltRad = ECLIPTIC_GALACTIC_TILT_DEG * DEG_TO_RAD;
 
   // ---------- 银盘粒子（确定性生成 + 较差自转着色器） ----------
-  const { diskGeometry, diskMaterial } = useMemo(() => {
+  const { diskGeometry, diskMaterial, diskColors } = useMemo(() => {
     const particles = generateGalaxyDiskParticles({
       // M2-3 按设备档降档（40,000 / 24,000 / 12,000；qualityTier.ts 唯一
       // 事实源；deviceTier 启动同步写入，mount 期读取即终值）
@@ -187,7 +188,23 @@ export function Galaxy(): JSX.Element {
       "aWarpLy",
       new THREE.BufferAttribute(particles.warpsLy, 1),
     );
-    geo.setAttribute("aColor", new THREE.BufferAttribute(particles.colors, 3));
+    // SC5 星系色彩增强：物理基色（SC1/SC2 生成器输出）与饱和提升显示色
+    // （boostSaturationColors，色相/亮度不变）双缓存；attribute 持独立
+    // 副本，开关切换仅整段重写 aColor（位置/相位等 buffer 不重建）
+    const colors = {
+      base: particles.colors,
+      boosted: boostSaturationColors(particles.colors),
+    };
+    geo.setAttribute(
+      "aColor",
+      new THREE.BufferAttribute(
+        (useSimulationStore.getState().colorBoostEnabled
+          ? colors.boosted
+          : colors.base
+        ).slice(),
+        3,
+      ),
+    );
     geo.setAttribute("aSize", new THREE.BufferAttribute(particles.sizes, 1));
     geo.setAttribute("aBar", new THREE.BufferAttribute(particles.barFlags, 1));
     geo.boundingSphere = new THREE.Sphere(
@@ -326,18 +343,20 @@ export function Galaxy(): JSX.Element {
           if (d2 > 0.25) discard;
           // 柔和圆点（中心亮边缘淡）；密度波调制亮度（vWave ∈ [1−c, 1+c]）
           float falloff = 1.0 - smoothstep(0.05, 0.25, d2);
-          // R2-9 尘埃红化：中平面残余光偏红棕（星际消光蓝端更强）
+          // R2-9/SC2-3 尘埃褐化：中平面残余光变暗 + R>G>B 褐色偏移
+          // （星际消光曲线蓝端衰减更强 → 视觉 = 变暗 + 偏红褐，
+          // Cardelli et al. 1989；系数级改动，通道结构不变）
           vec3 col = vColor * vWave;
-          col = mix(col, col * vec3(1.0, 0.55, 0.38), vDust * 0.6);
+          col = mix(col, col * vec3(0.72, 0.42, 0.24), vDust * 0.8);
           gl_FragColor = vec4(col, uOpacity * (0.35 + 0.65 * falloff));
         }
       `,
     });
-    return { diskGeometry: geo, diskMaterial: mat };
+    return { diskGeometry: geo, diskMaterial: mat, diskColors: colors };
   }, []);
 
   // ---------- R2-9：3D 恒星银晕 + 球状星团（静态粒子，零逐帧更新） ----------
-  const { haloGeometry, haloMaterial, clusterGeometry, clusterMaterial } =
+  const { haloGeometry, haloMaterial, clusterGeometry, clusterMaterial, haloColors } =
     useMemo(() => {
       /** 静态粒子集 → BufferGeometry（光年 → 场景单位一次性换算） */
       const buildGeometry = (set: {
@@ -411,19 +430,57 @@ export function Galaxy(): JSX.Element {
           radiusLy: M13_EXCLUSION_RADIUS_LY,
         },
       });
+      // SC5：银晕粒子物理基色/饱和提升显示色双缓存（同银盘范式）；
+      // 球状星团不参与开关（SC5-2 范围登记：作用域 = 盘/棒/核球/银晕）
+      const haloColorVariants = {
+        base: halo.colors,
+        boosted: boostSaturationColors(halo.colors),
+      };
+      const haloGeo = buildGeometry(halo);
+      haloGeo.setAttribute(
+        "aColor",
+        new THREE.BufferAttribute(
+          (useSimulationStore.getState().colorBoostEnabled
+            ? haloColorVariants.boosted
+            : haloColorVariants.base
+          ).slice(),
+          3,
+        ),
+      );
       return {
-        haloGeometry: buildGeometry(halo),
+        haloGeometry: haloGeo,
         haloMaterial: buildMaterial(),
         clusterGeometry: buildGeometry(clusters),
         clusterMaterial: buildMaterial(),
+        haloColors: haloColorVariants,
       };
     }, []);
 
+  // SC5：星系色彩增强开关切换 → 银盘/银晕 aColor 按模式整段重写
+  // （双缓存一次性 CPU 写入 + needsUpdate，位置 buffer 不重建、帧循环零开销）
+  const colorBoostEnabled = useSimulationStore((s) => s.colorBoostEnabled);
+  useEffect(() => {
+    const rewrite = (
+      geo: THREE.BufferGeometry,
+      variants: { base: Float32Array; boosted: Float32Array },
+    ): void => {
+      const attr = geo.getAttribute("aColor") as THREE.BufferAttribute;
+      (attr.array as Float32Array).set(
+        colorBoostEnabled ? variants.boosted : variants.base,
+      );
+      attr.needsUpdate = true;
+    };
+    rewrite(diskGeometry, diskColors);
+    rewrite(haloGeometry, haloColors);
+  }, [colorBoostEnabled, diskGeometry, diskColors, haloGeometry, haloColors]);
+
   // ---------- 中心辉光（多层）与银心标记 ----------
   const glowTextures = useMemo(() => {
-    // 核球/银晕：噪声扰动多层辉光（P6 §3.3，替换纯径向渐变圆斑）
+    // 核球/银晕：噪声扰动多层辉光（P6 §3.3，替换纯径向渐变圆斑）。
+    // SC2-1：核球辉光径向双色（中心亮黄白 #fff3dc → 边缘暖橙 #ffb066），
+    // 与核球粒子径向渐变（applyBulgeRadialGradient）色温协调
     const core = new THREE.CanvasTexture(
-      createBulgeGlowCanvas("#ffe8c8", 256, 91),
+      createBulgeGlowCanvas("#fff3dc", 256, 91, "#ffb066"),
     );
     const halo = new THREE.CanvasTexture(
       createBulgeGlowCanvas("#c8d4ff", 256, 41),
@@ -954,8 +1011,10 @@ export function Galaxy(): JSX.Element {
         visible={false}
       >
         <sphereGeometry args={[1, 48, 12]} />
+        {/* SC2-3：暗带色 #170d06（近黑）→ #3d2415（可辨识暖褐，
+            R>G>B，Cardelli 1989 消光红化观感；渐入逻辑不变） */}
         <meshBasicMaterial
-          color="#170d06"
+          color="#3d2415"
           transparent
           opacity={0}
           depthWrite={false}
