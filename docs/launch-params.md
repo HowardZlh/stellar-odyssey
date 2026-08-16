@@ -32,6 +32,18 @@ https://stellar.guushu.com/?mode=kiosk&tour=all&dwell=30&logo=https://example.co
 
 天体 id 与信息面板/巡游序列一致（行星用英文名小写，特殊天体见 `src/data/specialBodies.ts` 等数据文件）。飞往在首批纹理加载完成后触发（最迟 3 秒兜底），只执行一次。
 
+### 天体观察站直达
+
+天文实验室「天体观察站」的单天体观察页为独立路径，同样可直接分享直开：
+
+```
+/lab/observatory/betelgeuse   # 参宿四恒星表面
+/lab/observatory/sgr-a-star   # 人马座 A* 黑洞引力透镜
+/lab/observatory/m87          # M87 环境（含 EHT 光子环推近预设）
+```
+
+全部观察对象见[观察站画廊](https://stellar.guushu.com/lab/observatory)；旧形态 `/lab/observatory?body=<id>` 链接仍兼容打开并自动规范化地址栏。
+
 ## 展馆模式（`mode=kiosk`）
 
 面向科技馆/展厅大屏的无人值守模式：

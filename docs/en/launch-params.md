@@ -34,6 +34,18 @@ Share a link that flies straight to the target body and starts following it:
 
 Body ids match those in the info panel / tour sequences (planets use lowercase English names; for notable bodies see data files such as `src/data/specialBodies.ts`). The fly-to triggers after the first batch of textures loads (with a 3-second fallback at the latest) and runs only once.
 
+### Direct links to the Body Observatory
+
+Each single-body observing page in the Astronomy Lab's Body Observatory has its own path, so it can be shared and opened directly as well:
+
+```
+/lab/observatory/betelgeuse   # Betelgeuse stellar surface
+/lab/observatory/sgr-a-star   # Sagittarius A* black-hole gravitational lensing
+/lab/observatory/m87          # M87 environment (with the EHT photon-ring zoom preset)
+```
+
+See the [observatory gallery](https://stellar.guushu.com/lab/observatory) for all observing targets; legacy `/lab/observatory?body=<id>` links still open and normalize the address bar automatically.
+
 ## Kiosk Mode (`mode=kiosk`)
 
 An unattended mode for science museum / exhibition hall displays:
