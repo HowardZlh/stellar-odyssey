@@ -89,7 +89,7 @@
 
 ### 🖥 展馆模式与深链启动
 - **展馆模式**：控制面板一键启动或 `?mode=kiosk` 链接直入——全屏自动巡游逐站运镜，观众任意触碰即暂停并显示界面，片刻无操作自动恢复巡游；`tour=all` 四域由内向外轮转（行星系统 → 太阳系 → 银河系 → 宇宙），每站停留时长可调
-- **深链直达**：`?body=jupiter` 分享链接开屏即飞往任意天体；`?lang=en` 英文界面启动；`?logo=` 注入合作方标识（仅 https，展馆冠名场景 UI 隐藏时仍保留）——参数可自由组合，详见 [docs/launch-params.md](docs/launch-params.md)
+- **深链直达**：`?body=jupiter` 分享链接开屏即飞往任意天体；天体观察站单天体页路径直达 `/lab/observatory/<天体id>`；`?lang=en` 英文界面启动；`?logo=` 注入合作方标识（仅 https，展馆冠名场景 UI 隐藏时仍保留）——参数可自由组合，详见 [docs/launch-params.md](docs/launch-params.md)
 - `H` 键一键隐藏全部界面，纯净画面用于截图、录屏与投屏
 
 ### 🎧 沉浸式体验

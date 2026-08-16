@@ -95,7 +95,7 @@
 
 ### 🖥 Kiosk mode & deep links
 - **Kiosk mode**: one click in the control panel or launch with `?mode=kiosk` — a fullscreen self-running tour that flies from station to station; any visitor input pauses it and reveals the UI, and it resumes automatically after a short idle period; `tour=all` rotates through all four levels from the inside out
-- **Deep links**: `?body=jupiter` opens the app flying straight to any body; `?lang=en` presets the language; `?logo=` injects a partner logo (https only, stays visible while the UI is hidden) — all parameters combine freely, see [docs/en/launch-params.md](docs/en/launch-params.md)
+- **Deep links**: `?body=jupiter` opens the app flying straight to any body; single-body Observatory pages open directly via `/lab/observatory/<body-id>`; `?lang=en` presets the language; `?logo=` injects a partner logo (https only, stays visible while the UI is hidden) — all parameters combine freely, see [docs/en/launch-params.md](docs/en/launch-params.md)
 - Press `H` to hide the entire UI for clean screenshots, recordings, and projection
 
 ### 🎧 Immersive experience
