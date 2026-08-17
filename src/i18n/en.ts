@@ -19,20 +19,29 @@ export const en: I18nDict = {
     sponsor: 'Sponsor on Afdian',
     donateLabel: 'Fuel the Voyage',
     donateAria: 'Open the donation page (new tab)',
+    unlockLabel: 'Supporter Unlock',
+    unlockAria: 'Open the unlock page (new tab)',
     closeAria: 'Close the support & partnership panel',
   },
   donate: {
     title: 'Fuel the Voyage',
-    subtitle: 'Add a little fuel to Stellar Odyssey',
+    subtitle: 'Support the project and unlock instantly',
     intro:
-      'If this universe ever made you pause your scroll wheel for a moment longer, consider tossing in some fuel. All donations are voluntary support with no reward or update obligations promised — every feature and every line of source code stays equally open to everyone. Your support funds continued development and domain upkeep, keeping the project free, ad-free, and open source.',
-    platformsSection: 'Donation channels',
-    platformAvailable: 'Donate',
+      'Supporting the project unlocks the advanced content: Alipay QR payment is recommended — once paid, your unlock credential is issued automatically and the close-view detail layers and tour demos unlock instantly, with your nickname and message (both optional) listed on the contributor roster and in the Contributor Universe. The full source code remains open; your support funds continued development and domain upkeep, keeping the project free, ad-free, and open source.',
+    platformsSection: 'Support channels',
+    platformAvailable: 'Support',
     platformComingSoon: 'Reserved · coming soon',
-    platformShowQr: 'Show tip code',
-    platformHideQr: 'Hide tip code',
+    alipayGuide:
+      'Recommended: on the unlock page, click a tier card to generate a payment QR code — once paid, your unlock token is issued automatically and access unlocks instantly, no account needed; your nickname joins the contributor roster automatically.',
+    alipayCta: 'Pay with Alipay on the unlock page',
+    wechatGuide:
+      'Fallback channel: WeChat tips cannot be verified automatically — they are checked manually and the unlock token is sent by email only (not instant; usually within 48 hours). In a hurry? Use the Alipay QR above. Pay the tier amount, then email us using the template below with a payment screenshot and the transaction time.',
+    afdianNote:
+      'Fallback · redeem automatically on the unlock page with your order number (Afdian account required)',
+    kofiNote: 'Overseas fallback · verified manually, unlock token sent by email',
     wechatQrAlt: 'WeChat tip code',
-    wechatQrHint: 'Long-press in WeChat to scan, or scan with your phone',
+    wechatQrHint:
+      'Long-press in WeChat to scan, or scan with your phone; please pay the tier price',
     donorsSection: 'Fuel supply roster',
     donorsNote: 'Sorted by cumulative donation amount, descending (manually registered; may lag)',
     donorsEmpty: 'This spot is waiting — be the first star to light the voyage.',
@@ -69,7 +78,7 @@ export const en: I18nDict = {
     title: 'Supporter Unlock',
     subtitle: 'Time-limited access to close-view detail layers and tour sequences',
     intro:
-      'This page offers clearly priced, time-limited access: pay the tier amount, redeem with your proof of payment, and access reverts to the free experience upon expiry. It is entirely separate from the voluntary "Fuel the Voyage" sponsorship — neither is a condition for the other. The project source code remains open source.',
+      'This page offers clearly priced, time-limited access: pay the tier amount and unlock automatically (or redeem with your proof of payment); access reverts to the free experience upon expiry. Supporter nicknames and messages (both optional) are listed on the contributor roster and in the Contributor Universe. The project source code remains open source.',
     backToApp: 'Back to the star map',
     statusSection: 'My access',
     statusFree:
@@ -108,9 +117,13 @@ export const en: I18nDict = {
     refundPolicy:
       'Unredeemed orders are fully refundable; if a redeemed order is refunded, its unlock credential will be invalidated accordingly. No invoices are provided; access does not auto-renew upon expiry.',
     channelsSection: 'Purchase & redeem',
-    afdianTitle: 'Afdian (automatic)',
+    alipayChannelTitle: 'Alipay QR pay (recommended · instant auto-unlock after payment)',
+    alipayChannelGuide:
+      'Click a tier card above to pay by QR code: once paid, your unlock token is issued automatically and access activates instantly — no account needed; your nickname and message (both optional) join the contributor roster.',
+    alipayChannelCta: 'Pick a tier and pay by QR',
+    afdianTitle: 'Afdian (fallback · automatic order redemption)',
     afdianGuide:
-      'Purchase the tier amount on Afdian (Week/Year Pass as products, Month Pass as a subscription plan), then paste your order number below to redeem automatically.',
+      'Afdian account required. Purchase the tier amount on Afdian (Week/Year Pass as products, Month Pass as a subscription plan), then paste your order number below to redeem automatically.',
     afdianLink: 'Buy on Afdian',
     orderInputLabel: 'Afdian order number',
     orderInputPlaceholder: 'Paste order number (14-40 digits)',
@@ -130,20 +143,29 @@ export const en: I18nDict = {
       'The item in this order is not eligible for unlock redemption — please make sure you purchased an unlock tier item',
     errUnknown: 'Redeem failed (unknown error) — please retry later or contact us by email',
     errNetwork: 'Network request failed — please check your connection and retry',
-    wechatTitle: 'WeChat tip code (manual)',
+    wechatTitle: 'WeChat tip code (manual review · token sent by email)',
     wechatGuide:
-      'Pay the selected tier amount via the WeChat tip code, then send a redeem email to {email} with a payment screenshot and the transaction time — we will reply with your unlock token (usually within 48 hours).',
+      'WeChat tips cannot be verified automatically — they are checked manually and the unlock token is sent by email only (not instant; usually within 48 hours). In a hurry? Use the Alipay QR above. Pay the selected tier amount, then send a redeem email to {email} using the template below, with a payment screenshot and the transaction time.',
     wechatShowQr: 'Show tip code',
     wechatHideQr: 'Hide tip code',
     wechatQrAlt: 'WeChat tip code',
     wechatQrHint:
       'Long-press in WeChat to scan, or scan with your phone; please pay the tier price',
-    kofiTitle: 'Ko-fi (manual)',
+    kofiTitle: 'Ko-fi (overseas fallback · manual review)',
     kofiGuide:
       'Pay the tier\u2019s $ amount via Ko-fi, then send a redeem email to {email} with your payment receipt and the transaction time — we will reply with your unlock token (usually within 48 hours).',
     kofiLink: 'Pay on Ko-fi',
     emailCta: 'Send redeem email',
     emailSubject: 'Stellar Odyssey unlock redemption',
+    mailTplHint:
+      'Email template (copy with one click, or open your mail client pre-filled):',
+    mailTplToLabel: 'To',
+    mailTplSubjectLabel: 'Subject',
+    mailTplBody:
+      'Nickname (optional, listed on the contributor roster):\nTier purchased (Week/Month/Year Pass) and payment channel:\nPayment screenshot: see attachment\nTransaction time:\nMessage (optional, shown on the roster):\n\nNote: the unlock token will be sent to the address this email is sent from — make sure it can receive mail. If nothing arrives for a long while, check your spam folder and add {email} to your contacts.',
+    mailTplCopy: 'Copy email template',
+    mailTplCopied: 'Copied',
+    mailTplOpen: 'Open mail client',
     tokenSection: 'Already have a token? Activate here',
     tokenIntro:
       'Tokens from manual-channel replies, device migration, or B2B delivery are all pasted and activated here.',

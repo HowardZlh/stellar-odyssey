@@ -1,31 +1,39 @@
 'use client';
 
 /**
- * 捐赠页（/donate，静态导出为 donate.html）
+ * 捐赠页（/donate，静态导出为 donate.html；Z 迭代 M3 改版，需求 E2(a)）
  *
- * 左下角「☄️ 投喂燃料」入口新标签页打开。内容：多平台捐赠通道卡片
- * （data/donationPlatforms.ts 注册表，链接型跳转 / 二维码型卡片内展开
- * （微信赞赏码，桌面扫码与微信内长按识别双路径）/ 预留位显示"即将开通"）
- * + 捐赠名单（data/donors.ts 人工登记，渲染前按金额降序排列）+ 返回主站链接。
+ * 左下角「☄️ 投喂燃料」入口新标签页打开。内容（统一"支持即解锁"口径）：
+ * 支持通道按 donationPlatforms 注册表顺序渲染——① 支付宝扫码（推荐）
+ * 引导面板 + 「前往解锁页扫码支付 →」跳 /unlock（付款 modal 只在解锁页，
+ * 对齐 stock render_donate）② 微信赞赏码独立 panel（内嵌图 + 邮件模板 +
+ * 预填 mailto，模板与 /unlock 页同源）③ 爱发电（备选）④ Ko-fi（海外备选）
+ * ⑤ 预留位卡片 + 捐赠名单（data/donors.ts 人工登记，渲染前按金额降序）
+ * + 贡献者宇宙入口 + 返回主站链接。
  *
- * 文案口径（AGENTS.md 赞助红线）：零回报承诺——不承诺任何回报或更新
- * 义务；i18n 经 donate.* 键组双语化，页面右上角提供 zh/EN 切换。
+ * 文案边界：解锁承诺仅限"付 ¥X 得 Y 天"的既有对价事实，不承诺更新义务；
+ * i18n 经 donate.* 键组双语化，页面右上角提供 zh/EN 切换。
  */
 
 import type { JSX } from 'react';
 import { useState } from 'react';
 import Link from 'next/link';
+import type { MessageKey } from '@/i18n';
 import { pickLocalized } from '@/i18n';
 import { useLocaleInit, useT, useTf } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
 import { DONATION_PLATFORMS } from '@/data/donationPlatforms';
 import { DONORS } from '@/data/donors';
+import { CONTACT_EMAIL, UNLOCK_PAGE_PATH } from '@/components/UI/ContactBadge';
 import { CONTRIBUTORS_PAGE_PATH } from '@/utils/contributorUniverse';
 import type { DonationPlatformId } from '@/utils/donors';
 import { sortDonorsByAmountDesc } from '@/utils/donors';
+import {
+  buildRedeemMailtoHref,
+  formatRedeemMailTemplate,
+} from '@/utils/redeemMail';
 
-/** 平台图标（emoji 由组件层持有，i18n 约定；alipay 为 M2 类型补全——
- * 捐赠注册表暂无 alipay 面板，渠道重排 M3 处理） */
+/** 平台图标（emoji 由组件层持有，i18n 约定） */
 const PLATFORM_EMOJI: Record<DonationPlatformId, string> = {
   afdian: '⚡',
   wechat: '💚',
@@ -34,6 +42,16 @@ const PLATFORM_EMOJI: Record<DonationPlatformId, string> = {
   buymeacoffee: '🍪',
   alipay: '💙',
 };
+
+/** 备选通道卡片说明行（M3 口径：爱发电备选 / Ko-fi 海外备选） */
+const PLATFORM_NOTE_KEYS: Partial<Record<DonationPlatformId, MessageKey>> = {
+  afdian: 'donate.afdianNote',
+  kofi: 'donate.kofiNote',
+};
+
+/** 特殊形态面板的注册表条目（按 id 查找，防注册表顺序调整时错位） */
+const ALIPAY_PLATFORM = DONATION_PLATFORMS.find((p) => p.id === 'alipay');
+const WECHAT_PLATFORM = DONATION_PLATFORMS.find((p) => p.id === 'wechat');
 
 export default function DonatePage(): JSX.Element {
   // i18n：独立页面同样按 ?lang= > localStorage > zh 初始化
@@ -46,8 +64,30 @@ export default function DonatePage(): JSX.Element {
   // 名单按金额降序（数据文件无需保序，排序逻辑单测覆盖）
   const donors = sortDonorsByAmountDesc(DONORS);
 
-  // 二维码形态通道（微信赞赏码）：卡片内展开/收起，至多一张同时展开
-  const [openQrId, setOpenQrId] = useState<DonationPlatformId | null>(null);
+  // M3：邮件模板复制态（微信 panel；clipboard 失败时模板文本可手动选中）
+  const [mailCopied, setMailCopied] = useState(false);
+
+  // 人工渠道兑换邮件（与 /unlock 页同源拼装：同一 i18n 键组 + 同一纯函数）
+  const mailSubject = tr('unlock.emailSubject');
+  const mailBody = trf('unlock.mailTplBody', { email: CONTACT_EMAIL });
+  const mailtoHref = buildRedeemMailtoHref(CONTACT_EMAIL, mailSubject, mailBody);
+  const mailTemplate = formatRedeemMailTemplate({
+    toLabel: tr('unlock.mailTplToLabel'),
+    subjectLabel: tr('unlock.mailTplSubjectLabel'),
+    email: CONTACT_EMAIL,
+    subject: mailSubject,
+    body: mailBody,
+  });
+
+  /** 复制邮件模板（失败静默：模板 pre 文本本身可手动选中复制） */
+  async function handleCopyMailTemplate(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(mailTemplate);
+      setMailCopied(true);
+    } catch {
+      setMailCopied(false);
+    }
+  }
 
   return (
     // 滚动修复：globals.css 对 html/body 全局 overflow:hidden（主 3D 场景
@@ -115,73 +155,124 @@ export default function DonatePage(): JSX.Element {
           </p>
         </header>
 
-        {/* 捐赠通道 */}
+        {/* 支持通道（M3 渠道重排 §5.2：注册表顺序即渲染顺序——支付宝引导
+            面板 → 微信独立 panel → 备选/预留卡片栅格；顺序断言测试对照
+            stock test_pages_recommend_alipay_and_channel_order） */}
         <section className="mt-10">
           <h2 className="mb-3 text-sm font-semibold text-gray-300">
             {tr('donate.platformsSection')}
           </h2>
-          {/* items-start：二维码卡展开时不拉伸同排卡片（收起态各卡等高无视觉差异） */}
-          <ul className="grid items-start gap-3 sm:grid-cols-2">
-            {DONATION_PLATFORMS.map((platform) => (
-              <li
-                key={platform.id}
-                className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm text-gray-200">
-                    {PLATFORM_EMOJI[platform.id]}{' '}
-                    {pickLocalized(locale, platform.nameZh, platform.nameEn)}
-                  </span>
-                  {platform.url ? (
-                    <a
-                      href={platform.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="shrink-0 rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent max-md:px-4 max-md:py-3.5"
-                    >
-                      {tr('donate.platformAvailable')}
-                    </a>
-                  ) : platform.qrImage ? (
-                    <button
-                      type="button"
-                      aria-expanded={openQrId === platform.id}
-                      onClick={() =>
-                        setOpenQrId((current) =>
-                          current === platform.id ? null : platform.id,
-                        )
-                      }
-                      className="shrink-0 rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent max-md:px-4 max-md:py-3.5"
-                    >
-                      {tr(
-                        openQrId === platform.id
-                          ? 'donate.platformHideQr'
-                          : 'donate.platformShowQr',
-                      )}
-                    </button>
-                  ) : (
-                    <span className="shrink-0 rounded bg-white/5 px-3 py-1.5 text-xs text-gray-500">
-                      {tr('donate.platformComingSoon')}
-                    </span>
+          <div className="space-y-3">
+            {/* ① 支付宝扫码（推荐）：引导面板 + 跳 /unlock（modal 不进本页） */}
+            <div className="rounded-lg border border-space-accent/40 bg-space-panel p-4 backdrop-blur">
+              <h3 className="text-sm text-gray-200">
+                {PLATFORM_EMOJI.alipay}{' '}
+                {ALIPAY_PLATFORM !== undefined &&
+                  pickLocalized(
+                    locale,
+                    ALIPAY_PLATFORM.nameZh,
+                    ALIPAY_PLATFORM.nameEn,
                   )}
-                </div>
-                {platform.qrImage && openQrId === platform.id && (
-                  <div className="mt-3 text-center">
-                    {/* 原生 <img>：静态导出无 next/image 优化（规则已全局关闭）；
-                        自适应宽度（移动单列/桌面双列均不溢出），点按图片也可收起 */}
-                    <img
-                      src={platform.qrImage}
-                      alt={tr('donate.wechatQrAlt')}
-                      onClick={() => setOpenQrId(null)}
-                      className="mx-auto w-full max-w-64 rounded-lg"
-                    />
-                    <p className="mt-2 text-[10px] leading-4 text-gray-500 max-md:text-xs">
-                      {tr('donate.wechatQrHint')}
-                    </p>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
+              </h3>
+              <p className="mt-2 text-xs leading-5 text-gray-400">
+                {tr('donate.alipayGuide')}
+              </p>
+              <a
+                href={UNLOCK_PAGE_PATH}
+                className="mt-3 inline-block rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent max-md:min-h-11 max-md:px-4 max-md:py-3"
+              >
+                {tr('donate.alipayCta')} →
+              </a>
+            </div>
+
+            {/* ② 微信赞赏码独立 panel：内嵌图 + 邮件模板 + 预填 mailto
+                （模板与 /unlock 页同源） */}
+            <div className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
+              <h3 className="text-sm text-gray-200">
+                {PLATFORM_EMOJI.wechat}{' '}
+                {WECHAT_PLATFORM !== undefined &&
+                  pickLocalized(
+                    locale,
+                    WECHAT_PLATFORM.nameZh,
+                    WECHAT_PLATFORM.nameEn,
+                  )}
+              </h3>
+              <p className="mt-2 text-xs leading-5 text-gray-400">
+                {tr('donate.wechatGuide')}
+              </p>
+              <div className="mt-3 text-center">
+                {/* 原生 <img>：静态导出无 next/image 优化（规则已全局关闭） */}
+                <img
+                  src={WECHAT_PLATFORM?.qrImage}
+                  alt={tr('donate.wechatQrAlt')}
+                  className="mx-auto w-full max-w-64 rounded-lg"
+                />
+                <p className="mt-2 text-[10px] leading-4 text-gray-500 max-md:text-xs">
+                  {tr('donate.wechatQrHint')}
+                </p>
+              </div>
+              <p className="mt-3 text-xs text-gray-400">{tr('unlock.mailTplHint')}</p>
+              <pre className="mt-1 whitespace-pre-wrap break-words rounded border border-white/10 bg-black/30 p-3 text-[10px] leading-4 text-gray-300 max-md:text-xs">
+                {mailTemplate}
+              </pre>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleCopyMailTemplate()}
+                  className="rounded border border-white/15 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:text-white max-md:min-h-11 max-md:px-4 max-md:py-3"
+                >
+                  📋 {tr(mailCopied ? 'unlock.mailTplCopied' : 'unlock.mailTplCopy')}
+                </button>
+                <a
+                  href={mailtoHref}
+                  className="inline-flex items-center rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent max-md:min-h-11 max-md:px-4 max-md:py-3"
+                >
+                  📮 {tr('unlock.mailTplOpen')} →
+                </a>
+              </div>
+            </div>
+
+            {/* ③④⑤ 备选与预留卡片（爱发电备选 / Ko-fi 海外备选 / 预留位） */}
+            <ul className="grid items-start gap-3 sm:grid-cols-2">
+              {DONATION_PLATFORMS.filter(
+                (p) => p.id !== 'alipay' && p.id !== 'wechat',
+              ).map((platform) => {
+                const noteKey = PLATFORM_NOTE_KEYS[platform.id];
+                return (
+                  <li
+                    key={platform.id}
+                    className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm text-gray-200">
+                        {PLATFORM_EMOJI[platform.id]}{' '}
+                        {pickLocalized(locale, platform.nameZh, platform.nameEn)}
+                      </span>
+                      {platform.url ? (
+                        <a
+                          href={platform.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="shrink-0 rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent max-md:px-4 max-md:py-3.5"
+                        >
+                          {tr('donate.platformAvailable')}
+                        </a>
+                      ) : (
+                        <span className="shrink-0 rounded bg-white/5 px-3 py-1.5 text-xs text-gray-500">
+                          {tr('donate.platformComingSoon')}
+                        </span>
+                      )}
+                    </div>
+                    {noteKey !== undefined && (
+                      <p className="mt-2 text-[10px] leading-4 text-gray-500 max-md:text-xs">
+                        {tr(noteKey)}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </section>
 
         {/* 捐赠名单（按金额降序） */}

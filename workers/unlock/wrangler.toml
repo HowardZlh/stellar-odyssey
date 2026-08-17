@@ -10,12 +10,10 @@ name = "stellar-unlock"
 main = "index.ts"
 compatibility_date = "2026-08-01"
 
-# Z 迭代 M1（存储层 D1 迁移）：代码链路已全量改走 UNLOCK_DB，本 KV 绑定
-# **保留至 M3 交付、用户确认 D1 全链路正常后移除**（回滚余地；届时同步
-# 在 CF Dashboard 删除 namespace——上线清单 REQUIREMENTS_ALIPAY_UNLOCK §9-7）。
-kv_namespaces = [
-  { binding = "UNLOCK_KV", id = "894f0a089472498f95cfccb5eec78251" }
-]
+# Z 迭代 M3：UNLOCK_KV 绑定已移除（M1 起代码链路全量走 UNLOCK_DB，
+# 绑定保留至 M3 作回滚余地）。上线提醒：确认 D1 全链路正常后，在 CF
+# Dashboard 删除 namespace 894f0a089472498f95cfccb5eec78251
+# （上线清单 REQUIREMENTS_ALIPAY_UNLOCK §9-7，用户手工执行）。
 
 # D1 数据库（Z 迭代 M1，REQUIREMENTS_ALIPAY_UNLOCK.md §4 / §9）。
 # 上线步骤（用户手工执行，部署 Worker 前必须完成）：

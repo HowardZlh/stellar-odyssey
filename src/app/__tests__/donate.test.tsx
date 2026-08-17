@@ -1,15 +1,23 @@
 /**
- * 捐赠页 /donate 单测（空名单上线态）：
- * - 标题/说明（零回报承诺口径）渲染
- * - 平台卡片：爱发电/Ko-fi 可用链接（同源常量）+ 微信赞赏码二维码展开/收起 + 两个预留位
- * - 空名单占位文案
+ * 捐赠页 /donate 单测（空名单上线态；Z 迭代 M3 改版，需求 E2(a)）：
+ * - 标题/说明（"支持即解锁"口径）渲染
+ * - 渠道顺序断言：支付宝（推荐引导面板）→ 微信（独立 panel）→ 爱发电 →
+ *   Ko-fi → 预留位（对齐 stock test_pages_recommend_alipay_and_channel_order）
+ * - 支付宝面板：引导口径 + 「前往解锁页扫码支付 →」跳 /unlock（modal 不进本页）
+ * - 微信 panel：内嵌二维码图 + 可复制邮件模板 + 预填 mailto（与 /unlock 同源）
+ * - 爱发电/Ko-fi 备选卡片链接（同源常量）+ 两个预留位
+ * - 空名单占位文案 + 贡献者宇宙入口
  * - zh/EN 语言切换
  */
 
 import { fireEvent, render, screen } from '@testing-library/react';
 
 import DonatePage from '@/app/donate/page';
-import { SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
+import {
+  CONTACT_EMAIL,
+  SPONSOR_AFDIAN_URL,
+  UNLOCK_PAGE_PATH,
+} from '@/components/UI/ContactBadge';
 import { SPONSOR_KOFI_URL } from '@/data/donationPlatforms';
 import { CONTRIBUTORS_PAGE_PATH } from '@/utils/contributorUniverse';
 import { useSimulationStore } from '@/store';
@@ -19,17 +27,81 @@ afterEach(() => {
   window.localStorage.clear();
 });
 
+/** 断言一组节点在 DOM 中按给定先后顺序出现 */
+function expectDomOrder(nodes: readonly Element[]): void {
+  for (let i = 0; i < nodes.length - 1; i += 1) {
+    expect(
+      nodes[i].compareDocumentPosition(nodes[i + 1]) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  }
+}
+
 describe('DonatePage 渲染（空名单）', () => {
-  it('渲染标题、副标题与零回报口径说明', () => {
+  it('渲染标题、副标题与"支持即解锁"口径说明', () => {
     render(<DonatePage />);
     expect(screen.getByRole('heading', { name: /投喂燃料/ })).toBeInTheDocument();
-    expect(screen.getByText('为星海奥德赛添一把燃料')).toBeInTheDocument();
-    expect(screen.getByText(/不构成任何回报或更新义务的承诺/)).toBeInTheDocument();
+    expect(screen.getByText('支持项目，即刻解锁高级内容')).toBeInTheDocument();
+    expect(screen.getByText(/支持项目即可解锁高级内容/)).toBeInTheDocument();
+    expect(screen.getByText(/记入贡献者名单与贡献者宇宙/)).toBeInTheDocument();
   });
 
-  it('爱发电/Ko-fi 卡片为可用链接（同源常量，新标签页）', () => {
+  it('M3 渠道顺序：支付宝 → 微信 → 爱发电 → Ko-fi → 预留位', () => {
     render(<DonatePage />);
-    const links = screen.getAllByRole('link', { name: '前往捐赠' });
+    const reserved = screen.getAllByText('预留位 · 即将开通');
+    expect(reserved).toHaveLength(2);
+    expectDomOrder([
+      screen.getByRole('heading', { name: /支付宝扫码支付/ }),
+      screen.getByRole('heading', { name: /微信赞赏码/ }),
+      screen.getByText('⚡ 爱发电'),
+      screen.getByText('☕ Ko-fi'),
+      reserved[0],
+      reserved[1],
+    ]);
+  });
+
+  it('支付宝引导面板：推荐口径 + 跳解锁页链接（付款 modal 不进本页）', () => {
+    render(<DonatePage />);
+    expect(screen.getByText(/支付成功后自动发放解锁 token 并即时解锁/)).toBeInTheDocument();
+    const cta = screen.getByRole('link', { name: /前往解锁页扫码支付/ });
+    expect(cta).toHaveAttribute('href', UNLOCK_PAGE_PATH);
+  });
+
+  it('微信 panel：内嵌二维码图（无需展开）+ 人工核验口径', () => {
+    render(<DonatePage />);
+    const qr = screen.getByRole('img', { name: '微信赞赏码' });
+    expect(qr).toHaveAttribute('src', '/donate/wechat-tip-code.jpg');
+    expect(screen.getByText(/微信内长按识别/)).toBeInTheDocument();
+    expect(screen.getByText(/需人工处理，解锁 token 只经 Email 发送/)).toBeInTheDocument();
+  });
+
+  it('微信 panel：邮件模板可复制 + mailto 预填主题与正文（同源邮箱）', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    render(<DonatePage />);
+    // 模板文本含收件人（同源邮箱）与主题行
+    expect(
+      screen.getByText(new RegExp(`收件人: ${CONTACT_EMAIL}`)),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /复制邮件模板/ }));
+    expect(await screen.findByText(/已复制/)).toBeInTheDocument();
+    expect(writeText).toHaveBeenCalledWith(
+      expect.stringContaining(`收件人: ${CONTACT_EMAIL}`),
+    );
+    // mailto 预填：subject + body 双参数
+    const mailto = screen.getByRole('link', { name: /打开邮件客户端/ });
+    const href = mailto.getAttribute('href') ?? '';
+    expect(href).toContain(`mailto:${CONTACT_EMAIL}`);
+    expect(href).toContain('subject=');
+    expect(href).toContain('body=');
+  });
+
+  it('爱发电/Ko-fi 备选卡片为可用链接（同源常量，新标签页）+ 备选口径说明', () => {
+    render(<DonatePage />);
+    const links = screen.getAllByRole('link', { name: '前往支持' });
     expect(links.map((l) => l.getAttribute('href'))).toEqual([
       SPONSOR_AFDIAN_URL,
       SPONSOR_KOFI_URL,
@@ -37,41 +109,15 @@ describe('DonatePage 渲染（空名单）', () => {
     for (const link of links) {
       expect(link).toHaveAttribute('target', '_blank');
     }
+    expect(screen.getByText(/凭订单号在解锁页自动兑换/)).toBeInTheDocument();
+    expect(screen.getByText(/海外备选/)).toBeInTheDocument();
   });
 
   it('GitHub Sponsors/Buy Me a Coffee 显示预留位', () => {
     render(<DonatePage />);
     expect(screen.getAllByText('预留位 · 即将开通')).toHaveLength(2);
-    expect(screen.getByText(/微信赞赏码/)).toBeInTheDocument();
     expect(screen.getByText(/GitHub Sponsors/)).toBeInTheDocument();
-    expect(screen.getByText(/Ko-fi/)).toBeInTheDocument();
     expect(screen.getByText(/Buy Me a Coffee/)).toBeInTheDocument();
-  });
-
-  it('微信赞赏码卡片：点按展开二维码与提示、再点收起', () => {
-    render(<DonatePage />);
-    // 初始：仅「查看赞赏码」按钮，无二维码图
-    expect(screen.queryByRole('img', { name: '微信赞赏码' })).not.toBeInTheDocument();
-    const toggle = screen.getByRole('button', { name: '查看赞赏码' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-
-    // 展开：二维码图 + 双路径提示 + 按钮转「收起」
-    fireEvent.click(toggle);
-    const qr = screen.getByRole('img', { name: '微信赞赏码' });
-    expect(qr).toHaveAttribute('src', '/donate/wechat-tip-code.jpg');
-    expect(screen.getByText(/微信内长按识别/)).toBeInTheDocument();
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-
-    // 收起（按钮再点）
-    fireEvent.click(screen.getByRole('button', { name: '收起赞赏码' }));
-    expect(screen.queryByRole('img', { name: '微信赞赏码' })).not.toBeInTheDocument();
-  });
-
-  it('微信赞赏码：点按二维码图本身也可收起', () => {
-    render(<DonatePage />);
-    fireEvent.click(screen.getByRole('button', { name: '查看赞赏码' }));
-    fireEvent.click(screen.getByRole('img', { name: '微信赞赏码' }));
-    expect(screen.queryByRole('img', { name: '微信赞赏码' })).not.toBeInTheDocument();
   });
 
   it('空名单显示占位文案与降序排列说明', () => {
@@ -93,12 +139,15 @@ describe('DonatePage 渲染（空名单）', () => {
     expect(back[0]).toHaveAttribute('href', '/');
   });
 
-  it('EN 切换后标题与占位文案切英文', () => {
+  it('EN 切换后标题、渠道与占位文案切英文', () => {
     render(<DonatePage />);
     fireEvent.click(screen.getByRole('button', { name: 'EN' }));
     expect(screen.getByRole('heading', { name: /Fuel the Voyage/ })).toBeInTheDocument();
     expect(screen.getAllByText('Reserved · coming soon')).toHaveLength(2);
-    expect(screen.getByRole('button', { name: 'Show tip code' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /Pay with Alipay on the unlock page/ }),
+    ).toHaveAttribute('href', UNLOCK_PAGE_PATH);
+    expect(screen.getByRole('heading', { name: /Alipay QR Pay/ })).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: /Enter the Contributor Universe/ }),
     ).toHaveAttribute('href', CONTRIBUTORS_PAGE_PATH);
