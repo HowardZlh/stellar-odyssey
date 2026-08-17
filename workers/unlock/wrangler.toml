@@ -30,7 +30,10 @@ routes = [
   { pattern = "stellar.guushu.com/api/*", zone_name = "guushu.com" }
 ]
 
-# A6 退款巡检 cron（每 3 小时；Workers Free 支持，每账户 5 排程限额本项目用 1）
+# 统一对账 cron（每 3 小时，D-z6 单 cron；Workers Free 每账户 5 排程限额
+# 本项目用 1）：爱发电退款巡检（A6 模式 A）+ 支付宝对账（M4：超时 pending
+# 关单 / 已付补发 / 退款吊销兜底——需 ALIPAY_* 与 ED25519 Secrets 齐备，
+# 否则该段独立降级不影响爱发电巡检）。子请求预算 ≤44/次（refundSync.ts 头注）。
 [triggers]
 crons = ["0 */3 * * *"]
 

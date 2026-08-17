@@ -148,9 +148,9 @@ function alipayConfigured(env: AlipayHandlerEnv): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// 订单行投影（发码/核验共用最小面）
+// 订单行投影（发码/核验共用最小面；M4：对账 Cron refundSync 同源消费，导出）
 // ---------------------------------------------------------------------------
-interface AlipayOrderRow {
+export interface AlipayOrderRow {
   readonly id: string;
   readonly tier: UnlockTier;
   readonly status: string;
@@ -165,8 +165,11 @@ const ORDER_SELECT =
   "SELECT id, tier, status, token, expires_at, amount_cny, nickname, message" +
   " FROM orders WHERE channel = ? AND ext_order_no = ?";
 
-/** 订单行防御式解析（形状异常返回 null，调用方按订单不存在/失败处理） */
-function parseOrderRow(row: Record<string, unknown> | null): AlipayOrderRow | null {
+/** 订单行防御式解析（形状异常返回 null，调用方按订单不存在/失败处理；
+ * M4：对账 Cron 复用同一解析口径，导出） */
+export function parseAlipayOrderRow(
+  row: Record<string, unknown> | null,
+): AlipayOrderRow | null {
   if (row === null) return null;
   const { id, tier, status } = row;
   if (typeof id !== "string" || typeof status !== "string") return null;
@@ -194,11 +197,15 @@ async function selectOrder(
   outTradeNo: string,
 ): Promise<AlipayOrderRow | null> {
   const row = await db.prepare(ORDER_SELECT).bind("alipay", outTradeNo).first();
-  return parseOrderRow(row);
+  return parseAlipayOrderRow(row);
 }
 
-/** 金额核验（分，防浮点）：通知/查询回报的 total_amount 必须与订单行一致 */
-function amountMatches(totalAmount: unknown, orderAmountCny: number): boolean {
+/** 金额核验（分，防浮点）：通知/查询回报的 total_amount 必须与订单行一致
+ * （M4：对账 Cron 补发前同口径核验，导出） */
+export function amountMatches(
+  totalAmount: unknown,
+  orderAmountCny: number,
+): boolean {
   const cents = Math.round(parseFloat(String(totalAmount ?? "0")) * 100);
   return Number.isFinite(cents) && cents === Math.round(orderAmountCny * 100);
 }
@@ -207,11 +214,13 @@ function amountMatches(totalAmount: unknown, orderAmountCny: number): boolean {
 // 发码事务（notify 与 status deep 兜底共用，幂等关键）
 // ---------------------------------------------------------------------------
 
-/** 发码结果（幂等：并发后到者返回首发 token） */
+/** 发码结果（幂等：并发后到者返回首发 token；wrote=false 表示抢占失败
+ * 走回读路径、本次零写入——M4 对账补发以此精确计数） */
 export interface IssueResult {
   readonly token: string;
   readonly tier: UnlockTier;
   readonly expiresAt: number;
+  readonly wrote: boolean;
 }
 
 /**
@@ -262,7 +271,7 @@ export async function issuePaidAlipayOrder(
 
   if ((updated.meta?.changes ?? 0) !== 1) {
     // 并发抢占失败：首写已落定 → 回读首发 token 幂等返回
-    const raced = parseOrderRow(
+    const raced = parseAlipayOrderRow(
       await db
         .prepare(
           "SELECT id, tier, status, token, expires_at, amount_cny, nickname, message FROM orders WHERE id = ?",
@@ -276,7 +285,12 @@ export async function issuePaidAlipayOrder(
       raced.token !== null &&
       raced.expiresAt !== null
     ) {
-      return { token: raced.token, tier: raced.tier, expiresAt: raced.expiresAt };
+      return {
+        token: raced.token,
+        tier: raced.tier,
+        expiresAt: raced.expiresAt,
+        wrote: false,
+      };
     }
     throw new Error("alipay-issue: 发码抢占失败且存量记录异常");
   }
@@ -297,7 +311,7 @@ export async function issuePaidAlipayOrder(
     )
     .run();
 
-  return { token, tier: order.tier, expiresAt: exp };
+  return { token, tier: order.tier, expiresAt: exp, wrote: true };
 }
 
 // ---------------------------------------------------------------------------

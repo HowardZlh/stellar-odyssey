@@ -21,7 +21,7 @@ import type { UnlockDbLike } from "./lib/db";
 import { handleGateConfig } from "./lib/gateConfig";
 import { handleRedeem } from "./lib/redeem";
 import { handleRevocations } from "./lib/revocations";
-import { runRefundSync } from "./lib/refundSync";
+import { runUnifiedSync } from "./lib/refundSync";
 
 /**
  * Worker env 绑定（D1/secrets 可缺省——未配置走 not_configured 降级；
@@ -252,29 +252,46 @@ const worker = {
   },
 
   /**
-   * cron 退款巡检壳（§A6-2，wrangler.toml `[triggers]` 每 3 小时排程）：
-   * 业务全在 lib/refundSync.ts 纯逻辑（jest 直测）；本壳只做 env 绑定
-   * 注入 + waitUntil 挂接。模式 A（裁决 ⑧）：REFUND_AUTO_REVOKE 为空
-   * 时只检测登记疑似单，不自动吊销。
+   * cron 统一对账壳（§A6-2 爱发电巡检 + M4 支付宝对账，D-z6 单 cron，
+   * wrangler.toml `[triggers]` 每 3 小时排程）：业务全在 lib/refundSync.ts
+   * 纯逻辑（jest 直测）；本壳只做 env 绑定注入 + waitUntil 挂接。
+   * 爱发电模式 A（裁决 ⑧）：REFUND_AUTO_REVOKE 为空时只检测登记疑似单；
+   * 支付宝段（超时关单/已付补发/退款吊销）Secrets 未配齐时独立降级。
    */
   scheduled(
     _controller: unknown,
     env: UnlockWorkerEnv,
     ctx: ExecutionCtxLike,
   ): void {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const lookbackDays = Number(env.REFUND_LOOKBACK_DAYS ?? "");
     ctx.waitUntil(
-      runRefundSync({
-        db: env.UNLOCK_DB ?? null,
-        fetchFn: (url, init) => fetch(url, init),
-        secrets: {
-          afdianUserId: env.AFDIAN_USER_ID,
-          afdianToken: env.AFDIAN_TOKEN,
+      runUnifiedSync(
+        {
+          db: env.UNLOCK_DB ?? null,
+          fetchFn: (url, init) => fetch(url, init),
+          secrets: {
+            afdianUserId: env.AFDIAN_USER_ID,
+            afdianToken: env.AFDIAN_TOKEN,
+          },
+          nowSec,
+          lookbackDays,
+          autoRevoke: env.REFUND_AUTO_REVOKE === "1",
+          by: "cron",
         },
-        nowSec: Math.floor(Date.now() / 1000),
-        lookbackDays: Number(env.REFUND_LOOKBACK_DAYS ?? ""),
-        autoRevoke: env.REFUND_AUTO_REVOKE === "1",
-        by: "cron",
-      }),
+        {
+          db: env.UNLOCK_DB ?? null,
+          env: {
+            ALIPAY_APP_ID: env.ALIPAY_APP_ID,
+            ALIPAY_PRIVATE_KEY: env.ALIPAY_PRIVATE_KEY,
+            ALIPAY_PUBLIC_KEY: env.ALIPAY_PUBLIC_KEY,
+            ALIPAY_SELLER_ID: env.ALIPAY_SELLER_ID,
+          },
+          ed25519PrivateKeyHex: env.ED25519_PRIVATE_KEY,
+          nowSec,
+          lookbackDays,
+        },
+      ),
     );
   },
 };

@@ -122,7 +122,12 @@ Your unlock credential is a three-segment string starting with `SO1.` (a time-li
   to request a refund to the original payment method.
 - If a **redeemed** order is refunded, its unlock credential will be **invalidated accordingly**
   (takes effect within about 5 minutes on connected devices).
-- No invoices are provided.
+- Alipay payments issue the token automatically upon success (i.e. they count as "redeemed"):
+  request refunds by email as well, stating the **payment time and amount** (include your
+  nickname/message if you filled them in, to help locate the order). After verification the
+  **full amount is refunded to your Alipay account**, usually arriving instantly, and the
+  credential is invalidated along with the refund.
+- Refunds are **full-amount only** (no partial refunds); no invoices are provided.
 
 ## FAQ
 

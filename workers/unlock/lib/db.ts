@@ -40,6 +40,13 @@ export const REFUND_SUSPECTS_STATE_KEY = "refund:suspects";
 /** kv_state 键：巡检统计 cursor（原 KV `revoke:cursor`，§0.15 契约） */
 export const REVOKE_CURSOR_STATE_KEY = "revoke:cursor";
 
+/**
+ * kv_state 键：支付宝退款兜底扫描滚动游标（Z 迭代 M4 新增，无 KV 前身）。
+ * 值形态 `{"last": "<paid_at ISO 或空串>"}`——每轮按 paid_at 升序推进，
+ * 扫完窗口归零重扫；**仅值变化才写**（零变化零写入纪律，对账 §M4）。
+ */
+export const ALIPAY_REFUND_CURSOR_STATE_KEY = "alipay:refund-cursor";
+
 /** kv_state 读（无记录 → null；与 KV get 语义对齐） */
 export async function getStateRaw(
   db: UnlockDbLike,

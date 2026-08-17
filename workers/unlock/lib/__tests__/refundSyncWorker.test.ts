@@ -467,7 +467,7 @@ describe("A6-2 runRefundSync", () => {
 // ---------------------------------------------------------------------------
 
 describe("A6-2 index.ts scheduled 壳", () => {
-  it("挂接 waitUntil 并注入 env 绑定（DB 未绑定 → not_configured 零副作用）", async () => {
+  it("挂接 waitUntil 并注入 env 绑定（DB 未绑定 → 两段 not_configured 零副作用；M4 统一对账壳）", async () => {
     const captured: Promise<unknown>[] = [];
     worker.scheduled(
       null,
@@ -475,8 +475,9 @@ describe("A6-2 index.ts scheduled 壳", () => {
       { waitUntil: (p) => captured.push(p) },
     );
     expect(captured).toHaveLength(1);
-    await expect(captured[0]).resolves.toEqual(
-      expect.objectContaining({ ok: false, error: "not_configured" }),
-    );
+    await expect(captured[0]).resolves.toEqual({
+      afdian: expect.objectContaining({ ok: false, error: "not_configured" }),
+      alipay: expect.objectContaining({ ok: false, error: "not_configured" }),
+    });
   });
 });
