@@ -1,13 +1,11 @@
 /**
- * GET /api/gate-config 纯逻辑（REQUIREMENTS_UNLOCK.md §A2-1 + §0.11 契约）：
- * KV 读 `gate:config` 原样透传——**不消毒**（消毒单点在
+ * GET /api/gate-config 纯逻辑（REQUIREMENTS_UNLOCK.md §A2-1 + §0.11 契约；
+ * Z 迭代 M1：存储层 KV `gate:config` → D1 kv_state 行，响应契约不变）：
+ * kv_state 读 `gate:config` 原样透传——**不消毒**（消毒单点在
  * `src/utils/remoteGateConfig.ts`，前端/管理台两端共享，防逻辑漂移）。
- * 零 KV 写、无请求体解析（防额度攻击，§A2 复核）。
+ * 零 DB 写、无请求体解析（防额度攻击，§A2 复核）。
  */
-import type { UnlockKvLike } from "./redeem";
-
-/** KV 键（§0.11：单键 JSON，管理台写、Worker 读、前端消费） */
-export const GATE_CONFIG_KV_KEY = "gate:config";
+import { GATE_CONFIG_STATE_KEY, getStateRaw, type UnlockDbLike } from "./db";
 
 /** 响应契约（HTTP 恒 200，体内报错——redeem 惯例） */
 export type GateConfigResponseBody =
@@ -15,23 +13,23 @@ export type GateConfigResponseBody =
   | { readonly ok: false; readonly error: "not_configured" };
 
 /**
- * KV 未绑定 → not_configured；无记录 → `config: {}`；
+ * DB 未绑定 → not_configured；无记录 → `config: {}`；
  * 合法 JSON → 原样透传；非法 JSON → 视同无记录 + console.warn。
  */
 export async function handleGateConfig(
-  kv: UnlockKvLike | null | undefined,
+  db: UnlockDbLike | null | undefined,
 ): Promise<GateConfigResponseBody> {
-  if (kv === null || kv === undefined) {
+  if (db === null || db === undefined) {
     return { ok: false, error: "not_configured" };
   }
-  const raw = await kv.get(GATE_CONFIG_KV_KEY);
+  const raw = await getStateRaw(db, GATE_CONFIG_STATE_KEY);
   if (raw === null) {
     return { ok: true, config: {} };
   }
   try {
     return { ok: true, config: JSON.parse(raw) as unknown };
   } catch {
-    console.warn("[gate-config] KV gate:config 非合法 JSON，视同无记录");
+    console.warn("[gate-config] kv_state gate:config 非合法 JSON，视同无记录");
     return { ok: true, config: {} };
   }
 }

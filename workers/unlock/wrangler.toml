@@ -10,11 +10,22 @@ name = "stellar-unlock"
 main = "index.ts"
 compatibility_date = "2026-08-01"
 
-# `npx wrangler kv namespace create UNLOCK_KV` 执行后，把输出的 id 替换下方占位。
-# 本地 `wrangler dev` 走内置 KV 模拟器，占位 id 不影响冒烟。
+# Z 迭代 M1（存储层 D1 迁移）：代码链路已全量改走 UNLOCK_DB，本 KV 绑定
+# **保留至 M3 交付、用户确认 D1 全链路正常后移除**（回滚余地；届时同步
+# 在 CF Dashboard 删除 namespace——上线清单 REQUIREMENTS_ALIPAY_UNLOCK §9-7）。
 kv_namespaces = [
   { binding = "UNLOCK_KV", id = "894f0a089472498f95cfccb5eec78251" }
 ]
+
+# D1 数据库（Z 迭代 M1，REQUIREMENTS_ALIPAY_UNLOCK.md §4 / §9）。
+# 上线步骤（用户手工执行，部署 Worker 前必须完成）：
+#   1. npx wrangler d1 create stellar-unlock   # 输出的 database_id 替换下方占位
+#   2. npx wrangler d1 migrations apply stellar-unlock --remote
+[[d1_databases]]
+binding = "UNLOCK_DB"
+database_name = "stellar-unlock"
+database_id = "00000000-0000-0000-0000-000000000000" # 占位：wrangler d1 create 后回填
+migrations_dir = "migrations"
 
 # 静态站留 GitHub Pages，Worker 只挂 API 路由（需求文档裁决 ④）
 routes = [

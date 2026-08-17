@@ -1,42 +1,42 @@
 /**
  * @jest-environment node
  *
- * A6-2 Worker /api/revocations 测试（REQUIREMENTS_UNLOCK.md §A6-2 / §0.15）：
- * lib 纯逻辑全分支（mock KV = 内存 Map）+ index.ts 路由矩阵
+ * A6-2 Worker /api/revocations 测试（REQUIREMENTS_UNLOCK.md §A6-2 / §0.15；
+ * Z 迭代 M1：mock KV → FakeD1 revocations 表，响应契约逐条回归——
+ * `{ ok, list: { v: 1, entries: [{ h, exp, at, reason? }] } }` 形状与
+ * KV 时代一致，前端零改动）：
+ * lib 纯逻辑全分支 + index.ts 路由矩阵
  * （GET 200 + 缓存头 / CORS / POST 405 / 既有路径回归）。
- * 断言零 KV 写（§0.16 防额度复核）。gateConfigWorker.test 同构。
+ * 断言零 DB 写（§0.16 防额度复核）。gateConfigWorker.test 同构。
  */
 import worker, { type UnlockWorkerEnv } from "../../index";
 import { PROD_ORIGIN } from "../cors";
 import {
-  REVOKE_LIST_KV_KEY,
   handleRevocations,
   type RevocationsResponseBody,
 } from "../revocations";
-import type { UnlockKvLike } from "../redeem";
+import { FakeD1, type FakeRow } from "./helpers/fakeD1";
 
-interface MockKv extends UnlockKvLike {
-  readonly store: Map<string, string>;
-  getCalls: number;
-  putCalls: number;
+interface CountedDb {
+  readonly db: FakeD1;
+  readonly selects: jest.SpyInstance;
+  readonly writes: jest.SpyInstance;
 }
 
-function makeKv(entries?: Record<string, string>): MockKv {
-  const store = new Map<string, string>(Object.entries(entries ?? {}));
-  const kv: MockKv = {
-    store,
-    getCalls: 0,
-    putCalls: 0,
-    async get(key: string): Promise<string | null> {
-      kv.getCalls += 1;
-      return store.get(key) ?? null;
-    },
-    async put(key: string, value: string): Promise<void> {
-      kv.putCalls += 1;
-      store.set(key, value);
-    },
+function makeDb(revocations: readonly FakeRow[] = []): CountedDb {
+  const db = new FakeD1();
+  for (const row of revocations) {
+    db.seed("revocations", {
+      reason: null,
+      restored: 0,
+      ...row,
+    });
+  }
+  return {
+    db,
+    selects: jest.spyOn(db, "_select"),
+    writes: jest.spyOn(db, "_write"),
   };
-  return kv;
 }
 
 const REVOCATIONS_URL = "https://stellar.guushu.com/api/revocations";
@@ -48,7 +48,7 @@ function revRequest(method = "GET", origin: string | null = PROD_ORIGIN): Reques
 }
 
 describe("handleRevocations（§0.15 契约）", () => {
-  it("KV 未绑定（undefined/null）→ not_configured", async () => {
+  it("DB 未绑定（undefined/null）→ not_configured", async () => {
     expect(await handleRevocations(undefined)).toEqual({
       ok: false,
       error: "not_configured",
@@ -59,55 +59,127 @@ describe("handleRevocations（§0.15 契约）", () => {
     });
   });
 
-  it("无记录 → ok + 空对象 list", async () => {
-    const kv = makeKv();
-    expect(await handleRevocations(kv)).toEqual({ ok: true, list: {} });
-    expect(kv.getCalls).toBe(1);
+  it("无记录 → ok + 空 entries（前端 sanitize 同口径为空名单）", async () => {
+    const { db, selects } = makeDb();
+    expect(await handleRevocations(db)).toEqual({
+      ok: true,
+      list: { v: 1, entries: [] },
+    });
+    expect(selects).toHaveBeenCalledTimes(1);
   });
 
-  it("有记录 → 原样透传（不消毒——消毒单点在 src/utils/revocationList）", async () => {
-    // 故意混入非法条目：Worker 不消毒，前端 sanitize 单点裁决
-    const list = {
-      v: 1,
-      entries: [
-        { h: "a".repeat(64), exp: 100, at: "2026-08-14T00:00:00Z", reason: "refund" },
-        { h: "bad", exp: "junk" },
-      ],
-    };
-    const kv = makeKv({ [REVOKE_LIST_KV_KEY]: JSON.stringify(list) });
-    expect(await handleRevocations(kv)).toEqual({ ok: true, list });
+  it("有记录 → 行映射为 §0.15 契约条目（h/exp/at/reason，按吊销时刻升序）", async () => {
+    const { db } = makeDb([
+      {
+        token_hash: "b".repeat(64),
+        exp: 200,
+        revoked_at: "2026-08-15T00:00:00Z",
+        reason: "manual",
+      },
+      {
+        token_hash: "a".repeat(64),
+        exp: 100,
+        revoked_at: "2026-08-14T00:00:00Z",
+        reason: "refund",
+      },
+    ]);
+    expect(await handleRevocations(db)).toEqual({
+      ok: true,
+      list: {
+        v: 1,
+        entries: [
+          { h: "a".repeat(64), exp: 100, at: "2026-08-14T00:00:00Z", reason: "refund" },
+          { h: "b".repeat(64), exp: 200, at: "2026-08-15T00:00:00Z", reason: "manual" },
+        ],
+      },
+    });
   });
 
-  it("非法 JSON → 视同无记录 + console.warn", async () => {
+  it("reason 为 NULL → 条目略去 reason 字段（sanitize 输出形状一致）", async () => {
+    const { db } = makeDb([
+      { token_hash: "c".repeat(64), exp: 300, revoked_at: "2026-08-16T00:00:00Z" },
+    ]);
+    const body = await handleRevocations(db);
+    if (!body.ok) throw new Error("unreachable");
+    const entries = (body.list as { entries: Record<string, unknown>[] }).entries;
+    expect(entries).toEqual([
+      { h: "c".repeat(64), exp: 300, at: "2026-08-16T00:00:00Z" },
+    ]);
+    expect("reason" in entries[0]).toBe(false);
+  });
+
+  it("restored=1 条目恒过滤（解除吊销以翻转记录，只增不删纪律）", async () => {
+    const { db } = makeDb([
+      {
+        token_hash: "a".repeat(64),
+        exp: 100,
+        revoked_at: "2026-08-14T00:00:00Z",
+        restored: 1,
+      },
+      {
+        token_hash: "b".repeat(64),
+        exp: 200,
+        revoked_at: "2026-08-15T00:00:00Z",
+      },
+    ]);
+    const body = await handleRevocations(db);
+    if (!body.ok) throw new Error("unreachable");
+    expect((body.list as { entries: { h: string }[] }).entries.map((e) => e.h)).toEqual([
+      "b".repeat(64),
+    ]);
+  });
+
+  it("查询异常 → 视同空名单 + console.warn（防御降级，恒 200 契约）", async () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const kv = makeKv({ [REVOKE_LIST_KV_KEY]: "{broken" });
-    expect(await handleRevocations(kv)).toEqual({ ok: true, list: {} });
+    const { db } = makeDb();
+    jest.spyOn(db, "_select").mockImplementation(() => {
+      throw new Error("db down");
+    });
+    expect(await handleRevocations(db)).toEqual({
+      ok: true,
+      list: { v: 1, entries: [] },
+    });
     expect(warnSpy).toHaveBeenCalledTimes(1);
     warnSpy.mockRestore();
   });
 
-  it("零 KV 写（§0.16 防额度攻击复核）", async () => {
-    const kv = makeKv({ [REVOKE_LIST_KV_KEY]: "{}" });
-    await handleRevocations(kv);
-    expect(kv.putCalls).toBe(0);
+  it("零 DB 写（§0.16 防额度攻击复核）", async () => {
+    const { db, writes } = makeDb([
+      { token_hash: "a".repeat(64), exp: 100, revoked_at: "t" },
+    ]);
+    await handleRevocations(db);
+    expect(writes).not.toHaveBeenCalled();
   });
 });
 
 describe("worker 路由：GET /api/revocations", () => {
-  it("GET（有记录）→ 200 + 透传 + 缓存头 300s + CORS 放行 + 零 KV 写", async () => {
-    const kv = makeKv({
-      [REVOKE_LIST_KV_KEY]: '{"v":1,"entries":[]}',
-    });
-    const res = await worker.fetch(revRequest(), { UNLOCK_KV: kv });
+  it("GET（有记录）→ 200 + 契约体 + 缓存头 300s + CORS 放行 + 零 DB 写", async () => {
+    const { db, writes } = makeDb([
+      {
+        token_hash: "a".repeat(64),
+        exp: 100,
+        revoked_at: "2026-08-14T00:00:00Z",
+        reason: "refund",
+      },
+    ]);
+    const res = await worker.fetch(revRequest(), { UNLOCK_DB: db });
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("public, max-age=300");
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe(PROD_ORIGIN);
     const body = (await res.json()) as RevocationsResponseBody;
-    expect(body).toEqual({ ok: true, list: { v: 1, entries: [] } });
-    expect(kv.putCalls).toBe(0);
+    expect(body).toEqual({
+      ok: true,
+      list: {
+        v: 1,
+        entries: [
+          { h: "a".repeat(64), exp: 100, at: "2026-08-14T00:00:00Z", reason: "refund" },
+        ],
+      },
+    });
+    expect(writes).not.toHaveBeenCalled();
   });
 
-  it("GET（KV 未绑定）→ HTTP 200 + 体内 not_configured（恒 200 契约）", async () => {
+  it("GET（DB 未绑定）→ HTTP 200 + 体内 not_configured（恒 200 契约）", async () => {
     const res = await worker.fetch(revRequest(), {});
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: false, error: "not_configured" });
@@ -116,17 +188,17 @@ describe("worker 路由：GET /api/revocations", () => {
   it("GET（陌生 Origin）→ 200 但无 ACAO（CORS 拒绝）", async () => {
     const res = await worker.fetch(
       revRequest("GET", "https://evil.example.com"),
-      { UNLOCK_KV: makeKv() },
+      { UNLOCK_DB: makeDb().db },
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
 
-  it("POST → 405 method_not_allowed（零 KV 访问）", async () => {
-    const kv = makeKv();
-    const res = await worker.fetch(revRequest("POST"), { UNLOCK_KV: kv });
+  it("POST → 405 method_not_allowed（零 DB 访问）", async () => {
+    const { db, selects } = makeDb();
+    const res = await worker.fetch(revRequest("POST"), { UNLOCK_DB: db });
     expect(res.status).toBe(405);
-    expect(kv.getCalls).toBe(0);
+    expect(selects).not.toHaveBeenCalled();
   });
 
   it("OPTIONS 预检 → 204", async () => {
@@ -137,13 +209,14 @@ describe("worker 路由：GET /api/revocations", () => {
 
 describe("worker 既有路径回归（A6 分支零影响）", () => {
   it("GET /api/gate-config 照常（透传 + 缓存头）", async () => {
-    const kv = makeKv({ "gate:config": '{"v":1}' });
+    const { db } = makeDb();
+    db.seed("kv_state", { k: "gate:config", v: '{"v":1}', updated_at: "seed" });
     const res = await worker.fetch(
       new Request("https://stellar.guushu.com/api/gate-config", {
         method: "GET",
         headers: { Origin: PROD_ORIGIN },
       }),
-      { UNLOCK_KV: kv },
+      { UNLOCK_DB: db },
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, config: { v: 1 } });

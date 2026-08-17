@@ -1,13 +1,15 @@
 /**
  * @jest-environment node
  *
- * U4 Worker 纯逻辑测试（REQUIREMENTS_UNLOCK.md §U4 验收）：
+ * U4 Worker 纯逻辑测试（REQUIREMENTS_UNLOCK.md §U4 验收；Z 迭代 M1：
+ * mock KV → FakeD1 orders 表，响应契约/幂等语义逐条回归零变化）：
  * /api/redeem 全分支（mock fetch 爱发电 fixture 参数化）+ 订单时间解析 /
  * 档位归档 / CORS 判定 / MD5 / 验单请求构造与响应解析纯函数。
- * 逐分支断言响应契约与 KV 读写次数（防写额度攻击验收）。
+ * 逐分支断言响应契约与 DB 读写次数（防写额度攻击验收）。
  */
 import * as ed from "@noble/ed25519";
 
+import { unlockTokenHash } from "../../../../src/utils/revocationList";
 import {
   bytesToHex,
   verifyToken,
@@ -29,8 +31,8 @@ import {
   type FetchLike,
   type PlanTierMapping,
   type RedeemDeps,
-  type UnlockKvLike,
 } from "../redeem";
+import { FakeD1, type FakeRow } from "./helpers/fakeD1";
 
 // ---------------------------------------------------------------------------
 // 共享 fixture（一次性测试密钥：种子 0x01..0x20，与 unlockU1.test.ts 同源；
@@ -81,22 +83,38 @@ function afdianResponseFixture(orders: unknown[]): unknown {
   return { ec: 200, em: "ok", data: { list: orders } };
 }
 
-interface MockKv extends UnlockKvLike {
-  get: jest.Mock<Promise<string | null>, [string]>;
-  put: jest.Mock<Promise<void>, [string, string]>;
-  store: Map<string, string>;
+// ---------------------------------------------------------------------------
+// FakeD1 构造（orders 预置 + 读写计数：_select/_write 引擎入口 spy）
+// ---------------------------------------------------------------------------
+
+interface CountedDb {
+  readonly db: FakeD1;
+  readonly selects: jest.SpyInstance;
+  readonly writes: jest.SpyInstance;
 }
 
-function makeKv(initial: Record<string, string> = {}): MockKv {
-  const store = new Map(Object.entries(initial));
-  const kv: MockKv = {
-    store,
-    get: jest.fn(async (key: string) => store.get(key) ?? null),
-    put: jest.fn(async (key: string, value: string) => {
-      store.set(key, value);
-    }),
+function makeDb(): CountedDb {
+  const db = new FakeD1();
+  return {
+    db,
+    selects: jest.spyOn(db, "_select"),
+    writes: jest.spyOn(db, "_write"),
   };
-  return kv;
+}
+
+/** 存量兑换行注入（KV 时代 `order:<单号>` JSON 记录的 D1 等价物） */
+function seedRedemption(db: FakeD1, overrides: FakeRow = {}): void {
+  db.seed("orders", {
+    id: "seed-row-1",
+    channel: "afdian",
+    ext_order_no: ORDER_ID,
+    tier: "month",
+    token: "SO1.stored.sig",
+    expires_at: 1_760_000_000,
+    status: "paid",
+    created_at: "seed",
+    ...overrides,
+  });
 }
 
 function makeFetch(raw: unknown, ok = true): jest.MockedFunction<FetchLike> {
@@ -107,7 +125,7 @@ function makeFetch(raw: unknown, ok = true): jest.MockedFunction<FetchLike> {
 
 function makeDeps(overrides: Partial<RedeemDeps> = {}): RedeemDeps {
   return {
-    kv: makeKv(),
+    db: makeDb().db,
     fetchFn: makeFetch(afdianResponseFixture([afdianOrderFixture()])),
     secrets: SECRETS,
     nowSec: NOW_SEC,
@@ -160,11 +178,11 @@ describe("handleRedeem 成功签发", () => {
       366,
     ],
   ])("%s", async (_label, orderOverrides, tier, days) => {
-    const kv = makeKv();
+    const { db, selects, writes } = makeDb();
     const fetchFn = makeFetch(
       afdianResponseFixture([afdianOrderFixture(orderOverrides)]),
     );
-    const body = await handleRedeem(ORDER_ID, makeDeps({ kv, fetchFn }));
+    const body = await handleRedeem(ORDER_ID, makeDeps({ db, fetchFn }));
 
     const expectedExp = ORDER_SEC + days * 86_400;
     expect(body).toEqual({
@@ -182,48 +200,99 @@ describe("handleRedeem 成功签发", () => {
       payload: { v: 1, tier, exp: expectedExp, iat: NOW_SEC, ch: "afdian" },
     });
 
-    // KV 读写次数：恰 1 读 + 1 写（每笔兑换 ≤1 条写，§0.3 零成本指标）
-    expect(kv.get).toHaveBeenCalledTimes(1);
-    expect(kv.put).toHaveBeenCalledTimes(1);
-    expect(kv.put).toHaveBeenCalledWith(
-      `order:${ORDER_ID}`,
-      // U6：KV 值追加审计字段 planId（fixture 无 plan_id → 归空串）
-      JSON.stringify({ token: body.token, tier, exp: expectedExp, planId: "" }),
-    );
+    // DB 读写次数：恰 1 读 + 1 行写（每笔兑换 ≤1 行写，§0.3 零成本指标沿用）
+    expect(selects).toHaveBeenCalledTimes(1);
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(db.rows("orders")).toHaveLength(1);
+    // 落账行：幂等基石 ext_order_no + 契约字段 + 审计字段（planId 归空串）
+    expect(db.rows("orders")[0]).toMatchObject({
+      channel: "afdian",
+      ext_order_no: ORDER_ID,
+      tier,
+      expires_at: expectedExp,
+      token: body.token,
+      token_hash: unlockTokenHash(body.token),
+      status: "paid",
+      plan_id: "",
+      paid_at: new Date(ORDER_SEC * 1000).toISOString(),
+      created_at: new Date(NOW_SEC * 1000).toISOString(),
+    });
     expect(fetchFn).toHaveBeenCalledTimes(1);
     expect(fetchFn.mock.calls[0][0]).toBe(AFDIAN_QUERY_ORDER_URL);
   });
 
-  it("重复兑换幂等：KV 命中直接返回首发 token，零验单零写", async () => {
-    const stored = { token: "SO1.stored.sig", tier: "month", exp: 1_760_000_000 };
-    const kv = makeKv({ [`order:${ORDER_ID}`]: JSON.stringify(stored) });
+  it("重复兑换幂等：orders 命中直接返回首发 token，零验单零写", async () => {
+    const { db, selects, writes } = makeDb();
+    seedRedemption(db);
     const fetchFn = makeFetch(afdianResponseFixture([afdianOrderFixture()]));
-    const body = await handleRedeem(ORDER_ID, makeDeps({ kv, fetchFn }));
+    const body = await handleRedeem(ORDER_ID, makeDeps({ db, fetchFn }));
 
     expect(body).toEqual({
       ok: true,
-      token: stored.token,
+      token: "SO1.stored.sig",
       tier: "month",
-      expiresAt: stored.exp,
+      expiresAt: 1_760_000_000,
     });
-    expect(kv.get).toHaveBeenCalledTimes(1);
-    expect(kv.put).not.toHaveBeenCalled();
+    expect(selects).toHaveBeenCalledTimes(1);
+    expect(writes).not.toHaveBeenCalled();
     expect(fetchFn).not.toHaveBeenCalled();
   });
 
-  it("两次真实兑换返回同一 token（首发 → KV → 幂等回放）", async () => {
-    const kv = makeKv();
-    const deps = makeDeps({ kv });
+  it("两次真实兑换返回同一 token（首发 → orders 行 → 幂等回放）", async () => {
+    const { db, writes } = makeDb();
+    const deps = makeDeps({ db });
     const first = await handleRedeem(ORDER_ID, deps);
     const second = await handleRedeem(ORDER_ID, deps);
     expect(first.ok && second.ok).toBe(true);
     expect(second).toEqual(first);
-    expect(kv.put).toHaveBeenCalledTimes(1);
+    expect(writes).toHaveBeenCalledTimes(1);
+  });
+
+  it("并发兑换 UNIQUE 冲突 → 回读首写行保持幂等（同单永远同一 token）", async () => {
+    const { db } = makeDb();
+    // 模拟并发：本请求幂等读 miss（返回空），随后首写方落账 →
+    // 本请求 INSERT 撞 ext_order_no UNIQUE → 回读返回首发 token
+    // （原型原始实现绑定，避免与 makeDb 的 spy 相互递归）
+    const realSelect = FakeD1.prototype._select.bind(db);
+    const stored = {
+      token: "SO1.first-writer.sig",
+      tier: "week" as const,
+      expires_at: 1_759_000_000,
+    };
+    jest
+      .spyOn(db, "_select")
+      .mockImplementationOnce(() => {
+        seedRedemption(db, { ...stored, id: "first-writer" });
+        return []; // 幂等读时首写方尚未落账
+      })
+      .mockImplementation(realSelect);
+    const body = await handleRedeem(ORDER_ID, makeDeps({ db }));
+    expect(body).toEqual({
+      ok: true,
+      token: stored.token,
+      tier: stored.tier,
+      expiresAt: stored.expires_at,
+    });
+    expect(db.rows("orders")).toHaveLength(1); // 未产生第二行
+  });
+
+  it("并发冲突且回读仍异常（首写行损坏）→ already_redeemed_conflict", async () => {
+    const { db } = makeDb();
+    const realSelect = FakeD1.prototype._select.bind(db);
+    jest
+      .spyOn(db, "_select")
+      .mockImplementationOnce(() => {
+        seedRedemption(db, { token: "", id: "first-writer" }); // 损坏行
+        return [];
+      })
+      .mockImplementation(realSelect);
+    const body = await handleRedeem(ORDER_ID, makeDeps({ db }));
+    expect(body).toMatchObject({ ok: false, error: "already_redeemed_conflict" });
   });
 });
 
 // ---------------------------------------------------------------------------
-// handleRedeem 失败分支（逐分支断言契约 + KV 读写次数）
+// handleRedeem 失败分支（逐分支断言契约 + DB 读写次数）
 // ---------------------------------------------------------------------------
 
 describe("handleRedeem 失败分支", () => {
@@ -234,17 +303,17 @@ describe("handleRedeem 失败分支", () => {
     ["空串", ""],
     ["非字符串（null）", null],
     ["非字符串（数字）", 12345678901234],
-  ])("订单号不合法（%s）→ invalid_order，零 KV/fetch 访问", async (_l, raw) => {
-    const kv = makeKv();
+  ])("订单号不合法（%s）→ invalid_order，零 DB/fetch 访问", async (_l, raw) => {
+    const { db, selects, writes } = makeDb();
     const fetchFn = makeFetch(afdianResponseFixture([]));
-    const body = await handleRedeem(raw, makeDeps({ kv, fetchFn }));
+    const body = await handleRedeem(raw, makeDeps({ db, fetchFn }));
     expect(body).toEqual({
       ok: false,
       error: "invalid_order",
       message: expect.stringContaining("订单号格式不正确"),
     });
-    expect(kv.get).not.toHaveBeenCalled();
-    expect(kv.put).not.toHaveBeenCalled();
+    expect(selects).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
     expect(fetchFn).not.toHaveBeenCalled();
   });
 
@@ -254,94 +323,87 @@ describe("handleRedeem 失败分支", () => {
     ["缺 ED25519_PRIVATE_KEY", { ...SECRETS, ed25519PrivateKeyHex: undefined }],
     ["私钥非 hex", { ...SECRETS, ed25519PrivateKeyHex: "zz" }],
     ["私钥长度非 32 字节", { ...SECRETS, ed25519PrivateKeyHex: "abcd" }],
-  ])("未配置降级（%s）→ not_configured，零 KV 访问", async (_l, secrets) => {
-    const kv = makeKv();
-    const body = await handleRedeem(ORDER_ID, makeDeps({ kv, secrets }));
+  ])("未配置降级（%s）→ not_configured，零 DB 访问", async (_l, secrets) => {
+    const { db, selects, writes } = makeDb();
+    const body = await handleRedeem(ORDER_ID, makeDeps({ db, secrets }));
     expect(body).toEqual({
       ok: false,
       error: "not_configured",
       message: expect.stringContaining("兑换服务尚未配置完成"),
     });
-    expect(kv.get).not.toHaveBeenCalled();
-    expect(kv.put).not.toHaveBeenCalled();
+    expect(selects).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
   });
 
-  it("KV 未绑定 → not_configured", async () => {
-    const body = await handleRedeem(ORDER_ID, makeDeps({ kv: null }));
+  it("DB 未绑定 → not_configured", async () => {
+    const body = await handleRedeem(ORDER_ID, makeDeps({ db: null }));
     expect(body).toMatchObject({ ok: false, error: "not_configured" });
   });
 
-  it("未付订单（status=1）→ order_not_paid，零 KV 写", async () => {
-    const kv = makeKv();
+  it("未付订单（status=1）→ order_not_paid，零 DB 写", async () => {
+    const { db, writes } = makeDb();
     const fetchFn = makeFetch(
       afdianResponseFixture([afdianOrderFixture({ status: 1 })]),
     );
-    const body = await handleRedeem(ORDER_ID, makeDeps({ kv, fetchFn }));
+    const body = await handleRedeem(ORDER_ID, makeDeps({ db, fetchFn }));
     expect(body).toEqual({
       ok: false,
       error: "order_not_paid",
       message: "订单未完成支付。",
     });
-    expect(kv.put).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
   });
 
-  it("订单不存在（list 无匹配）→ invalid_order，零 KV 写", async () => {
-    const kv = makeKv();
+  it("订单不存在（list 无匹配）→ invalid_order，零 DB 写", async () => {
+    const { db, writes } = makeDb();
     const fetchFn = makeFetch(afdianResponseFixture([]));
-    const body = await handleRedeem(ORDER_ID, makeDeps({ kv, fetchFn }));
+    const body = await handleRedeem(ORDER_ID, makeDeps({ db, fetchFn }));
     expect(body).toEqual({
       ok: false,
       error: "invalid_order",
       message: expect.stringContaining("未查询到该订单"),
     });
-    expect(kv.put).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
   });
 
   it("金额不足（¥3）→ amount_too_low（提示价格取自定价单一事实源）", async () => {
-    const kv = makeKv();
+    const { db, writes } = makeDb();
     const fetchFn = makeFetch(
       afdianResponseFixture([afdianOrderFixture({ total_amount: "3.00" })]),
     );
-    const body = await handleRedeem(ORDER_ID, makeDeps({ kv, fetchFn }));
+    const body = await handleRedeem(ORDER_ID, makeDeps({ db, fetchFn }));
     expect(body).toMatchObject({ ok: false, error: "amount_too_low" });
     if (body.ok) throw new Error("unreachable");
     expect(body.message).toContain("¥6");
     expect(body.message).toContain("¥15");
     expect(body.message).toContain("¥88");
-    expect(kv.put).not.toHaveBeenCalled();
-  });
-
-  it("KV 存量记录损坏 → already_redeemed_conflict，零写", async () => {
-    const kv = makeKv({ [`order:${ORDER_ID}`]: "not-json{" });
-    const body = await handleRedeem(ORDER_ID, makeDeps({ kv }));
-    expect(body).toMatchObject({
-      ok: false,
-      error: "already_redeemed_conflict",
-    });
-    expect(kv.put).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
   });
 
   it.each([
-    ["字段缺失", JSON.stringify({ token: "SO1.x.y" })],
-    ["tier 非法", JSON.stringify({ token: "SO1.x.y", tier: "vip", exp: 1 })],
-    ["exp 非数字", JSON.stringify({ token: "SO1.x.y", tier: "week", exp: "1" })],
-    ["token 空串", JSON.stringify({ token: "", tier: "week", exp: 1 })],
-    ["非对象", JSON.stringify("SO1.x.y")],
-  ])("KV 存量记录形状异常（%s）→ already_redeemed_conflict", async (_l, raw) => {
-    const kv = makeKv({ [`order:${ORDER_ID}`]: raw });
-    const body = await handleRedeem(ORDER_ID, makeDeps({ kv }));
+    ["token 为 NULL", { token: null }],
+    ["token 空串", { token: "" }],
+    ["tier 非法", { tier: "vip" }],
+    ["tier 为 NULL", { tier: null }],
+    ["expires_at 非数字", { expires_at: "1760000000" }],
+    ["expires_at 为 NULL", { expires_at: null }],
+  ])("存量行形状异常（%s）→ already_redeemed_conflict，零写", async (_l, overrides) => {
+    const { db, writes } = makeDb();
+    seedRedemption(db, overrides);
+    const body = await handleRedeem(ORDER_ID, makeDeps({ db }));
     expect(body).toMatchObject({
       ok: false,
       error: "already_redeemed_conflict",
     });
+    expect(writes).not.toHaveBeenCalled();
   });
 
-  it("上游 5xx（resp.ok=false）→ upstream_error，零 KV 写", async () => {
-    const kv = makeKv();
+  it("上游 5xx（resp.ok=false）→ upstream_error，零 DB 写", async () => {
+    const { db, writes } = makeDb();
     const fetchFn = makeFetch(null, false);
-    const body = await handleRedeem(ORDER_ID, makeDeps({ kv, fetchFn }));
+    const body = await handleRedeem(ORDER_ID, makeDeps({ db, fetchFn }));
     expect(body).toMatchObject({ ok: false, error: "upstream_error" });
-    expect(kv.put).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
   });
 
   it("fetch 抛异常（网络故障）→ upstream_error，不抛出", async () => {
@@ -363,14 +425,14 @@ describe("handleRedeem 失败分支", () => {
     const fetchFn = makeFetch(
       afdianResponseFixture([afdianOrderFixture({ out_trade_no: badTimeId })]),
     );
-    const kv = makeKv();
-    const body = await handleRedeem(badTimeId, makeDeps({ kv, fetchFn }));
+    const { db, writes } = makeDb();
+    const body = await handleRedeem(badTimeId, makeDeps({ db, fetchFn }));
     expect(body).toEqual({
       ok: false,
       error: "invalid_order",
       message: expect.stringContaining("订单时间解析失败"),
     });
-    expect(kv.put).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
   });
 });
 
@@ -379,8 +441,8 @@ describe("handleRedeem 失败分支", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleRedeem plan 映射（U6）", () => {
-  it("映射命中 + 8 折金额（¥70.4）→ 强制归档 year，KV 值含 planId 审计字段", async () => {
-    const kv = makeKv();
+  it("映射命中 + 8 折金额（¥70.4）→ 强制归档 year，orders 行含 plan_id 审计字段", async () => {
+    const { db } = makeDb();
     const fetchFn = makeFetch(
       afdianResponseFixture([
         afdianOrderFixture({
@@ -393,7 +455,7 @@ describe("handleRedeem plan 映射（U6）", () => {
     );
     const body = await handleRedeem(
       ORDER_ID,
-      makeDeps({ kv, fetchFn, planTiers: PLAN_TIERS }),
+      makeDeps({ db, fetchFn, planTiers: PLAN_TIERS }),
     );
 
     const expectedExp = ORDER_SEC + 366 * 86_400;
@@ -404,15 +466,13 @@ describe("handleRedeem plan 映射（U6）", () => {
       expiresAt: expectedExp,
     });
     if (!body.ok) throw new Error("unreachable");
-    expect(kv.put).toHaveBeenCalledWith(
-      `order:${ORDER_ID}`,
-      JSON.stringify({
-        token: body.token,
-        tier: "year",
-        exp: expectedExp,
-        planId: PLAN_TIERS.year,
-      }),
-    );
+    expect(db.rows("orders")[0]).toMatchObject({
+      ext_order_no: ORDER_ID,
+      token: body.token,
+      tier: "year",
+      expires_at: expectedExp,
+      plan_id: PLAN_TIERS.year,
+    });
   });
 
   it("映射命中 + 周卡 8 折（¥4.8，回退态会 amount_too_low）→ week 7 天", async () => {
@@ -433,8 +493,8 @@ describe("handleRedeem plan 映射（U6）", () => {
     expect(body).toMatchObject({ ok: true, tier: "week" });
   });
 
-  it("映射全配置 + 赞助方案/未知 plan → plan_not_eligible，零 KV 写", async () => {
-    const kv = makeKv();
+  it("映射全配置 + 赞助方案/未知 plan → plan_not_eligible，零 DB 写", async () => {
+    const { db, writes } = makeDb();
     const fetchFn = makeFetch(
       afdianResponseFixture([
         afdianOrderFixture({ total_amount: "30.00", plan_id: "plan-sponsor-9999" }),
@@ -442,18 +502,18 @@ describe("handleRedeem plan 映射（U6）", () => {
     );
     const body = await handleRedeem(
       ORDER_ID,
-      makeDeps({ kv, fetchFn, planTiers: PLAN_TIERS }),
+      makeDeps({ db, fetchFn, planTiers: PLAN_TIERS }),
     );
     expect(body).toEqual({
       ok: false,
       error: "plan_not_eligible",
       message: expect.stringContaining("不支持解锁兑换"),
     });
-    expect(kv.put).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
   });
 
   it("映射任一未配置 → 回退纯金额判定（金额不足仍归 amount_too_low）", async () => {
-    const kv = makeKv();
+    const { db, writes } = makeDb();
     const fetchFn = makeFetch(
       afdianResponseFixture([
         afdianOrderFixture({ total_amount: "4.80", plan_id: "plan-sponsor-9999" }),
@@ -461,26 +521,26 @@ describe("handleRedeem plan 映射（U6）", () => {
     );
     const body = await handleRedeem(
       ORDER_ID,
-      makeDeps({ kv, fetchFn, planTiers: { ...PLAN_TIERS, year: "" } }),
+      makeDeps({ db, fetchFn, planTiers: { ...PLAN_TIERS, year: "" } }),
     );
     expect(body).toMatchObject({ ok: false, error: "amount_too_low" });
-    expect(kv.put).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
   });
 
-  it("老格式 KV 存量记录（无 planId）幂等读照常返回（解析侧零改动）", async () => {
-    const stored = { token: "SO1.legacy.sig", tier: "week", exp: 1_760_000_000 };
-    const kv = makeKv({ [`order:${ORDER_ID}`]: JSON.stringify(stored) });
+  it("存量行 plan_id 为 NULL（老数据形态）幂等读照常返回（解析侧零改动）", async () => {
+    const { db, writes } = makeDb();
+    seedRedemption(db, { tier: "week", plan_id: null });
     const body = await handleRedeem(
       ORDER_ID,
-      makeDeps({ kv, planTiers: PLAN_TIERS }),
+      makeDeps({ db, planTiers: PLAN_TIERS }),
     );
     expect(body).toEqual({
       ok: true,
-      token: stored.token,
+      token: "SO1.stored.sig",
       tier: "week",
-      expiresAt: stored.exp,
+      expiresAt: 1_760_000_000,
     });
-    expect(kv.put).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
   });
 });
 
