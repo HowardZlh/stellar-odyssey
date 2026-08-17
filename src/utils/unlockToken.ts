@@ -32,8 +32,8 @@ ed.hashes.sha512 = sha512;
 /** token 版本前缀（§0.5 冻结） */
 export const UNLOCK_TOKEN_PREFIX = "SO1";
 
-/** 支付渠道（payload `ch` 字段取值，§0.5 冻结） */
-export const UNLOCK_CHANNELS = ["afdian", "wechat", "kofi"] as const;
+/** 支付渠道（payload `ch` 字段取值，§0.5 冻结；Z 迭代 M2 增 'alipay'，D-z3） */
+export const UNLOCK_CHANNELS = ["afdian", "wechat", "kofi", "alipay"] as const;
 export type UnlockChannel = (typeof UNLOCK_CHANNELS)[number];
 
 /** token payload（§0.5 冻结契约） */
@@ -224,8 +224,8 @@ function validatePayload(raw: unknown): UnlockTokenPayload | null {
   if (typeof exp !== "number" || !Number.isFinite(exp)) return null;
   if (typeof iat !== "number" || !Number.isFinite(iat)) return null;
   const ch = rec.ch;
-  if (ch !== "afdian" && ch !== "wechat" && ch !== "kofi") return null;
-  return { v: 1, tier, exp, iat, ch };
+  if (!UNLOCK_CHANNELS.includes(ch as UnlockChannel)) return null;
+  return { v: 1, tier, exp, iat, ch: ch as UnlockChannel };
 }
 
 /**

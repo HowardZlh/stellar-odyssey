@@ -10,18 +10,33 @@ name = "stellar-unlock"
 main = "index.ts"
 compatibility_date = "2026-08-01"
 
-# `npx wrangler kv namespace create UNLOCK_KV` 执行后，把输出的 id 替换下方占位。
-# 本地 `wrangler dev` 走内置 KV 模拟器，占位 id 不影响冒烟。
-kv_namespaces = [
-  { binding = "UNLOCK_KV", id = "894f0a089472498f95cfccb5eec78251" }
-]
-
-# 静态站留 GitHub Pages，Worker 只挂 API 路由（需求文档裁决 ④）
+# 静态站留 GitHub Pages，Worker 只挂 API 路由（需求文档裁决 ④）。
+# ⚠ routes 必须位于任何 [[表]] 头之前（TOML 语义：置于 [[d1_databases]]
+# 之后会被解析成该表字段、顶层 routes 静默丢失——2026-08-17 部署时
+# wrangler 警告发现并订正）。
 routes = [
   { pattern = "stellar.guushu.com/api/*", zone_name = "guushu.com" }
 ]
 
-# A6 退款巡检 cron（每 3 小时；Workers Free 支持，每账户 5 排程限额本项目用 1）
+# Z 迭代 M3：UNLOCK_KV 绑定已移除（M1 起代码链路全量走 UNLOCK_DB，
+# 绑定保留至 M3 作回滚余地）。上线提醒：确认 D1 全链路正常后，在 CF
+# Dashboard 删除 namespace 894f0a089472498f95cfccb5eec78251
+# （上线清单 REQUIREMENTS_ALIPAY_UNLOCK §9-7，用户手工执行）。
+
+# D1 数据库（Z 迭代 M1，REQUIREMENTS_ALIPAY_UNLOCK.md §4 / §9）。
+# 上线步骤（部署 Worker 前必须完成）：
+#   1. npx wrangler d1 create stellar-unlock   # 输出的 database_id 替换下方占位
+#   2. npx wrangler d1 migrations apply stellar-unlock --remote
+[[d1_databases]]
+binding = "UNLOCK_DB"
+database_name = "stellar-unlock"
+database_id = "871e5376-2f48-4604-81c4-531114093fed" # 2026-08-17 创建（--location apac，国内用户就近）
+migrations_dir = "migrations"
+
+# 统一对账 cron（每 3 小时，D-z6 单 cron；Workers Free 每账户 5 排程限额
+# 本项目用 1）：爱发电退款巡检（A6 模式 A）+ 支付宝对账（M4：超时 pending
+# 关单 / 已付补发 / 退款吊销兜底——需 ALIPAY_* 与 ED25519 Secrets 齐备，
+# 否则该段独立降级不影响爱发电巡检）。子请求预算 ≤44/次（refundSync.ts 头注）。
 [triggers]
 crons = ["0 */3 * * *"]
 

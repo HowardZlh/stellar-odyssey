@@ -59,16 +59,19 @@ describe('DONATION_PLATFORMS 注册表', () => {
     expect(wechat?.qrImage).toBe('/donate/wechat-tip-code.jpg');
   });
 
-  it('包含五个平台（GitHub Sponsors/Buy Me a Coffee 为预留位）', () => {
+  it('M3 渠道顺序：支付宝→微信→爱发电→Ko-fi→预留位（顺序即渲染顺序）', () => {
     expect(DONATION_PLATFORMS.map((p) => p.id)).toEqual([
-      'afdian',
+      'alipay',
       'wechat',
-      'github-sponsors',
+      'afdian',
       'kofi',
+      'github-sponsors',
       'buymeacoffee',
     ]);
+    // alipay 为引导型面板（无外链无二维码，页面按 id 分流跳 /unlock）；
+    // 预留位 = 除 alipay 外无链接且无二维码的条目
     const reserved = DONATION_PLATFORMS.filter(
-      (p) => p.url === null && !p.qrImage,
+      (p) => p.url === null && !p.qrImage && p.id !== 'alipay',
     );
     expect(reserved.map((p) => p.id)).toEqual([
       'github-sponsors',

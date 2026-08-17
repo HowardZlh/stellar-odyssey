@@ -15,6 +15,7 @@ import {
   ContactBadge,
   DONATE_PAGE_PATH,
   SPONSOR_AFDIAN_URL,
+  UNLOCK_PAGE_PATH,
 } from '../ContactBadge';
 
 /** 事件/剖面相关标志复位（其余 store 字段不动，沿用既有 store 测试口径） */
@@ -71,6 +72,15 @@ describe('ContactBadge 渲染', () => {
     const sponsor = screen.getByRole('link', { name: /爱发电赞助支持/ });
     expect(sponsor).toHaveAttribute('href', SPONSOR_AFDIAN_URL);
     expect(sponsor).toHaveAttribute('target', '_blank');
+  });
+
+  it('展开卡包含支持者解锁入口（M3 统一"支持即解锁"口径，新标签页 /unlock）', () => {
+    render(<ContactBadge />);
+    expandBadge();
+    const unlock = screen.getByRole('link', { name: '打开解锁页（新标签页）' });
+    expect(unlock).toHaveTextContent('支持者解锁');
+    expect(unlock).toHaveAttribute('href', UNLOCK_PAGE_PATH);
+    expect(unlock).toHaveAttribute('target', '_blank');
   });
 });
 

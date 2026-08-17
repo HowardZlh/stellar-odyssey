@@ -1,27 +1,30 @@
 /**
- * `/api/redeem` 主流程纯逻辑（REQUIREMENTS_UNLOCK.md §U4-1，响应契约 §0.5）。
+ * `/api/redeem` 主流程纯逻辑（REQUIREMENTS_UNLOCK.md §U4-1，响应契约 §0.5；
+ * Z 迭代 M1：存储层 KV `order:<订单号>` → D1 orders 表，对外契约零变化）。
  *
- * 依赖全部注入（KV/fetch/secrets/时钟），jest 可直测；Response 构造留给
+ * 依赖全部注入（DB/fetch/secrets/时钟），jest 可直测；Response 构造留给
  * `workers/unlock/index.ts` 薄壳。
  *
  * 流程（§0.6 自 stock_analysis redeem.js 平移 + 三档改造）：
- *   订单号正则（不合法即拒，零 KV 访问）
- *   → KV 读 `order:<订单号>`（命中 → 幂等返回存量 token）
+ *   订单号正则（不合法即拒，零 DB 访问）
+ *   → D1 读 orders（ext_order_no UNIQUE 幂等基石，命中 → 幂等返回首发 token）
  *   → 爱发电 query-order 验单（status!==2 → order_not_paid）
  *   → 档位判定（U6 plan_id 映射强制归档优先；映射未全配置回退
  *     商品单按单件归档防误判 + resolveTierFromAmount 金额链）
  *   → exp = 订单号前 14 位下单时间 + 档位天数
  *   → Ed25519 签发（与 U1 verifyToken 同一编码路径 signToken）
- *   → KV 写 `order:<订单号>`（永久，幂等重兑依据）
+ *   → D1 INSERT orders（幂等重兑依据；UNIQUE 冲突 = 并发首写落定，
+ *     回读首发 token——KV 时代无此保护，迁移增强登记）
  *
- * 防写额度攻击（§U4-1 硬约束）：全部快速失败路径零 KV 写；
- * 正则不合法路径连 KV 读都没有。
+ * 防写额度攻击（§U4-1 硬约束沿用）：全部快速失败路径零 DB 写；
+ * 正则不合法路径连 DB 读都没有。
  */
 import {
   resolveTierFromAmount,
   UNLOCK_TIERS,
   type UnlockTier,
 } from "../../../src/data/unlockPricing";
+import { unlockTokenHash } from "../../../src/utils/revocationList";
 import {
   hexToBytes,
   signToken,
@@ -33,6 +36,7 @@ import {
   type AfdianOrder,
   type AfdianQueryResult,
 } from "./afdian";
+import type { UnlockDbLike } from "./db";
 import { parseOrderEpochSec } from "./orderTime";
 
 /** §0.5 失败机器码（v1.1：U6 追加 plan_not_eligible，前端未知码回退兼容） */
@@ -58,12 +62,6 @@ export type RedeemBody =
       readonly error: RedeemErrorCode;
       readonly message: string;
     };
-
-/** KV 结构化最小接口（生产 = CF KVNamespace，测试 = jest mock） */
-export interface UnlockKvLike {
-  get(key: string): Promise<string | null>;
-  put(key: string, value: string): Promise<void>;
-}
 
 /** fetch 结构化最小接口（生产 = 全局 fetch，测试 = fixture mock） */
 export type FetchLike = (
@@ -105,7 +103,7 @@ export function isPlanMappingComplete(planTiers: PlanTierMapping): boolean {
 
 /** 主流程注入依赖 */
 export interface RedeemDeps {
-  readonly kv: UnlockKvLike | null;
+  readonly db: UnlockDbLike | null;
   readonly fetchFn: FetchLike;
   readonly secrets: RedeemSecrets;
   /** 当前 epoch 秒（token iat 与爱发电签名 ts 共用） */
@@ -174,28 +172,33 @@ export function classifyOrder(
   return resolveTierFromAmount(order.totalAmountCny, order.months);
 }
 
-/** KV 存量兑换记录（`order:<订单号>` 的 JSON 值） */
+/** 存量兑换记录（orders 行的 token/tier/expires_at 投影） */
 interface StoredRedemption {
   readonly token: string;
   readonly tier: UnlockTier;
   readonly exp: number;
 }
 
-/** KV 存量记录防御式解析（形状异常返回 null → already_redeemed_conflict） */
-function parseStoredRedemption(raw: string): StoredRedemption | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (typeof parsed !== "object" || parsed === null) return null;
-  const rec = parsed as Record<string, unknown>;
-  const { token, tier, exp } = rec;
+/** orders 存量行防御式解析（形状异常返回 null → already_redeemed_conflict） */
+function parseStoredRow(row: Record<string, unknown>): StoredRedemption | null {
+  const { token, tier, expires_at: exp } = row;
   if (typeof token !== "string" || token === "") return null;
   if (tier !== "week" && tier !== "month" && tier !== "year") return null;
   if (typeof exp !== "number" || !Number.isFinite(exp)) return null;
   return { token, tier, exp };
+}
+
+/** 幂等读：ext_order_no 命中的爱发电订单行（无记录 → null） */
+async function selectStoredRow(
+  db: UnlockDbLike,
+  orderId: string,
+): Promise<Record<string, unknown> | null> {
+  return db
+    .prepare(
+      "SELECT token, tier, expires_at FROM orders WHERE channel = ? AND ext_order_no = ?",
+    )
+    .bind("afdian", orderId)
+    .first();
 }
 
 /** 爱发电验单（网络/形状异常一律归 upstream_error，不抛异常） */
@@ -229,29 +232,29 @@ export async function handleRedeem(
   orderIdRaw: unknown,
   deps: RedeemDeps,
 ): Promise<RedeemBody> {
-  // 1. 订单号格式校验——不合法即拒，零 KV 访问（防写额度攻击）
+  // 1. 订单号格式校验——不合法即拒，零 DB 访问（防写额度攻击）
   const orderId = typeof orderIdRaw === "string" ? orderIdRaw.trim() : "";
   if (!ORDER_ID_RE.test(orderId)) {
     return fail("invalid_order", "订单号格式不正确，请核对后重试。");
   }
 
-  // 2. 配置检查——Secrets/KV 未配置友好降级，不抛 500
+  // 2. 配置检查——Secrets/DB 未配置友好降级，不抛 500
   const { afdianUserId, afdianToken, ed25519PrivateKeyHex } = deps.secrets;
   const notConfigured = fail(
     "not_configured",
     "兑换服务尚未配置完成，请稍后重试或邮件联系作者。",
   );
-  if (!afdianUserId || !afdianToken || !ed25519PrivateKeyHex || !deps.kv) {
+  if (!afdianUserId || !afdianToken || !ed25519PrivateKeyHex || !deps.db) {
     return notConfigured;
   }
   const privateKey = hexToBytes(ed25519PrivateKeyHex);
   if (privateKey === null || privateKey.length !== 32) return notConfigured;
 
-  // 3. KV 幂等读——已兑换订单直接返回首发 token
-  const kvKey = `order:${orderId}`;
-  const storedRaw = await deps.kv.get(kvKey);
-  if (storedRaw !== null) {
-    const stored = parseStoredRedemption(storedRaw);
+  // 3. D1 幂等读——已兑换订单直接返回首发 token（ext_order_no UNIQUE）
+  const db = deps.db;
+  const storedRow = await selectStoredRow(db, orderId);
+  if (storedRow !== null) {
+    const stored = parseStoredRow(storedRow);
     if (stored === null) {
       return fail(
         "already_redeemed_conflict",
@@ -281,7 +284,7 @@ export async function handleRedeem(
     return fail("order_not_paid", "订单未完成支付。");
   }
 
-  // 5. 档位判定（U6：映射全配置态下未命中 → plan_not_eligible，零 KV 写）
+  // 5. 档位判定（U6：映射全配置态下未命中 → plan_not_eligible，零 DB 写）
   const resolved = classifyOrder(result.order, deps.planTiers);
   if (resolved === null) {
     if (isPlanMappingComplete(deps.planTiers)) {
@@ -300,7 +303,9 @@ export async function handleRedeem(
   }
   const exp = orderEpochSec + resolved.days * SECONDS_PER_DAY;
 
-  // 7. Ed25519 签发（U1 同一编码路径）+ KV 落账（每笔兑换恰 1 次写）
+  // 7. Ed25519 签发（U1 同一编码路径）+ D1 落账（每笔兑换恰 1 行写）。
+  //    plan_id 为审计字段（U6：排查哪笔兑换来自哪个商品）；D-z8：不落
+  //    任何买家身份字段。paid_at = 爱发电下单时刻（status===2 已核验）。
   const payload: UnlockTokenPayload = {
     v: 1,
     tier: resolved.tier,
@@ -309,11 +314,47 @@ export async function handleRedeem(
     ch: "afdian",
   };
   const token = signToken(payload, privateKey);
-  // planId 为审计字段（U6：排查哪笔兑换来自哪个商品）；
-  // parseStoredRedemption 只解构 token/tier/exp，存量老记录无此字段不受影响
-  await deps.kv.put(
-    kvKey,
-    JSON.stringify({ token, tier: resolved.tier, exp, planId: result.order.planId }),
-  );
+  const nowIso = new Date(deps.nowSec * 1000).toISOString();
+  try {
+    await db
+      .prepare(
+        `INSERT INTO orders (id, channel, ext_order_no, amount_cny, tier, months,
+           status, token, token_hash, expires_at, plan_id, created_at, paid_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        "afdian",
+        orderId,
+        result.order.totalAmountCny,
+        resolved.tier,
+        result.order.isGoods ? null : result.order.months,
+        "paid",
+        token,
+        unlockTokenHash(token),
+        exp,
+        result.order.planId,
+        nowIso,
+        new Date(orderEpochSec * 1000).toISOString(),
+      )
+      .run();
+  } catch {
+    // UNIQUE 冲突 = 并发兑换首写已落定 → 回读首发 token 保持幂等
+    // （同单永远返回同一 token；回读仍异常才归 conflict）
+    const raced = await selectStoredRow(db, orderId);
+    const stored = raced === null ? null : parseStoredRow(raced);
+    if (stored === null) {
+      return fail(
+        "already_redeemed_conflict",
+        "该订单已兑换过，但存量记录异常，请邮件联系作者处理。",
+      );
+    }
+    return {
+      ok: true,
+      token: stored.token,
+      tier: stored.tier,
+      expiresAt: stored.exp,
+    };
+  }
   return { ok: true, token, tier: resolved.tier, expiresAt: exp };
 }

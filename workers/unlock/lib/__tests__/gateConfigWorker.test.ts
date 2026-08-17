@@ -1,46 +1,41 @@
 /**
  * @jest-environment node
  *
- * A2 Worker gate-config 测试（REQUIREMENTS_UNLOCK.md §A2 验收）：
- * lib 纯逻辑全分支（mock KV = 内存 Map）+ index.ts 路由矩阵
+ * A2 Worker gate-config 测试（REQUIREMENTS_UNLOCK.md §A2 验收；
+ * Z 迭代 M1：mock KV → FakeD1 内存替身，响应契约逐条回归零变化）：
+ * lib 纯逻辑全分支（kv_state 行注入）+ index.ts 路由矩阵
  * （GET 200 + 缓存头 / CORS 放行与拒绝 / POST 405 / OPTIONS 204 /
- * redeem 路径回归）。断言零 KV 写（防额度攻击复核）。
+ * redeem 路径回归）。断言零 DB 写（防额度攻击复核）。
  */
 import worker, { type UnlockWorkerEnv } from "../../index";
 import { PROD_ORIGIN } from "../cors";
+import { GATE_CONFIG_STATE_KEY } from "../db";
 import {
-  GATE_CONFIG_KV_KEY,
   handleGateConfig,
   type GateConfigResponseBody,
 } from "../gateConfig";
-import type { UnlockKvLike } from "../redeem";
+import { FakeD1 } from "./helpers/fakeD1";
 
 // ---------------------------------------------------------------------------
-// mock KV（内存 Map + 读写计数）
+// FakeD1 构造（kv_state 预置 + 读写计数：_select/_write 引擎入口 spy）
 // ---------------------------------------------------------------------------
 
-interface MockKv extends UnlockKvLike {
-  readonly store: Map<string, string>;
-  getCalls: number;
-  putCalls: number;
+interface CountedDb {
+  readonly db: FakeD1;
+  readonly selects: jest.SpyInstance;
+  readonly writes: jest.SpyInstance;
 }
 
-function makeKv(entries?: Record<string, string>): MockKv {
-  const store = new Map<string, string>(Object.entries(entries ?? {}));
-  const kv: MockKv = {
-    store,
-    getCalls: 0,
-    putCalls: 0,
-    async get(key: string): Promise<string | null> {
-      kv.getCalls += 1;
-      return store.get(key) ?? null;
-    },
-    async put(key: string, value: string): Promise<void> {
-      kv.putCalls += 1;
-      store.set(key, value);
-    },
+function makeDb(states?: Record<string, string>): CountedDb {
+  const db = new FakeD1();
+  for (const [k, v] of Object.entries(states ?? {})) {
+    db.seed("kv_state", { k, v, updated_at: "seed" });
+  }
+  return {
+    db,
+    selects: jest.spyOn(db, "_select"),
+    writes: jest.spyOn(db, "_write"),
   };
-  return kv;
 }
 
 const GATE_URL = "https://stellar.guushu.com/api/gate-config";
@@ -56,21 +51,21 @@ function gateRequest(method = "GET", origin: string | null = PROD_ORIGIN): Reque
 // ---------------------------------------------------------------------------
 
 describe("handleGateConfig（§0.11 契约）", () => {
-  it("KV 未绑定（undefined）→ not_configured", async () => {
+  it("DB 未绑定（undefined）→ not_configured", async () => {
     const body = await handleGateConfig(undefined);
     expect(body).toEqual({ ok: false, error: "not_configured" });
   });
 
-  it("KV 未绑定（null）→ not_configured", async () => {
+  it("DB 未绑定（null）→ not_configured", async () => {
     const body = await handleGateConfig(null);
     expect(body).toEqual({ ok: false, error: "not_configured" });
   });
 
   it("无记录 → ok + 空对象 config", async () => {
-    const kv = makeKv();
-    const body = await handleGateConfig(kv);
+    const { db, selects } = makeDb();
+    const body = await handleGateConfig(db);
     expect(body).toEqual({ ok: true, config: {} });
-    expect(kv.getCalls).toBe(1);
+    expect(selects).toHaveBeenCalledTimes(1);
   });
 
   it("有记录 → 原样透传（含嵌套对象，不消毒）", async () => {
@@ -81,24 +76,30 @@ describe("handleGateConfig（§0.11 契约）", () => {
       detail: { premiumBodyIds: ["betelgeuse"] },
       unknownField: { nested: [1, "two", null] },
     };
-    const kv = makeKv({ [GATE_CONFIG_KV_KEY]: JSON.stringify(config) });
-    const body = await handleGateConfig(kv);
+    const { db } = makeDb({ [GATE_CONFIG_STATE_KEY]: JSON.stringify(config) });
+    const body = await handleGateConfig(db);
     expect(body).toEqual({ ok: true, config });
   });
 
   it("非法 JSON → 视同无记录 + console.warn", async () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
-    const kv = makeKv({ [GATE_CONFIG_KV_KEY]: "{broken" });
-    const body = await handleGateConfig(kv);
+    const { db } = makeDb({ [GATE_CONFIG_STATE_KEY]: "{broken" });
+    const body = await handleGateConfig(db);
     expect(body).toEqual({ ok: true, config: {} });
     expect(warnSpy).toHaveBeenCalledTimes(1);
     warnSpy.mockRestore();
   });
 
-  it("零 KV 写（防额度攻击复核）", async () => {
-    const kv = makeKv({ [GATE_CONFIG_KV_KEY]: "{}" });
-    await handleGateConfig(kv);
-    expect(kv.putCalls).toBe(0);
+  it("kv_state 行 v 非字符串（形状异常）→ 视同无记录", async () => {
+    const { db } = makeDb();
+    db.seed("kv_state", { k: GATE_CONFIG_STATE_KEY, v: 42, updated_at: "seed" });
+    expect(await handleGateConfig(db)).toEqual({ ok: true, config: {} });
+  });
+
+  it("零 DB 写（防额度攻击复核）", async () => {
+    const { db, writes } = makeDb({ [GATE_CONFIG_STATE_KEY]: "{}" });
+    await handleGateConfig(db);
+    expect(writes).not.toHaveBeenCalled();
   });
 });
 
@@ -107,19 +108,21 @@ describe("handleGateConfig（§0.11 契约）", () => {
 // ---------------------------------------------------------------------------
 
 describe("worker 路由：GET /api/gate-config", () => {
-  it("GET（KV 已绑定，有记录）→ 200 + 透传 + 缓存头 + CORS 放行", async () => {
-    const kv = makeKv({ [GATE_CONFIG_KV_KEY]: '{"v":1,"demo":{"dailyLimit":3}}' });
-    const res = await worker.fetch(gateRequest(), { UNLOCK_KV: kv });
+  it("GET（DB 已绑定，有记录）→ 200 + 透传 + 缓存头 + CORS 放行", async () => {
+    const { db, writes } = makeDb({
+      [GATE_CONFIG_STATE_KEY]: '{"v":1,"demo":{"dailyLimit":3}}',
+    });
+    const res = await worker.fetch(gateRequest(), { UNLOCK_DB: db });
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("public, max-age=300");
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe(PROD_ORIGIN);
     expect(res.headers.get("Content-Type")).toBe("application/json; charset=utf-8");
     const body = (await res.json()) as GateConfigResponseBody;
     expect(body).toEqual({ ok: true, config: { v: 1, demo: { dailyLimit: 3 } } });
-    expect(kv.putCalls).toBe(0);
+    expect(writes).not.toHaveBeenCalled();
   });
 
-  it("GET（KV 未绑定）→ HTTP 200 + 体内 not_configured（恒 200 契约）", async () => {
+  it("GET（DB 未绑定）→ HTTP 200 + 体内 not_configured（恒 200 契约）", async () => {
     const res = await worker.fetch(gateRequest(), {});
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("public, max-age=300");
@@ -128,22 +131,23 @@ describe("worker 路由：GET /api/gate-config", () => {
 
   it("GET（陌生 Origin）→ 200 但无 ACAO（CORS 拒绝）", async () => {
     const res = await worker.fetch(gateRequest("GET", "https://evil.example.com"), {
-      UNLOCK_KV: makeKv(),
+      UNLOCK_DB: makeDb().db,
     });
     expect(res.status).toBe(200);
     expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
 
-  it("POST → 405 method_not_allowed（零 KV 访问）", async () => {
-    const kv = makeKv();
-    const res = await worker.fetch(gateRequest("POST"), { UNLOCK_KV: kv });
+  it("POST → 405 method_not_allowed（零 DB 访问）", async () => {
+    const { db, selects, writes } = makeDb();
+    const res = await worker.fetch(gateRequest("POST"), { UNLOCK_DB: db });
     expect(res.status).toBe(405);
     expect(await res.json()).toEqual({
       ok: false,
       error: "method_not_allowed",
       message: "仅支持 GET。",
     });
-    expect(kv.getCalls).toBe(0);
+    expect(selects).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
   });
 
   it("OPTIONS 预检 → 204", async () => {

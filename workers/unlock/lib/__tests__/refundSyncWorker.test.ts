@@ -1,11 +1,13 @@
 /**
  * @jest-environment node
  *
- * A6-2 退款巡检纯逻辑测试（REQUIREMENTS_UNLOCK.md §A6-2 / §0.15 / §0.16）：
+ * A6-2 退款巡检纯逻辑测试（REQUIREMENTS_UNLOCK.md §A6-2 / §0.15 / §0.16；
+ * Z 迭代 M1：mock KV → FakeD1——疑似名单/cursor 走 kv_state 行，兑换记录
+ * 查 orders 表，自动吊销写 revocations 表；检测/幂等/截断语义逐条回归）：
  * 1) 分页请求构造（签名族复用）与分页响应解析（防御矩阵）
- * 2) runRefundSync：not_configured / 疑似单检出（status != 2 且 KV 有
+ * 2) runRefundSync：not_configured / 疑似单检出（status != 2 且 orders 有
  *    兑换记录）/ 幂等去重 / 回看窗口日期截断终止 / 页数 ≤20 上限 /
- *    上游错误部分扫描 / 模式 A KV 写 ≤2 断言 / 自动吊销分支
+ *    上游错误部分扫描 / 模式 A DB 写 ≤2 断言 / 自动吊销分支
  * 3) index.ts scheduled 壳挂接（waitUntil 被调用）
  */
 import { md5hex } from "../md5";
@@ -14,44 +16,55 @@ import {
   parseAfdianQueryOrderPageResponse,
 } from "../afdian";
 import {
-  REFUND_SUSPECTS_KV_KEY,
+  REFUND_SUSPECTS_STATE_KEY,
+  REVOKE_CURSOR_STATE_KEY,
+} from "../db";
+import {
   REFUND_SYNC_MAX_PAGES,
-  REVOKE_CURSOR_KV_KEY,
   runRefundSync,
   sanitizeRefundSuspects,
   type RefundSyncDeps,
 } from "../refundSync";
-import { REVOKE_LIST_KV_KEY } from "../revocations";
 import worker from "../../index";
 import { unlockTokenHash } from "../../../../src/utils/revocationList";
-import type { UnlockKvLike } from "../redeem";
+import { FakeD1, type FakeRow } from "./helpers/fakeD1";
 
 // ---------------------------------------------------------------------------
-// mock KV / fetch
+// FakeD1 构造 / fetch mock
 // ---------------------------------------------------------------------------
 
-interface MockKv extends UnlockKvLike {
-  readonly store: Map<string, string>;
-  getCalls: number;
-  putCalls: number;
+interface CountedDb {
+  readonly db: FakeD1;
+  readonly writes: jest.SpyInstance;
 }
 
-function makeKv(entries?: Record<string, string>): MockKv {
-  const store = new Map<string, string>(Object.entries(entries ?? {}));
-  const kv: MockKv = {
-    store,
-    getCalls: 0,
-    putCalls: 0,
-    async get(key: string): Promise<string | null> {
-      kv.getCalls += 1;
-      return store.get(key) ?? null;
-    },
-    async put(key: string, value: string): Promise<void> {
-      kv.putCalls += 1;
-      store.set(key, value);
-    },
-  };
-  return kv;
+function makeDb(): CountedDb {
+  const db = new FakeD1();
+  return { db, writes: jest.spyOn(db, "_write") };
+}
+
+/** 已兑换订单行注入（KV 时代 `order:<单号>` 记录的 D1 等价物） */
+function seedOrder(db: FakeD1, orderId: string, token: string, exp: number): void {
+  db.seed("orders", {
+    id: `seed-${orderId}`,
+    channel: "afdian",
+    ext_order_no: orderId,
+    token,
+    expires_at: exp,
+    status: "paid",
+    created_at: "seed",
+  });
+}
+
+/** kv_state 单键 JSON 读取（断言辅助；无记录 → null） */
+function stateOf(db: FakeD1, key: string): unknown {
+  const row = db.rows("kv_state").find((r) => r.k === key);
+  if (!row) return null;
+  return JSON.parse(String(row.v));
+}
+
+function seedState(db: FakeD1, key: string, value: unknown): void {
+  db.seed("kv_state", { k: key, v: JSON.stringify(value), updated_at: "seed" });
 }
 
 const NOW_SEC = Date.parse("2026-08-14T12:00:00Z") / 1000;
@@ -86,7 +99,7 @@ function makePagedFetch(
 
 function makeDeps(overrides: Partial<RefundSyncDeps>): RefundSyncDeps {
   return {
-    kv: makeKv(),
+    db: makeDb().db,
     fetchFn: async () => ({ ok: true, json: async () => ({ ec: 200, data: { list: [] } }) }),
     secrets: { afdianUserId: "user1", afdianToken: "tok1" },
     nowSec: NOW_SEC,
@@ -168,6 +181,14 @@ describe("A6-2 sanitizeRefundSuspects（防御式）", () => {
       orders: [good, { orderId: "3", detectedAt: "t", status: 4, note: "n" }],
     });
   });
+
+  it.each([
+    ["数组", []],
+    ["detectedAt 非字符串", { v: 1, orders: [{ orderId: "1", detectedAt: 5, status: 3 }] }],
+    ["status NaN", { v: 1, orders: [{ orderId: "1", detectedAt: "t", status: Number.NaN }] }],
+  ])("防御矩阵补充（%s）→ 归空/丢弃", (_l, raw) => {
+    expect(sanitizeRefundSuspects(raw)).toEqual({ v: 1, orders: [] });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -175,32 +196,31 @@ describe("A6-2 sanitizeRefundSuspects（防御式）", () => {
 // ---------------------------------------------------------------------------
 
 describe("A6-2 runRefundSync", () => {
-  it("KV 未绑定 / secrets 缺失 → not_configured 零写", async () => {
-    const kv = makeKv();
-    expect(await runRefundSync(makeDeps({ kv: null }))).toEqual(
-      expect.objectContaining({ ok: false, error: "not_configured", kvWrites: 0 }),
+  it("DB 未绑定 / secrets 缺失 → not_configured 零写", async () => {
+    const { db, writes } = makeDb();
+    expect(await runRefundSync(makeDeps({ db: null }))).toEqual(
+      expect.objectContaining({ ok: false, error: "not_configured", dbWrites: 0 }),
     );
     expect(
-      await runRefundSync(makeDeps({ kv, secrets: { afdianToken: "t" } })),
+      await runRefundSync(makeDeps({ db, secrets: { afdianToken: "t" } })),
     ).toEqual(expect.objectContaining({ ok: false, error: "not_configured" }));
-    expect(kv.putCalls).toBe(0);
+    expect(writes).not.toHaveBeenCalled();
   });
 
-  it("疑似单检出：status != 2 且 KV 有兑换记录 → 登记 suspects + cursor（写 = 2）", async () => {
+  it("疑似单检出：status != 2 且 orders 有兑换记录 → 登记 suspects + cursor（写 = 2）", async () => {
     const refunded = orderIdDaysAgo(2, "111111");
     const unpaidNoRecord = orderIdDaysAgo(1, "222222");
     const paid = orderIdDaysAgo(3, "333333");
-    const kv = makeKv({
-      [`order:${refunded}`]: JSON.stringify({ token: "SO1.a.b", tier: "week", exp: NOW_SEC + 86400 }),
-    });
+    const { db } = makeDb();
+    seedOrder(db, refunded, "SO1.a.b", NOW_SEC + 86400);
     const { fetchFn } = makePagedFetch([[
       { out_trade_no: unpaidNoRecord, status: 1 }, // 未支付且无记录 → 不登记
       { out_trade_no: refunded, status: 3 }, // 已兑换后退款 → 登记
       { out_trade_no: paid, status: 2 }, // 正常已支付 → 跳过
     ]]);
-    const result = await runRefundSync(makeDeps({ kv, fetchFn }));
-    expect(result).toEqual({ ok: true, scanned: 3, newSuspects: 1, kvWrites: 2 });
-    expect(JSON.parse(kv.store.get(REFUND_SUSPECTS_KV_KEY) ?? "")).toEqual({
+    const result = await runRefundSync(makeDeps({ db, fetchFn }));
+    expect(result).toEqual({ ok: true, scanned: 3, newSuspects: 1, dbWrites: 2 });
+    expect(stateOf(db, REFUND_SUSPECTS_STATE_KEY)).toEqual({
       v: 1,
       orders: [
         {
@@ -210,32 +230,59 @@ describe("A6-2 runRefundSync", () => {
         },
       ],
     });
-    expect(JSON.parse(kv.store.get(REVOKE_CURSOR_KV_KEY) ?? "")).toEqual({
+    expect(stateOf(db, REVOKE_CURSOR_STATE_KEY)).toEqual({
       lastRun: new Date(NOW_SEC * 1000).toISOString(),
       scanned: 3,
       suspects: 1,
       by: "cron",
     });
-    // 模式 A：不写 revoke:list
-    expect(kv.store.has(REVOKE_LIST_KV_KEY)).toBe(false);
+    // 模式 A：不写 revocations 表
+    expect(db.rows("revocations")).toHaveLength(0);
   });
 
   it("幂等：已登记疑似单再次巡检不重复登记（suspects 不重写，仅 cursor 1 写）", async () => {
     const refunded = orderIdDaysAgo(2, "111111");
-    const kv = makeKv({
-      [`order:${refunded}`]: JSON.stringify({ token: "SO1.a.b", tier: "week", exp: NOW_SEC + 86400 }),
-      [REFUND_SUSPECTS_KV_KEY]: JSON.stringify({
-        v: 1,
-        orders: [{ orderId: refunded, detectedAt: "earlier", status: 3 }],
-      }),
+    const { db } = makeDb();
+    seedOrder(db, refunded, "SO1.a.b", NOW_SEC + 86400);
+    seedState(db, REFUND_SUSPECTS_STATE_KEY, {
+      v: 1,
+      orders: [{ orderId: refunded, detectedAt: "earlier", status: 3 }],
     });
     const { fetchFn } = makePagedFetch([[{ out_trade_no: refunded, status: 3 }]]);
-    const result = await runRefundSync(makeDeps({ kv, fetchFn }));
-    expect(result).toEqual({ ok: true, scanned: 1, newSuspects: 0, kvWrites: 1 });
-    // 已登记单不再读 order 键（先查 known 集合）
+    const result = await runRefundSync(makeDeps({ db, fetchFn }));
+    expect(result).toEqual({ ok: true, scanned: 1, newSuspects: 0, dbWrites: 1 });
+    // 已登记单不再查 orders 行（先查 known 集合）
     expect(
-      JSON.parse(kv.store.get(REFUND_SUSPECTS_KV_KEY) ?? "").orders,
+      (stateOf(db, REFUND_SUSPECTS_STATE_KEY) as { orders: unknown[] }).orders,
     ).toHaveLength(1);
+  });
+
+  it("订单号日期不可解析 → 跳过不计 scanned（防御）；存量名单非法 JSON → 视同空名单", async () => {
+    const refunded = orderIdDaysAgo(2, "111111");
+    const { db } = makeDb();
+    seedOrder(db, refunded, "SO1.a.b", NOW_SEC + 86400);
+    // kv_state 存量疑似名单为非法 JSON → getStateJson 归 null → 空名单
+    db.seed("kv_state", { k: REFUND_SUSPECTS_STATE_KEY, v: "{broken", updated_at: "seed" });
+    const { fetchFn } = makePagedFetch([[
+      { out_trade_no: "not-a-date-order", status: 3 }, // 日期不可解析 → 跳过
+      { out_trade_no: refunded, status: 3 },
+    ]]);
+    const result = await runRefundSync(makeDeps({ db, fetchFn }));
+    expect(result).toEqual({ ok: true, scanned: 1, newSuspects: 1, dbWrites: 2 });
+    expect(
+      (stateOf(db, REFUND_SUSPECTS_STATE_KEY) as { orders: unknown[] }).orders,
+    ).toHaveLength(1);
+  });
+
+  it("lookbackDays 非法（≤0/NaN）→ 回退默认 15 天窗口", async () => {
+    const inWindow = orderIdDaysAgo(10, "111111"); // 15 天默认窗口内
+    const outWindow = orderIdDaysAgo(20, "222222");
+    const { fetchFn } = makePagedFetch([[
+      { out_trade_no: inWindow, status: 2 },
+      { out_trade_no: outWindow, status: 2 },
+    ]]);
+    const result = await runRefundSync(makeDeps({ fetchFn, lookbackDays: 0 }));
+    expect(result.scanned).toBe(1); // 默认窗口生效：仅 10 天前订单计入
   });
 
   it("回看窗口截断：页内出现窗口外订单即终止分页（不再拉后续页）", async () => {
@@ -248,8 +295,8 @@ describe("A6-2 runRefundSync", () => {
       ],
       [{ out_trade_no: orderIdDaysAgo(25, "333333"), status: 3 }],
     ]);
-    const kv = makeKv();
-    const result = await runRefundSync(makeDeps({ kv, fetchFn }));
+    const { db } = makeDb();
+    const result = await runRefundSync(makeDeps({ db, fetchFn }));
     expect(calls).toEqual([1]); // 第 2 页未拉取
     expect(result.scanned).toBe(1); // 窗口外订单不计 scanned
     expect(result.newSuspects).toBe(0);
@@ -267,9 +314,8 @@ describe("A6-2 runRefundSync", () => {
 
   it("上游错误：终止分页但已收集候选照常登记 + cursor 照写（部分扫描口径）", async () => {
     const refunded = orderIdDaysAgo(2, "111111");
-    const kv = makeKv({
-      [`order:${refunded}`]: JSON.stringify({ token: "SO1.a.b", tier: "week", exp: NOW_SEC + 86400 }),
-    });
+    const { db } = makeDb();
+    seedOrder(db, refunded, "SO1.a.b", NOW_SEC + 86400);
     let call = 0;
     const fetchFn: RefundSyncDeps["fetchFn"] = async () => {
       call += 1;
@@ -284,75 +330,135 @@ describe("A6-2 runRefundSync", () => {
       }
       throw new Error("network down");
     };
-    const result = await runRefundSync(makeDeps({ kv, fetchFn }));
+    const result = await runRefundSync(makeDeps({ db, fetchFn }));
     expect(result).toEqual({
       ok: false,
       error: "upstream_error",
       scanned: 1,
       newSuspects: 1,
-      kvWrites: 2,
+      dbWrites: 2,
     });
-    expect(kv.store.has(REVOKE_CURSOR_KV_KEY)).toBe(true);
+    expect(stateOf(db, REVOKE_CURSOR_STATE_KEY)).not.toBeNull();
   });
 
   it("HTTP 非 2xx → upstream_error（首页失败零候选，仅 cursor 1 写）", async () => {
-    const kv = makeKv();
+    const { db } = makeDb();
     const fetchFn: RefundSyncDeps["fetchFn"] = async () => ({
       ok: false,
       json: async () => ({}),
     });
-    const result = await runRefundSync(makeDeps({ kv, fetchFn }));
+    const result = await runRefundSync(makeDeps({ db, fetchFn }));
     expect(result).toEqual({
       ok: false,
       error: "upstream_error",
       scanned: 0,
       newSuspects: 0,
-      kvWrites: 1,
+      dbWrites: 1,
     });
   });
 
-  it("模式 A KV 写上限断言：任何巡检 ≤2 写（§0.16 额度契约）", async () => {
+  it("模式 A DB 写上限断言：任何巡检 ≤2 行写（§0.16 额度契约沿用）", async () => {
     // 多个疑似单也只合并为一次 suspects 写 + 一次 cursor 写
     const r1 = orderIdDaysAgo(1, "111111");
     const r2 = orderIdDaysAgo(2, "222222");
-    const kv = makeKv({
-      [`order:${r1}`]: JSON.stringify({ token: "SO1.a.b", tier: "week", exp: NOW_SEC + 1 }),
-      [`order:${r2}`]: JSON.stringify({ token: "SO1.c.d", tier: "year", exp: NOW_SEC + 2 }),
-    });
+    const { db, writes } = makeDb();
+    seedOrder(db, r1, "SO1.a.b", NOW_SEC + 1);
+    seedOrder(db, r2, "SO1.c.d", NOW_SEC + 2);
     const { fetchFn } = makePagedFetch([[
       { out_trade_no: r1, status: 3 },
       { out_trade_no: r2, status: 4 },
     ]]);
-    const result = await runRefundSync(makeDeps({ kv, fetchFn }));
-    expect(result.kvWrites).toBeLessThanOrEqual(2);
-    expect(kv.putCalls).toBeLessThanOrEqual(2);
+    const result = await runRefundSync(makeDeps({ db, fetchFn }));
+    expect(result.dbWrites).toBeLessThanOrEqual(2);
+    expect(writes.mock.calls.length).toBeLessThanOrEqual(2);
     expect(result.newSuspects).toBe(2);
   });
 
-  it("自动吊销分支（REFUND_AUTO_REVOKE=1）：token 哈希入 revoke:list（reason=refund）", async () => {
+  it("自动吊销分支（REFUND_AUTO_REVOKE=1）：token 哈希入 revocations 表（reason=refund）", async () => {
     const refunded = orderIdDaysAgo(2, "111111");
     const token = "SO1.payload.sig";
     const exp = NOW_SEC + 5 * 86_400;
-    const kv = makeKv({
-      [`order:${refunded}`]: JSON.stringify({ token, tier: "week", exp }),
-      [REVOKE_LIST_KV_KEY]: JSON.stringify({
-        v: 1,
-        entries: [{ h: "f".repeat(64), exp: NOW_SEC + 999, at: "existing" }],
-      }),
+    const { db } = makeDb();
+    seedOrder(db, refunded, token, exp);
+    // 既有吊销条目（他单）保留不动
+    db.seed("revocations", {
+      token_hash: "f".repeat(64),
+      exp: NOW_SEC + 999,
+      revoked_at: "existing",
+      reason: null,
+      restored: 0,
     });
     const { fetchFn } = makePagedFetch([[{ out_trade_no: refunded, status: 3 }]]);
-    const result = await runRefundSync(makeDeps({ kv, fetchFn, autoRevoke: true }));
-    expect(result.kvWrites).toBe(3); // suspects + revoke:list + cursor
-    const list = JSON.parse(kv.store.get(REVOKE_LIST_KV_KEY) ?? "") as {
-      entries: { h: string; exp: number; reason?: string }[];
-    };
-    expect(list.entries).toHaveLength(2); // 既有条目保留 + 新增
-    expect(list.entries[1]).toEqual({
-      h: unlockTokenHash(token),
+    const result = await runRefundSync(makeDeps({ db, fetchFn, autoRevoke: true }));
+    expect(result.dbWrites).toBe(3); // suspects + revocations 1 行 + cursor
+    const rows = db.rows("revocations");
+    expect(rows).toHaveLength(2); // 既有条目保留 + 新增
+    expect(rows[1]).toEqual({
+      token_hash: unlockTokenHash(token),
       exp,
-      at: new Date(NOW_SEC * 1000).toISOString(),
       reason: "refund",
+      revoked_at: new Date(NOW_SEC * 1000).toISOString(),
+      restored: 0,
     });
+  });
+
+  it("自动吊销幂等：哈希已在名单（含 restored 行）→ 不重写 revocations", async () => {
+    const refunded = orderIdDaysAgo(2, "111111");
+    const token = "SO1.payload.sig";
+    const { db } = makeDb();
+    seedOrder(db, refunded, token, NOW_SEC + 86400);
+    db.seed("revocations", {
+      token_hash: unlockTokenHash(token),
+      exp: NOW_SEC + 86400,
+      revoked_at: "existing",
+      reason: "manual",
+      restored: 0,
+    });
+    const { fetchFn } = makePagedFetch([[{ out_trade_no: refunded, status: 3 }]]);
+    const result = await runRefundSync(makeDeps({ db, fetchFn, autoRevoke: true }));
+    expect(result.dbWrites).toBe(2); // 仅 suspects + cursor
+    expect(db.rows("revocations")).toHaveLength(1);
+  });
+
+  it.each([
+    ["token 空串", { token: "" }],
+    ["token 为 NULL", { token: null }],
+    ["expires_at 非数字", { expires_at: "soon" }],
+  ])("自动吊销：orders 行形状异常（%s）→ 留给人工核实，不写 revocations", async (_l, overrides) => {
+    const refunded = orderIdDaysAgo(2, "111111");
+    const { db } = makeDb();
+    db.seed("orders", {
+      id: "seed-broken",
+      channel: "afdian",
+      ext_order_no: refunded,
+      token: "SO1.ok.sig",
+      expires_at: NOW_SEC + 86400,
+      status: "paid",
+      created_at: "seed",
+      ...overrides,
+    });
+    const { fetchFn } = makePagedFetch([[{ out_trade_no: refunded, status: 3 }]]);
+    const result = await runRefundSync(makeDeps({ db, fetchFn, autoRevoke: true }));
+    expect(result.newSuspects).toBe(1); // 照常登记疑似
+    expect(db.rows("revocations")).toHaveLength(0);
+    expect(result.dbWrites).toBe(2);
+  });
+
+  it("自动吊销：两疑似单同一 token（同哈希）→ 名单只写一行（seen 去重）", async () => {
+    const r1 = orderIdDaysAgo(1, "111111");
+    const r2 = orderIdDaysAgo(2, "222222");
+    const token = "SO1.same.sig";
+    const { db } = makeDb();
+    seedOrder(db, r1, token, NOW_SEC + 86400);
+    seedOrder(db, r2, token, NOW_SEC + 86400);
+    const { fetchFn } = makePagedFetch([[
+      { out_trade_no: r1, status: 3 },
+      { out_trade_no: r2, status: 3 },
+    ]]);
+    const result = await runRefundSync(makeDeps({ db, fetchFn, autoRevoke: true }));
+    expect(result.newSuspects).toBe(2);
+    expect(db.rows("revocations")).toHaveLength(1);
+    expect(result.dbWrites).toBe(3); // suspects + revocations 1 行 + cursor
   });
 });
 
@@ -361,7 +467,7 @@ describe("A6-2 runRefundSync", () => {
 // ---------------------------------------------------------------------------
 
 describe("A6-2 index.ts scheduled 壳", () => {
-  it("挂接 waitUntil 并注入 env 绑定（KV 未绑定 → not_configured 零副作用）", async () => {
+  it("挂接 waitUntil 并注入 env 绑定（DB 未绑定 → 两段 not_configured 零副作用；M4 统一对账壳）", async () => {
     const captured: Promise<unknown>[] = [];
     worker.scheduled(
       null,
@@ -369,8 +475,9 @@ describe("A6-2 index.ts scheduled 壳", () => {
       { waitUntil: (p) => captured.push(p) },
     );
     expect(captured).toHaveLength(1);
-    await expect(captured[0]).resolves.toEqual(
-      expect.objectContaining({ ok: false, error: "not_configured" }),
-    );
+    await expect(captured[0]).resolves.toEqual({
+      afdian: expect.objectContaining({ ok: false, error: "not_configured" }),
+      alipay: expect.objectContaining({ ok: false, error: "not_configured" }),
+    });
   });
 });

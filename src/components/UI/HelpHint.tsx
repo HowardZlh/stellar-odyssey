@@ -6,7 +6,7 @@ import { useT } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
 
 /** 打开后自动关闭延时（毫秒，UI 布局优化：避免长期遮挡画面中央） */
-export const HELP_HINT_AUTO_CLOSE_MS = 5000;
+export const HELP_HINT_AUTO_CLOSE_MS = 3000;
 
 /**
  * 首次进入操作引导（需求 3.5.3）
@@ -16,7 +16,7 @@ export const HELP_HINT_AUTO_CLOSE_MS = 5000;
  * 末行语言切换说明为 B3-D 新增（实现差异登记）。
  *
  * UI 布局优化：
- * - 页面打开 5 秒后自动关闭（鼠标悬停暂停倒计时，移出后重新计满 5 秒）；
+ * - 页面打开 3 秒后自动关闭（鼠标悬停暂停倒计时，移出后重新计满 3 秒）；
  * - 关闭后原位置保留一个「?」小按钮可重新打开；手动重开后不再自动关闭
  *   （用户主动查看时不打断阅读）。
  *

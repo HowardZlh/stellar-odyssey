@@ -1,10 +1,12 @@
 /**
- * 捐赠平台注册表（捐赠页 /donate 消费）
+ * 支持渠道注册表（/donate 页消费；Z 迭代 M3 起统一"支持即解锁"口径）
  *
- * url 为 null 表示预留位（卡片显示"预留位 · 即将开通"）；开通后填入
- * 链接即上线。爱发电链接复用 ContactBadge 导出的同源常量
- * （README 赞助小节与 .github/FUNDING.yml 同源，对外入口同源纪律）。
- * 平台名为专有名词，zh/en 双字段按 locale 取用；emoji 由组件层持有。
+ * 特殊形态由页面按 id 分流：alipay 为引导面板（跳 /unlock 扫码）、
+ * wechat 为二维码独立 panel（qrImage）；其余 url 为 null 表示预留位
+ * （卡片显示"预留位 · 即将开通"），开通后填入链接即上线。爱发电链接
+ * 复用 ContactBadge 导出的同源常量（README 赞助小节与 .github/FUNDING.yml
+ * 同源，对外入口同源纪律）。平台名为专有名词，zh/en 双字段按 locale
+ * 取用；emoji 由组件层持有。
  */
 import { SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
 import type { DonationPlatformId } from '@/utils/donors';
@@ -22,8 +24,13 @@ export interface DonationPlatform {
   qrImage?: string;
 }
 
+/**
+ * 顺序即 /donate 页渲染顺序（Z 迭代 M3 渠道重排，需求 E2(a)）：
+ * 支付宝（引导型：面板引导跳 /unlock 扫码，付款 modal 只在解锁页）→
+ * 微信赞赏码（独立 panel）→ 爱发电（备选）→ Ko-fi（海外备选）→ 预留位。
+ */
 export const DONATION_PLATFORMS: readonly DonationPlatform[] = [
-  { id: 'afdian', nameZh: '爱发电', nameEn: 'Afdian', url: SPONSOR_AFDIAN_URL },
+  { id: 'alipay', nameZh: '支付宝扫码支付', nameEn: 'Alipay QR Pay', url: null },
   {
     id: 'wechat',
     nameZh: '微信赞赏码',
@@ -31,13 +38,14 @@ export const DONATION_PLATFORMS: readonly DonationPlatform[] = [
     url: null,
     qrImage: '/donate/wechat-tip-code.jpg',
   },
+  { id: 'afdian', nameZh: '爱发电', nameEn: 'Afdian', url: SPONSOR_AFDIAN_URL },
+  { id: 'kofi', nameZh: 'Ko-fi', nameEn: 'Ko-fi', url: SPONSOR_KOFI_URL },
   {
     id: 'github-sponsors',
     nameZh: 'GitHub Sponsors',
     nameEn: 'GitHub Sponsors',
     url: null,
   },
-  { id: 'kofi', nameZh: 'Ko-fi', nameEn: 'Ko-fi', url: SPONSOR_KOFI_URL },
   {
     id: 'buymeacoffee',
     nameZh: 'Buy Me a Coffee',

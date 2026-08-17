@@ -162,7 +162,7 @@ describe('U3-1 页面骨架与档位表', () => {
   it('渲染标题/副标题/对价口径说明/退款口径/免费态状态区', () => {
     render(<UnlockPage />);
     expect(screen.getByRole('heading', { name: /支持者解锁/ })).toBeInTheDocument();
-    expect(screen.getByText(/明码标价的限时访问对价/)).toBeInTheDocument();
+    expect(screen.getByText(/明码标价的限时访问/)).toBeInTheDocument();
     expect(screen.getByText(/未兑换的订单可全额退款；已兑换订单如发生退款，对应解锁凭证将同步失效/)).toBeInTheDocument();
     expect(screen.getByText(/当前为免费体验/)).toBeInTheDocument();
     // 权益说明：被解锁内容概览
@@ -218,32 +218,66 @@ describe('U3-2 三通道兑换', () => {
     expect(kofi).toHaveAttribute('target', '_blank');
   });
 
-  it('微信/Ko-fi 邮件兑换 CTA 指向同源邮箱（mailto）', () => {
+  it('微信/Ko-fi 邮件 CTA 指向同源邮箱且预填主题与正文（M3 mailto 模板；微信区先展开）', () => {
     render(<UnlockPage />);
-    const mails = screen.getAllByRole('link', { name: /发送兑换邮件/ });
-    expect(mails).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: /展开微信支付步骤/ }));
+    // 微信小节「打开邮件客户端」+ Ko-fi「发送兑换邮件」共用同一预填 mailto
+    const mails = [
+      screen.getByRole('link', { name: /打开邮件客户端/ }),
+      screen.getByRole('link', { name: /发送兑换邮件/ }),
+    ];
     for (const mail of mails) {
-      expect(mail.getAttribute('href')).toContain(`mailto:${CONTACT_EMAIL}`);
+      const href = mail.getAttribute('href') ?? '';
+      expect(href).toContain(`mailto:${CONTACT_EMAIL}`);
+      expect(href).toContain('subject=');
+      expect(href).toContain('body=');
     }
     // 指引文案中的邮箱经 {email} 插值为同源常量
     const guides = screen.getAllByText(new RegExp(CONTACT_EMAIL));
     expect(guides.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('微信赞赏码：展开二维码与档位金额提示、点图收起', () => {
+  it('微信小节邮件模板：默认收起，展开后模板含同源收件人，复制按钮写剪贴板', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
     render(<UnlockPage />);
+    // M4 后续微调「轻量化」：模板默认不可见（人工渠道不喧宾夺主）
+    expect(
+      screen.queryByText(new RegExp(`收件人: ${CONTACT_EMAIL}`)),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /展开微信支付步骤/ }));
+    expect(
+      screen.getByText(new RegExp(`收件人: ${CONTACT_EMAIL}`)),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /复制邮件模板/ }));
+    expect(await screen.findByText(/已复制/)).toBeInTheDocument();
+    expect(writeText).toHaveBeenCalledWith(
+      expect.stringContaining(`收件人: ${CONTACT_EMAIL}`),
+    );
+  });
+
+  it('微信小节轻量化：默认只留引导短句（推荐支付宝），展开出二维码+模板，可再收起', () => {
+    render(<UnlockPage />);
+    // 默认态：引导短句常显，二维码/邮件模板均不可见
+    expect(screen.getByText(/推荐优先使用上方支付宝扫码/)).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: '微信赞赏码' })).not.toBeInTheDocument();
-    const toggle = screen.getByRole('button', { name: '展开赞赏码' });
+    expect(screen.queryByText(/邮件模板（可一键复制/)).not.toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: /展开微信支付步骤/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(toggle);
     const qr = screen.getByRole('img', { name: '微信赞赏码' });
     expect(qr).toHaveAttribute('src', '/donate/wechat-tip-code.jpg');
     expect(screen.getByText(/金额请按档位价格支付/)).toBeInTheDocument();
+    expect(screen.getByText(/邮件模板（可一键复制/)).toBeInTheDocument();
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
 
-    fireEvent.click(qr);
+    fireEvent.click(screen.getByRole('button', { name: /收起微信支付步骤/ }));
     expect(screen.queryByRole('img', { name: '微信赞赏码' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/邮件模板（可一键复制/)).not.toBeInTheDocument();
   });
 
   it('订单号前端校验：非 14-40 位数字直接报错且不发请求', () => {
@@ -356,6 +390,44 @@ describe('U3-2 三通道兑换', () => {
     fireEvent.click(screen.getByRole('button', { name: '兑换' }));
     expect(await screen.findByText(/兑换成功，权益已激活/)).toBeInTheDocument();
     expect(window.localStorage.getItem(UNLOCK_TOKEN_STORAGE_KEY)).toBe(token);
+  });
+});
+
+describe('M3 渠道顺序断言（对齐 stock test_pages_recommend_alipay_and_channel_order）', () => {
+  /** 断言一组节点在 DOM 中按给定先后顺序出现 */
+  function expectDomOrder(nodes: readonly Element[]): void {
+    for (let i = 0; i < nodes.length - 1; i += 1) {
+      expect(
+        nodes[i].compareDocumentPosition(nodes[i + 1]) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  }
+
+  it('通道顺序：①支付宝（推荐）②微信 ③爱发电（备选）④Ko-fi ⑤token 粘贴区', () => {
+    render(<UnlockPage />);
+    expectDomOrder([
+      screen.getByRole('heading', { name: /支付宝扫码支付（推荐 · 支付后自动发码即时解锁）/ }),
+      screen.getByRole('heading', { name: /微信赞赏码（人工核验 · token 经 Email 发送）/ }),
+      screen.getByRole('heading', { name: /爱发电（备选 · 订单号自动兑换）/ }),
+      screen.getByRole('heading', { name: /Ko-fi（海外备选 · 人工核验）/ }),
+      screen.getByRole('heading', { name: /已有 token？在此激活/ }),
+    ]);
+  });
+
+  it('支付宝面板为引导口径：档位卡片即 CTA，面板锚点回跳档位表', () => {
+    render(<UnlockPage />);
+    expect(screen.getByText(/点击上方档位卡片即可扫码支付/)).toBeInTheDocument();
+    const anchor = screen.getByRole('link', { name: /选择档位扫码支付/ });
+    expect(anchor).toHaveAttribute('href', '#unlock-tiers');
+    // 锚点目标存在（档位表 section）
+    expect(document.getElementById('unlock-tiers')).not.toBeNull();
+  });
+
+  it('爱发电降为备选口径：需注册账号说明 + 订单号兑换框保留', () => {
+    render(<UnlockPage />);
+    expect(screen.getByText(/需注册爱发电账号/)).toBeInTheDocument();
+    expect(screen.getByLabelText('爱发电订单号')).toBeInTheDocument();
   });
 });
 

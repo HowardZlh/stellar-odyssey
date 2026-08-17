@@ -3,14 +3,17 @@
 /**
  * 支持者解锁页（/unlock，U3，静态导出为 unlock.html）
  *
- * 结构（§U3-1~3）：权益状态区 → 档位价格表（消费 UNLOCK_TIERS 单一事实源，
- * 禁止硬编码价格）→ 三通道兑换区（爱发电自动 / 微信人工 / Ko-fi 人工）→
- * token 粘贴区 → 退款/说明区。骨架照 donate 页范式（useLocaleInit +
+ * 结构（§U3-1~3 + Z 迭代 M3 渠道重排，REQUIREMENTS_ALIPAY_UNLOCK §5.1）：
+ * 权益状态区 → 档位价格表（消费 UNLOCK_TIERS 单一事实源，禁止硬编码价格；
+ * 档位卡片 = 支付宝扫码主入口 CTA）→ 四通道购买与兑换区（① 支付宝扫码
+ * 推荐 · 自动发码 ② 微信赞赏码独立小节：内嵌图 + 人工核验口径 + 可复制
+ * 邮件模板 + 预填 mailto ③ 爱发电备选 · 订单号兑换框保留 ④ Ko-fi 海外
+ * 备选）→ token 粘贴区 → 退款/说明区。骨架照 donate 页范式（useLocaleInit +
  * zh/EN 切换 + 返回主站 + 深空渐变背景 + 自身滚动容器）。
  *
- * 文案红线（§0.4 双轨隔离）：本页为明码标价对价口径（"支付 ¥X 解锁 Y 天"）；
- * 禁止"捐赠/赞助即解锁"表述；/donate 页与 ContactBadge 零改动（本页仅
- * import 其同源常量）。
+ * 文案口径（M3 起统一"支持即解锁"，D3 双轨隔离取消）：本页为明码标价
+ * 对价口径（"支付 ¥X 解锁 Y 天"承诺允许）；邮件模板与 /donate 页同源
+ * （utils/redeemMail 拼装 + 同一 i18n 键组，禁止第二份副本）。
  *
  * 权益链路收敛登记（U2 已交付）：激活/清除/恢复一律走 store actions
  * （applyUnlockToken / clearEntitlement / restoreUnlockState，验签 +
@@ -36,6 +39,7 @@ import type { UnlockTier } from '@/data/unlockPricing';
 import { UNLOCK_TIERS } from '@/data/unlockPricing';
 import { DONATION_PLATFORMS, SPONSOR_KOFI_URL } from '@/data/donationPlatforms';
 import { CONTACT_EMAIL, SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
+import { UnlockAlipayModal } from '@/components/UI/UnlockAlipayModal';
 import { tokenRemainingDays } from '@/utils/unlockToken';
 import { readStoredUnlockToken } from '@/utils/unlockStorage';
 import { parseLaunchParams } from '@/utils/launchParams';
@@ -47,6 +51,10 @@ import {
   resolveRedeemApiUrl,
   tokenErrorMessageKey,
 } from '@/utils/unlockRedeem';
+import {
+  buildRedeemMailtoHref,
+  formatRedeemMailTemplate,
+} from '@/utils/redeemMail';
 
 /** 档位展示顺序（渲染消费 UNLOCK_TIERS，价格零硬编码） */
 const TIER_ORDER: readonly UnlockTier[] = ['week', 'month', 'year'];
@@ -110,6 +118,12 @@ export default function UnlockPage(): JSX.Element {
 
   // 微信二维码展开（donate 页先例）
   const [qrOpen, setQrOpen] = useState(false);
+
+  // M3：邮件模板复制态（微信小节；clipboard 失败时模板文本本身可选中复制）
+  const [mailCopied, setMailCopied] = useState(false);
+
+  // M2：支付宝付款 modal（档位卡片 CTA 打开；null = 关闭）
+  const [alipayTier, setAlipayTier] = useState<UnlockTier | null>(null);
 
   /** 激活收口：store applyUnlockToken（验签 + 吊销核对 + persist 由 store 承担） */
   function applyToken(
@@ -231,7 +245,27 @@ export default function UnlockPage(): JSX.Element {
     setTokenDone(false);
   }
 
-  const mailtoHref = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(tr('unlock.emailSubject'))}`;
+  // 人工渠道兑换邮件（M3：主题 + 正文预填，模板与 /donate 页同源拼装）
+  const mailSubject = tr('unlock.emailSubject');
+  const mailBody = trf('unlock.mailTplBody', { email: CONTACT_EMAIL });
+  const mailtoHref = buildRedeemMailtoHref(CONTACT_EMAIL, mailSubject, mailBody);
+  const mailTemplate = formatRedeemMailTemplate({
+    toLabel: tr('unlock.mailTplToLabel'),
+    subjectLabel: tr('unlock.mailTplSubjectLabel'),
+    email: CONTACT_EMAIL,
+    subject: mailSubject,
+    body: mailBody,
+  });
+
+  /** 复制邮件模板（失败静默：模板 pre 文本本身可手动选中复制） */
+  async function handleCopyMailTemplate(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(mailTemplate);
+      setMailCopied(true);
+    } catch {
+      setMailCopied(false);
+    }
+  }
 
   // 触控命中区（≥44×44pt）：移动端按钮统一 max-md 放大（donate 页口径）
   const touchBtn = 'max-md:min-h-11 max-md:px-4 max-md:py-3';
@@ -420,38 +454,51 @@ export default function UnlockPage(): JSX.Element {
           )}
         </section>
 
-        {/* 档位价格表（消费 UNLOCK_TIERS，价格零硬编码；isCompact 布局分流） */}
-        <section className="mt-10">
+        {/* 档位价格表（消费 UNLOCK_TIERS，价格零硬编码；isCompact 布局分流；
+            id 供通道区「选择档位扫码支付」锚点回跳（M3） */}
+        <section id="unlock-tiers" className="mt-10 scroll-mt-6">
           <h2 className="mb-3 text-sm font-semibold text-gray-300">
             {tr('unlock.tiersSection')}
           </h2>
           {isCompact ? (
-            // 紧凑视口：堆叠卡片（375~430 无溢出）
+            // 紧凑视口：堆叠卡片（375~430 无溢出）；M2：卡片附支付宝扫码 CTA
             <ul className="space-y-2">
               {TIER_ORDER.map((tier) => (
                 <li
                   key={tier}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-space-panel px-4 py-3 backdrop-blur"
+                  className="rounded-lg border border-white/10 bg-space-panel px-4 py-3 backdrop-blur"
                 >
-                  <span className="text-sm text-gray-200">
-                    {tr(TIER_NAME_KEYS[tier])}
-                  </span>
-                  <span className="text-right text-xs text-gray-400">
-                    <span className="block text-sm font-medium text-amber-200/90">
-                      {trf('unlock.tierPriceCny', {
-                        price: UNLOCK_TIERS[tier].priceCny,
-                      })}
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-gray-200">
+                      {tr(TIER_NAME_KEYS[tier])}
                     </span>
-                    {trf('unlock.tierPriceUsd', {
-                      price: UNLOCK_TIERS[tier].priceUsd,
-                    })}{' '}
-                    · {trf('unlock.tierDays', { days: UNLOCK_TIERS[tier].days })}
-                  </span>
+                    <span className="text-right text-xs text-gray-400">
+                      <span className="block text-sm font-medium text-amber-200/90">
+                        {trf('unlock.tierPriceCny', {
+                          price: UNLOCK_TIERS[tier].priceCny,
+                        })}
+                      </span>
+                      {trf('unlock.tierPriceUsd', {
+                        price: UNLOCK_TIERS[tier].priceUsd,
+                      })}{' '}
+                      · {trf('unlock.tierDays', { days: UNLOCK_TIERS[tier].days })}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAlipayTier(tier)}
+                    aria-label={trf('unlock.alipay.tierCtaAria', {
+                      tier: tr(TIER_NAME_KEYS[tier]),
+                    })}
+                    className="mt-2 min-h-11 w-full rounded bg-space-accent/90 px-4 py-2 text-xs text-black transition-colors hover:bg-space-accent"
+                  >
+                    💙 {tr('unlock.alipay.tierCta')} →
+                  </button>
                 </li>
               ))}
             </ul>
           ) : (
-            // 桌面：对比表格
+            // 桌面：对比表格（M2：行尾支付宝扫码 CTA 列）
             <table className="w-full rounded-lg border border-white/10 bg-space-panel text-xs backdrop-blur">
               <thead>
                 <tr className="text-gray-500">
@@ -467,6 +514,7 @@ export default function UnlockPage(): JSX.Element {
                   <th className="px-4 py-2 text-right font-normal">
                     {tr('unlock.tierColumnDays')}
                   </th>
+                  <th className="px-4 py-2" aria-hidden="true" />
                 </tr>
               </thead>
               <tbody>
@@ -488,6 +536,18 @@ export default function UnlockPage(): JSX.Element {
                     <td className="px-4 py-2.5 text-right text-gray-400">
                       {trf('unlock.tierDays', { days: UNLOCK_TIERS[tier].days })}
                     </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setAlipayTier(tier)}
+                        aria-label={trf('unlock.alipay.tierCtaAria', {
+                          tier: tr(TIER_NAME_KEYS[tier]),
+                        })}
+                        className="rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent"
+                      >
+                        💙 {tr('unlock.alipay.tierCta')} →
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -507,13 +567,90 @@ export default function UnlockPage(): JSX.Element {
           </div>
         </section>
 
-        {/* 三通道兑换区（§U3-2） */}
+        {/* 四通道购买与兑换区（M3 渠道重排 §5.1：支付宝→微信→爱发电→Ko-fi；
+            顺序断言测试对照 stock test_pages_recommend_alipay_and_channel_order） */}
         <section className="mt-10">
           <h2 className="mb-3 text-sm font-semibold text-gray-300">
             {tr('unlock.channelsSection')}
           </h2>
           <div className="space-y-3">
-            {/* 爱发电（自动兑换） */}
+            {/* ① 支付宝扫码（推荐 · 自动发码）：档位卡片即 CTA，本面板为
+                引导口径 + 锚点回跳档位表 */}
+            <div className="rounded-lg border border-space-accent/40 bg-space-panel p-4 backdrop-blur">
+              <h3 className="text-sm text-gray-200">
+                💙 {tr('unlock.alipayChannelTitle')}
+              </h3>
+              <p className="mt-2 text-xs leading-5 text-gray-400">
+                {tr('unlock.alipayChannelGuide')}
+              </p>
+              <a
+                href="#unlock-tiers"
+                className={`mt-3 inline-block rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent ${touchBtn}`}
+              >
+                {tr('unlock.alipayChannelCta')} ↑
+              </a>
+            </div>
+
+            {/* ② 微信赞赏码独立小节（人工核验 · token 经 Email 发送）：
+                M4 后续微调「轻量化」——默认只留引导短句 + 展开按钮（防止
+                人工渠道显眼分流支付宝），赞赏码/支付步骤/邮件模板全部收进
+                展开区（模板与 donate 页同源） */}
+            <div className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
+              <h3 className="text-sm text-gray-200">💚 {tr('unlock.wechatTitle')}</h3>
+              <p className="mt-2 text-xs leading-5 text-gray-400">
+                {tr('unlock.wechatGuide')}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  aria-expanded={qrOpen}
+                  onClick={() => setQrOpen((v) => !v)}
+                  className={`rounded border border-white/15 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:text-white ${touchBtn}`}
+                >
+                  {tr(qrOpen ? 'unlock.wechatCollapse' : 'unlock.wechatExpand')}{' '}
+                  {qrOpen ? '▴' : '▾'}
+                </button>
+              </div>
+              {qrOpen && (
+                <>
+                  <p className="mt-3 text-xs leading-5 text-gray-400">
+                    {trf('unlock.wechatSteps', { email: CONTACT_EMAIL })}
+                  </p>
+                  <div className="mt-3 text-center">
+                    {/* 原生 <img>：静态导出无 next/image 优化（donate 页先例） */}
+                    <img
+                      src={WECHAT_QR_IMAGE}
+                      alt={tr('unlock.wechatQrAlt')}
+                      className="mx-auto w-full max-w-64 rounded-lg"
+                    />
+                    <p className="mt-2 text-[10px] leading-4 text-gray-500 max-md:text-xs">
+                      {tr('unlock.wechatQrHint')}
+                    </p>
+                  </div>
+                  <p className="mt-3 text-xs text-gray-400">{tr('unlock.mailTplHint')}</p>
+                  <pre className="mt-1 whitespace-pre-wrap break-words rounded border border-white/10 bg-black/30 p-3 text-[10px] leading-4 text-gray-300 max-md:text-xs">
+                    {mailTemplate}
+                  </pre>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleCopyMailTemplate()}
+                      className={`rounded border border-white/15 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:text-white ${touchBtn}`}
+                    >
+                      📋 {tr(mailCopied ? 'unlock.mailTplCopied' : 'unlock.mailTplCopy')}
+                    </button>
+                    <a
+                      href={mailtoHref}
+                      className={`rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent ${touchBtn} inline-flex items-center`}
+                    >
+                      📮 {tr('unlock.mailTplOpen')} →
+                    </a>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* ③ 爱发电（备选 · 订单号自动兑换，兑换框保留） */}
             <div className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
               <h3 className="text-sm text-gray-200">⚡ {tr('unlock.afdianTitle')}</h3>
               <p className="mt-2 text-xs leading-5 text-gray-400">
@@ -565,45 +702,7 @@ export default function UnlockPage(): JSX.Element {
               </div>
             </div>
 
-            {/* 微信赞赏码（人工兑换）：对价语义明示（按档位金额支付后凭凭证兑换） */}
-            <div className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
-              <h3 className="text-sm text-gray-200">💚 {tr('unlock.wechatTitle')}</h3>
-              <p className="mt-2 text-xs leading-5 text-gray-400">
-                {trf('unlock.wechatGuide', { email: CONTACT_EMAIL })}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  aria-expanded={qrOpen}
-                  onClick={() => setQrOpen((v) => !v)}
-                  className={`rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent ${touchBtn}`}
-                >
-                  {tr(qrOpen ? 'unlock.wechatHideQr' : 'unlock.wechatShowQr')}
-                </button>
-                <a
-                  href={mailtoHref}
-                  className={`rounded border border-white/15 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:text-white ${touchBtn} inline-flex items-center`}
-                >
-                  📮 {tr('unlock.emailCta')}
-                </a>
-              </div>
-              {qrOpen && (
-                <div className="mt-3 text-center">
-                  {/* 原生 <img>：静态导出无 next/image 优化（donate 页先例） */}
-                  <img
-                    src={WECHAT_QR_IMAGE}
-                    alt={tr('unlock.wechatQrAlt')}
-                    onClick={() => setQrOpen(false)}
-                    className="mx-auto w-full max-w-64 rounded-lg"
-                  />
-                  <p className="mt-2 text-[10px] leading-4 text-gray-500 max-md:text-xs">
-                    {tr('unlock.wechatQrHint')}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Ko-fi（人工兑换） */}
+            {/* ④ Ko-fi（海外备选 · 人工核验） */}
             <div className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
               <h3 className="text-sm text-gray-200">☕ {tr('unlock.kofiTitle')}</h3>
               <p className="mt-2 text-xs leading-5 text-gray-400">
@@ -687,6 +786,15 @@ export default function UnlockPage(): JSX.Element {
           </Link>
         </footer>
       </div>
+
+      {/* M2：支付宝付款 modal（档位 CTA 打开；isCompact 转全屏抽屉） */}
+      {alipayTier !== null && (
+        <UnlockAlipayModal
+          tier={alipayTier}
+          isCompact={isCompact}
+          onClose={() => setAlipayTier(null)}
+        />
+      )}
     </main>
   );
 }

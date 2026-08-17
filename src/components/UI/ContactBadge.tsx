@@ -14,6 +14,8 @@ export const CONTACT_GITHUB_ISSUES_URL =
 export const SPONSOR_AFDIAN_URL = 'https://afdian.com/a/stellar-odyssey';
 /** 站内捐赠页路径（左下角「投喂燃料」入口新标签页打开） */
 export const DONATE_PAGE_PATH = '/donate';
+/** 站内解锁页路径（Z 迭代 M3 统一"支持即解锁"口径后新增入口） */
+export const UNLOCK_PAGE_PATH = '/unlock';
 
 /**
  * 商业合作角标（左下角常驻）：点击展开小卡片（邮箱 + GitHub Issues +
@@ -65,9 +67,20 @@ export function ContactBadge(): JSX.Element | null {
     return () => window.removeEventListener('pointerdown', onPointerDown);
   }, [expanded]);
 
-  // 三个对外链接（桌面展开卡 / 移动居中弹层共用；常量同源纪律不动）
+  // 对外链接（桌面展开卡 / 移动居中弹层共用；常量同源纪律不动。
+  // M3：统一"支持即解锁"口径后新增解锁页入口——支持渠道以解锁页为
+  // 第一入口，与 /donate 页渠道顺序同口径）
   const links = (
     <div className="mt-2 space-y-1 max-md:space-y-0">
+      <a
+        href={UNLOCK_PAGE_PATH}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={tr('contactBadge.unlockAria')}
+        className="block text-space-accent hover:underline max-md:py-3"
+      >
+        🔓 {tr('contactBadge.unlockLabel')}
+      </a>
       <a
         href={`mailto:${CONTACT_EMAIL}`}
         className="block text-space-accent hover:underline max-md:py-3"

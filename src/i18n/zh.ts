@@ -35,22 +35,37 @@ export const zh = {
     /** 捐赠入口按钮文字（emoji ☄️ 由组件层持有；跳转 /donate 新页面） */
     donateLabel: '投喂燃料',
     donateAria: '打开捐赠页（新标签页）',
+    /** 支持者解锁入口（Z 迭代 M3 统一口径后允许；emoji 🔓 由组件层持有） */
+    unlockLabel: '支持者解锁',
+    unlockAria: '打开解锁页（新标签页）',
     /** M3 移动弹层关闭按钮（居中弹层化，桌面不使用） */
     closeAria: '关闭投喂与合作面板',
   },
-  /** 捐赠页（/donate，零回报承诺口径——不承诺任何回报或更新义务） */
+  /**
+   * 捐赠页（/donate，Z 迭代 M3 起统一"支持即解锁"口径——渠道顺序
+   * 支付宝→微信→爱发电→Ko-fi→预留位，支付宝为引导面板跳 /unlock）。
+   * 边界：不承诺更新义务；解锁承诺仅限"付 ¥X 得 Y 天"的既有对价事实。
+   */
   donate: {
     title: '投喂燃料',
-    subtitle: '为星海奥德赛添一把燃料',
+    subtitle: '支持项目，即刻解锁高级内容',
     intro:
-      '如果这片宇宙曾让你停下滚轮多看一会儿，欢迎投喂一份燃料。所有捐赠均为无偿支持，不构成任何回报或更新义务的承诺——项目的全部功能与源代码对所有人平等开放，你的支持将用于持续开发与域名维护，让它保持免费、无广告、开源。',
-    platformsSection: '捐赠通道',
-    platformAvailable: '前往捐赠',
+      '支持项目即可解锁高级内容：推荐支付宝扫码支付——支付成功后自动发放解锁凭证、即时解锁近观细节层与巡游演示，昵称与留言（均可选）将记入贡献者名单与贡献者宇宙。项目的全部源代码保持开源，你的支持将用于持续开发与域名维护，让它保持免费、无广告、开源。',
+    platformsSection: '支持通道',
+    platformAvailable: '前往支持',
     platformComingSoon: '预留位 · 即将开通',
-    platformShowQr: '查看赞赏码',
-    platformHideQr: '收起赞赏码',
+    /** 支付宝引导面板（付款 modal 只在 /unlock，本页仅引导跳转） */
+    alipayGuide:
+      '推荐渠道：在解锁页点击档位卡片生成付款码，支付成功后自动发放解锁 token 并即时解锁，无需注册账号；昵称自动记入贡献者名单。',
+    alipayCta: '前往解锁页扫码支付',
+    /** 微信独立 panel（人工核验口径 + 邮件模板，模板与解锁页同源键） */
+    wechatGuide:
+      '备选渠道：微信打赏无法自动核验，需人工处理，解锁 token 只经 Email 发送（非即时，通常 48 小时内）；急用请走上方支付宝扫码。按档位金额支付后，按下方邮件模板发送邮件，附支付截图与交易时间。',
+    /** 备选通道卡片说明行 */
+    afdianNote: '备选 · 支付后凭订单号在解锁页自动兑换（需注册爱发电账号）',
+    kofiNote: '海外备选 · 人工核验，解锁 token 经 Email 发送',
     wechatQrAlt: '微信赞赏码',
-    wechatQrHint: '微信内长按识别，或用手机微信扫码',
+    wechatQrHint: '微信内长按识别，或用手机微信扫码；金额请按档位价格支付',
     donorsSection: '燃料补给名单',
     donorsNote: '按累计捐赠金额降序排列（人工登记，可能存在延迟）',
     donorsEmpty: '虚位以待——成为第一颗点亮航程的星。',
@@ -85,17 +100,20 @@ export const zh = {
     detailPlatform: '平台',
     detailMessage: '留言',
     detailCloseAria: '关闭详情卡',
+    /** M2 动态名单（D-z4）：空昵称展示名 + 支付宝渠道展示名（注册表外平台） */
+    anonymous: '匿名用户',
+    platformAlipay: '支付宝',
   },
   /**
-   * 解锁页（/unlock，U3）。口径红线（REQUIREMENTS_UNLOCK §0.4）：
-   * 本页为明码标价对价口径（允许"支付 ¥X 解锁 Y 天"承诺式表述），
-   * 与 /donate 赞助（零回报）双轨隔离——禁止出现"捐赠/赞助即解锁"表述。
+   * 解锁页（/unlock，U3；Z 迭代 M3 起统一"支持即解锁"口径）。
+   * 本页为明码标价对价口径（允许"支付 ¥X 解锁 Y 天"承诺式表述）；
+   * 渠道顺序：支付宝（推荐）→ 微信 → 爱发电（备选）→ Ko-fi（海外备选）。
    */
   unlock: {
     title: '支持者解锁',
     subtitle: '解锁近观细节层与巡游序列的限时访问',
     intro:
-      '以下为明码标价的限时访问对价：按档位金额支付后凭凭证兑换，到期自动恢复免费体验。本页与"投喂燃料"自愿赞助相互独立，互不构成条件。项目源代码保持开源。',
+      '以下为明码标价的限时访问：按档位金额支付后自动或凭凭证兑换解锁，到期自动恢复免费体验；支持者昵称与留言（均可选）将记入贡献者名单与贡献者宇宙。项目源代码保持开源。',
     backToApp: '返回星图',
     /** 权益状态区 */
     statusSection: '我的权益',
@@ -133,11 +151,15 @@ export const zh = {
     refundTitle: '退款与说明',
     refundPolicy:
       '未兑换的订单可全额退款；已兑换订单如发生退款，对应解锁凭证将同步失效。不提供发票；到期后不自动续费。',
-    /** 三通道兑换区 */
+    /** 四通道购买与兑换区（M3 渠道重排：支付宝→微信→爱发电→Ko-fi） */
     channelsSection: '购买与兑换',
-    afdianTitle: '爱发电（自动兑换）',
+    alipayChannelTitle: '支付宝扫码支付（推荐 · 支付后自动发码即时解锁）',
+    alipayChannelGuide:
+      '点击上方档位卡片即可扫码支付：支付成功后自动发放解锁 token 并即时激活权益，无需注册账号；昵称与留言（均可选）将记入贡献者名单。',
+    alipayChannelCta: '选择档位扫码支付',
+    afdianTitle: '爱发电（备选 · 订单号自动兑换）',
     afdianGuide:
-      '前往爱发电按档位金额购买（周卡/年卡为商品，月卡为订阅方案），支付完成后在下方粘贴订单号即可自动兑换。',
+      '需注册爱发电账号。前往爱发电按档位金额购买（周卡/年卡为商品，月卡为订阅方案），支付完成后在下方粘贴订单号即可自动兑换。',
     afdianLink: '前往爱发电购买',
     orderInputLabel: '爱发电订单号',
     orderInputPlaceholder: '粘贴订单号（14-40 位数字）',
@@ -154,19 +176,36 @@ export const zh = {
     errPlanNotEligible: '该订单对应的商品不支持解锁兑换，请核对购买的是解锁档位商品',
     errUnknown: '兑换失败（未知错误），请稍后重试或邮件联系',
     errNetwork: '网络请求失败，请检查网络后重试',
-    wechatTitle: '微信赞赏码（人工兑换）',
+    wechatTitle: '微信赞赏码（人工核验 · token 经 Email 发送）',
+    /** 常显短句（微信小节默认收起——引导优先走支付宝，M4 后续微调） */
     wechatGuide:
-      '按所选档位金额通过微信赞赏码支付，然后发送兑换邮件至 {email}，附支付截图与交易时间，我们将回信发送解锁 token（通常 48 小时内）。',
-    wechatShowQr: '展开赞赏码',
-    wechatHideQr: '收起赞赏码',
+      '需人工处理，解锁 token 只经 Email 发送（非即时，通常 48 小时内）——推荐优先使用上方支付宝扫码，自动发码、即时解锁。',
+    /** 展开区支付步骤（含兑换邮箱插值） */
+    wechatSteps:
+      '按所选档位金额扫码支付后，按下方邮件模板发送兑换邮件至 {email}，附支付截图与交易时间。',
+    wechatExpand: '展开微信支付步骤（赞赏码 + 邮件模板）',
+    wechatCollapse: '收起微信支付步骤',
     wechatQrAlt: '微信赞赏码',
     wechatQrHint: '微信内长按识别，或用手机微信扫码；金额请按档位价格支付',
-    kofiTitle: 'Ko-fi（人工兑换）',
+    kofiTitle: 'Ko-fi（海外备选 · 人工核验）',
     kofiGuide:
       '按档位对应的 $ 金额通过 Ko-fi 支付，然后发送兑换邮件至 {email}，附支付凭证与交易时间，我们将回信发送解锁 token（通常 48 小时内）。',
     kofiLink: '前往 Ko-fi 支付',
     emailCta: '发送兑换邮件',
     emailSubject: '星海奥德赛解锁兑换',
+    /**
+     * 人工渠道兑换邮件模板（/unlock 与 /donate 两页同源消费，M3）：
+     * 主题复用 emailSubject；正文 {email} 插值 CONTACT_EMAIL 同源常量。
+     * 不写价格（价格同源纪律：档位价只在 unlockPricing.ts 及登记同源点）。
+     */
+    mailTplHint: '邮件模板（可一键复制，或直接打开邮件客户端自动填好）：',
+    mailTplToLabel: '收件人',
+    mailTplSubjectLabel: '主题',
+    mailTplBody:
+      '昵称（可选，将记入贡献者名单）:\n所购档位（周卡/月卡/年卡）与支付渠道:\n支付截图: 见附件\n交易时间:\n留言（可选，将展示在名单）:\n\n说明: 解锁 token 将回复至本邮件的发件邮箱，请确保能正常收信；若长时间未收到，请检查垃圾邮件文件夹，并将 {email} 加入通讯录。',
+    mailTplCopy: '复制邮件模板',
+    mailTplCopied: '已复制',
+    mailTplOpen: '打开邮件客户端',
     /** token 粘贴区 */
     tokenSection: '已有 token？在此激活',
     tokenIntro:
@@ -205,6 +244,46 @@ export const zh = {
     demoQuotaRemaining: '今日免费演示剩余 {count} 次',
     demoQuotaExhausted: '今日免费演示次数已用完，解锁后不限次',
     cycleLockedTooltip: '银河系/宇宙巡游为支持者专属',
+    /**
+     * Z 迭代 M2 支付宝当面付付款 modal（REQUIREMENTS_ALIPAY_UNLOCK §5.1；
+     * 对价口径同本组红线——支付后自动发码即时解锁为明码标价承诺，允许）。
+     */
+    alipay: {
+      tierCta: '支付宝扫码支付',
+      tierCtaAria: '选择{tier}，打开支付宝扫码付款窗口',
+      modalTitle: '支付宝扫码支付',
+      closeAria: '关闭付款窗口',
+      tierLine: '{tier} · ¥{price} / {days} 天',
+      nicknameLabel: '昵称（可选）',
+      nicknamePlaceholder: '将记入贡献者名单，留空显示「匿名用户」',
+      messageLabel: '留言（可选）',
+      messagePlaceholder: '随昵称一起展示，最多 50 字',
+      publicNote: '昵称与留言将公开展示在贡献者名单与贡献者宇宙。',
+      createButton: '生成付款码',
+      creating: '正在生成付款码…',
+      qrTitle: '打开支付宝「扫一扫」完成支付',
+      qrAlt: '支付宝付款二维码',
+      amountLine: '应付金额 ¥{amount}',
+      expireHint: '二维码 30 分钟内有效；支付成功后本页自动激活权益。',
+      openInAlipay: '在手机上打开支付宝付款',
+      waiting: '等待支付确认…',
+      paidTitle: '支付成功，权益已激活！',
+      paidTokenHint:
+        '以下为你的解锁 token，请妥善保存——换设备时在解锁页粘贴激活即可找回权益：',
+      expiredNotice: '二维码已过期（超过 30 分钟未支付），请重新生成。',
+      regenerate: '重新生成付款码',
+      backToEdit: '返回修改',
+      errNicknameTooLong: '昵称过长，请控制在 20 个字符以内',
+      errNicknameBlocked: '昵称包含不适宜公开展示的内容，请修改后重试',
+      errMessageTooLong: '留言过长，请控制在 50 个字符以内',
+      errMessageBlocked: '留言包含不适宜公开展示的内容，请修改后重试',
+      errNotConfigured: '支付宝支付尚未开通，请改用爱发电或其他渠道',
+      errGateway: '支付宝预下单失败，请稍后重试',
+      errOrderLost: '订单状态查询异常，请重新生成付款码',
+      errUnknown: '操作失败（未知错误），请稍后重试或邮件联系',
+      errNetwork: '网络请求失败，请检查网络后重试',
+      errTokenVerify: '服务端返回的凭证校验失败，请邮件联系作者处理',
+    },
   },
   /**
    * 天文实验室（M2 骨架：/lab 首页 + /lab/meteor-shower 场景页 + 主界面入口）。
@@ -427,7 +506,7 @@ export const zh = {
     /** M4-5 触屏版引导（isTouch 分流：替换键鼠口径首段；快捷键段落隐藏） */
     controlsTouch: '单指拖动旋转 · 双指缩放/平移 · 点按选中天体',
     closeAria: '关闭引导',
-    /** 关闭后底部中央"?"重开按钮（UI 布局优化：引导 5 秒自动关闭后可重开） */
+    /** 关闭后底部中央"?"重开按钮（UI 布局优化：引导 3 秒自动关闭后可重开） */
     reopenAria: '重新打开操作引导',
   },
   /** M3 移动布局底部标签栏（仅 isCompact 渲染；emoji/符号由组件层持有） */

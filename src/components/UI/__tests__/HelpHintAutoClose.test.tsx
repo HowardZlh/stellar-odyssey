@@ -1,7 +1,7 @@
 /**
  * 操作引导自动关闭单测（UI 布局优化）：
- * - 打开 5 秒后自动关闭，原位置留「?」重开按钮
- * - 鼠标悬停暂停倒计时，移出后重新计满 5 秒
+ * - 打开 3 秒后自动关闭，原位置留「?」重开按钮
+ * - 鼠标悬停暂停倒计时，移出后重新计满 3 秒
  * - 手动 ✕ 提前关闭
  * - 经「?」重开后不再自动关闭
  */
@@ -25,7 +25,7 @@ function hintVisible(): boolean {
 }
 
 describe('HelpHint 自动关闭', () => {
-  it('默认显示，5 秒后自动关闭并显示「?」重开按钮', () => {
+  it('默认显示，3 秒后自动关闭并显示「?」重开按钮', () => {
     render(<HelpHint />);
     expect(hintVisible()).toBe(true);
     act(() => {
@@ -35,7 +35,7 @@ describe('HelpHint 自动关闭', () => {
     expect(screen.getByRole('button', { name: '重新打开操作引导' })).toBeInTheDocument();
   });
 
-  it('未满 5 秒不关闭', () => {
+  it('未满 3 秒不关闭', () => {
     render(<HelpHint />);
     act(() => {
       jest.advanceTimersByTime(HELP_HINT_AUTO_CLOSE_MS - 100);
@@ -43,7 +43,7 @@ describe('HelpHint 自动关闭', () => {
     expect(hintVisible()).toBe(true);
   });
 
-  it('悬停暂停倒计时，移出后重新计满 5 秒', () => {
+  it('悬停暂停倒计时，移出后重新计满 3 秒', () => {
     render(<HelpHint />);
     const panel = screen.getByRole('button', { name: '关闭引导' }).closest('div')!
       .parentElement!;
