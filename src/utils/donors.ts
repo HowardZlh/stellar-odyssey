@@ -6,9 +6,10 @@
  * 按金额降序排列——数据文件无需手工保序。
  */
 
-/** 捐赠平台 id（与 data/donationPlatforms.ts 注册表对应） */
+/** 捐赠平台 id（与 data/donationPlatforms.ts 注册表对应；Z 迭代 M2 增
+ * 'alipay'——支付宝扫码解锁渠道，动态贡献者名单条目消费，注册表面板 M3 补） */
 export type DonationPlatformId =
-  'afdian' | 'wechat' | 'github-sponsors' | 'kofi' | 'buymeacoffee';
+  'afdian' | 'wechat' | 'github-sponsors' | 'kofi' | 'buymeacoffee' | 'alipay';
 
 /** 单条捐赠登记（跨平台金额统一折算为人民币元） */
 export interface DonorRecord {

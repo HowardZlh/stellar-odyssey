@@ -26,14 +26,20 @@ import type { JSX } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { Locale } from '@/types';
-import { pickLocalized } from '@/i18n';
+import { pickLocalized, t } from '@/i18n';
 import { useLocaleInit, useT, useTf } from '@/hooks/useI18n';
 import { useDeviceTierInit, useViewportKind } from '@/hooks/useViewportKind';
 import { useSimulationStore } from '@/store';
 import { DONATION_PLATFORMS } from '@/data/donationPlatforms';
 import { DONORS } from '@/data/donors';
 import type { DonationPlatformId, DonorRecord } from '@/utils/donors';
-import { sortDonorsByAmountDesc } from '@/utils/donors';
+import {
+  mergeDonorLists,
+  parseContributorsResponse,
+  remoteContributorsToDonors,
+  resolveContributorsApiUrl,
+  type RemoteContributor,
+} from '@/utils/contributorsFeed';
 import {
   contributorCanvasQuality,
   layoutContributorStars,
@@ -50,13 +56,24 @@ const PLATFORM_EMOJI: Record<DonationPlatformId, string> = {
   'github-sponsors': '💖',
   kofi: '☕',
   buymeacoffee: '🍪',
+  alipay: '💙',
 };
 
-/** 平台注册表查找（详情卡双语名；未注册 id 兜底显示原始 id） */
+/** 贡献者名单 API（M2 动态名单，D-z4；base 覆写机制与 unlockRedeem 同源） */
+const CONTRIBUTORS_API_URL = resolveContributorsApiUrl(
+  process.env.NEXT_PUBLIC_UNLOCK_API_BASE,
+);
+
+/**
+ * 平台注册表查找（详情卡双语名；未注册 id 兜底显示原始 id）。
+ * M2 登记：alipay 为解锁支付渠道、不进 donationPlatforms 捐赠注册表
+ * （渠道重排 M3 处理），展示名走 i18n 键。
+ */
 function platformDisplayName(
   locale: Locale,
   platformId: DonationPlatformId,
 ): string {
+  if (platformId === 'alipay') return t(locale, 'contributors.platformAlipay');
   const platform = DONATION_PLATFORMS.find((p) => p.id === platformId);
   if (!platform) return platformId;
   return pickLocalized(locale, platform.nameZh, platform.nameEn);
@@ -77,8 +94,41 @@ export default function ContributorsPage(): JSX.Element {
   const deviceTier = useSimulationStore((s) => s.deviceTier);
   const quality = useMemo(() => contributorCanvasQuality(deviceTier), [deviceTier]);
 
-  // 名单排序 + C1 布点全部一次完成（渲染循环零重算）
-  const donors = useMemo(() => sortDonorsByAmountDesc(DONORS), []);
+  // M2 动态名单（D-z4）：启动拉取 /api/contributors 与静态 DONORS 合并；
+  // 拉取失败/形状异常静默降级为仅静态名单（fetch 缺失环境同样静默）
+  const [remoteEntries, setRemoteEntries] = useState<RemoteContributor[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async (): Promise<void> => {
+      try {
+        const response = await fetch(CONTRIBUTORS_API_URL);
+        const parsed = parseContributorsResponse(
+          (await response.json()) as unknown,
+        );
+        if (!cancelled && parsed !== null) setRemoteEntries(parsed);
+      } catch {
+        // 静默降级：仅静态名单
+      }
+    })();
+    return (): void => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 名单排序 + C1 布点全部一次完成（渲染循环零重算）。
+  // 登记：匿名展示名随 locale 切换（i18n 键），匿名星布点随之重派生——
+  // 页面级画布数据流更新，非主场景重建，可接受。
+  const donors = useMemo(
+    () =>
+      mergeDonorLists(
+        DONORS,
+        remoteContributorsToDonors(
+          remoteEntries,
+          t(locale, 'contributors.anonymous'),
+        ),
+      ),
+    [remoteEntries, locale],
+  );
   const stars = useMemo(() => layoutContributorStars(donors), [donors]);
 
   // WebGL 三态：null = 检测中（SSR/首帧占位），true = 3D，false = 文字名单降级

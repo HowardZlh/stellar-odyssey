@@ -62,6 +62,8 @@ export const en: I18nDict = {
     detailPlatform: 'Platform',
     detailMessage: 'Message',
     detailCloseAria: 'Close details',
+    anonymous: 'Anonymous supporter',
+    platformAlipay: 'Alipay',
   },
   unlock: {
     title: 'Supporter Unlock',
@@ -174,6 +176,50 @@ export const en: I18nDict = {
     demoQuotaRemaining: '{count} free demos left today',
     demoQuotaExhausted: "Today's free demos are used up — unlock for unlimited",
     cycleLockedTooltip: 'Galaxy/Universe tours are supporter-only',
+    alipay: {
+      tierCta: 'Pay with Alipay QR',
+      tierCtaAria: 'Select {tier} and open the Alipay payment dialog',
+      modalTitle: 'Pay with Alipay QR code',
+      closeAria: 'Close payment dialog',
+      tierLine: '{tier} · ¥{price} / {days} days',
+      nicknameLabel: 'Nickname (optional)',
+      nicknamePlaceholder:
+        'Shown on the contributor roster; leave empty to appear as "Anonymous supporter"',
+      messageLabel: 'Message (optional)',
+      messagePlaceholder: 'Shown with your nickname, up to 50 characters',
+      publicNote:
+        'Your nickname and message will be publicly displayed on the contributor roster and the Contributor Universe.',
+      createButton: 'Generate payment code',
+      creating: 'Generating payment code…',
+      qrTitle: 'Open Alipay "Scan" to complete the payment',
+      qrAlt: 'Alipay payment QR code',
+      amountLine: 'Amount due: ¥{amount}',
+      expireHint:
+        'The QR code is valid for 30 minutes; access activates automatically on this page once paid.',
+      openInAlipay: 'Open Alipay on this phone to pay',
+      waiting: 'Waiting for payment confirmation…',
+      paidTitle: 'Payment received — access activated!',
+      paidTokenHint:
+        'Here is your unlock token — keep it safe. Paste it on the unlock page to restore access on another device:',
+      expiredNotice:
+        'The QR code has expired (unpaid for over 30 minutes) — please generate a new one.',
+      regenerate: 'Generate a new payment code',
+      backToEdit: 'Back to edit',
+      errNicknameTooLong: 'Nickname too long — please keep it within 20 characters',
+      errNicknameBlocked:
+        'The nickname contains content unsuitable for public display — please revise and retry',
+      errMessageTooLong: 'Message too long — please keep it within 50 characters',
+      errMessageBlocked:
+        'The message contains content unsuitable for public display — please revise and retry',
+      errNotConfigured:
+        'Alipay payment is not yet live — please use Afdian or another channel',
+      errGateway: 'Alipay pre-order failed — please retry later',
+      errOrderLost: 'Order status lookup failed — please generate a new payment code',
+      errUnknown: 'Operation failed (unknown error) — please retry later or contact us by email',
+      errNetwork: 'Network request failed — please check your connection and retry',
+      errTokenVerify:
+        'The credential returned by the server failed verification — please contact us by email',
+    },
   },
   lab: {
     entrySection: 'Astronomy Lab',

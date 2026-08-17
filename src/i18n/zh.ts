@@ -85,6 +85,9 @@ export const zh = {
     detailPlatform: '平台',
     detailMessage: '留言',
     detailCloseAria: '关闭详情卡',
+    /** M2 动态名单（D-z4）：空昵称展示名 + 支付宝渠道展示名（注册表外平台） */
+    anonymous: '匿名用户',
+    platformAlipay: '支付宝',
   },
   /**
    * 解锁页（/unlock，U3）。口径红线（REQUIREMENTS_UNLOCK §0.4）：
@@ -205,6 +208,46 @@ export const zh = {
     demoQuotaRemaining: '今日免费演示剩余 {count} 次',
     demoQuotaExhausted: '今日免费演示次数已用完，解锁后不限次',
     cycleLockedTooltip: '银河系/宇宙巡游为支持者专属',
+    /**
+     * Z 迭代 M2 支付宝当面付付款 modal（REQUIREMENTS_ALIPAY_UNLOCK §5.1；
+     * 对价口径同本组红线——支付后自动发码即时解锁为明码标价承诺，允许）。
+     */
+    alipay: {
+      tierCta: '支付宝扫码支付',
+      tierCtaAria: '选择{tier}，打开支付宝扫码付款窗口',
+      modalTitle: '支付宝扫码支付',
+      closeAria: '关闭付款窗口',
+      tierLine: '{tier} · ¥{price} / {days} 天',
+      nicknameLabel: '昵称（可选）',
+      nicknamePlaceholder: '将记入贡献者名单，留空显示「匿名用户」',
+      messageLabel: '留言（可选）',
+      messagePlaceholder: '随昵称一起展示，最多 50 字',
+      publicNote: '昵称与留言将公开展示在贡献者名单与贡献者宇宙。',
+      createButton: '生成付款码',
+      creating: '正在生成付款码…',
+      qrTitle: '打开支付宝「扫一扫」完成支付',
+      qrAlt: '支付宝付款二维码',
+      amountLine: '应付金额 ¥{amount}',
+      expireHint: '二维码 30 分钟内有效；支付成功后本页自动激活权益。',
+      openInAlipay: '在手机上打开支付宝付款',
+      waiting: '等待支付确认…',
+      paidTitle: '支付成功，权益已激活！',
+      paidTokenHint:
+        '以下为你的解锁 token，请妥善保存——换设备时在解锁页粘贴激活即可找回权益：',
+      expiredNotice: '二维码已过期（超过 30 分钟未支付），请重新生成。',
+      regenerate: '重新生成付款码',
+      backToEdit: '返回修改',
+      errNicknameTooLong: '昵称过长，请控制在 20 个字符以内',
+      errNicknameBlocked: '昵称包含不适宜公开展示的内容，请修改后重试',
+      errMessageTooLong: '留言过长，请控制在 50 个字符以内',
+      errMessageBlocked: '留言包含不适宜公开展示的内容，请修改后重试',
+      errNotConfigured: '支付宝支付尚未开通，请改用爱发电或其他渠道',
+      errGateway: '支付宝预下单失败，请稍后重试',
+      errOrderLost: '订单状态查询异常，请重新生成付款码',
+      errUnknown: '操作失败（未知错误），请稍后重试或邮件联系',
+      errNetwork: '网络请求失败，请检查网络后重试',
+      errTokenVerify: '服务端返回的凭证校验失败，请邮件联系作者处理',
+    },
   },
   /**
    * 天文实验室（M2 骨架：/lab 首页 + /lab/meteor-shower 场景页 + 主界面入口）。

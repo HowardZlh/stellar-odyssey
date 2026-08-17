@@ -9,6 +9,13 @@
  * `AFDIAN_TOKEN` / `ED25519_PRIVATE_KEY`（部署 checklist 见
  * docs/internal/UNLOCK_OPS.md；D1 初始化步骤见 REQUIREMENTS_ALIPAY_UNLOCK §9）。
  */
+import {
+  handleAlipayCreate,
+  handleAlipayNotify,
+  handleAlipayStatus,
+  handleContributors,
+  type AlipayDeps,
+} from "./lib/alipayHandlers";
 import { buildCorsHeaders, resolveCorsOrigin } from "./lib/cors";
 import type { UnlockDbLike } from "./lib/db";
 import { handleGateConfig } from "./lib/gateConfig";
@@ -20,18 +27,39 @@ import { runRefundSync } from "./lib/refundSync";
  * Worker env 绑定（D1/secrets 可缺省——未配置走 not_configured 降级；
  * UNLOCK_PLAN_ID_* 为 wrangler.toml `[vars]` 非机密映射，U6：任一为空
  * 整体回退纯金额判定；REFUND_* 为 A6 退款巡检 vars——AUTO_REVOKE 默认
- * 空 = 模式 A 只检测登记，检测口径校准前禁开，裁决 ⑧）
+ * 空 = 模式 A 只检测登记，检测口径校准前禁开，裁决 ⑧；
+ * ALIPAY_* 为 M2 支付宝当面付 secrets——4 项齐备才启用支付链路，
+ * 命名 D-z9：ALIPAY_PUBLIC_KEY 是**支付宝公钥**不是应用公钥）
  */
 export interface UnlockWorkerEnv {
   readonly UNLOCK_DB?: UnlockDbLike;
   readonly AFDIAN_USER_ID?: string;
   readonly AFDIAN_TOKEN?: string;
   readonly ED25519_PRIVATE_KEY?: string;
+  readonly ALIPAY_APP_ID?: string;
+  readonly ALIPAY_PRIVATE_KEY?: string;
+  readonly ALIPAY_PUBLIC_KEY?: string;
+  readonly ALIPAY_SELLER_ID?: string;
   readonly UNLOCK_PLAN_ID_WEEK?: string;
   readonly UNLOCK_PLAN_ID_MONTH?: string;
   readonly UNLOCK_PLAN_ID_YEAR?: string;
   readonly REFUND_LOOKBACK_DAYS?: string;
   readonly REFUND_AUTO_REVOKE?: string;
+}
+
+/** 支付宝三接口共享依赖组装（M2；纯映射，无业务分支） */
+function alipayDepsOf(env: UnlockWorkerEnv): AlipayDeps {
+  return {
+    db: env.UNLOCK_DB ?? null,
+    env: {
+      ALIPAY_APP_ID: env.ALIPAY_APP_ID,
+      ALIPAY_PRIVATE_KEY: env.ALIPAY_PRIVATE_KEY,
+      ALIPAY_PUBLIC_KEY: env.ALIPAY_PUBLIC_KEY,
+      ALIPAY_SELLER_ID: env.ALIPAY_SELLER_ID,
+    },
+    ed25519PrivateKeyHex: env.ED25519_PRIVATE_KEY,
+    nowSec: Math.floor(Date.now() / 1000),
+  };
 }
 
 /** scheduled 执行上下文最小接口（生产 = CF ExecutionContext，测试 = mock） */
@@ -88,6 +116,94 @@ const worker = {
         status: 200,
         headers: { ...headers, "Cache-Control": "public, max-age=300" },
       });
+    }
+
+    // M2：GET /api/contributors（贡献者名单，D-z4；缓存头 300s 与
+    // gate-config 同口径——浏览器侧 HTTP 缓存防轮询消耗，零 DB 写）
+    if (pathname === "/api/contributors") {
+      if (request.method !== "GET") {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: "method_not_allowed",
+            message: "仅支持 GET。",
+          }),
+          { status: 405, headers },
+        );
+      }
+      const contribBody = await handleContributors(env.UNLOCK_DB ?? null);
+      return new Response(JSON.stringify(contribBody), {
+        status: 200,
+        headers: { ...headers, "Cache-Control": "public, max-age=300" },
+      });
+    }
+
+    // M2：POST /api/alipay/create（当面付预下单）
+    if (pathname === "/api/alipay/create") {
+      if (request.method !== "POST") {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: "method_not_allowed",
+            message: "仅支持 POST。",
+          }),
+          { status: 405, headers },
+        );
+      }
+      let createBodyRaw: unknown = null;
+      try {
+        createBodyRaw = await request.json();
+      } catch {
+        createBodyRaw = null; // 非法 JSON → 档位缺失 → invalid_tier
+      }
+      const createBody = await handleAlipayCreate(
+        createBodyRaw,
+        alipayDepsOf(env),
+      );
+      return new Response(JSON.stringify(createBody), { status: 200, headers });
+    }
+
+    // M2：POST /api/alipay/notify（支付宝异步通知，安全核心——回纯文本；
+    // 服务端对服务端通道，无 CORS 语义）
+    if (pathname === "/api/alipay/notify") {
+      if (request.method !== "POST") {
+        return new Response("failure", {
+          status: 405,
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        });
+      }
+      let notifyRaw = "";
+      try {
+        notifyRaw = await request.text();
+      } catch {
+        notifyRaw = "";
+      }
+      const notifyOut = await handleAlipayNotify(notifyRaw, alipayDepsOf(env));
+      return new Response(notifyOut, {
+        status: 200,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+
+    // M2：GET /api/alipay/status（轮询 + deep=1 trade.query 兜底补发）
+    if (pathname === "/api/alipay/status") {
+      if (request.method !== "GET") {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: "method_not_allowed",
+            message: "仅支持 GET。",
+          }),
+          { status: 405, headers },
+        );
+      }
+      const url = new URL(request.url);
+      const statusBody = await handleAlipayStatus(
+        url.searchParams.get("out_trade_no"),
+        url.searchParams.get("deep") === "1",
+        alipayDepsOf(env),
+      );
+      return new Response(JSON.stringify(statusBody), { status: 200, headers });
     }
 
     if (pathname !== "/api/redeem") {

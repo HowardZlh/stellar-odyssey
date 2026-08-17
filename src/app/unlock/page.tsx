@@ -36,6 +36,7 @@ import type { UnlockTier } from '@/data/unlockPricing';
 import { UNLOCK_TIERS } from '@/data/unlockPricing';
 import { DONATION_PLATFORMS, SPONSOR_KOFI_URL } from '@/data/donationPlatforms';
 import { CONTACT_EMAIL, SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
+import { UnlockAlipayModal } from '@/components/UI/UnlockAlipayModal';
 import { tokenRemainingDays } from '@/utils/unlockToken';
 import { readStoredUnlockToken } from '@/utils/unlockStorage';
 import { parseLaunchParams } from '@/utils/launchParams';
@@ -110,6 +111,9 @@ export default function UnlockPage(): JSX.Element {
 
   // 微信二维码展开（donate 页先例）
   const [qrOpen, setQrOpen] = useState(false);
+
+  // M2：支付宝付款 modal（档位卡片 CTA 打开；null = 关闭）
+  const [alipayTier, setAlipayTier] = useState<UnlockTier | null>(null);
 
   /** 激活收口：store applyUnlockToken（验签 + 吊销核对 + persist 由 store 承担） */
   function applyToken(
@@ -426,32 +430,44 @@ export default function UnlockPage(): JSX.Element {
             {tr('unlock.tiersSection')}
           </h2>
           {isCompact ? (
-            // 紧凑视口：堆叠卡片（375~430 无溢出）
+            // 紧凑视口：堆叠卡片（375~430 无溢出）；M2：卡片附支付宝扫码 CTA
             <ul className="space-y-2">
               {TIER_ORDER.map((tier) => (
                 <li
                   key={tier}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-space-panel px-4 py-3 backdrop-blur"
+                  className="rounded-lg border border-white/10 bg-space-panel px-4 py-3 backdrop-blur"
                 >
-                  <span className="text-sm text-gray-200">
-                    {tr(TIER_NAME_KEYS[tier])}
-                  </span>
-                  <span className="text-right text-xs text-gray-400">
-                    <span className="block text-sm font-medium text-amber-200/90">
-                      {trf('unlock.tierPriceCny', {
-                        price: UNLOCK_TIERS[tier].priceCny,
-                      })}
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm text-gray-200">
+                      {tr(TIER_NAME_KEYS[tier])}
                     </span>
-                    {trf('unlock.tierPriceUsd', {
-                      price: UNLOCK_TIERS[tier].priceUsd,
-                    })}{' '}
-                    · {trf('unlock.tierDays', { days: UNLOCK_TIERS[tier].days })}
-                  </span>
+                    <span className="text-right text-xs text-gray-400">
+                      <span className="block text-sm font-medium text-amber-200/90">
+                        {trf('unlock.tierPriceCny', {
+                          price: UNLOCK_TIERS[tier].priceCny,
+                        })}
+                      </span>
+                      {trf('unlock.tierPriceUsd', {
+                        price: UNLOCK_TIERS[tier].priceUsd,
+                      })}{' '}
+                      · {trf('unlock.tierDays', { days: UNLOCK_TIERS[tier].days })}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAlipayTier(tier)}
+                    aria-label={trf('unlock.alipay.tierCtaAria', {
+                      tier: tr(TIER_NAME_KEYS[tier]),
+                    })}
+                    className="mt-2 min-h-11 w-full rounded bg-space-accent/90 px-4 py-2 text-xs text-black transition-colors hover:bg-space-accent"
+                  >
+                    💙 {tr('unlock.alipay.tierCta')} →
+                  </button>
                 </li>
               ))}
             </ul>
           ) : (
-            // 桌面：对比表格
+            // 桌面：对比表格（M2：行尾支付宝扫码 CTA 列）
             <table className="w-full rounded-lg border border-white/10 bg-space-panel text-xs backdrop-blur">
               <thead>
                 <tr className="text-gray-500">
@@ -467,6 +483,7 @@ export default function UnlockPage(): JSX.Element {
                   <th className="px-4 py-2 text-right font-normal">
                     {tr('unlock.tierColumnDays')}
                   </th>
+                  <th className="px-4 py-2" aria-hidden="true" />
                 </tr>
               </thead>
               <tbody>
@@ -487,6 +504,18 @@ export default function UnlockPage(): JSX.Element {
                     </td>
                     <td className="px-4 py-2.5 text-right text-gray-400">
                       {trf('unlock.tierDays', { days: UNLOCK_TIERS[tier].days })}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setAlipayTier(tier)}
+                        aria-label={trf('unlock.alipay.tierCtaAria', {
+                          tier: tr(TIER_NAME_KEYS[tier]),
+                        })}
+                        className="rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent"
+                      >
+                        💙 {tr('unlock.alipay.tierCta')} →
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -687,6 +716,15 @@ export default function UnlockPage(): JSX.Element {
           </Link>
         </footer>
       </div>
+
+      {/* M2：支付宝付款 modal（档位 CTA 打开；isCompact 转全屏抽屉） */}
+      {alipayTier !== null && (
+        <UnlockAlipayModal
+          tier={alipayTier}
+          isCompact={isCompact}
+          onClose={() => setAlipayTier(null)}
+        />
+      )}
     </main>
   );
 }

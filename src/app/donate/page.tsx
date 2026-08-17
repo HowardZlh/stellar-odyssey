@@ -24,13 +24,15 @@ import { CONTRIBUTORS_PAGE_PATH } from '@/utils/contributorUniverse';
 import type { DonationPlatformId } from '@/utils/donors';
 import { sortDonorsByAmountDesc } from '@/utils/donors';
 
-/** 平台图标（emoji 由组件层持有，i18n 约定） */
+/** 平台图标（emoji 由组件层持有，i18n 约定；alipay 为 M2 类型补全——
+ * 捐赠注册表暂无 alipay 面板，渠道重排 M3 处理） */
 const PLATFORM_EMOJI: Record<DonationPlatformId, string> = {
   afdian: '⚡',
   wechat: '💚',
   'github-sponsors': '💖',
   kofi: '☕',
   buymeacoffee: '🍪',
+  alipay: '💙',
 };
 
 export default function DonatePage(): JSX.Element {
