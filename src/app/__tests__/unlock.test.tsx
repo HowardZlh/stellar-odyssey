@@ -218,8 +218,9 @@ describe('U3-2 三通道兑换', () => {
     expect(kofi).toHaveAttribute('target', '_blank');
   });
 
-  it('微信/Ko-fi 邮件 CTA 指向同源邮箱且预填主题与正文（M3 mailto 模板）', () => {
+  it('微信/Ko-fi 邮件 CTA 指向同源邮箱且预填主题与正文（M3 mailto 模板；微信区先展开）', () => {
     render(<UnlockPage />);
+    fireEvent.click(screen.getByRole('button', { name: /展开微信支付步骤/ }));
     // 微信小节「打开邮件客户端」+ Ko-fi「发送兑换邮件」共用同一预填 mailto
     const mails = [
       screen.getByRole('link', { name: /打开邮件客户端/ }),
@@ -236,13 +237,18 @@ describe('U3-2 三通道兑换', () => {
     expect(guides.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('微信小节邮件模板：模板文本含同源收件人，复制按钮写剪贴板', async () => {
+  it('微信小节邮件模板：默认收起，展开后模板含同源收件人，复制按钮写剪贴板', async () => {
     const writeText = jest.fn().mockResolvedValue(undefined);
     Object.defineProperty(window.navigator, 'clipboard', {
       value: { writeText },
       configurable: true,
     });
     render(<UnlockPage />);
+    // M4 后续微调「轻量化」：模板默认不可见（人工渠道不喧宾夺主）
+    expect(
+      screen.queryByText(new RegExp(`收件人: ${CONTACT_EMAIL}`)),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /展开微信支付步骤/ }));
     expect(
       screen.getByText(new RegExp(`收件人: ${CONTACT_EMAIL}`)),
     ).toBeInTheDocument();
@@ -253,20 +259,25 @@ describe('U3-2 三通道兑换', () => {
     );
   });
 
-  it('微信赞赏码：展开二维码与档位金额提示、点图收起', () => {
+  it('微信小节轻量化：默认只留引导短句（推荐支付宝），展开出二维码+模板，可再收起', () => {
     render(<UnlockPage />);
+    // 默认态：引导短句常显，二维码/邮件模板均不可见
+    expect(screen.getByText(/推荐优先使用上方支付宝扫码/)).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: '微信赞赏码' })).not.toBeInTheDocument();
-    const toggle = screen.getByRole('button', { name: '展开赞赏码' });
+    expect(screen.queryByText(/邮件模板（可一键复制/)).not.toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: /展开微信支付步骤/ });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
     fireEvent.click(toggle);
     const qr = screen.getByRole('img', { name: '微信赞赏码' });
     expect(qr).toHaveAttribute('src', '/donate/wechat-tip-code.jpg');
     expect(screen.getByText(/金额请按档位价格支付/)).toBeInTheDocument();
+    expect(screen.getByText(/邮件模板（可一键复制/)).toBeInTheDocument();
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
 
-    fireEvent.click(qr);
+    fireEvent.click(screen.getByRole('button', { name: /收起微信支付步骤/ }));
     expect(screen.queryByRole('img', { name: '微信赞赏码' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/邮件模板（可一键复制/)).not.toBeInTheDocument();
   });
 
   it('订单号前端校验：非 14-40 位数字直接报错且不发请求', () => {

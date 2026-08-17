@@ -592,55 +592,62 @@ export default function UnlockPage(): JSX.Element {
             </div>
 
             {/* ② 微信赞赏码独立小节（人工核验 · token 经 Email 发送）：
-                内嵌二维码图 + 可复制邮件模板 + 预填 mailto（模板与 donate 页同源） */}
+                M4 后续微调「轻量化」——默认只留引导短句 + 展开按钮（防止
+                人工渠道显眼分流支付宝），赞赏码/支付步骤/邮件模板全部收进
+                展开区（模板与 donate 页同源） */}
             <div className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
               <h3 className="text-sm text-gray-200">💚 {tr('unlock.wechatTitle')}</h3>
               <p className="mt-2 text-xs leading-5 text-gray-400">
-                {trf('unlock.wechatGuide', { email: CONTACT_EMAIL })}
+                {tr('unlock.wechatGuide')}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="button"
                   aria-expanded={qrOpen}
                   onClick={() => setQrOpen((v) => !v)}
-                  className={`rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent ${touchBtn}`}
+                  className={`rounded border border-white/15 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:text-white ${touchBtn}`}
                 >
-                  {tr(qrOpen ? 'unlock.wechatHideQr' : 'unlock.wechatShowQr')}
+                  {tr(qrOpen ? 'unlock.wechatCollapse' : 'unlock.wechatExpand')}{' '}
+                  {qrOpen ? '▴' : '▾'}
                 </button>
               </div>
               {qrOpen && (
-                <div className="mt-3 text-center">
-                  {/* 原生 <img>：静态导出无 next/image 优化（donate 页先例） */}
-                  <img
-                    src={WECHAT_QR_IMAGE}
-                    alt={tr('unlock.wechatQrAlt')}
-                    onClick={() => setQrOpen(false)}
-                    className="mx-auto w-full max-w-64 rounded-lg"
-                  />
-                  <p className="mt-2 text-[10px] leading-4 text-gray-500 max-md:text-xs">
-                    {tr('unlock.wechatQrHint')}
+                <>
+                  <p className="mt-3 text-xs leading-5 text-gray-400">
+                    {trf('unlock.wechatSteps', { email: CONTACT_EMAIL })}
                   </p>
-                </div>
+                  <div className="mt-3 text-center">
+                    {/* 原生 <img>：静态导出无 next/image 优化（donate 页先例） */}
+                    <img
+                      src={WECHAT_QR_IMAGE}
+                      alt={tr('unlock.wechatQrAlt')}
+                      className="mx-auto w-full max-w-64 rounded-lg"
+                    />
+                    <p className="mt-2 text-[10px] leading-4 text-gray-500 max-md:text-xs">
+                      {tr('unlock.wechatQrHint')}
+                    </p>
+                  </div>
+                  <p className="mt-3 text-xs text-gray-400">{tr('unlock.mailTplHint')}</p>
+                  <pre className="mt-1 whitespace-pre-wrap break-words rounded border border-white/10 bg-black/30 p-3 text-[10px] leading-4 text-gray-300 max-md:text-xs">
+                    {mailTemplate}
+                  </pre>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleCopyMailTemplate()}
+                      className={`rounded border border-white/15 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:text-white ${touchBtn}`}
+                    >
+                      📋 {tr(mailCopied ? 'unlock.mailTplCopied' : 'unlock.mailTplCopy')}
+                    </button>
+                    <a
+                      href={mailtoHref}
+                      className={`rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent ${touchBtn} inline-flex items-center`}
+                    >
+                      📮 {tr('unlock.mailTplOpen')} →
+                    </a>
+                  </div>
+                </>
               )}
-              <p className="mt-3 text-xs text-gray-400">{tr('unlock.mailTplHint')}</p>
-              <pre className="mt-1 whitespace-pre-wrap break-words rounded border border-white/10 bg-black/30 p-3 text-[10px] leading-4 text-gray-300 max-md:text-xs">
-                {mailTemplate}
-              </pre>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => void handleCopyMailTemplate()}
-                  className={`rounded border border-white/15 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:text-white ${touchBtn}`}
-                >
-                  📋 {tr(mailCopied ? 'unlock.mailTplCopied' : 'unlock.mailTplCopy')}
-                </button>
-                <a
-                  href={mailtoHref}
-                  className={`rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent ${touchBtn} inline-flex items-center`}
-                >
-                  📮 {tr('unlock.mailTplOpen')} →
-                </a>
-              </div>
             </div>
 
             {/* ③ 爱发电（备选 · 订单号自动兑换，兑换框保留） */}

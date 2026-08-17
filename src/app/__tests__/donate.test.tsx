@@ -67,21 +67,32 @@ describe('DonatePage 渲染（空名单）', () => {
     expect(cta).toHaveAttribute('href', UNLOCK_PAGE_PATH);
   });
 
-  it('微信 panel：内嵌二维码图（无需展开）+ 人工核验口径', () => {
+  it('微信 panel 轻量化（M4 后续微调）：默认收起，展开后出二维码 + 人工核验口径', () => {
     render(<DonatePage />);
+    // 默认态：二维码/邮件模板不可见，人工核验口径常显
+    expect(screen.queryByRole('img', { name: '微信赞赏码' })).not.toBeInTheDocument();
+    expect(screen.getByText(/需人工处理，解锁 token 只经 Email 发送/)).toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: /展开微信支付步骤/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle);
     const qr = screen.getByRole('img', { name: '微信赞赏码' });
     expect(qr).toHaveAttribute('src', '/donate/wechat-tip-code.jpg');
     expect(screen.getByText(/微信内长按识别/)).toBeInTheDocument();
-    expect(screen.getByText(/需人工处理，解锁 token 只经 Email 发送/)).toBeInTheDocument();
   });
 
-  it('微信 panel：邮件模板可复制 + mailto 预填主题与正文（同源邮箱）', async () => {
+  it('微信 panel：展开后邮件模板可复制 + mailto 预填主题与正文（同源邮箱）', async () => {
     const writeText = jest.fn().mockResolvedValue(undefined);
     Object.defineProperty(window.navigator, 'clipboard', {
       value: { writeText },
       configurable: true,
     });
     render(<DonatePage />);
+    // 默认收起：模板不可见（轻量化断言）
+    expect(
+      screen.queryByText(new RegExp(`收件人: ${CONTACT_EMAIL}`)),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /展开微信支付步骤/ }));
     // 模板文本含收件人（同源邮箱）与主题行
     expect(
       screen.getByText(new RegExp(`收件人: ${CONTACT_EMAIL}`)),

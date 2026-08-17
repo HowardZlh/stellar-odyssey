@@ -66,6 +66,9 @@ export default function DonatePage(): JSX.Element {
 
   // M3：邮件模板复制态（微信 panel；clipboard 失败时模板文本可手动选中）
   const [mailCopied, setMailCopied] = useState(false);
+  // M4 后续微调「微信轻量化」：赞赏码/邮件模板默认收起（与 /unlock 同口径，
+  // 防止人工渠道显眼分流支付宝）
+  const [wechatOpen, setWechatOpen] = useState(false);
 
   // 人工渠道兑换邮件（与 /unlock 页同源拼装：同一 i18n 键组 + 同一纯函数）
   const mailSubject = tr('unlock.emailSubject');
@@ -200,36 +203,51 @@ export default function DonatePage(): JSX.Element {
               <p className="mt-2 text-xs leading-5 text-gray-400">
                 {tr('donate.wechatGuide')}
               </p>
-              <div className="mt-3 text-center">
-                {/* 原生 <img>：静态导出无 next/image 优化（规则已全局关闭） */}
-                <img
-                  src={WECHAT_PLATFORM?.qrImage}
-                  alt={tr('donate.wechatQrAlt')}
-                  className="mx-auto w-full max-w-64 rounded-lg"
-                />
-                <p className="mt-2 text-[10px] leading-4 text-gray-500 max-md:text-xs">
-                  {tr('donate.wechatQrHint')}
-                </p>
-              </div>
-              <p className="mt-3 text-xs text-gray-400">{tr('unlock.mailTplHint')}</p>
-              <pre className="mt-1 whitespace-pre-wrap break-words rounded border border-white/10 bg-black/30 p-3 text-[10px] leading-4 text-gray-300 max-md:text-xs">
-                {mailTemplate}
-              </pre>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => void handleCopyMailTemplate()}
+                  aria-expanded={wechatOpen}
+                  onClick={() => setWechatOpen((v) => !v)}
                   className="rounded border border-white/15 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:text-white max-md:min-h-11 max-md:px-4 max-md:py-3"
                 >
-                  📋 {tr(mailCopied ? 'unlock.mailTplCopied' : 'unlock.mailTplCopy')}
+                  {tr(wechatOpen ? 'unlock.wechatCollapse' : 'unlock.wechatExpand')}{' '}
+                  {wechatOpen ? '▴' : '▾'}
                 </button>
-                <a
-                  href={mailtoHref}
-                  className="inline-flex items-center rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent max-md:min-h-11 max-md:px-4 max-md:py-3"
-                >
-                  📮 {tr('unlock.mailTplOpen')} →
-                </a>
               </div>
+              {wechatOpen && (
+                <>
+                  <div className="mt-3 text-center">
+                    {/* 原生 <img>：静态导出无 next/image 优化（规则已全局关闭） */}
+                    <img
+                      src={WECHAT_PLATFORM?.qrImage}
+                      alt={tr('donate.wechatQrAlt')}
+                      className="mx-auto w-full max-w-64 rounded-lg"
+                    />
+                    <p className="mt-2 text-[10px] leading-4 text-gray-500 max-md:text-xs">
+                      {tr('donate.wechatQrHint')}
+                    </p>
+                  </div>
+                  <p className="mt-3 text-xs text-gray-400">{tr('unlock.mailTplHint')}</p>
+                  <pre className="mt-1 whitespace-pre-wrap break-words rounded border border-white/10 bg-black/30 p-3 text-[10px] leading-4 text-gray-300 max-md:text-xs">
+                    {mailTemplate}
+                  </pre>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleCopyMailTemplate()}
+                      className="rounded border border-white/15 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:text-white max-md:min-h-11 max-md:px-4 max-md:py-3"
+                    >
+                      📋 {tr(mailCopied ? 'unlock.mailTplCopied' : 'unlock.mailTplCopy')}
+                    </button>
+                    <a
+                      href={mailtoHref}
+                      className="inline-flex items-center rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent max-md:min-h-11 max-md:px-4 max-md:py-3"
+                    >
+                      📮 {tr('unlock.mailTplOpen')} →
+                    </a>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* ③④⑤ 备选与预留卡片（爱发电备选 / Ko-fi 海外备选 / 预留位） */}

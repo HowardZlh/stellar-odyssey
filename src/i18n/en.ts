@@ -145,9 +145,11 @@ export const en: I18nDict = {
     errNetwork: 'Network request failed — please check your connection and retry',
     wechatTitle: 'WeChat tip code (manual review · token sent by email)',
     wechatGuide:
-      'WeChat tips cannot be verified automatically — they are checked manually and the unlock token is sent by email only (not instant; usually within 48 hours). In a hurry? Use the Alipay QR above. Pay the selected tier amount, then send a redeem email to {email} using the template below, with a payment screenshot and the transaction time.',
-    wechatShowQr: 'Show tip code',
-    wechatHideQr: 'Hide tip code',
+      'Handled manually — the unlock token is sent by email only (not instant; usually within 48 hours). We recommend the Alipay QR above instead: token issued automatically, unlocks instantly.',
+    wechatSteps:
+      'Pay the selected tier amount by scanning the tip code, then send a redeem email to {email} using the template below, with a payment screenshot and the transaction time.',
+    wechatExpand: 'Show WeChat payment steps (tip code + email template)',
+    wechatCollapse: 'Hide WeChat payment steps',
     wechatQrAlt: 'WeChat tip code',
     wechatQrHint:
       'Long-press in WeChat to scan, or scan with your phone; please pay the tier price',
