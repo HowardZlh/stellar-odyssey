@@ -94,8 +94,7 @@ export function PostEffects(): JSX.Element | null {
   const bloomElement = useMemo(
     () => (
       <Bloom
-        // 库的 ref 类型标注为 typeof BloomEffect（已知类型瑕疵），实际转发实例
-        ref={bloomRef as unknown as React.Ref<typeof BloomEffect>}
+        ref={bloomRef}
         intensity={bloomIntensityForLevel(2)}
         luminanceThreshold={BLOOM_LUMINANCE_THRESHOLD}
         luminanceSmoothing={BLOOM_LUMINANCE_SMOOTHING}
