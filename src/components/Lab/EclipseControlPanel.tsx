@@ -7,10 +7,11 @@
  * → settingsRef → Canvas useFrame 读 ref，流星雨范式），本组件只渲染控件
  * 与回调——零内联可测逻辑（§7）。
  *
- * 分区：播放模式（导览变速/×1，登记 A1）· 曝光（契约 C5：自动/手动 + 滑杆
- * + A2 科普卡）· 太阳活动周（isotropy01 → 日冕形态）· 假想模式（§3.3 月地
- * 距离滑杆，与真实时间轴互斥）· 99%/100% 天光断崖对比 · 环境数值条（§1.4）
- * · 阶段科普卡（§3.1 五接触点 + 安全口径）。
+ * 分区：视角（M4：地面/太空分段控件 + 太空专属开关）· 播放模式（导览变速
+ * /×1，登记 A1）· 曝光（契约 C5：自动/手动 + 滑杆 + A2 科普卡）· 太阳活动周
+ * （isotropy01 → 日冕形态）· 假想模式（§3.3 月地距离滑杆，与真实时间轴互斥）
+ * · 99%/100% 天光断崖对比 · 环境数值条（§1.4）· 阶段科普卡（§3.1 五接触点
+ * + 安全口径）· 太空视角科普卡（A3 距离压缩/影锥可见性登记）。
  *
  * 移动端条款基线：可点元素 max-md:min-h-11（全量适配随 M6）。
  */
@@ -25,9 +26,12 @@ import {
   type EclipsePhaseCardKey,
   type EclipsePlayMode,
 } from '@/utils/solarEclipseLab';
+import type { EclipseViewMode } from '@/utils/solarEclipseSpace';
 
-/** M3 控件状态（父级 React state；渲染期同步 settingsRef 供 useFrame 读） */
+/** M3+M4 控件状态（父级 React state；渲染期同步 settingsRef 供 useFrame 读） */
 export interface EclipseM3Settings {
+  /** 视角档（M4 §3.2：地面 / 太空；切换触发 1–2s 运镜） */
+  viewMode: EclipseViewMode;
   /** 播放模式（§3.1：导览变速 / ×1 真实速度） */
   playMode: EclipsePlayMode;
   /** 曝光档（契约 C5：自动 = C2/C3 跨越切换基准） */
@@ -40,6 +44,10 @@ export interface EclipseM3Settings {
   hypoActive: boolean;
   /** 假想月地距离（km，363,104–405,696） */
   hypoMoonDistKm: number;
+  /** 本影放大 ×N 开关（M4；A4 登记：默认关 = 真实比例，HUD 注明倍率） */
+  umbraMagnify: boolean;
+  /** 倾角叙事模式（M4-4；A5 登记：倾角夸张显示，HUD 标真实值与倍率） */
+  inclinationDemo: boolean;
 }
 
 /** 环境数值条读数（父级 500ms tick 经纯函数计算后的展示文本） */
@@ -131,6 +139,69 @@ export function EclipseControlPanel({
 
   return (
     <div className="text-xs text-gray-100">
+      {/* 视角分段控件（M4 §3.2：地面 / 太空） */}
+      <SectionTitle text={tr('lab.eclipseViewTitle')} />
+      <Segmented
+        ariaLabel={tr('lab.eclipseViewAria')}
+        options={[
+          { id: 'ground', label: tr('lab.eclipseViewGround') },
+          { id: 'space', label: tr('lab.eclipseViewSpace') },
+        ]}
+        value={settings.viewMode}
+        onSelect={(id) => onChange({ viewMode: id as EclipseViewMode })}
+      />
+      {settings.viewMode === 'space' && (
+        <>
+          {/* 本影放大开关（A4：默认关 = 真实比例；标签含倍率） */}
+          <div className="mt-1 flex gap-1">
+            <button
+              aria-label={tr('lab.eclipseUmbraMagnifyAria')}
+              aria-pressed={settings.umbraMagnify}
+              onClick={() => onChange({ umbraMagnify: !settings.umbraMagnify })}
+              className={`flex-1 rounded px-1 py-1 text-[10px] leading-tight transition-colors max-md:min-h-11 ${
+                settings.umbraMagnify
+                  ? 'bg-amber-500/30 font-semibold text-amber-200'
+                  : 'bg-white/5 text-gray-400 hover:bg-white/10'
+              }`}
+            >
+              {tr('lab.eclipseUmbraMagnifyLabel')}：{settings.umbraMagnify ? 'ON' : 'OFF'}
+            </button>
+            {/* 倾角叙事模式（A5：夸张倾角示意） */}
+            <button
+              aria-label={tr('lab.eclipseInclinationAria')}
+              aria-pressed={settings.inclinationDemo}
+              onClick={() => onChange({ inclinationDemo: !settings.inclinationDemo })}
+              className={`flex-1 rounded px-1 py-1 text-[10px] leading-tight transition-colors max-md:min-h-11 ${
+                settings.inclinationDemo
+                  ? 'bg-amber-500/30 font-semibold text-amber-200'
+                  : 'bg-white/5 text-gray-400 hover:bg-white/10'
+              }`}
+            >
+              {tr('lab.eclipseInclinationLabel')}：{settings.inclinationDemo ? 'ON' : 'OFF'}
+            </button>
+          </div>
+          {settings.umbraMagnify && (
+            <p className="mt-1 rounded bg-amber-950/40 px-2 py-1 text-[10px] leading-snug text-amber-200/90">
+              {tr('lab.eclipseUmbraMagnifyBadge')}
+            </p>
+          )}
+          {settings.inclinationDemo && (
+            <p className="mt-1 rounded bg-amber-950/40 px-2 py-1 text-[10px] leading-snug text-amber-200/90">
+              {tr('lab.eclipseInclinationBadge')}
+            </p>
+          )}
+          {settings.inclinationDemo && (
+            <p className="mt-1 rounded bg-white/5 px-2 py-1 text-[10px] leading-snug text-gray-400">
+              {tr('lab.eclipseInclinationCard')}
+            </p>
+          )}
+          {/* 太空视角科普卡（A3：太阳距离压缩 + 影锥可见实体登记） */}
+          <p className="mt-1 rounded bg-white/5 px-2 py-1 text-[10px] leading-snug text-gray-400">
+            {tr('lab.eclipseSpaceCard')}
+          </p>
+        </>
+      )}
+
       {/* 播放模式（A1 登记：HUD 常显真实时刻与倍速） */}
       <SectionTitle text={tr('lab.eclipsePlayModeAria')} />
       <Segmented

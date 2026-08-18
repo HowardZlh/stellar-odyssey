@@ -493,6 +493,25 @@ export const en: I18nDict = {
       'Failed to load the eclipse ephemerides — the scene is unavailable. Please refresh and retry.',
     eclipseHintLookAround:
       'Drag or two-finger scroll to look around · Pinch to zoom in on the eclipsed Sun',
+    eclipseViewTitle: 'View',
+    eclipseViewAria: 'Switch viewpoint',
+    eclipseViewGround: 'Ground',
+    eclipseViewSpace: 'Space',
+    eclipseHudUmbraWidth: 'Umbra width',
+    eclipseHudShadowSpeed: 'Umbra ground speed',
+    eclipseHudAntumbra: 'antumbra',
+    eclipseUmbraMagnifyLabel: 'Magnify umbra ×8',
+    eclipseUmbraMagnifyAria: 'Toggle umbra magnification (display aid)',
+    eclipseUmbraMagnifyBadge: 'Umbra shown magnified ×8 (true width in the HUD)',
+    eclipseInclinationLabel: 'Inclination story',
+    eclipseInclinationAria: 'Toggle inclination story mode',
+    eclipseInclinationBadge:
+      'True orbital inclination 5.145°, shown exaggerated ×4; orbit and node pacing use a narrative timescale',
+    eclipseInclinationCard:
+      "The Moon's orbit is tilted 5.145° to the ecliptic — at most new moons the shadow sweeps above or below the Earth. Only when new moon happens near an orbital node does the cone strike the Earth. Watch the cone miss most passes and connect only during eclipse seasons roughly every half year.",
+    eclipseSpaceCard:
+      'Space view notes: the Sun is drawn with its true direction but compressed distance (the real 150 million km is beyond the scene); the translucent shadow cones are a visual aid — real shadow cones are invisible. Umbra/penumbra and the ground shadow spot are solved each frame from true cone geometry; at true scale the umbra is only ~100–270 km wide.',
+    eclipseHintSpace: 'Drag to orbit · Scroll or pinch to zoom · Press play to watch the umbra sweep',
   },
   helpHint: {
     controls:

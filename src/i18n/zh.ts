@@ -583,6 +583,30 @@ export const zh = {
     eclipseEphemerisFailed: '日食星历加载失败，场景暂不可用——请刷新页面重试',
     /** 操作提示（偏食段白昼恒星不可见属科学事实，提示捏合放大看日面） */
     eclipseHintLookAround: '拖动或双指滚动环顾 · 双指捏合放大视野看清日面缺角',
+    /** M4 视角分段控件（§3.2：地面/太空；切换触发 1–2s 运镜） */
+    eclipseViewTitle: '视角',
+    eclipseViewAria: '切换观察视角',
+    eclipseViewGround: '地面',
+    eclipseViewSpace: '太空',
+    /** M4 太空视角 HUD（本影宽度为真锥×球面解析真实值；速度 §1.2 锚点） */
+    eclipseHudUmbraWidth: '本影宽度',
+    eclipseHudShadowSpeed: '本影地速',
+    eclipseHudAntumbra: '伪本影',
+    /** 本影放大开关（A4 登记：文案倍率与 UMBRA_MAGNIFY_FACTOR=8 同步维护） */
+    eclipseUmbraMagnifyLabel: '本影放大 ×8',
+    eclipseUmbraMagnifyAria: '开关本影放大（显示辅助）',
+    eclipseUmbraMagnifyBadge: '本影已按 ×8 放大显示（真实宽度见 HUD 数值）',
+    /** 倾角叙事模式（A5 登记：文案倍率与 INCLINATION_DISPLAY_FACTOR=4 同步维护） */
+    eclipseInclinationLabel: '倾角叙事',
+    eclipseInclinationAria: '开关倾角叙事模式',
+    eclipseInclinationBadge: '轨道倾角真实值 5.145°，显示按 ×4 夸张；轨道与交点节奏为叙事时间尺度',
+    eclipseInclinationCard:
+      '月球轨道相对黄道倾斜 5.145°——多数月份的朔，月影从地球上方或下方掠过；只有朔恰逢月球行至白道交点附近，影锥才会命中地球发生日食。观察影锥多数时候擦过地球外侧、约每半年一段「食季」才命中。',
+    /** 太空视角科普卡（A3 登记：太阳距离压缩 + 影锥渲染为可见实体） */
+    eclipseSpaceCard:
+      '太空视角说明：太阳方向真实、距离压缩绘制（真实日地距离约 1.5 亿 km，超出场景域）；半透明影锥为表达辅助，真实影锥不可见。本影/半影与地表影斑由真锥几何逐帧解析，真实比例下地表本影仅百余公里宽。',
+    /** 太空档操作提示（OrbitControls 原生手势） */
+    eclipseHintSpace: '拖动旋转 · 滚轮或双指捏合缩放 · 播放看本影扫过地表',
   },
   helpHint: {
     /**
