@@ -1,0 +1,27 @@
+{
+  "source": "JPL Horizons API（位置序列，DE441）+ NASA Eclipse Web Site / Fred Espenak（贝塞尔要素、全食带路径表、事件元数据）",
+  "horizonsApi": "https://ssd.jpl.nasa.gov/api/horizons.api",
+  "gsfcPages": {
+    "e2027": "https://eclipse.gsfc.nasa.gov/SEgoogle/SEgoogle2001/SE2027Aug02Tgoogle.html + /SEpath/SEpath2001/SE2027Aug02Tpath.html",
+    "e2035": "https://eclipse.gsfc.nasa.gov/SEgoogle/SEgoogle2001/SE2035Sep02Tgoogle.html + /SEpath/SEpath2001/SE2035Sep02Tpath.html",
+    "e1919": "https://eclipse.gsfc.nasa.gov/SEgoogle/SEgoogle1901/SE1919May29Tgoogle.html + /SEpath/SEpath1901/SE1919May29Tpath.html"
+  },
+  "eclipseWiseNote": "需求原定 EclipseWise.com 校核，抓取时返回 HTTP 403（反爬），替换为同作者（Fred Espenak）的 NASA Eclipse Web Site 一手页面：贝塞尔要素与路径表均出自 Espenak 官方计算，来源等级不降",
+  "observers": {
+    "e2027": { "latDeg": 26.81642, "lonDeg": 31.13257, "altKm": 0.3, "note": "Espenak GD（最长全食持续）标记点，埃及新河谷省，全食 6m23s；海拔取沙漠高原近似值 300 m（登记近似）" },
+    "e2035": { "latDeg": 40.105, "lonDeg": 116.858333, "altKm": 0.06, "note": "Espenak 路径表 00:34 UT 中心线点（40°06.3'N 116°51.5'E），北京市郊怀柔—密云一带，全食 1m50.8s；海拔近似 60 m（登记近似）" },
+    "e1919": { "latDeg": -3.6883, "lonDeg": -40.3497, "altKm": 0.07, "note": "巴西 Sobral（1919 Eddington 实验决定性数据观测站，距 Espenak 中心线约 18 km），全食 ~5m13s；海拔近似 70 m（登记近似）" }
+  },
+  "horizonsQueries": {
+    "topo": "EPHEM_TYPE=OBSERVER, CENTER=coord@399, COORD_TYPE=GEODETIC, QUANTITIES=2,4,13（视 RA/Dec + 地平 Az/El airless + 视直径）, ANG_FORMAT=DEG, APPARENT=AIRLESS, EXTRA_PREC=YES, CSV_FORMAT=YES；粗采样窗口≈食甚±2h @1m、细采样窗口≈食甚±7min @1s（STEP_SIZE 为等分区间数）",
+    "geo": "EPHEM_TYPE=VECTORS, CENTER=500@399, REF_PLANE=FRAME(ICRF), VEC_TABLE=1, OUT_UNITS=KM-S, CSV_FORMAT=YES, VEC_LABELS=NO；窗口≈食甚±6h @2m（时标 TDB，烘焙时按事件常量换算 UTC，登记近似）"
+  },
+  "windows": {
+    "e2027": { "topo": "2027-08-02 08:15 → 11:45 @1m", "fine": "2027-08-02 09:52 → 10:09 @1s", "geo": "2027-08-02 04:00 → 16:00 @2m" },
+    "e2035": { "topo": "2035-09-01 22:15 → 2035-09-02 02:15 @1m", "fine": "2035-09-02 00:28 → 00:41 @1s", "geo": "2035-09-01 18:30 → 2035-09-02 06:30 @2m" },
+    "e1919": { "topo": "1919-05-29 10:25 → 13:50 @1m", "fine": "1919-05-29 11:53 → 12:09 @1s", "geo": "1919-05-29 06:00 → 18:00 @2m" }
+  },
+  "besselian": "贝塞尔要素内嵌于 gsfc-google.html 快照的 `var elements = new Array(...)` 段（Espenak 官方数值）；本地事件圈算法移植自同站 SEgoogle/SEcirc.js（Espenak/Jubier，逐式照抄）",
+  "retrievedAt": "2026-08-18T07:20:00Z",
+  "license": "公开科学数据：NASA/JPL Horizons（公有领域）；NASA Eclipse Web Site 数据由 Fred Espenak (NASA GSFC) 计算，引用注明 'Eclipse Predictions by Fred Espenak, NASA's GSFC'"
+}

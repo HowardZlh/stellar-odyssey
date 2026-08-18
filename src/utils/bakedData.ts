@@ -457,6 +457,172 @@ export function validateGalaxyCatalog(raw: ArrayBuffer | null): GalaxyCatalogDat
 }
 
 // ---------------------------------------------------------------------------
+// E-M1 日食星历 + 月缘剖面（契约 C2 / C3；scripts/bake-data/solarEclipses.ts
+// 与 lunarLimb.ts 文件头登记来源——JPL Horizons + NASA Eclipse Web Site /
+// Espenak、LRO LOLA LDEM_4）
+// ---------------------------------------------------------------------------
+
+/** 星历采样序列（契约 C2 topo/fineC2/fineC3/geo 块；与 solarEclipse.EphemerisSeries 结构兼容） */
+export interface SolarEclipseSeriesData {
+  /** 首行时刻（UTC 秒，Unix 纪元） */
+  t0: number;
+  /** 采样间隔（秒） */
+  dtSec: number;
+  /** 采样行（topo 族 7 列度值 / geo 8 列单位方向+距离 km） */
+  rows: number[][];
+}
+
+/** 单场日食事件（契约 C2） */
+export interface SolarEclipseEventData {
+  id: 'e2027' | 'e2035' | 'e1919';
+  /** 事件日期（UTC，YYYY-MM-DD） */
+  dateUtc: string;
+  saros: number;
+  kind: 'total';
+  /** 事件食分（Espenak 路径表最大直径比） */
+  magnitude: number;
+  /** |γ|（影轴离地心最小距离，地球赤道半径单位） */
+  gammaAbs: number;
+  /** 食甚中心线固定观测点 */
+  observer: { latDeg: number; lonDeg: number; altM: number; label: string };
+  /** 五接触点（UTC 秒；贝塞尔要素权威值） */
+  contacts: { c1: number; c2: number; max: number; c3: number; c4: number };
+  /** 站心序列（C1−15min→C4+15min @60s） */
+  topo: SolarEclipseSeriesData;
+  /** C2±3min @1s 细采样段 */
+  fineC2: SolarEclipseSeriesData;
+  /** C3±3min @1s 细采样段 */
+  fineC3: SolarEclipseSeriesData;
+  /** 地心 J2000 赤道系序列（±6h @120s） */
+  geo: SolarEclipseSeriesData;
+  /** 全食带中心线折线 [[latDeg, lonDeg, durationSec], …] */
+  path: number[][];
+}
+
+export interface SolarEclipsesData {
+  events: SolarEclipseEventData[];
+}
+
+/** 月缘高程剖面（契约 C3） */
+export interface LunarLimbProfileData {
+  source: string;
+  /** 平均半径（km，LDEM 基准 1737.4） */
+  meanRadiusKm: number;
+  /** 720 点 @0.5° 极角步长的高程偏差（km） */
+  samples: number[];
+}
+
+const SOLAR_ECLIPSE_IDS = ['e2027', 'e2035', 'e1919'] as const;
+
+/** 月缘剖面点数/偏差域（烘焙自校验同判据） */
+const LUNAR_LIMB_SAMPLE_COUNT = 720;
+const LUNAR_LIMB_DEVIATION_BOUND_KM = 9;
+
+function validateSeries(raw: unknown, rowWidth: number): SolarEclipseSeriesData | null {
+  if (!isRecord(raw) || !Array.isArray(raw.rows)) return null;
+  const { t0, dtSec } = raw;
+  if (!isFiniteNumber(t0) || !isFiniteNumber(dtSec) || dtSec <= 0) return null;
+  if (raw.rows.length < 2) return null;
+  const rows: number[][] = [];
+  for (const row of raw.rows as unknown[]) {
+    if (!Array.isArray(row) || row.length !== rowWidth) return null;
+    if (!row.every(isFiniteNumber)) return null;
+    rows.push(row as number[]);
+  }
+  return { t0, dtSec, rows };
+}
+
+/**
+ * 校验日食星历产物（契约 C2）：三事件齐全、接触时刻有序且落在采样窗内、
+ * 序列结构/数值域完整。失败返回 null（消费方显示降级提示，实验室不渲染）。
+ */
+export function validateSolarEclipses(raw: unknown): SolarEclipsesData | null {
+  if (!isRecord(raw) || !Array.isArray(raw.events)) return null;
+  if (raw.events.length !== SOLAR_ECLIPSE_IDS.length) return null;
+  const events: SolarEclipseEventData[] = [];
+  for (let i = 0; i < SOLAR_ECLIPSE_IDS.length; i += 1) {
+    const ev = raw.events[i] as unknown;
+    if (!isRecord(ev)) return null;
+    if (ev.id !== SOLAR_ECLIPSE_IDS[i]) return null;
+    if (!isNonEmptyString(ev.dateUtc) || ev.kind !== 'total') return null;
+    if (!isFiniteNumber(ev.saros) || !Number.isInteger(ev.saros) || ev.saros <= 0) return null;
+    if (!isFiniteNumber(ev.magnitude) || ev.magnitude <= 1 || ev.magnitude >= 1.1) return null;
+    if (!isFiniteNumber(ev.gammaAbs) || ev.gammaAbs < 0 || ev.gammaAbs >= 1) return null;
+    const obs = ev.observer;
+    if (!isRecord(obs)) return null;
+    const { latDeg, lonDeg, altM, label } = obs;
+    if (!isFiniteNumber(latDeg) || Math.abs(latDeg) > 90) return null;
+    if (!isFiniteNumber(lonDeg) || Math.abs(lonDeg) > 180) return null;
+    if (!isFiniteNumber(altM) || !isNonEmptyString(label)) return null;
+    const contacts = ev.contacts;
+    if (!isRecord(contacts)) return null;
+    const { c1, c2, max, c3, c4 } = contacts;
+    if (
+      !isFiniteNumber(c1) ||
+      !isFiniteNumber(c2) ||
+      !isFiniteNumber(max) ||
+      !isFiniteNumber(c3) ||
+      !isFiniteNumber(c4)
+    ) {
+      return null;
+    }
+    if (!(c1 < c2 && c2 < max && max < c3 && c3 < c4)) return null;
+    const topo = validateSeries(ev.topo, 7);
+    const fineC2 = validateSeries(ev.fineC2, 7);
+    const fineC3 = validateSeries(ev.fineC3, 7);
+    const geo = validateSeries(ev.geo, 8);
+    if (!topo || !fineC2 || !fineC3 || !geo) return null;
+    const coversContacts =
+      topo.t0 <= c1 && topo.t0 + (topo.rows.length - 1) * topo.dtSec >= c4;
+    const coversC2 =
+      fineC2.t0 <= c2 && fineC2.t0 + (fineC2.rows.length - 1) * fineC2.dtSec >= c2;
+    const coversC3 =
+      fineC3.t0 <= c3 && fineC3.t0 + (fineC3.rows.length - 1) * fineC3.dtSec >= c3;
+    if (!coversContacts || !coversC2 || !coversC3) return null;
+    if (!Array.isArray(ev.path) || ev.path.length < 10) return null;
+    const path: number[][] = [];
+    for (const p of ev.path as unknown[]) {
+      if (!Array.isArray(p) || p.length !== 3 || !p.every(isFiniteNumber)) return null;
+      path.push(p as number[]);
+    }
+    events.push({
+      id: SOLAR_ECLIPSE_IDS[i],
+      dateUtc: ev.dateUtc,
+      saros: ev.saros,
+      kind: 'total',
+      magnitude: ev.magnitude,
+      gammaAbs: ev.gammaAbs,
+      observer: { latDeg, lonDeg, altM, label },
+      contacts: { c1, c2, max, c3, c4 },
+      topo,
+      fineC2,
+      fineC3,
+      geo,
+      path,
+    });
+  }
+  return { events };
+}
+
+/**
+ * 校验月缘剖面产物（契约 C3）：720 点、偏差 ∈ [−9, +9] km、平均半径 1737.4。
+ * 失败返回 null（消费方降级——贝利珠退化为均匀月缘，M3 登记）。
+ */
+export function validateLunarLimbProfile(raw: unknown): LunarLimbProfileData | null {
+  if (!isRecord(raw)) return null;
+  const { source, meanRadiusKm, samples } = raw;
+  if (!isNonEmptyString(source)) return null;
+  if (!isFiniteNumber(meanRadiusKm) || Math.abs(meanRadiusKm - 1737.4) > 0.1) return null;
+  if (!Array.isArray(samples) || samples.length !== LUNAR_LIMB_SAMPLE_COUNT) return null;
+  const validated: number[] = [];
+  for (const v of samples as unknown[]) {
+    if (!isFiniteNumber(v) || Math.abs(v) > LUNAR_LIMB_DEVIATION_BOUND_KM) return null;
+    validated.push(v);
+  }
+  return { source, meanRadiusKm, samples: validated };
+}
+
+// ---------------------------------------------------------------------------
 // 加载（fetch + 内存缓存；失败返回 null 且不缓存）
 // ---------------------------------------------------------------------------
 
@@ -537,6 +703,18 @@ export async function loadGalaxyCatalog(baseUrl = '/data'): Promise<GalaxyCatalo
 /** 加载耶鲁亮星目录（M2 星穹；失败返回 null，消费方显示降级提示） */
 export async function loadYaleBrightStars(baseUrl = '/data'): Promise<YaleBrightStar[] | null> {
   return loadValidated(`${baseUrl}/yale_bright_stars.json`, validateYaleBrightStars);
+}
+
+/** 加载三事件日食星历（E-M1，契约 C2；失败返回 null，消费方显示降级提示） */
+export async function loadSolarEclipses(baseUrl = '/data'): Promise<SolarEclipsesData | null> {
+  return loadValidated(`${baseUrl}/solar_eclipses.json`, validateSolarEclipses);
+}
+
+/** 加载月缘高程剖面（E-M1，契约 C3；失败返回 null，贝利珠降级均匀月缘） */
+export async function loadLunarLimbProfile(
+  baseUrl = '/data'
+): Promise<LunarLimbProfileData | null> {
+  return loadValidated(`${baseUrl}/lunar_limb_profile.json`, validateLunarLimbProfile);
 }
 
 /** 加载星系影像权重图 meta（R5-1；失败返回 null，消费方降级参数化） */

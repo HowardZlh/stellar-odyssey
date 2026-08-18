@@ -1,0 +1,9 @@
+{
+  "source": "LRO LOLA GDR LDEM_4（Lunar Orbiter Laser Altimeter 高程网格，4 px/deg，V3.0 2017-09-15，Smith et al. / NASA GSFC）",
+  "url": "https://pds-geosciences.wustl.edu/lro/lro-l-lola-3-rdr-v1/lrolol_1xxx/data/lola_gdr/cylindrical/img/ldem_4.img（标签 ldem_4.lbl 同目录）",
+  "format": "720 行 × 1440 列 int16 LSB，0.5 m/count，基准半径 1737.4 km，simple cylindrical（lat +90→−90，lon 0→360 东经正），MEAN EARTH/POLAR AXIS (DE421) 坐标系，pixel registered",
+  "productChoice": "选型登记（契约 C3 🔶）：选 GDR 高程网格自行沿缘取样，而非现成 limb profile 产品——后者（Watts charts / NASA SVS 逐事件剖面）无通用可编程获取渠道；LDEM_4 为完整原始产品可整体提交快照（2.0 MB），分辨率 7.58 km/px 对 0.5° 步长（月缘弧上 ~15 km 间距）满足奈奎斯特采样，分辨率上限登记为已知近似",
+  "librationNote": "静态平均天平动姿态（需求 §1.5 🔶 定稿：不纳入逐时刻天平动修正，登记为已知近似）：ME 坐标系定义下平均指向地球点即 (0°N, 0°E)，月缘即 lon ±90° 子午线大圆；沿缘 ±0.5° 带内取高程极大值合成（契约 C3 取极值口径，兼顾天平动扫带与网格采样鲁棒性）",
+  "retrievedAt": "2026-08-18T07:20:00Z",
+  "license": "NASA PDS 公开数据（公有领域）；引用 Smith et al. (2010, GRL 37, L18204)，LRO-L-LOLA-4-GDR-V1.0"
+}
