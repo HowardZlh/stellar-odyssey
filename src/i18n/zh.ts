@@ -486,6 +486,43 @@ export const zh = {
     /** 预设视角按钮标签（devPreview 注册表 viewPresets.labelKey 引用） */
     obsPresetOverview: '全景语境',
     obsPresetCore: '核心推近（EHT 光子环）',
+    /**
+     * E-M2 日全食实验室（/lab/solar-eclipse）：条目卡/页签/HUD/时间轴。
+     * 页签标题含日期与地点（§3.5）；锚点名由数据驱动锚点列表引用（契约 C7，
+     * 月食条目将以 7 锚点复用同一 scrubber 组件）。
+     */
+    solarEclipseTitle: '日全食',
+    solarEclipseDescription:
+      '三场真实日全食的权威星历复现：2027 埃及世纪之食（全食 6 分 23 秒）、2035 北京家门口的全食、1919 爱丁顿验证广义相对论的历史之食。站在食甚中心线上，拖动时间轴亲历初亏到复圆。',
+    eclipseTabAria: '切换日食事件',
+    eclipseTab2027: '2027-08-02 · 埃及',
+    eclipseTab2035: '2035-09-02 · 北京',
+    eclipseTab1919: '1919-05-29 · 索布拉尔',
+    /** 观测点说明（固定食甚中心线点，§0.1；全食时长为本站贝塞尔解） */
+    eclipseObserver2027: '观测点：埃及新河谷省（食甚中心线，全食 6 分 23 秒）',
+    eclipseObserver2035: '观测点：北京市郊怀柔—密云（中心线，全食 1 分 51 秒）',
+    eclipseObserver1919: '观测点：巴西索布拉尔（1919 爱丁顿观测队驻地，全食 5 分 14 秒）',
+    /** 时间轴锚点名（五接触点，§1.3；数据驱动列表引用） */
+    eclipseAnchorC1: '初亏',
+    eclipseAnchorC2: '食既',
+    eclipseAnchorMax: '食甚',
+    eclipseAnchorC3: '生光',
+    eclipseAnchorC4: '复圆',
+    /** 时间轴 scrubber（M2-6 骨架：播放/暂停 ×1 真实速度，变速档随 M3） */
+    eclipseTimelineAria: '日食时间轴',
+    eclipsePlay: '播放（×1 真实速度）',
+    eclipsePause: '暂停',
+    /** HUD（500ms 刷新；视直径为真实值常显——契约 C4 不做几何放大） */
+    eclipseHudUtc: 'UTC',
+    eclipseHudMagnitude: '食分',
+    eclipseHudObscuration: '遮挡率',
+    eclipseHudSunDiam: '日视直径',
+    eclipseHudMoonDiam: '月视直径',
+    /** 星历加载态（useSolarEclipses 三态） */
+    eclipseLoadingEphemeris: '正在加载日食星历…',
+    eclipseEphemerisFailed: '日食星历加载失败，场景暂不可用——请刷新页面重试',
+    /** 操作提示（偏食段白昼恒星不可见属科学事实，提示捏合放大看日面） */
+    eclipseHintLookAround: '拖动或双指滚动环顾 · 双指捏合放大视野看清日面缺角',
   },
   helpHint: {
     /**

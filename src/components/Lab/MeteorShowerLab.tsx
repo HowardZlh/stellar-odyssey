@@ -120,13 +120,8 @@ import {
   LAB_POLAR_MIN_RAD,
   clampFollowDistance,
   clampFollowElevation,
-  clampLabPolar,
   followOrbitDelta,
   fovPointScaleFactor,
-  pinchFovDeg,
-  safariGestureFovDeg,
-  touchPinchScale,
-  wheelLookDelta,
 } from '@/utils/labGestures';
 import {
   effectiveLimitingMag,
@@ -147,6 +142,7 @@ import { LabEarth } from '@/components/Lab/LabEarth';
 import { LabSkyDome } from '@/components/Lab/LabSkyDome';
 import { HorizonRidge } from '@/components/Lab/HorizonRidge';
 import { RadiantMarker } from '@/components/Lab/RadiantMarker';
+import { TrackpadLookControls } from '@/components/Lab/TrackpadLookControls';
 import {
   LabControlPanel,
   type LabHudState,
@@ -653,125 +649,6 @@ function StarDome({ stars, refs, starPointMaxPx }: StarDomeProps): JSX.Element {
   // 几何包围球是单位球（attribute 为单位向量，真实位置由 shader 放到半径
   // 10000 处），必须关 frustum culling 防止整批被误剔除
   return <points geometry={geometry} material={material} frustumCulled={false} />;
-}
-
-/** Safari 专有捏合手势事件（lib.dom 无类型声明，最小结构接口） */
-interface SafariGestureEvent extends Event {
-  readonly scale?: number;
-}
-
-/**
- * 触控板手势接线（方案 A）：双指滚动 → 环顾、捏合 → FOV 缩放。
- * 换算/钳制走 utils/labGestures 纯函数（组件内零可测业务逻辑）；
- * 监听挂画布元素、非被动（preventDefault 阻止页面缩放/回弹）。
- */
-function TrackpadLookControls(): null {
-  const camera = useThree((s) => s.camera);
-  const gl = useThree((s) => s.gl);
-
-  useEffect(() => {
-    const el = gl.domElement;
-    const cam = camera as THREE.PerspectiveCamera;
-    const spherical = new THREE.Spherical();
-    // Safari 捏合走 gesture*（激活期间忽略 ctrl+wheel 分支防双重缩放）
-    let gestureActive = false;
-    let gestureStartFovDeg = cam.fov;
-
-    const applyFov = (fovDeg: number): void => {
-      cam.fov = fovDeg;
-      cam.updateProjectionMatrix();
-    };
-
-    const onWheel = (e: WheelEvent): void => {
-      e.preventDefault();
-      if (e.ctrlKey || e.metaKey) {
-        // 触控板捏合（Chrome/Firefox/Edge 映射为 wheel+ctrlKey）→ FOV
-        if (!gestureActive) applyFov(pinchFovDeg(cam.fov, e.deltaY));
-        return;
-      }
-      // 双指滚动 → 环顾（deltaMode 换行/换页按近似像素预乘）
-      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? el.clientHeight : 1;
-      const { dThetaRad, dPhiRad } = wheelLookDelta(
-        e.deltaX * unit,
-        e.deltaY * unit,
-        el.clientHeight,
-        cam.fov
-      );
-      if (dThetaRad === 0 && dPhiRad === 0) return;
-      // 相机球坐标绕 target（原点）旋转，半径不变；polar 钳制与
-      // OrbitControls props 同一事实源（labGestures 常量）
-      spherical.setFromVector3(cam.position);
-      spherical.theta += dThetaRad;
-      spherical.phi = clampLabPolar(spherical.phi + dPhiRad);
-      cam.position.setFromSpherical(spherical);
-      cam.lookAt(0, 0, 0);
-    };
-
-    // 触屏双指捏合（M4-2 触控）：起始双指距为基准 → touchPinchScale →
-    // safariGestureFovDeg（M2 登记的同一 FOV 钳制函数复用）。单指环顾由
-    // OrbitControls 原生触控 rotate 承担；仅双指时 preventDefault（防页面缩放）。
-    let touchStartDistPx = 0;
-    let touchStartFovDeg = cam.fov;
-    const touchDistPx = (touches: TouchList): number =>
-      Math.hypot(
-        touches[0].clientX - touches[1].clientX,
-        touches[0].clientY - touches[1].clientY
-      );
-    const onTouchStart = (e: TouchEvent): void => {
-      if (e.touches.length === 2) {
-        touchStartDistPx = touchDistPx(e.touches);
-        touchStartFovDeg = cam.fov;
-      }
-    };
-    const onTouchMove = (e: TouchEvent): void => {
-      if (e.touches.length !== 2 || touchStartDistPx <= 0) return;
-      e.preventDefault();
-      applyFov(
-        safariGestureFovDeg(touchStartFovDeg, touchPinchScale(touchStartDistPx, touchDistPx(e.touches)))
-      );
-    };
-    const onTouchEnd = (e: TouchEvent): void => {
-      if (e.touches.length < 2) touchStartDistPx = 0;
-    };
-
-    const onGestureStart = (e: Event): void => {
-      e.preventDefault();
-      gestureActive = true;
-      gestureStartFovDeg = cam.fov;
-    };
-    const onGestureChange = (e: Event): void => {
-      e.preventDefault();
-      const scale = (e as SafariGestureEvent).scale;
-      if (typeof scale === 'number') {
-        applyFov(safariGestureFovDeg(gestureStartFovDeg, scale));
-      }
-    };
-    const onGestureEnd = (e: Event): void => {
-      e.preventDefault();
-      gestureActive = false;
-    };
-
-    el.addEventListener('wheel', onWheel, { passive: false });
-    el.addEventListener('gesturestart', onGestureStart, { passive: false });
-    el.addEventListener('gesturechange', onGestureChange, { passive: false });
-    el.addEventListener('gestureend', onGestureEnd, { passive: false });
-    el.addEventListener('touchstart', onTouchStart, { passive: true });
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
-    el.addEventListener('touchend', onTouchEnd, { passive: true });
-    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
-    return () => {
-      el.removeEventListener('wheel', onWheel);
-      el.removeEventListener('gesturestart', onGestureStart);
-      el.removeEventListener('gesturechange', onGestureChange);
-      el.removeEventListener('gestureend', onGestureEnd);
-      el.removeEventListener('touchstart', onTouchStart);
-      el.removeEventListener('touchmove', onTouchMove);
-      el.removeEventListener('touchend', onTouchEnd);
-      el.removeEventListener('touchcancel', onTouchEnd);
-    };
-  }, [camera, gl]);
-
-  return null;
 }
 
 /**

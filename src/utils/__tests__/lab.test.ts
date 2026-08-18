@@ -25,8 +25,8 @@ const VALID_ENTRY: LabEntry = {
 };
 
 describe('LAB_REGISTRY（契约 C4）', () => {
-  it('本期为 meteor-shower + observatory 两项且字段齐全', () => {
-    expect(LAB_REGISTRY.size).toBe(2);
+  it('本期为 meteor-shower + observatory + solar-eclipse 三项且字段齐全', () => {
+    expect(LAB_REGISTRY.size).toBe(3);
     const entry = LAB_REGISTRY.get('meteor-shower');
     expect(entry).toBeDefined();
     expect(entry?.titleKey).toBe('lab.meteorShowerTitle');
@@ -45,6 +45,22 @@ describe('LAB_REGISTRY（契约 C4）', () => {
     expect(entry?.componentKey).toBe('observatory-lab');
     expect(entry?.dataSource).toContain('devPreview');
     expect(entry?.emoji).toBe('🔭');
+  });
+
+  it('E-M2：日全食条目字段齐全（契约 C6）', () => {
+    const entry = LAB_REGISTRY.get('solar-eclipse');
+    expect(entry).toBeDefined();
+    expect(entry?.titleKey).toBe('lab.solarEclipseTitle');
+    expect(entry?.descriptionKey).toBe('lab.solarEclipseDescription');
+    expect(entry?.componentKey).toBe('solar-eclipse-lab');
+    // 契约 C6：数据来源登记 NASA/Espenak + Horizons + LOLA + Yale 复用与主要近似
+    expect(entry?.dataSource).toContain('NASA Eclipse Web Site');
+    expect(entry?.dataSource).toContain('Espenak');
+    expect(entry?.dataSource).toContain('JPL Horizons');
+    expect(entry?.dataSource).toContain('LRO LOLA');
+    expect(entry?.dataSource).toContain('Yale Bright Star Catalog');
+    expect(entry?.dataSource).toContain('近似');
+    expect(entry?.emoji).toBe('🌒');
   });
 
   it('注册表全部条目通过注册期校验（模块加载即自检，此处显式复跑）', () => {
@@ -76,16 +92,18 @@ describe('查找与路径', () => {
   it('labEntryForId：命中返回条目，null/undefined/未注册返回 null', () => {
     expect(labEntryForId('meteor-shower')).toBe(LAB_REGISTRY.get('meteor-shower'));
     expect(labEntryForId('observatory')).toBe(LAB_REGISTRY.get('observatory'));
+    expect(labEntryForId('solar-eclipse')).toBe(LAB_REGISTRY.get('solar-eclipse'));
     expect(labEntryForId(null)).toBeNull();
     expect(labEntryForId(undefined)).toBeNull();
-    expect(labEntryForId('solar-eclipse')).toBeNull();
+    expect(labEntryForId('lunar-eclipse')).toBeNull();
   });
 
   it('registeredLabEntries 按注册序返回全部条目', () => {
     const entries = registeredLabEntries();
-    expect(entries).toHaveLength(2);
+    expect(entries).toHaveLength(3);
     expect(entries[0].labId).toBe('meteor-shower');
     expect(entries[1].labId).toBe('observatory');
+    expect(entries[2].labId).toBe('solar-eclipse');
   });
 
   it('labScenePath 与 LAB_PAGE_PATH 路由同源', () => {
