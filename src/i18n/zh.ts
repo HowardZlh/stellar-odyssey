@@ -508,9 +508,9 @@ export const zh = {
     eclipseAnchorMax: '食甚',
     eclipseAnchorC3: '生光',
     eclipseAnchorC4: '复圆',
-    /** 时间轴 scrubber（M2-6 骨架：播放/暂停 ×1 真实速度，变速档随 M3） */
+    /** 时间轴 scrubber（M2-6 骨架 + M3 变速档；贝利珠窗高亮刻度 §3.1） */
     eclipseTimelineAria: '日食时间轴',
-    eclipsePlay: '播放（×1 真实速度）',
+    eclipsePlay: '播放',
     eclipsePause: '暂停',
     /** HUD（500ms 刷新；视直径为真实值常显——契约 C4 不做几何放大） */
     eclipseHudUtc: 'UTC',
@@ -518,6 +518,66 @@ export const zh = {
     eclipseHudObscuration: '遮挡率',
     eclipseHudSunDiam: '日视直径',
     eclipseHudMoonDiam: '月视直径',
+    /** HUD·M3 扩展（A1 登记：真实时刻 + 倍速常显；全食段剩余时间 §3.4） */
+    eclipseHudRate: '倍速',
+    eclipseHudPhase: '阶段',
+    eclipseHudKind: '食型',
+    eclipseHudTotalityLeft: '全食剩余',
+    /** 食型/阶段名（eclipseKind 实时判定，§1.1 不硬编码事件类型） */
+    eclipsePhaseNone: '无食',
+    eclipsePhasePartial: '偏食',
+    eclipsePhaseTotal: '全食',
+    eclipsePhaseAnnular: '环食',
+    /** 播放模式（§3.1：导览变速 = 偏食×60/全食×1，登记 A1） */
+    eclipsePlayModeAria: '播放模式',
+    eclipsePlayModeTour: '导览变速',
+    eclipsePlayModeReal: '×1 真实',
+    /** 曝光状态机（契约 C5：filtered/naked-eye 双基准 + 滑杆 + 自动档） */
+    eclipseExposureTitle: '曝光',
+    eclipseExposureAuto: '自动（人眼）',
+    eclipseExposureManual: '手动',
+    eclipseExposureSliderAria: '曝光（滤镜 ↔ 裸眼）',
+    eclipseExposureFiltered: '滤镜',
+    eclipseExposureNaked: '裸眼',
+    /** 曝光科普卡（A2 登记：日冕亮度经色调映射压缩非线性真值） */
+    eclipseExposureCard:
+      '光球比日冕亮约 100 万倍（6 个数量级），任何一档曝光都无法同屏两者：滤镜档只见光球、裸眼档光球溢出泛光而日冕显形。本场景的日冕亮度经色调映射压缩，不是线性真值。',
+    /** 太阳活动周滑杆（§3.3：绑定日冕 isotropy01，极小年赤道长冕流 ↔ 极大年圆胖） */
+    eclipseActivityTitle: '太阳活动周',
+    eclipseActivityAria: '太阳活动周（日冕形态）',
+    eclipseActivityMin: '极小年',
+    eclipseActivityMax: '极大年',
+    /** 假想模式（§3.3：与真实时间轴互斥，HUD 明示） */
+    eclipseHypoTitle: '假想模式',
+    eclipseHypoToggleAria: '开关假想模式',
+    eclipseHypoBadge: '假想模式：月地距离已改写，几何为重算值',
+    eclipseHypoMoonDist: '月地距离',
+    eclipseHypoMoonDistAria: '假想月地距离（km）',
+    /** 99%/100% 一键对比（§3.3：天光断崖，纠正「偏食是小号全食」误解） */
+    eclipseCompareTitle: '天光断崖对比',
+    eclipseCompare99: '遮挡 99%',
+    eclipseCompare100: '食甚 100%',
+    /** 环境数值条（§1.4：不做粒子级模拟，信息面板实时数值） */
+    eclipseEnvTitle: '环境',
+    eclipseEnvTemp: '气温降幅',
+    eclipseEnvSky: '天光亮度',
+    eclipseEnvLm: '极限星等',
+    /** 阶段科普卡（§3.1 五接触点；C2/C3 卡含安全口径——底稿 §七） */
+    eclipseCardC1:
+      '初亏：月缘首次切入日面。此后约一个多小时太阳被逐渐吃掉，但遮挡 90% 前你几乎察觉不到变暗——人眼的对数响应把变化藏起来了。地上树影里的光斑会先泄密：每个都是一枚小月牙。',
+    eclipseCardC2:
+      '食既前的最后时刻：阳光只剩月缘山谷间的几粒——贝利珠，大小与间距由真实月缘地形（LRO/LOLA 高程）决定；收敛到最后一珠即钻石环。注意：此刻光球仍在，现实中仍不可裸眼直视，须待完全食既。地面可能掠过快速的明暗波纹（影带——机制真实、形态为程序化再现）。',
+    eclipseCardMax:
+      '食甚：全食的正中。日冕向四周伸展（形态随太阳活动周变化），月缘外侧可见粉红色日珥剪影（分布为典型形态再现，非该次食实测）。环顾四周——地平线一圈仍是橙色暮光，因为百余公里外的大地仍在阳光下：全食不是黑夜。',
+    eclipseCardC3:
+      '生光：月缘另一侧先漏出钻石环，再散成贝利珠，色球红环一闪即逝。注意：光球一旦重现即不可裸眼直视，现实中此刻必须重新戴上滤镜。',
+    eclipseCardC4:
+      '复圆：月盘完全退出日面，这场日食结束。同一地点平均要等约 375 年才会再逢全食；而随着月球以每年约 3.8 厘米远离地球，日全食将在数亿年后永久终结——我们正好活在能看到它的地质窗口里。',
+    /** 亮行星标注（§2.1：按事件历元真实方位；星等为典型值近似登记） */
+    eclipsePlanetVenus: '金星',
+    eclipsePlanetJupiter: '木星',
+    eclipsePlanetMercury: '水星',
+    eclipsePlanetMars: '火星',
     /** 星历加载态（useSolarEclipses 三态） */
     eclipseLoadingEphemeris: '正在加载日食星历…',
     eclipseEphemerisFailed: '日食星历加载失败，场景暂不可用——请刷新页面重试',
