@@ -425,7 +425,8 @@ export const en: I18nDict = {
     eclipseTab1919: '1919-05-29 · Sobral',
     eclipseObserver2027: 'Site: New Valley, Egypt (central line, totality 6 min 23 s)',
     eclipseObserver2035: 'Site: Beijing outskirts, China (central line, totality 1 min 51 s)',
-    eclipseObserver1919: 'Site: Sobral, Brazil (1919 Eddington expedition site, totality 5 min 14 s)',
+    eclipseObserver1919:
+      'Historical scene · Site: Sobral, Brazil (1919 Eddington expedition site, totality 5 min 14 s)',
     eclipseAnchorC1: 'First contact',
     eclipseAnchorC2: 'Totality begins',
     eclipseAnchorMax: 'Maximum',
@@ -512,6 +513,16 @@ export const en: I18nDict = {
     eclipseSpaceCard:
       'Space view notes: the Sun is drawn with its true direction but compressed distance (the real 150 million km is beyond the scene); the translucent shadow cones are a visual aid — real shadow cones are invisible. Umbra/penumbra and the ground shadow spot are solved each frame from true cone geometry; at true scale the umbra is only ~100–270 km wide.',
     eclipseHintSpace: 'Drag to orbit · Scroll or pinch to zoom · Press play to watch the umbra sweep',
+    /** M5 Eddington starlight deflection (A10: ×2500 synced with EDDINGTON_DEFLECTION_EXAGGERATION) */
+    eclipseDeflectionTitle: 'Starlight deflection (1919)',
+    eclipseDeflectionToggle: 'Show gravitational deflection',
+    eclipseDeflectionAria: 'Toggle starlight deflection comparison',
+    eclipseDeflectionBadge:
+      'Deflection exaggerated ×2500 for display; the real effect is tiny — just 1.75″ even at the solar limb. The values next to the markers are true arcseconds.',
+    eclipseDeflectionLegend:
+      'Hollow ring = position without the Sun · solid dot = deflected position · the closer to the Sun, the larger the shift (δ ∝ 1/b)',
+    eclipse1919Card:
+      'Historical scene: on 29 May 1919, two British expeditions — at Sobral, Brazil and Príncipe, West Africa — measured how starlight bends when passing near the Sun (Eddington himself was on Príncipe, where clouds left only 2 usable plates; the decisive data came from Sobral\u2019s 4-inch lens: 7 plates, 1.98″ ± 0.12″). Only during a total eclipse can stars near the Sun be seen — at maximum the Sun stood right in the Hyades cluster, rich in bright stars, which is exactly why this eclipse was chosen. The measured deflection matched the prediction of general relativity (1.75″ at the solar limb), about twice the Newtonian value. The precision achieved then was close to the experimental limit; the conclusion was confirmed by repeated measurements in the second half of the 20th century.',
   },
   helpHint: {
     controls:

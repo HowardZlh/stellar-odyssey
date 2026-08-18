@@ -36,6 +36,7 @@ import {
   eclipseObscuration,
   eclipseSkyDarkening,
   interpolateEphemeris,
+  starDeflectionArcsec,
   topoAngularSepDeg,
   MOON_MEAN_RADIUS_KM,
   SKY_DARKEN_ONSET_OBSCURATION,
@@ -43,6 +44,7 @@ import {
   type EclipseKind,
   type EphemerisSeries,
 } from '@/utils/solarEclipse';
+import { horizontalFromEquatorial, sceneDirFromAltAz } from '@/utils/meteorShower';
 import { heliocentricPosition } from '@/utils/physics';
 import { createSeededRandom } from '@/utils/random';
 
@@ -818,4 +820,149 @@ export function eclipseTempDropC(obscuration01: number): number {
   }
   const obs = Math.min(1, Math.max(0, obscuration01));
   return TOTALITY_TEMP_DROP_C * Math.pow(obs, 1.5);
+}
+
+// ---------------------------------------------------------------------------
+// M5 Eddington 星光引力偏折（§M5-2；契约 C1 starDeflectionArcsec 唯一消费口，
+// 组件不得内联公式；登记 A10：偏折量夸张显示 + HUD 标注真实角秒值）
+// ---------------------------------------------------------------------------
+
+/** 角秒 → 弧度 */
+export const ARCSEC_TO_RAD = Math.PI / (180 * 3600);
+
+/**
+ * 偏折显示夸张倍率（登记 A10）：真实日面边缘偏折仅 1.7520″ ≈ 0.00049°，
+ * 屏幕上不可辨；×2500 后日面边缘偏移 ≈ 1.22°（约 2.3 个日面直径），近日
+ * 恒星位移直观可辨且 δ ∝ 1/b 递减关系可目验。HUD/科普卡明示倍率与真实值
+ * （i18n `lab.eclipseDeflectionBadge` 文案数值与此常量同步维护）。
+ */
+export const EDDINGTON_DEFLECTION_EXAGGERATION = 2500;
+
+/** 偏折双态切换动画时长（秒；0↔1 线性缓动，UI 过渡非物理量） */
+export const DEFLECTION_EASE_SEC = 0.8;
+
+/**
+ * 星点方向施加引力偏折（CPU 侧事实源，StarDome/标记层 GLSL 照抄勿变形）：
+ * 偏折角 δ = starDeflectionArcsec(sep)（契约 C1）× 夸张倍率（A10）×
+ * strength01，方向沿**背离日心**的大圆切向（光线掠日弯向太阳 → 视位置
+ * 外移，1919 底片的观测形态）。小角近似：dir' = normalize(dir + away·δ)。
+ *
+ * @param starDir 恒星单位方向（场景地平系）
+ * @param sunDir 日心单位方向（同系）
+ * @param strength01 偏折态插值（0 = 无太阳假想位 ↔ 1 = 偏折后实位）
+ * @param out 复用输出（渲染循环零 GC）
+ */
+export function deflectedStarDirection(
+  starDir: readonly number[],
+  sunDir: readonly number[],
+  strength01: number,
+  out: [number, number, number] = [0, 0, 0]
+): [number, number, number] {
+  if (!Number.isFinite(strength01)) {
+    throw new RangeError(`strength01 必须为有限数，收到 ${strength01}`);
+  }
+  const cosSep = Math.min(
+    1,
+    Math.max(-1, starDir[0] * sunDir[0] + starDir[1] * sunDir[1] + starDir[2] * sunDir[2])
+  );
+  // 背离日心切向：dir 在垂直于 sunDir 方向上的分量
+  const ax = starDir[0] - sunDir[0] * cosSep;
+  const ay = starDir[1] - sunDir[1] * cosSep;
+  const az = starDir[2] - sunDir[2] * cosSep;
+  const awayLen = Math.hypot(ax, ay, az);
+  if (awayLen < 1e-9 || strength01 <= 0) {
+    out[0] = starDir[0];
+    out[1] = starDir[1];
+    out[2] = starDir[2];
+    return out;
+  }
+  const sepDeg = Math.acos(cosSep) / DEG;
+  const deflRad =
+    starDeflectionArcsec(sepDeg) * ARCSEC_TO_RAD * EDDINGTON_DEFLECTION_EXAGGERATION * strength01;
+  const k = deflRad / awayLen;
+  const x = starDir[0] + ax * k;
+  const y = starDir[1] + ay * k;
+  const z = starDir[2] + az * k;
+  const n = Math.hypot(x, y, z);
+  out[0] = x / n;
+  out[1] = y / n;
+  out[2] = z / n;
+  return out;
+}
+
+/** 对照标记选星上限（§M5-2：双位置标记 + 角秒标注，控制标注密度与 draw call） */
+export const EDDINGTON_MARKER_MAX_COUNT = 6;
+
+/** 对照标记选星角距窗（度；食甚时刻与日心视角距上限——毕宿星团覆盖域） */
+export const EDDINGTON_MARKER_MAX_SEP_DEG = 8;
+
+/** 对照标记选星星等上限（毕宿星团亮星 + 毕宿五量级；更暗恒星标注价值低） */
+export const EDDINGTON_MARKER_MAG_MAX = 4.0;
+
+/** 偏折对照标记星（食甚时刻选定，事件级一次计算） */
+export interface EddingtonMarkerStar {
+  /** 星表索引（星穹 attribute 对位） */
+  index: number;
+  /** 赤经（度，J2000） */
+  raDeg: number;
+  /** 赤纬（度，J2000） */
+  decDeg: number;
+  /** 视星等 */
+  mag: number;
+  /** 食甚时刻与日心视角距（度） */
+  sepDeg: number;
+  /** 真实偏折角（角秒，契约 C1 starDeflectionArcsec——HUD 标注真实值，A10） */
+  deflectionArcsec: number;
+}
+
+/**
+ * 偏折对照标记选星（§M5-2）：食甚时刻地平系内，取日心角距 ≤ 8° 且亮于
+ * 4.0 等、位于地平上的恒星，按角距升序取前 6 颗——1919-05-29 食甚太阳
+ * 恰在毕宿星团中（历史上选中这次食的原因），选出即毕宿亮星 + 毕宿五。
+ *
+ * 近似登记：星表为 J2000 历元、恒星时链忽略岁差（M2 星穹同口径）——
+ * 1919 历元下恒星相对日面位置含 ~1° 量级系统偏差，对 8° 选星窗与偏折
+ * 叙事无实质影响。
+ *
+ * @param stars 耶鲁亮星目录（结构子集，解耦 bakedData 类型）
+ * @param group 事件星历序列组（食甚时刻太阳视位置）
+ * @param contacts 接触时刻（取 max）
+ * @param observer 观测点（纬度/经度，度）
+ */
+export function eddingtonMarkerStars(
+  stars: ReadonlyArray<{ ra: number; dec: number; mag: number }>,
+  group: EclipseSeriesGroup,
+  contacts: EclipseContacts,
+  observer: { latDeg: number; lonDeg: number }
+): EddingtonMarkerStar[] {
+  const frame = eclipseFrameState(group, contacts.max);
+  const sunDir = sceneDirFromAltAz({
+    altRad: frame.sunAltDeg * DEG,
+    azRad: frame.sunAzDeg * DEG,
+  });
+  const lst = lstRadFromUnixSec(contacts.max, observer.lonDeg);
+  const out: EddingtonMarkerStar[] = [];
+  for (let i = 0; i < stars.length; i += 1) {
+    const s = stars[i];
+    if (s.mag > EDDINGTON_MARKER_MAG_MAX) continue;
+    const altAz = horizontalFromEquatorial(s.ra, s.dec, observer.latDeg, lst);
+    if (altAz.altRad <= 0) continue;
+    const dir = sceneDirFromAltAz(altAz);
+    const cosSep = Math.min(
+      1,
+      Math.max(-1, dir[0] * sunDir[0] + dir[1] * sunDir[1] + dir[2] * sunDir[2])
+    );
+    const sepDeg = Math.acos(cosSep) / DEG;
+    if (sepDeg > EDDINGTON_MARKER_MAX_SEP_DEG) continue;
+    out.push({
+      index: i,
+      raDeg: s.ra,
+      decDeg: s.dec,
+      mag: s.mag,
+      sepDeg,
+      deflectionArcsec: starDeflectionArcsec(sepDeg),
+    });
+  }
+  out.sort((a, b) => a.sepDeg - b.sepDeg);
+  return out.slice(0, EDDINGTON_MARKER_MAX_COUNT);
 }

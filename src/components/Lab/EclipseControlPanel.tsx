@@ -48,6 +48,8 @@ export interface EclipseM3Settings {
   umbraMagnify: boolean;
   /** 倾角叙事模式（M4-4；A5 登记：倾角夸张显示，HUD 标真实值与倍率） */
   inclinationDemo: boolean;
+  /** 星光偏折对照（M5-2；A10 登记：偏折夸张显示，HUD 标真实角秒值与倍率） */
+  deflectionDemo: boolean;
 }
 
 /** 环境数值条读数（父级 500ms tick 经纯函数计算后的展示文本） */
@@ -83,6 +85,8 @@ export interface EclipseControlPanelProps {
   phaseCardKey: EclipsePhaseCardKey;
   /** 99%/100% 一键对比（父级 seek 到对应时刻并暂停） */
   onCompare: (which: '99' | '100') => void;
+  /** M5：当前为 1919 Eddington 历史页签（显示偏折对照控件 + 科学史科普卡） */
+  eddington: boolean;
 }
 
 /** 分区标题（统一样式） */
@@ -134,6 +138,7 @@ export function EclipseControlPanel({
   env,
   phaseCardKey,
   onCompare,
+  eddington,
 }: EclipseControlPanelProps): JSX.Element {
   const tr = useT();
 
@@ -198,6 +203,45 @@ export function EclipseControlPanel({
           {/* 太空视角科普卡（A3：太阳距离压缩 + 影锥可见实体登记） */}
           <p className="mt-1 rounded bg-white/5 px-2 py-1 text-[10px] leading-snug text-gray-400">
             {tr('lab.eclipseSpaceCard')}
+          </p>
+        </>
+      )}
+
+      {/* M5 星光引力偏折对照（1919 Eddington 页签专属；A10 登记） */}
+      {eddington && (
+        <>
+          <SectionTitle text={tr('lab.eclipseDeflectionTitle')} />
+          {settings.viewMode === 'ground' && (
+            <>
+              <button
+                aria-label={tr('lab.eclipseDeflectionAria')}
+                aria-pressed={settings.deflectionDemo}
+                onClick={() => onChange({ deflectionDemo: !settings.deflectionDemo })}
+                className={`w-full rounded px-2 py-1 text-[10px] transition-colors max-md:min-h-11 ${
+                  settings.deflectionDemo
+                    ? 'bg-amber-500/30 font-semibold text-amber-200'
+                    : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                }`}
+              >
+                {tr('lab.eclipseDeflectionToggle')}：{settings.deflectionDemo ? 'ON' : 'OFF'}
+              </button>
+              {settings.deflectionDemo && (
+                <>
+                  {/* A10 徽标：夸张倍率 + 真实值 1.75″（文案数值与
+                      EDDINGTON_DEFLECTION_EXAGGERATION 常量同步维护） */}
+                  <p className="mt-1 rounded bg-amber-950/40 px-2 py-1 text-[10px] leading-snug text-amber-200/90">
+                    {tr('lab.eclipseDeflectionBadge')}
+                  </p>
+                  <p className="mt-1 rounded bg-white/5 px-2 py-1 text-[10px] leading-snug text-gray-400">
+                    {tr('lab.eclipseDeflectionLegend')}
+                  </p>
+                </>
+              )}
+            </>
+          )}
+          {/* 科学史科普卡（M5-3：诚实口径——当年精度接近极限、后世确认） */}
+          <p className="mt-1 rounded bg-sky-950/50 px-2 py-1.5 text-[10px] leading-relaxed text-gray-300">
+            {tr('lab.eclipse1919Card')}
           </p>
         </>
       )}

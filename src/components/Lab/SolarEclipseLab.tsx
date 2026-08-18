@@ -113,13 +113,18 @@ import {
 } from '@/utils/sunSurface';
 import { PROMINENCE_FIBRIL_FREQ } from '@/utils/solarActivity';
 import {
+  GR_LIMB_DEFLECTION_ARCSEC,
   LIMB_PROFILE_SAMPLE_COUNT,
   MOON_MEAN_RADIUS_KM,
   SKY_SHELL_RADIUS_KM,
+  SUN_MEAN_ANGULAR_RADIUS_DEG,
 } from '@/utils/solarEclipse';
 import {
+  ARCSEC_TO_RAD,
+  DEFLECTION_EASE_SEC,
   ECLIPSE_PLANETS,
   ECLIPSE_QUAD_HALF_ANGLE_RAD,
+  EDDINGTON_DEFLECTION_EXAGGERATION,
   EXPOSURE_FILTERED_PHOTO_GAIN,
   EXPOSURE_FILTERED_STAR_GAIN,
   TWILIGHT_RING_BAND_POW,
@@ -128,8 +133,10 @@ import {
   activePhaseCardKey,
   autoExposure01,
   beadsHighlightWindows,
+  deflectedStarDirection,
   eclipseEventSeed,
   eclipseFrameState,
+  eddingtonMarkerStars,
   eclipsePlayRate,
   eclipseProminences,
   eclipseTempDropC,
@@ -150,6 +157,7 @@ import {
   type EclipseExposureUniforms,
   type EclipseFrameState,
   type EclipsePhaseCardKey,
+  type EddingtonMarkerStar,
   type EclipseProminence,
   type EclipseTimelineAnchor,
   type EclipseTimelineWindow,
@@ -223,6 +231,8 @@ interface EclipseRenderState extends EclipseExposureUniforms {
   rateNow: number;
   /** 影带强度包络（shadowBandsStrength01；pass 帧读） */
   bands01: number;
+  /** M5 星光偏折双态插值（0 = 无偏折 ↔ 1 = 偏折实位；开关 0.8s 缓动） */
+  deflection01: number;
 }
 
 /** 空渲染派生状态（挂载期分配一次零 GC） */
@@ -233,6 +243,7 @@ function emptyEclipseRenderState(): EclipseRenderState {
     twilight01: 0,
     rateNow: 1,
     bands01: 0,
+    deflection01: 0,
   };
 }
 
@@ -334,6 +345,11 @@ function EclipseTimeDriver({
     r.twilight01 = totalityImmersion01(frame.obscuration01);
     r.rateNow = rate;
     r.bands01 = s.hypoActive ? 0 : shadowBandsStrength01(tSec, event.contacts);
+    // M5 偏折双态 0↔1 切换动画（线性缓动收敛到目标——UI 过渡非物理量，
+    // 与 tSec 单值重建红线不冲突；仅地面档生效）
+    const deflTarget = s.deflectionDemo && s.viewMode === 'ground' ? 1 : 0;
+    const deflStep = Math.min(delta, 0.1) / DEFLECTION_EASE_SEC;
+    r.deflection01 += Math.max(-deflStep, Math.min(deflStep, deflTarget - r.deflection01));
   });
   return null;
 }
@@ -442,6 +458,26 @@ function EclipseViewIntroRig({
 // 天穹叶组件（流星雨同范式扩展；每帧只写 uniforms/材质色，零 buffer 更新）
 // ---------------------------------------------------------------------------
 
+/**
+ * M5 星光引力偏折 GLSL 镜像（CPU 事实源 = solarEclipseLab.deflectedStarDirection，
+ * 照抄勿变形——契约 C1 starDeflectionArcsec 同式：δ″ = 1.7520 × R☉/b，日面
+ * 边缘内钳制；偏移沿背离日心切向 × 夸张倍率（A10 登记：真实 1.75″ 不可辨，
+ * ×2500 显示，HUD/科普卡标注真实值与倍率）。
+ */
+const GLSL_DEFLECTION_MIRROR = /* glsl */ `
+  vec3 applyDeflection(vec3 dir, vec3 sunDir, float strength01) {
+    if (strength01 <= 0.0001) return dir;
+    float cosSep = clamp(dot(dir, sunDir), -1.0, 1.0);
+    vec3 away = dir - sunDir * cosSep;
+    float awayLen = length(away);
+    if (awayLen < 1e-6) return dir;
+    float sepDeg = max(acos(cosSep) * ${(180 / Math.PI).toFixed(8)}, ${SUN_MEAN_ANGULAR_RADIUS_DEG.toFixed(5)});
+    float deflRad = ${GR_LIMB_DEFLECTION_ARCSEC.toFixed(4)} * ${SUN_MEAN_ANGULAR_RADIUS_DEG.toFixed(5)} / sepDeg
+      * ${ARCSEC_TO_RAD.toExponential(8)} * ${EDDINGTON_DEFLECTION_EXAGGERATION.toFixed(1)} * strength01;
+    return normalize(dir + (away / awayLen) * deflRad);
+  }
+`;
+
 const ECLIPSE_STAR_VERTEX_SHADER = /* glsl */ `
   attribute float aMag;
   uniform mat3 uEqToHor;
@@ -451,7 +487,10 @@ const ECLIPSE_STAR_VERTEX_SHADER = /* glsl */ `
   uniform float uDomeRadius;
   uniform float uPointMax;
   uniform float uGain;
+  uniform vec3 uSunDir;
+  uniform float uDeflection01;
   varying vec3 vColor;
+  ${GLSL_DEFLECTION_MIRROR}
   void main() {
     // 极限星等剔除：白昼 lm=−4 时全部剔除（零 fragment 开销）；
     // 近全食经 eclipseSkyDarkening 抬升 lm 后渐显（M3 专项目验）
@@ -461,7 +500,8 @@ const ECLIPSE_STAR_VERTEX_SHADER = /* glsl */ `
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       return;
     }
-    vec3 dir = uEqToHor * position;
+    // M5 偏折双态：近日恒星沿背离日心方向偏移（0↔1 切换动画，A10）
+    vec3 dir = applyDeflection(uEqToHor * position, uSunDir, uDeflection01);
     vec4 mvPosition = modelViewMatrix * vec4(dir * uDomeRadius, 1.0);
     float size = uSize * pow(1.32, -aMag);
     gl_PointSize = clamp(size * (uScale / -mvPosition.z), 1.0, uPointMax);
@@ -526,6 +566,8 @@ function EclipseStarDome({
         uDomeRadius: { value: STAR_DOME_RADIUS_UNITS },
         uPointMax: { value: starPointMaxPx },
         uGain: { value: EXPOSURE_FILTERED_STAR_GAIN },
+        uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+        uDeflection01: { value: 0 },
       },
       vertexShader: ECLIPSE_STAR_VERTEX_SHADER,
       fragmentShader: ECLIPSE_STAR_FRAGMENT_SHADER,
@@ -556,6 +598,13 @@ function EclipseStarDome({
     const lst = lstRadFromUnixSec(refs.tSecRef.current, event.observer.lonDeg);
     const m = equatorialToHorizontalMatrix(event.observer.latDeg, lst);
     (material.uniforms.uEqToHor.value as THREE.Matrix3).set(...m);
+    // M5 偏折双态（背离日心方向由 uSunDir 逐帧驱动；缓动值经渲染派生状态）
+    const sunDir = sceneDirFromAltAz({
+      altRad: frame.sunAltDeg * DEG,
+      azRad: frame.sunAzDeg * DEG,
+    });
+    (material.uniforms.uSunDir.value as THREE.Vector3).set(sunDir[0], sunDir[1], sunDir[2]);
+    material.uniforms.uDeflection01.value = refs.renderRef.current.deflection01;
   });
 
   // 单位球 attribute（真实位置由 shader 放到壳半径），关剔除防整批误剔
@@ -1183,6 +1232,201 @@ function EclipsePlanetMarker({
 }
 
 // ---------------------------------------------------------------------------
+// M5 星光偏折双位置对照标记（§M5-2：空心 = 无太阳假想位、实心 = 偏折实位、
+// 连线 + 真实角秒标注——A10：偏移按夸张倍率显示、标注数值为契约 C1 真值）
+// ---------------------------------------------------------------------------
+
+/** 标记壳半径（星穹内侧一线，防与星点深度冲突；标记为屏幕空间注记） */
+const DEFLECTION_MARKER_RADIUS_UNITS = STAR_DOME_RADIUS_UNITS * 0.995;
+
+/** 标记点尺寸（px；空心圈需能环住星点） */
+const DEFLECTION_MARKER_POINT_PX = 18;
+
+/** 角秒标注相对实位标记的下移量（场景单位；标记壳距离下 ≈1° 视偏移） */
+const DEFLECTION_LABEL_OFFSET_UNITS = 190;
+
+const DEFLECTION_MARKER_VERTEX_SHADER = /* glsl */ `
+  attribute float aDeflect;
+  attribute float aHollow;
+  uniform mat3 uEqToHor;
+  uniform vec3 uSunDir;
+  uniform float uDeflection01;
+  uniform float uDomeRadius;
+  uniform float uPointPx;
+  varying float vHollow;
+  ${GLSL_DEFLECTION_MIRROR}
+  void main() {
+    vHollow = aHollow;
+    // aDeflect=0 顶点恒为无太阳假想位；aDeflect=1 顶点随双态插值移向实位
+    vec3 dir = applyDeflection(uEqToHor * position, uSunDir, uDeflection01 * aDeflect);
+    vec4 mvPosition = modelViewMatrix * vec4(dir * uDomeRadius, 1.0);
+    gl_PointSize = uPointPx;
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const DEFLECTION_MARKER_FRAGMENT_SHADER = /* glsl */ `
+  uniform float uDeflection01;
+  uniform vec3 uColorHollow;
+  uniform vec3 uColorSolid;
+  varying float vHollow;
+  void main() {
+    float d = length(gl_PointCoord - vec2(0.5));
+    float ring = smoothstep(0.30, 0.36, d) * (1.0 - smoothstep(0.42, 0.48, d));
+    float solid = 1.0 - smoothstep(0.14, 0.26, d);
+    float alpha = mix(solid, ring, vHollow) * uDeflection01;
+    if (alpha < 0.02) discard;
+    vec3 col = mix(uColorSolid, uColorHollow, vHollow);
+    gl_FragColor = vec4(col * alpha, alpha);
+  }
+`;
+
+const DEFLECTION_LINE_FRAGMENT_SHADER = /* glsl */ `
+  uniform float uDeflection01;
+  uniform vec3 uColorSolid;
+  void main() {
+    gl_FragColor = vec4(uColorSolid, 0.55 * uDeflection01);
+  }
+`;
+
+/**
+ * 偏折对照标记层（2 draw call：全部空心/实心点合 1 次 Points + 连线 1 次
+ * LineSegments；共享几何——顶点对 (无太阳位, 实位) 恰为线段对）。
+ * 星表位置经 uEqToHor 逐帧驱动（周日运动随星穹），偏折端顶点在 shader 内
+ * 走 GLSL_DEFLECTION_MIRROR（与星穹同式，实心点恒与偏折后星点重合）。
+ * 角秒标注为契约 C1 真值（A10），标签组位置由 CPU 侧同式函数
+ * deflectedStarDirection 逐帧计算。
+ */
+function EclipseDeflectionMarkers({
+  refs,
+  markers,
+}: {
+  refs: EclipseFrameRefs;
+  markers: readonly EddingtonMarkerStar[];
+}): JSX.Element {
+  const labelGroupsRef = useRef<Array<THREE.Group | null>>([]);
+  const scratch = useMemo(() => ({ out: [0, 0, 0] as [number, number, number] }), []);
+
+  const { geometry, pointsMaterial, linesMaterial } = useMemo(() => {
+    const n = markers.length;
+    const positions = new Float32Array(n * 2 * 3);
+    const deflect = new Float32Array(n * 2);
+    const hollow = new Float32Array(n * 2);
+    for (let i = 0; i < n; i += 1) {
+      const [xe, ye, ze] = equatorialUnitVector(markers[i].raDeg, markers[i].decDeg);
+      for (let k = 0; k < 2; k += 1) {
+        positions[(i * 2 + k) * 3] = xe;
+        positions[(i * 2 + k) * 3 + 1] = ye;
+        positions[(i * 2 + k) * 3 + 2] = ze;
+      }
+      deflect[i * 2] = 0;
+      deflect[i * 2 + 1] = 1;
+      hollow[i * 2] = 1;
+      hollow[i * 2 + 1] = 0;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('aDeflect', new THREE.BufferAttribute(deflect, 1));
+    geo.setAttribute('aHollow', new THREE.BufferAttribute(hollow, 1));
+    const shared = {
+      uEqToHor: { value: new THREE.Matrix3() },
+      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+      uDeflection01: { value: 0 },
+      uDomeRadius: { value: DEFLECTION_MARKER_RADIUS_UNITS },
+      // 空心 = 无太阳假想位（冷灰蓝）、实心 = 偏折后实位（琥珀）
+      uColorHollow: { value: new THREE.Color(0.62, 0.72, 0.8) },
+      uColorSolid: { value: new THREE.Color(1.0, 0.76, 0.36) },
+    };
+    const pm = new THREE.ShaderMaterial({
+      uniforms: { ...shared, uPointPx: { value: DEFLECTION_MARKER_POINT_PX } },
+      vertexShader: DEFLECTION_MARKER_VERTEX_SHADER,
+      fragmentShader: DEFLECTION_MARKER_FRAGMENT_SHADER,
+      transparent: true,
+      depthWrite: false,
+    });
+    const lm = new THREE.ShaderMaterial({
+      uniforms: shared,
+      vertexShader: DEFLECTION_MARKER_VERTEX_SHADER,
+      fragmentShader: DEFLECTION_LINE_FRAGMENT_SHADER,
+      transparent: true,
+      depthWrite: false,
+    });
+    return { geometry: geo, pointsMaterial: pm, linesMaterial: lm };
+  }, [markers]);
+
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+      pointsMaterial.dispose();
+      linesMaterial.dispose();
+    };
+  }, [geometry, pointsMaterial, linesMaterial]);
+
+  useFrame(() => {
+    const frame = refs.frameRef.current;
+    const { event } = refs.eventRef.current;
+    const d01 = refs.renderRef.current.deflection01;
+    const lst = lstRadFromUnixSec(refs.tSecRef.current, event.observer.lonDeg);
+    const m = equatorialToHorizontalMatrix(event.observer.latDeg, lst);
+    const sunDir = sceneDirFromAltAz({
+      altRad: frame.sunAltDeg * DEG,
+      azRad: frame.sunAzDeg * DEG,
+    });
+    // 两材质共享 uniform value 对象（shared 展开为同引用）——写一次即可，
+    // 但 uniforms 容器独立，稳妥起见逐材质赋值标量
+    (pointsMaterial.uniforms.uEqToHor.value as THREE.Matrix3).set(...m);
+    (pointsMaterial.uniforms.uSunDir.value as THREE.Vector3).set(sunDir[0], sunDir[1], sunDir[2]);
+    pointsMaterial.uniforms.uDeflection01.value = d01;
+    linesMaterial.uniforms.uDeflection01.value = d01;
+    // 角秒标注标签组：CPU 侧同式偏折（GLSL 镜像的 CPU 事实源）
+    for (let i = 0; i < markers.length; i += 1) {
+      const g = labelGroupsRef.current[i];
+      if (!g) continue;
+      const altAz = horizontalFromEquatorial(
+        markers[i].raDeg,
+        markers[i].decDeg,
+        event.observer.latDeg,
+        lst
+      );
+      const dir = sceneDirFromAltAz(altAz);
+      deflectedStarDirection(dir, sunDir, d01, scratch.out);
+      g.position.set(
+        scratch.out[0] * DEFLECTION_MARKER_RADIUS_UNITS,
+        scratch.out[1] * DEFLECTION_MARKER_RADIUS_UNITS,
+        scratch.out[2] * DEFLECTION_MARKER_RADIUS_UNITS
+      );
+      g.lookAt(0, 0, 0);
+    }
+  });
+
+  return (
+    <group>
+      <points geometry={geometry} material={pointsMaterial} frustumCulled={false} />
+      <lineSegments geometry={geometry} material={linesMaterial} frustumCulled={false} />
+      {markers.map((mk, i) => (
+        <group
+          key={mk.index}
+          ref={(el) => {
+            labelGroupsRef.current[i] = el;
+          }}
+        >
+          <Html
+            position={[0, -DEFLECTION_LABEL_OFFSET_UNITS, 0]}
+            center
+            style={{ pointerEvents: 'none' }}
+          >
+            {/* 真实偏折角秒值（契约 C1，A10：HUD 数值标注真实值非夸张值） */}
+            <span className="whitespace-nowrap rounded bg-black/55 px-1 py-0.5 font-mono text-[10px] text-amber-200/95 backdrop-blur">
+              {mk.deflectionArcsec.toFixed(2)}″
+            </span>
+          </Html>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // M3-5 树影月牙贴花（§4.3：针孔成像光斑，月牙形态与日月偏移 uniform 同源）
 // ---------------------------------------------------------------------------
 
@@ -1317,8 +1561,8 @@ const KIND_LABEL_KEYS: Record<EclipseFrameState['kind'], MessageKey> = {
   annular: 'lab.eclipsePhaseAnnular',
 };
 
-/** M3+M4 控件初值（地面视角 + 导览变速 + 自动曝光；活动周取中庸 0.3；
- * 本影放大默认关 = 真实比例（A4）、倾角叙事默认关） */
+/** M3+M4+M5 控件初值（地面视角 + 导览变速 + 自动曝光；活动周取中庸 0.3；
+ * 本影放大默认关 = 真实比例（A4）、倾角叙事默认关、偏折对照默认关（A10）） */
 function defaultEclipseSettings(): EclipseM3Settings {
   return {
     viewMode: 'ground',
@@ -1330,6 +1574,7 @@ function defaultEclipseSettings(): EclipseM3Settings {
     hypoMoonDistKm: 384400,
     umbraMagnify: false,
     inclinationDemo: false,
+    deflectionDemo: false,
   };
 }
 
@@ -1380,6 +1625,16 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
   const prominences = useMemo(() => eclipseProminences(eclipseEventSeed(eventId)), [eventId]);
   const noiseSeed01 = useMemo(() => (eclipseEventSeed(eventId) % 1000) / 1000, [eventId]);
 
+  // M5 偏折对照标记选星（e1919 专属；食甚时刻毕宿星团亮星 + 毕宿五，
+  // 事件级一次计算——历史场景「太阳恰在毕宿星团中」的验收锚点）
+  const deflectionMarkers = useMemo<EddingtonMarkerStar[]>(
+    () =>
+      eventId === 'e1919' && stars
+        ? eddingtonMarkerStars(stars, event, event.contacts, event.observer)
+        : [],
+    [eventId, stars, event]
+  );
+
   // M3 控件状态（DOM 写 React state → 渲染期同步 ref → useFrame 只读）
   const [settings, setSettings] = useState<EclipseM3Settings>(defaultEclipseSettings);
 
@@ -1420,11 +1675,15 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
     )
   );
 
-  /** 页签切换（§3.5 范式）：结束演示态（暂停 + 退出假想）+ 时间轴对齐新事件 C1 */
+  /** 页签切换（§3.5 范式）：结束演示态（暂停 + 退出假想/偏折对照）+ 时间轴对齐新事件 C1 */
   const handleEventChange = (id: EclipseEventId): void => {
     if (id === eventId) return;
     setPlaying(false);
-    setSettings((prev) => (prev.hypoActive ? { ...prev, hypoActive: false } : prev));
+    setSettings((prev) =>
+      prev.hypoActive || prev.deflectionDemo
+        ? { ...prev, hypoActive: false, deflectionDemo: false }
+        : prev
+    );
     const next = data.events.find((e) => e.id === id) ?? data.events[0];
     tSecRef.current = next.contacts.c1;
     setScrubSec(next.contacts.c1);
@@ -1623,6 +1882,10 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
             {ECLIPSE_PLANETS.filter((p) => visiblePlanetIds.has(p.id)).map((p) => (
               <EclipsePlanetMarker key={p.id} refs={refs} planetId={p.id} labelKey={p.labelKey} />
             ))}
+            {/* M5 偏折对照标记（e1919 开关门控挂载；2 draw call + ≤6 标签） */}
+            {settings.deflectionDemo && deflectionMarkers.length > 0 && (
+              <EclipseDeflectionMarkers refs={refs} markers={deflectionMarkers} />
+            )}
           </>
         ) : (
           /* M4 太空视角（地球 + 月球 + 方向光日盘 + 真锥双层 + 中心线 +
@@ -1763,6 +2026,7 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
           env={env}
           phaseCardKey={phaseCard}
           onCompare={handleCompare}
+          eddington={eventId === 'e1919'}
         />
         <p className="mt-2 border-t border-white/10 pt-2 text-[10px] leading-snug text-gray-500">
           {tr('lab.dataSourceLabel')}：{entry?.dataSource ?? ''}
