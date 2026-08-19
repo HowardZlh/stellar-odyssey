@@ -134,6 +134,7 @@ npm run start
 | [docs/launch-params.md](docs/launch-params.md) | 启动 URL 参数：深链直达、展馆模式部署、logo/语言注入 |
 | [docs/events-guide.md](docs/events-guide.md) | 动态事件演示：耀斑 / CME / 超新星 / 星系合并预览 |
 | [docs/meteor-shower-lab.md](docs/meteor-shower-lab.md) | 天文实验室：盛夏双重流星雨观测指南（英仙座 / 天鹅座κ / 1966 狮子座暴） |
+| [docs/solar-eclipse-lab.md](docs/solar-eclipse-lab.md) | 天文实验室：日全食观测指南（2027 埃及 / 2035 北京 / 1919 爱丁顿历史之食） |
 | [docs/science-notes.md](docs/science-notes.md) | 科学性说明：真实数据来源与艺术化处理登记 |
 | [docs/unlock-guide.md](docs/unlock-guide.md) | 支持者解锁：档位价格、三通道兑换步骤、token 使用与常见问题 |
 | [docs/how-it-works.md](docs/how-it-works.md) | 技术揭秘：跨 10+ 量级尺度渲染、体积渲染、引力透镜、离线烘焙管线 |

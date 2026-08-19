@@ -1,9 +1,13 @@
-'use client';
+"use client";
 
 /**
- * 日全食实验室场景（E 迭代 M2+M3：地面视角全量——全食核心景观六件套 +
- * 曝光状态机 + 360° 暮光 + 控件全量；太空视角随 M4、Eddington 叙事随 M5、
- * 音频/移动端随 M6 递进）
+ * 日全食实验室场景（E 迭代 M2–M6 全量：地面视角全食核心景观六件套 +
+ * 曝光状态机 + 360° 暮光 + 控件全量；太空视角 M4、Eddington 叙事 M5；
+ * M6：阶段化声景（EclipseAudio）+ 一次性观测安全提示（EclipseSafetyNotice）
+ * + 移动端全量——右上面板 <sm 转底部抽屉（ObservatoryHarness 同范式：
+ * 标题栏常显 + ▾/▴ 开合钮 + safe-area 底衬，纯 CSS max-sm 断点无 JS
+ * 布局分流）、scrubber/贴边元素 safe-area 避让、reduced 档钻石环解析
+ * 光晕降级（A9））
  *
  * 状态流红线（§3.1）：「事件时间轴秒 tSec」为单值状态源——一切效果由 tSec
  * 经纯函数（utils/solarEclipseLab + 契约 C1 函数族）逐帧重建，禁止帧间累积
@@ -46,22 +50,26 @@
  * 常量照抄，不得变形、不改源文件；主场景零改动。
  */
 
-import type { JSX } from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Html, OrbitControls } from '@react-three/drei';
-import { Bloom, EffectComposer, ToneMapping } from '@react-three/postprocessing';
-import { ToneMappingMode } from 'postprocessing';
-import * as THREE from 'three';
-import { useT } from '@/hooks/useI18n';
-import { useYaleBrightStars } from '@/hooks/useYaleBrightStars';
-import { useSolarEclipses } from '@/hooks/useSolarEclipses';
-import { useLunarLimbProfile } from '@/hooks/useLunarLimbProfile';
-import type { SolarEclipseEventData, YaleBrightStar } from '@/utils/bakedData';
-import type { MessageKey } from '@/i18n';
-import { labEntryForId, LAB_PAGE_PATH } from '@/utils/lab';
-import { PLANETS } from '@/data/planets';
+import type { JSX } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Html, OrbitControls } from "@react-three/drei";
+import {
+  Bloom,
+  EffectComposer,
+  ToneMapping,
+} from "@react-three/postprocessing";
+import { ToneMappingMode } from "postprocessing";
+import * as THREE from "three";
+import { useT } from "@/hooks/useI18n";
+import { useYaleBrightStars } from "@/hooks/useYaleBrightStars";
+import { useSolarEclipses } from "@/hooks/useSolarEclipses";
+import { useLunarLimbProfile } from "@/hooks/useLunarLimbProfile";
+import type { SolarEclipseEventData, YaleBrightStar } from "@/utils/bakedData";
+import type { MessageKey } from "@/i18n";
+import { labEntryForId, LAB_PAGE_PATH } from "@/utils/lab";
+import { PLANETS } from "@/data/planets";
 import {
   CAMERA_RADIUS_MAX_UNITS,
   CAMERA_RADIUS_MIN_UNITS,
@@ -73,13 +81,13 @@ import {
   labQualityTier,
   sceneDirFromAltAz,
   type LabQualityParams,
-} from '@/utils/meteorShower';
+} from "@/utils/meteorShower";
 import {
   LAB_FOV_DEFAULT_DEG,
   LAB_POLAR_MAX_RAD,
   LAB_POLAR_MIN_RAD,
   fovPointScaleFactor,
-} from '@/utils/labGestures';
+} from "@/utils/labGestures";
 import {
   RIDGE_DARKEN_FACTOR,
   RIDGE_RADIUS_KM,
@@ -89,9 +97,9 @@ import {
   labGroundColor,
   labSkyColors,
   ridgeHeightProfile,
-} from '@/utils/labSky';
-import { bvToTeffK, srgbToLinear01 } from '@/utils/pleiadesCatalog';
-import { blackbodyRGB } from '@/utils/starPhysics';
+} from "@/utils/labSky";
+import { bvToTeffK, srgbToLinear01 } from "@/utils/pleiadesCatalog";
+import { blackbodyRGB } from "@/utils/starPhysics";
 import {
   CHROMOSPHERE_COLOR,
   CHROMOSPHERE_FRESNEL_POWER,
@@ -110,15 +118,15 @@ import {
   SPICULE_AMP,
   SPICULE_NOISE_FREQ,
   SUN_LIMB_DARKENING_U,
-} from '@/utils/sunSurface';
-import { PROMINENCE_FIBRIL_FREQ } from '@/utils/solarActivity';
+} from "@/utils/sunSurface";
+import { PROMINENCE_FIBRIL_FREQ } from "@/utils/solarActivity";
 import {
   GR_LIMB_DEFLECTION_ARCSEC,
   LIMB_PROFILE_SAMPLE_COUNT,
   MOON_MEAN_RADIUS_KM,
   SKY_SHELL_RADIUS_KM,
   SUN_MEAN_ANGULAR_RADIUS_DEG,
-} from '@/utils/solarEclipse';
+} from "@/utils/solarEclipse";
 import {
   ARCSEC_TO_RAD,
   DEFLECTION_EASE_SEC,
@@ -162,7 +170,7 @@ import {
   type EclipseTimelineAnchor,
   type EclipseTimelineWindow,
   type EquatorialPos,
-} from '@/utils/solarEclipseLab';
+} from "@/utils/solarEclipseLab";
 import {
   MOON_ORBIT_INCLINATION_DEG,
   INCLINATION_DISPLAY_FACTOR,
@@ -183,17 +191,22 @@ import {
   type MutableVec3,
   type NarrativeAngles,
   type ViewIntroPose,
-} from '@/utils/solarEclipseSpace';
-import { EclipseSpaceView } from '@/components/Lab/EclipseSpaceView';
-import { TrackpadLookControls } from '@/components/Lab/TrackpadLookControls';
-import { EclipseTimelineScrubber } from '@/components/Lab/EclipseTimelineScrubber';
+} from "@/utils/solarEclipseSpace";
+import { EclipseSpaceView } from "@/components/Lab/EclipseSpaceView";
+import { TrackpadLookControls } from "@/components/Lab/TrackpadLookControls";
+import { EclipseTimelineScrubber } from "@/components/Lab/EclipseTimelineScrubber";
 import {
   EclipseControlPanel,
   type EclipseEnvReadout,
   type EclipseM3Settings,
-} from '@/components/Lab/EclipseControlPanel';
-import { EclipseShadowBandsPass } from '@/components/Lab/EclipseShadowBands';
-import { LabelText } from '@/components/Scene/LocalizedLabelText';
+} from "@/components/Lab/EclipseControlPanel";
+import { EclipseShadowBandsPass } from "@/components/Lab/EclipseShadowBands";
+import {
+  EclipseAudioBridge,
+  EclipseSoundscapeDriver,
+} from "@/components/Lab/EclipseAudio";
+import { EclipseSafetyNotice } from "@/components/Lab/EclipseSafetyNotice";
+import { LabelText } from "@/components/Scene/LocalizedLabelText";
 
 /** 度 → 弧度（单位换算，非球面公式） */
 const DEG = Math.PI / 180;
@@ -208,7 +221,7 @@ const INITIAL_CAMERA_RADIUS = 1.2;
 const ECLIPSE_RIDGE_SEED = 0xec1b5e;
 
 /** 事件 id 联合（契约 C2） */
-type EclipseEventId = SolarEclipseEventData['id'];
+type EclipseEventId = SolarEclipseEventData["id"];
 
 /** 事件页签（§3.5：标题含日期与地点；观测点说明键随页签切换） */
 const ECLIPSE_TABS: ReadonlyArray<{
@@ -216,9 +229,21 @@ const ECLIPSE_TABS: ReadonlyArray<{
   labelKey: MessageKey;
   observerKey: MessageKey;
 }> = [
-  { id: 'e2027', labelKey: 'lab.eclipseTab2027', observerKey: 'lab.eclipseObserver2027' },
-  { id: 'e2035', labelKey: 'lab.eclipseTab2035', observerKey: 'lab.eclipseObserver2035' },
-  { id: 'e1919', labelKey: 'lab.eclipseTab1919', observerKey: 'lab.eclipseObserver1919' },
+  {
+    id: "e2027",
+    labelKey: "lab.eclipseTab2027",
+    observerKey: "lab.eclipseObserver2027",
+  },
+  {
+    id: "e2035",
+    labelKey: "lab.eclipseTab2035",
+    observerKey: "lab.eclipseObserver2035",
+  },
+  {
+    id: "e1919",
+    labelKey: "lab.eclipseTab1919",
+    observerKey: "lab.eclipseObserver1919",
+  },
 ];
 
 /** 逐帧渲染派生状态（曝光增益组 + 全食沉浸/倍速/影带包络；驱动器每帧重建） */
@@ -254,7 +279,9 @@ interface EclipseFrameRefs {
   /** 播放中 */
   playingRef: { current: boolean };
   /** 当前事件 + 时间窗（渲染期同步；页签切换即更新） */
-  eventRef: { current: { event: SolarEclipseEventData; window: EclipseTimelineWindow } };
+  eventRef: {
+    current: { event: SolarEclipseEventData; window: EclipseTimelineWindow };
+  };
   /** 逐帧状态（EclipseTimeDriver 每帧重建，各叶组件只读；挂载期分配一次零 GC） */
   frameRef: { current: EclipseFrameState };
   /** M3 控件状态（React state 渲染期同步；useFrame 只读） */
@@ -266,7 +293,8 @@ interface EclipseFrameRefs {
 }
 
 /** 倾角叙事显示倾角（弧度；A5 登记：真实 5.145° × 显示倍率） */
-const NARRATIVE_INC_RAD = MOON_ORBIT_INCLINATION_DEG * INCLINATION_DISPLAY_FACTOR * DEG;
+const NARRATIVE_INC_RAD =
+  MOON_ORBIT_INCLINATION_DEG * INCLINATION_DISPLAY_FACTOR * DEG;
 
 /**
  * 时间轴推进 + 逐帧状态重建（首个 Canvas 子组件，同优先级 useFrame 按挂载序
@@ -289,12 +317,16 @@ function EclipseTimeDriver({
       angles: { phaseRad: 0, nodeRad: 0 } as NarrativeAngles,
       posKm: [0, 0, 0] as MutableVec3,
     }),
-    []
+    [],
   );
   useFrame((_, delta) => {
     const { window: win, event } = refs.eventRef.current;
     const s = refs.settingsRef.current;
-    const rate = eclipsePlayRate(s.playMode, refs.tSecRef.current, event.contacts);
+    const rate = eclipsePlayRate(
+      s.playMode,
+      refs.tSecRef.current,
+      event.contacts,
+    );
     if (refs.playingRef.current && !s.hypoActive) {
       const next = refs.tSecRef.current + Math.min(delta, 0.1) * rate;
       if (next >= win.endSec) {
@@ -306,12 +338,17 @@ function EclipseTimeDriver({
     }
     const tSec = refs.tSecRef.current;
     const frame = s.hypoActive
-      ? hypotheticalFrameState(event, tSec, s.hypoMoonDistKm, refs.frameRef.current)
+      ? hypotheticalFrameState(
+          event,
+          tSec,
+          s.hypoMoonDistKm,
+          refs.frameRef.current,
+        )
       : eclipseFrameState(event, tSec, refs.frameRef.current);
     // M4 太空视角帧状态（geo 星历 → 真锥/足印/姿态；只在太空档重建。
     // 倾角叙事时月球位置改走夸张倾角轨道（A5）；假想模式沿地心方向改写
     // 月距——太空档为真物理路径，与地面档口径差异已在 M3 差异登记）
-    if (s.viewMode === 'space') {
+    if (s.viewMode === "space") {
       let narrativePos: MutableVec3 | null = null;
       if (s.inclinationDemo) {
         narrativeAngles(tSec, win.startSec, narrative.angles);
@@ -320,7 +357,7 @@ function EclipseTimeDriver({
           narrative.angles.nodeRad,
           NARRATIVE_INC_RAD,
           NARRATIVE_ORBIT_RADIUS_KM,
-          narrative.posKm
+          narrative.posKm,
         );
         narrativePos = narrative.posKm;
       }
@@ -329,14 +366,14 @@ function EclipseTimeDriver({
         tSec,
         s.hypoActive ? s.hypoMoonDistKm : null,
         narrativePos,
-        refs.spaceRef.current
+        refs.spaceRef.current,
       );
     }
     const r = refs.renderRef.current;
     // 曝光状态机（契约 C5）：自动档真实路径走 C2/C3 时刻曲线；假想路径无
     // 权威接触时刻，以遮挡率沉浸因子替代（环食恒 filtered、全食恒 naked-eye）
     r.exposure01 =
-      s.exposureMode === 'manual'
+      s.exposureMode === "manual"
         ? s.exposureManual01
         : s.hypoActive
           ? totalityImmersion01(frame.obscuration01)
@@ -347,26 +384,38 @@ function EclipseTimeDriver({
     r.bands01 = s.hypoActive ? 0 : shadowBandsStrength01(tSec, event.contacts);
     // M5 偏折双态 0↔1 切换动画（线性缓动收敛到目标——UI 过渡非物理量，
     // 与 tSec 单值重建红线不冲突；仅地面档生效）
-    const deflTarget = s.deflectionDemo && s.viewMode === 'ground' ? 1 : 0;
+    const deflTarget = s.deflectionDemo && s.viewMode === "ground" ? 1 : 0;
     const deflStep = Math.min(delta, 0.1) / DEFLECTION_EASE_SEC;
-    r.deflection01 += Math.max(-deflStep, Math.min(deflStep, deflTarget - r.deflection01));
+    r.deflection01 += Math.max(
+      -deflStep,
+      Math.min(deflStep, deflTarget - r.deflection01),
+    );
   });
   return null;
 }
 
 /** 页签切换相机指向：对准当前 tSec 的太阳方向（反转轨道范式，交互事件路径） */
-function EclipseCameraAim({ refs, eventId }: { refs: EclipseFrameRefs; eventId: string }): null {
+function EclipseCameraAim({
+  refs,
+  eventId,
+}: {
+  refs: EclipseFrameRefs;
+  eventId: string;
+}): null {
   const camera = useThree((s) => s.camera);
   useEffect(() => {
     // 太空档不接管相机（页签切换保持太空机位；回地面由运镜 rig 对准）
-    if (refs.settingsRef.current.viewMode !== 'ground') return;
+    if (refs.settingsRef.current.viewMode !== "ground") return;
     const { event } = refs.eventRef.current;
     const frame = eclipseFrameState(event, refs.tSecRef.current);
-    const dir = sceneDirFromAltAz({ altRad: frame.sunAltDeg * DEG, azRad: frame.sunAzDeg * DEG });
+    const dir = sceneDirFromAltAz({
+      altRad: frame.sunAltDeg * DEG,
+      azRad: frame.sunAzDeg * DEG,
+    });
     camera.position.set(
       -dir[0] * INITIAL_CAMERA_RADIUS,
       -dir[1] * INITIAL_CAMERA_RADIUS,
-      -dir[2] * INITIAL_CAMERA_RADIUS
+      -dir[2] * INITIAL_CAMERA_RADIUS,
     );
     camera.lookAt(0, 0, 0);
     // eventId 为依赖：页签切换重新对准新事件太阳
@@ -399,10 +448,13 @@ function EclipseViewIntroRig({
   const doneRef = useRef(false);
   const scratch = useMemo(
     () => ({
-      pose: { pos: [0, 0, 0] as MutableVec3, fovDeg: LAB_FOV_DEFAULT_DEG } as ViewIntroPose,
+      pose: {
+        pos: [0, 0, 0] as MutableVec3,
+        fovDeg: LAB_FOV_DEFAULT_DEG,
+      } as ViewIntroPose,
       aim: { altDeg: 0, azDeg: 0, fovDeg: LAB_FOV_DEFAULT_DEG },
     }),
-    []
+    [],
   );
 
   // 激活即复位计时 + 按目标档切近/远平面（一次性投影参数，交互事件路径）
@@ -411,7 +463,7 @@ function EclipseViewIntroRig({
     elapsedRef.current = 0;
     doneRef.current = false;
     const pc = camera as THREE.PerspectiveCamera;
-    if (refs.settingsRef.current.viewMode === 'space') {
+    if (refs.settingsRef.current.viewMode === "space") {
       pc.near = SPACE_CAMERA_NEAR_UNITS;
       pc.far = SPACE_CAMERA_FAR_UNITS;
     } else {
@@ -426,9 +478,13 @@ function EclipseViewIntroRig({
     elapsedRef.current += Math.min(delta, 0.1);
     const t01 = Math.min(1, elapsedRef.current / VIEW_TRANSITION_SEC);
     const pc = camera as THREE.PerspectiveCamera;
-    if (refs.settingsRef.current.viewMode === 'space') {
+    if (refs.settingsRef.current.viewMode === "space") {
       spaceIntroPose(refs.spaceRef.current.sunDirScene, t01, scratch.pose);
-      pc.position.set(scratch.pose.pos[0], scratch.pose.pos[1], scratch.pose.pos[2]);
+      pc.position.set(
+        scratch.pose.pos[0],
+        scratch.pose.pos[1],
+        scratch.pose.pos[2],
+      );
       pc.fov = scratch.pose.fovDeg;
     } else {
       const frame = refs.frameRef.current;
@@ -440,7 +496,7 @@ function EclipseViewIntroRig({
       pc.position.set(
         -dir[0] * INITIAL_CAMERA_RADIUS,
         -dir[1] * INITIAL_CAMERA_RADIUS,
-        -dir[2] * INITIAL_CAMERA_RADIUS
+        -dir[2] * INITIAL_CAMERA_RADIUS,
       );
       pc.fov = scratch.aim.fovDeg;
     }
@@ -554,9 +610,9 @@ function EclipseStarDome({
       mags[i] = s.mag;
     }
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geo.setAttribute('aMag', new THREE.BufferAttribute(mags, 1));
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geo.setAttribute("aMag", new THREE.BufferAttribute(mags, 1));
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         uEqToHor: { value: new THREE.Matrix3() },
@@ -603,12 +659,18 @@ function EclipseStarDome({
       altRad: frame.sunAltDeg * DEG,
       azRad: frame.sunAzDeg * DEG,
     });
-    (material.uniforms.uSunDir.value as THREE.Vector3).set(sunDir[0], sunDir[1], sunDir[2]);
+    (material.uniforms.uSunDir.value as THREE.Vector3).set(
+      sunDir[0],
+      sunDir[1],
+      sunDir[2],
+    );
     material.uniforms.uDeflection01.value = refs.renderRef.current.deflection01;
   });
 
   // 单位球 attribute（真实位置由 shader 放到壳半径），关剔除防整批误剔
-  return <points geometry={geometry} material={material} frustumCulled={false} />;
+  return (
+    <points geometry={geometry} material={material} frustumCulled={false} />
+  );
 }
 
 const ECLIPSE_SKY_VERTEX_SHADER = /* glsl */ `
@@ -661,7 +723,7 @@ function EclipseSkyDome({ refs }: { refs: EclipseFrameRefs }): JSX.Element {
         side: THREE.BackSide,
         depthWrite: false,
       }),
-    []
+    [],
   );
   const sky = useMemo(() => emptyLabSkyColors(), []);
 
@@ -680,19 +742,21 @@ function EclipseSkyDome({ refs }: { refs: EclipseFrameRefs }): JSX.Element {
     (material.uniforms.uZenith.value as THREE.Color).setRGB(
       sky.zenith[0] * f,
       sky.zenith[1] * f,
-      sky.zenith[2] * f
+      sky.zenith[2] * f,
     );
     (material.uniforms.uHorizon.value as THREE.Color).setRGB(
       sky.horizon[0] * f,
       sky.horizon[1] * f,
-      sky.horizon[2] * f
+      sky.horizon[2] * f,
     );
     material.uniforms.uTotality01.value = render.twilight01;
   });
 
   return (
     <mesh material={material} frustumCulled={false}>
-      <sphereGeometry args={[STAR_DOME_RADIUS_UNITS * SKY_DOME_RADIUS_FACTOR, 48, 24]} />
+      <sphereGeometry
+        args={[STAR_DOME_RADIUS_UNITS * SKY_DOME_RADIUS_FACTOR, 48, 24]}
+      />
     </mesh>
   );
 }
@@ -701,8 +765,11 @@ function EclipseSkyDome({ refs }: { refs: EclipseFrameRefs }): JSX.Element {
 function EclipseGroundDisk({ refs }: { refs: EclipseFrameRefs }): JSX.Element {
   const materialRef = useRef<THREE.MeshBasicMaterial>(null);
   const tmp = useMemo(
-    () => ({ sky: emptyLabSkyColors(), ground: [0, 0, 0] as [number, number, number] }),
-    []
+    () => ({
+      sky: emptyLabSkyColors(),
+      ground: [0, 0, 0] as [number, number, number],
+    }),
+    [],
   );
 
   useFrame(() => {
@@ -712,19 +779,31 @@ function EclipseGroundDisk({ refs }: { refs: EclipseFrameRefs }): JSX.Element {
     labSkyColors(6.5, frame.sunAltDeg * DEG, tmp.sky);
     labGroundColor(tmp.sky, tmp.ground);
     const f = frame.skyFactor01;
-    material.color.setRGB(tmp.ground[0] * f, tmp.ground[1] * f, tmp.ground[2] * f);
+    material.color.setRGB(
+      tmp.ground[0] * f,
+      tmp.ground[1] * f,
+      tmp.ground[2] * f,
+    );
   });
 
   return (
     <mesh rotation-x={-Math.PI / 2} position={[0, GROUND_DISK_Y_UNITS, 0]}>
       <circleGeometry args={[STAR_DOME_RADIUS_UNITS, 96]} />
-      <meshBasicMaterial ref={materialRef} color="#04060a" side={THREE.DoubleSide} />
+      <meshBasicMaterial
+        ref={materialRef}
+        color="#04060a"
+        side={THREE.DoubleSide}
+      />
     </mesh>
   );
 }
 
 /** 地平山脊剪影带（HorizonRidge 同范式；几何烘焙一次，每帧只写材质色） */
-function EclipseHorizonRidge({ refs }: { refs: EclipseFrameRefs }): JSX.Element {
+function EclipseHorizonRidge({
+  refs,
+}: {
+  refs: EclipseFrameRefs;
+}): JSX.Element {
   const materialRef = useRef<THREE.MeshBasicMaterial>(null);
 
   const geometry = useMemo(() => {
@@ -750,7 +829,7 @@ function EclipseHorizonRidge({ refs }: { refs: EclipseFrameRefs }): JSX.Element 
       indices[i * 6 + 5] = next * 2 + 1;
     }
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     geo.setIndex(new THREE.BufferAttribute(indices, 1));
     return geo;
   }, []);
@@ -762,8 +841,11 @@ function EclipseHorizonRidge({ refs }: { refs: EclipseFrameRefs }): JSX.Element 
   }, [geometry]);
 
   const tmp = useMemo(
-    () => ({ sky: emptyLabSkyColors(), ground: [0, 0, 0] as [number, number, number] }),
-    []
+    () => ({
+      sky: emptyLabSkyColors(),
+      ground: [0, 0, 0] as [number, number, number],
+    }),
+    [],
   );
 
   useFrame(() => {
@@ -773,12 +855,20 @@ function EclipseHorizonRidge({ refs }: { refs: EclipseFrameRefs }): JSX.Element 
     labSkyColors(6.5, frame.sunAltDeg * DEG, tmp.sky);
     labGroundColor(tmp.sky, tmp.ground);
     const f = frame.skyFactor01 * RIDGE_DARKEN_FACTOR;
-    material.color.setRGB(tmp.ground[0] * f, tmp.ground[1] * f, tmp.ground[2] * f);
+    material.color.setRGB(
+      tmp.ground[0] * f,
+      tmp.ground[1] * f,
+      tmp.ground[2] * f,
+    );
   });
 
   return (
     <mesh geometry={geometry}>
-      <meshBasicMaterial ref={materialRef} color="#010203" side={THREE.DoubleSide} />
+      <meshBasicMaterial
+        ref={materialRef}
+        color="#010203"
+        side={THREE.DoubleSide}
+      />
     </mesh>
   );
 }
@@ -838,6 +928,7 @@ const ECLIPSE_QUAD_FRAGMENT_SHADER = /* glsl */ `
   uniform float uPromAngle[4];
   uniform float uPromHeight[4];
   uniform float uPromSpan[4];
+  uniform float uBeadHalo;
   varying vec2 vAng;
 
   const float PI = 3.14159265;
@@ -934,6 +1025,14 @@ const ECLIPSE_QUAD_FRAGMENT_SHADER = /* glsl */ `
     float dr = rm - moonLimbR;
     float beadG = exp(-dr * dr / (beadW * beadW));
     vec3 beads = uSunColor * uPhotoGain * 2.0 * max(beadI, 0.0) * beadG;
+    // A9 登记（reduced 档降级形态）：Bloom 关闭时钻石环失去泛光辉环，
+    // 以解析径向渐变光晕近似——高亮珠体 + 沿月缘外侧 exp 衰减渐晕
+    // （haloMask 挡月盘内侧防漏光进剪影），形态为降级近似非物理真值。
+    if (uBeadHalo > 0.5 && inside > 0.0) {
+      float haloMask = smoothstep(-aa, aa, dr);
+      float halo = max(beadI, 0.0) * exp(-max(dr, 0.0) / (uSunR * 0.18)) * haloMask;
+      beads += uSunColor * uPhotoGain * 0.9 * halo;
+    }
 
     // ---- 层 1：日冕（coronaIntensity 函数族镜像；isotropy01 接活动周滑杆）
     vec3 corona = vec3(0.0);
@@ -1032,11 +1131,14 @@ function EclipseSunMoonQuad({
   limbTexture,
   prominences,
   noiseSeed01,
+  beadHaloFallback,
 }: {
   refs: EclipseFrameRefs;
   limbTexture: THREE.DataTexture;
   prominences: readonly EclipseProminence[];
   noiseSeed01: number;
+  /** A9：reduced 档（Bloom 关闭）钻石环解析光晕降级开关（挂载期常量） */
+  beadHaloFallback: boolean;
 }): JSX.Element {
   const meshRef = useRef<THREE.Mesh>(null);
   const material = useMemo(
@@ -1060,6 +1162,7 @@ function EclipseSunMoonQuad({
           uPromAngle: { value: [0, 0, 0, 0] },
           uPromHeight: { value: [0.08, 0.08, 0.08, 0.08] },
           uPromSpan: { value: [0.2, 0.2, 0.2, 0.2] },
+          uBeadHalo: { value: beadHaloFallback ? 1 : 0 },
         },
         vertexShader: ECLIPSE_QUAD_VERTEX_SHADER,
         fragmentShader: ECLIPSE_QUAD_FRAGMENT_SHADER,
@@ -1067,7 +1170,9 @@ function EclipseSunMoonQuad({
         depthWrite: false,
         premultipliedAlpha: true,
       }),
-    []
+    // beadHaloFallback 为画质档挂载期常量（labQualityParams 判定一次），
+    // 实际不触发重建；列入依赖满足 exhaustive-deps
+    [beadHaloFallback],
   );
 
   useEffect(() => {
@@ -1093,7 +1198,8 @@ function EclipseSunMoonQuad({
   }, [material, limbTexture, prominences, noiseSeed01]);
 
   // quad 边长：天穹壳距离 × tan(半角) × 2（真实角尺度 → 场景 km）
-  const quadSize = 2 * SKY_SHELL_RADIUS_KM * Math.tan(ECLIPSE_QUAD_HALF_ANGLE_RAD);
+  const quadSize =
+    2 * SKY_SHELL_RADIUS_KM * Math.tan(ECLIPSE_QUAD_HALF_ANGLE_RAD);
 
   useFrame(() => {
     const mesh = meshRef.current;
@@ -1107,7 +1213,7 @@ function EclipseSunMoonQuad({
     mesh.position.set(
       dir[0] * SKY_SHELL_RADIUS_KM,
       dir[1] * SKY_SHELL_RADIUS_KM,
-      dir[2] * SKY_SHELL_RADIUS_KM
+      dir[2] * SKY_SHELL_RADIUS_KM,
     );
     // lookAt 原点：本地 +Y = 高度角向（世界上方向投影）、+X = 方位角减小向
     mesh.lookAt(0, 0, 0);
@@ -1118,7 +1224,7 @@ function EclipseSunMoonQuad({
     // 本地系换算：x = −方位向偏移（+X 朝方位角减小向）、y = 高度向偏移
     (material.uniforms.uMoonOffset.value as THREE.Vector2).set(
       -frame.offEastRad,
-      frame.offUpRad
+      frame.offUpRad,
     );
     // 月缘 km ↔ 角量（beadsLeakProfile 同式换算，自洽于 moonR）
     material.uniforms.uKmToRad.value = moonR / MOON_MEAN_RADIUS_KM;
@@ -1126,7 +1232,7 @@ function EclipseSunMoonQuad({
     material.uniforms.uLimbRot.value = limbTexRotationRad(
       frame.offEastRad,
       frame.offUpRad,
-      frame.posAngleDeg
+      frame.posAngleDeg,
     );
     // 曝光状态机增益（契约 C5）+ 活动周滑杆
     material.uniforms.uPhotoGain.value = render.photoGain;
@@ -1135,7 +1241,12 @@ function EclipseSunMoonQuad({
   });
 
   return (
-    <mesh ref={meshRef} material={material} frustumCulled={false} renderOrder={1}>
+    <mesh
+      ref={meshRef}
+      material={material}
+      frustumCulled={false}
+      renderOrder={1}
+    >
       <planeGeometry args={[quadSize, quadSize]} />
     </mesh>
   );
@@ -1153,10 +1264,10 @@ const PLANET_MARKER_RADIUS_UNITS = 13;
 
 /** 行星标注色（近似观感色：金白/暖白/灰白/橘红） */
 const PLANET_MARKER_COLORS: Record<string, string> = {
-  venus: '#f5f0dc',
-  jupiter: '#f0e6c8',
-  mercury: '#d8d4cc',
-  mars: '#e8a070',
+  venus: "#f5f0dc",
+  jupiter: "#f0e6c8",
+  mercury: "#d8d4cc",
+  mars: "#e8a070",
 };
 
 /** 行星轨道要素查找（data/planets 单一事实源） */
@@ -1173,7 +1284,7 @@ function EclipsePlanetMarker({
   labelKey,
 }: {
   refs: EclipseFrameRefs;
-  planetId: 'venus' | 'jupiter' | 'mercury' | 'mars';
+  planetId: "venus" | "jupiter" | "mercury" | "mars";
   labelKey: MessageKey;
 }): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
@@ -1190,7 +1301,7 @@ function EclipsePlanetMarker({
     const cache = cacheRef.current;
     if (Math.abs(tSec - cache.tSec) > 300) {
       const orbit = PLANET_ORBIT_BY_ID.get(planetId);
-      const earth = PLANET_ORBIT_BY_ID.get('earth');
+      const earth = PLANET_ORBIT_BY_ID.get("earth");
       if (!orbit || !earth) return;
       planetGeocentricEquatorial(orbit, earth, tSec, cache.eq);
       cache.tSec = tSec;
@@ -1200,13 +1311,13 @@ function EclipsePlanetMarker({
       cache.eq.raDeg,
       cache.eq.decDeg,
       event.observer.latDeg,
-      lst
+      lst,
     );
     const dir = sceneDirFromAltAz(altAz);
     group.position.set(
       dir[0] * PLANET_MARKER_DISTANCE_UNITS,
       dir[1] * PLANET_MARKER_DISTANCE_UNITS,
-      dir[2] * PLANET_MARKER_DISTANCE_UNITS
+      dir[2] * PLANET_MARKER_DISTANCE_UNITS,
     );
     group.lookAt(0, 0, 0);
   });
@@ -1222,7 +1333,11 @@ function EclipsePlanetMarker({
           depthWrite={false}
         />
       </mesh>
-      <Html position={[0, -PLANET_MARKER_RADIUS_UNITS * 5, 0]} center style={{ pointerEvents: 'none' }}>
+      <Html
+        position={[0, -PLANET_MARKER_RADIUS_UNITS * 5, 0]}
+        center
+        style={{ pointerEvents: "none" }}
+      >
         <span className="whitespace-nowrap rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-amber-100/90 backdrop-blur">
           <LabelText k={labelKey} />
         </span>
@@ -1305,7 +1420,10 @@ function EclipseDeflectionMarkers({
   markers: readonly EddingtonMarkerStar[];
 }): JSX.Element {
   const labelGroupsRef = useRef<Array<THREE.Group | null>>([]);
-  const scratch = useMemo(() => ({ out: [0, 0, 0] as [number, number, number] }), []);
+  const scratch = useMemo(
+    () => ({ out: [0, 0, 0] as [number, number, number] }),
+    [],
+  );
 
   const { geometry, pointsMaterial, linesMaterial } = useMemo(() => {
     const n = markers.length;
@@ -1313,7 +1431,10 @@ function EclipseDeflectionMarkers({
     const deflect = new Float32Array(n * 2);
     const hollow = new Float32Array(n * 2);
     for (let i = 0; i < n; i += 1) {
-      const [xe, ye, ze] = equatorialUnitVector(markers[i].raDeg, markers[i].decDeg);
+      const [xe, ye, ze] = equatorialUnitVector(
+        markers[i].raDeg,
+        markers[i].decDeg,
+      );
       for (let k = 0; k < 2; k += 1) {
         positions[(i * 2 + k) * 3] = xe;
         positions[(i * 2 + k) * 3 + 1] = ye;
@@ -1325,9 +1446,9 @@ function EclipseDeflectionMarkers({
       hollow[i * 2 + 1] = 0;
     }
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute('aDeflect', new THREE.BufferAttribute(deflect, 1));
-    geo.setAttribute('aHollow', new THREE.BufferAttribute(hollow, 1));
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("aDeflect", new THREE.BufferAttribute(deflect, 1));
+    geo.setAttribute("aHollow", new THREE.BufferAttribute(hollow, 1));
     const shared = {
       uEqToHor: { value: new THREE.Matrix3() },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) },
@@ -1375,7 +1496,11 @@ function EclipseDeflectionMarkers({
     // 两材质共享 uniform value 对象（shared 展开为同引用）——写一次即可，
     // 但 uniforms 容器独立，稳妥起见逐材质赋值标量
     (pointsMaterial.uniforms.uEqToHor.value as THREE.Matrix3).set(...m);
-    (pointsMaterial.uniforms.uSunDir.value as THREE.Vector3).set(sunDir[0], sunDir[1], sunDir[2]);
+    (pointsMaterial.uniforms.uSunDir.value as THREE.Vector3).set(
+      sunDir[0],
+      sunDir[1],
+      sunDir[2],
+    );
     pointsMaterial.uniforms.uDeflection01.value = d01;
     linesMaterial.uniforms.uDeflection01.value = d01;
     // 角秒标注标签组：CPU 侧同式偏折（GLSL 镜像的 CPU 事实源）
@@ -1386,14 +1511,14 @@ function EclipseDeflectionMarkers({
         markers[i].raDeg,
         markers[i].decDeg,
         event.observer.latDeg,
-        lst
+        lst,
       );
       const dir = sceneDirFromAltAz(altAz);
       deflectedStarDirection(dir, sunDir, d01, scratch.out);
       g.position.set(
         scratch.out[0] * DEFLECTION_MARKER_RADIUS_UNITS,
         scratch.out[1] * DEFLECTION_MARKER_RADIUS_UNITS,
-        scratch.out[2] * DEFLECTION_MARKER_RADIUS_UNITS
+        scratch.out[2] * DEFLECTION_MARKER_RADIUS_UNITS,
       );
       g.lookAt(0, 0, 0);
     }
@@ -1401,8 +1526,16 @@ function EclipseDeflectionMarkers({
 
   return (
     <group>
-      <points geometry={geometry} material={pointsMaterial} frustumCulled={false} />
-      <lineSegments geometry={geometry} material={linesMaterial} frustumCulled={false} />
+      <points
+        geometry={geometry}
+        material={pointsMaterial}
+        frustumCulled={false}
+      />
+      <lineSegments
+        geometry={geometry}
+        material={linesMaterial}
+        frustumCulled={false}
+      />
       {markers.map((mk, i) => (
         <group
           key={mk.index}
@@ -1413,7 +1546,7 @@ function EclipseDeflectionMarkers({
           <Html
             position={[0, -DEFLECTION_LABEL_OFFSET_UNITS, 0]}
             center
-            style={{ pointerEvents: 'none' }}
+            style={{ pointerEvents: "none" }}
           >
             {/* 真实偏折角秒值（契约 C1，A10：HUD 数值标注真实值非夸张值） */}
             <span className="whitespace-nowrap rounded bg-black/55 px-1 py-0.5 font-mono text-[10px] text-amber-200/95 backdrop-blur">
@@ -1473,7 +1606,11 @@ const CRESCENT_DECAL_FRAGMENT_SHADER = /* glsl */ `
 `;
 
 /** 树影月牙贴花（GroundDisk 上的针孔光斑毯；1 draw call） */
-function EclipseCrescentDecal({ refs }: { refs: EclipseFrameRefs }): JSX.Element {
+function EclipseCrescentDecal({
+  refs,
+}: {
+  refs: EclipseFrameRefs;
+}): JSX.Element {
   const material = useMemo(
     () =>
       new THREE.ShaderMaterial({
@@ -1495,7 +1632,7 @@ function EclipseCrescentDecal({ refs }: { refs: EclipseFrameRefs }): JSX.Element
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       }),
-    []
+    [],
   );
 
   useEffect(() => {
@@ -1510,7 +1647,7 @@ function EclipseCrescentDecal({ refs }: { refs: EclipseFrameRefs }): JSX.Element
     material.uniforms.uMoonR.value = frame.moonSdDeg * DEG;
     (material.uniforms.uMoonOffset.value as THREE.Vector2).set(
       -frame.offEastRad,
-      frame.offUpRad
+      frame.offUpRad,
     );
     // 亮度 = 天光感知因子 × 太阳在地平上包络（全食时自然熄灭）
     const sunUp = Math.min(1, Math.max(0, frame.sunAltDeg / 5));
@@ -1523,7 +1660,9 @@ function EclipseCrescentDecal({ refs }: { refs: EclipseFrameRefs }): JSX.Element
       rotation-x={-Math.PI / 2}
       position={[0.7, GROUND_DISK_Y_UNITS + 0.01, -0.7]}
     >
-      <planeGeometry args={[CRESCENT_DECAL_SIZE_UNITS, CRESCENT_DECAL_SIZE_UNITS]} />
+      <planeGeometry
+        args={[CRESCENT_DECAL_SIZE_UNITS, CRESCENT_DECAL_SIZE_UNITS]}
+      />
     </mesh>
   );
 }
@@ -1554,20 +1693,20 @@ interface EclipseHudState {
 }
 
 /** 食型 → i18n 键（假想模式月地距离滑杆的实时反馈依赖此映射） */
-const KIND_LABEL_KEYS: Record<EclipseFrameState['kind'], MessageKey> = {
-  none: 'lab.eclipsePhaseNone',
-  partial: 'lab.eclipsePhasePartial',
-  total: 'lab.eclipsePhaseTotal',
-  annular: 'lab.eclipsePhaseAnnular',
+const KIND_LABEL_KEYS: Record<EclipseFrameState["kind"], MessageKey> = {
+  none: "lab.eclipsePhaseNone",
+  partial: "lab.eclipsePhasePartial",
+  total: "lab.eclipsePhaseTotal",
+  annular: "lab.eclipsePhaseAnnular",
 };
 
 /** M3+M4+M5 控件初值（地面视角 + 导览变速 + 自动曝光；活动周取中庸 0.3；
  * 本影放大默认关 = 真实比例（A4）、倾角叙事默认关、偏折对照默认关（A10）） */
 function defaultEclipseSettings(): EclipseM3Settings {
   return {
-    viewMode: 'ground',
-    playMode: 'tour',
-    exposureMode: 'auto',
+    viewMode: "ground",
+    playMode: "tour",
+    exposureMode: "auto",
     exposureManual01: 0,
     isotropy01: 0.3,
     hypoActive: false,
@@ -1579,27 +1718,37 @@ function defaultEclipseSettings(): EclipseM3Settings {
 }
 
 /** 事件已就绪后的场景 + 控件（数据 ready 前由外层 gate，见 SolarEclipseLab） */
-function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] } }): JSX.Element {
+function EclipseExperience({
+  data,
+}: {
+  data: { events: SolarEclipseEventData[] };
+}): JSX.Element {
   const tr = useT();
-  const entry = labEntryForId('solar-eclipse');
+  const entry = labEntryForId("solar-eclipse");
   const { stars } = useYaleBrightStars();
   const { profile: limbProfile } = useLunarLimbProfile();
 
-  const [eventId, setEventId] = useState<EclipseEventId>('e2027');
+  const [eventId, setEventId] = useState<EclipseEventId>("e2027");
   const [playing, setPlaying] = useState(false);
   const event = useMemo(
     () => data.events.find((e) => e.id === eventId) ?? data.events[0],
-    [data, eventId]
+    [data, eventId],
   );
   const window_ = useMemo(() => eclipseTimelineWindow(event.contacts), [event]);
   const anchors = useMemo<EclipseTimelineAnchor[]>(
     () => solarEclipseAnchors(event.contacts),
-    [event]
+    [event],
   );
   // 贝利珠/钻石环时段高亮刻度（§3.1；数据驱动，契约 C7 口径）
-  const highlights = useMemo(() => beadsHighlightWindows(event.contacts), [event]);
+  const highlights = useMemo(
+    () => beadsHighlightWindows(event.contacts),
+    [event],
+  );
   // 99% 遮挡时刻（一键对比 seek 目标；事件级一次反解）
-  const t99 = useMemo(() => obscurationCrossingTimeSec(event, event.contacts, 0.99), [event]);
+  const t99 = useMemo(
+    () => obscurationCrossingTimeSec(event, event.contacts, 0.99),
+    [event],
+  );
 
   // 月缘剖面 1D 静态纹理（契约 C3 → 贝利珠 shader 查表；加载前为零剖面
   // ——均匀月缘的珠串退化形态，profile 就绪后一次性换纹理，交互事件路径）
@@ -1611,7 +1760,7 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
       LIMB_PROFILE_SAMPLE_COUNT,
       1,
       THREE.RedFormat,
-      THREE.FloatType
+      THREE.FloatType,
     );
     tex.wrapS = THREE.RepeatWrapping;
     tex.magFilter = THREE.NearestFilter;
@@ -1622,21 +1771,29 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
   useEffect(() => () => limbTexture.dispose(), [limbTexture]);
 
   // 日珥布点 + 日冕噪声种子（事件种子固定——A6 登记 + seek 一致性）
-  const prominences = useMemo(() => eclipseProminences(eclipseEventSeed(eventId)), [eventId]);
-  const noiseSeed01 = useMemo(() => (eclipseEventSeed(eventId) % 1000) / 1000, [eventId]);
+  const prominences = useMemo(
+    () => eclipseProminences(eclipseEventSeed(eventId)),
+    [eventId],
+  );
+  const noiseSeed01 = useMemo(
+    () => (eclipseEventSeed(eventId) % 1000) / 1000,
+    [eventId],
+  );
 
   // M5 偏折对照标记选星（e1919 专属；食甚时刻毕宿星团亮星 + 毕宿五，
   // 事件级一次计算——历史场景「太阳恰在毕宿星团中」的验收锚点）
   const deflectionMarkers = useMemo<EddingtonMarkerStar[]>(
     () =>
-      eventId === 'e1919' && stars
+      eventId === "e1919" && stars
         ? eddingtonMarkerStars(stars, event, event.contacts, event.observer)
         : [],
-    [eventId, stars, event]
+    [eventId, stars, event],
   );
 
   // M3 控件状态（DOM 写 React state → 渲染期同步 ref → useFrame 只读）
-  const [settings, setSettings] = useState<EclipseM3Settings>(defaultEclipseSettings);
+  const [settings, setSettings] = useState<EclipseM3Settings>(
+    defaultEclipseSettings,
+  );
 
   // scrubber 显示值（拖动即时更新；播放期间由 500ms tick 从 tSecRef 回同步）
   const [scrubSec, setScrubSec] = useState<number>(event.contacts.c1);
@@ -1653,26 +1810,40 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
   const renderRef = useRef(emptyEclipseRenderState());
   const spaceRef = useRef(emptyEclipseSpaceFrameState());
   const refs: EclipseFrameRefs = useMemo(
-    () => ({ tSecRef, playingRef, eventRef, frameRef, settingsRef, renderRef, spaceRef }),
-    []
+    () => ({
+      tSecRef,
+      playingRef,
+      eventRef,
+      frameRef,
+      settingsRef,
+      renderRef,
+      spaceRef,
+    }),
+    [],
   );
 
   // M4 视角切换运镜期（OrbitControls 卸载 gate；rig 完成回调解除）
   const [viewTransitioning, setViewTransitioning] = useState(false);
 
+  // M6-2 移动端底部抽屉展开态（<sm 生效；桌面侧栏不受影响——
+  // LabControlPanel/ObservatoryHarness 同范式，纯 CSS max-sm 断点，
+  // 默认收起防遮挡场景）
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   // 画质档（流星雨 M4-2 同链：挂载时判定一次；reduced 关 Bloom、DPR≤2）
   const [quality] = useState<LabQualityParams>(() =>
     labQualityParams(
-      typeof window === 'undefined'
-        ? 'full'
+      typeof window === "undefined"
+        ? "full"
         : labQualityTier({
             dpr: window.devicePixelRatio,
             userAgent: navigator.userAgent,
             screenWidth: window.screen.width,
             screenHeight: window.screen.height,
-            deviceMemoryGb: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
-          })
-    )
+            deviceMemoryGb: (navigator as Navigator & { deviceMemory?: number })
+              .deviceMemory,
+          }),
+    ),
   );
 
   /** 页签切换（§3.5 范式）：结束演示态（暂停 + 退出假想/偏折对照）+ 时间轴对齐新事件 C1 */
@@ -1682,7 +1853,7 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
     setSettings((prev) =>
       prev.hypoActive || prev.deflectionDemo
         ? { ...prev, hypoActive: false, deflectionDemo: false }
-        : prev
+        : prev,
     );
     const next = data.events.find((e) => e.id === id) ?? data.events[0];
     tSecRef.current = next.contacts.c1;
@@ -1700,37 +1871,44 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
    * M4：视角切换触发 1.6s 运镜——时间轴 tSec 跨视角保持，§M4-3） */
   const handleSettingsChange = (patch: Partial<EclipseM3Settings>): void => {
     if (patch.hypoActive) setPlaying(false);
-    if (patch.viewMode && patch.viewMode !== settings.viewMode) setViewTransitioning(true);
+    if (patch.viewMode && patch.viewMode !== settings.viewMode)
+      setViewTransitioning(true);
     setSettings((prev) => ({ ...prev, ...patch }));
   };
 
   /** 99%/100% 一键对比（§3.3：seek 到反解时刻/食甚并暂停；退出假想） */
-  const handleCompare = (which: '99' | '100'): void => {
+  const handleCompare = (which: "99" | "100"): void => {
     setPlaying(false);
-    setSettings((prev) => (prev.hypoActive ? { ...prev, hypoActive: false } : prev));
-    handleSeek(which === '99' ? t99 : event.contacts.max);
+    setSettings((prev) =>
+      prev.hypoActive ? { ...prev, hypoActive: false } : prev,
+    );
+    handleSeek(which === "99" ? t99 : event.contacts.max);
   };
 
   // HUD：500ms interval 经纯函数读 ref 计算（DOM 层，不进 useFrame）
   const [hud, setHud] = useState<EclipseHudState>({
-    utcText: '--:--:--',
-    magnitudeText: '0.000',
-    obscurationText: '0.0%',
-    sunDiamText: '—',
-    moonDiamText: '—',
-    rateText: '×1',
-    kindKey: 'lab.eclipsePhaseNone',
-    totalityLeftText: '—',
-    umbraWidthText: '—',
+    utcText: "--:--:--",
+    magnitudeText: "0.000",
+    obscurationText: "0.0%",
+    sunDiamText: "—",
+    moonDiamText: "—",
+    rateText: "×1",
+    kindKey: "lab.eclipsePhaseNone",
+    totalityLeftText: "—",
+    umbraWidthText: "—",
     umbraIsAntumbra: false,
-    shadowSpeedText: '—',
+    shadowSpeedText: "—",
   });
-  const [env, setEnv] = useState<EclipseEnvReadout>({ tempText: '—', skyText: '—', lmText: '—' });
-  const [phaseCard, setPhaseCard] = useState<EclipsePhaseCardKey>('c1');
+  const [env, setEnv] = useState<EclipseEnvReadout>({
+    tempText: "—",
+    skyText: "—",
+    lmText: "—",
+  });
+  const [phaseCard, setPhaseCard] = useState<EclipsePhaseCardKey>("c1");
   // 影带 pass 时段门控（窗外整体卸载零开销，§4.3；reduced 档恒关 §4.5）
   const [bandsActive, setBandsActive] = useState(false);
   // 可见行星（500ms 粒度评估：地平上 + 亮于极限星等 + 裸眼曝光；挂载门控）
-  const [visiblePlanets, setVisiblePlanets] = useState<string>('');
+  const [visiblePlanets, setVisiblePlanets] = useState<string>("");
 
   useEffect(() => {
     const tick = (): void => {
@@ -1742,29 +1920,29 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
         : eclipseFrameState(ev, tSec);
       const rate = eclipsePlayRate(s.playMode, tSec, ev.contacts);
       const totalityLeft =
-        !s.hypoActive && frame.kind === 'total' && tSec < ev.contacts.c3
+        !s.hypoActive && frame.kind === "total" && tSec < ev.contacts.c3
           ? formatUtcClock(Math.max(0, ev.contacts.c3 - tSec))
-          : '—';
+          : "—";
       // M4 太空档读数（spaceRef 由驱动器每帧重建；倾角叙事的示意轨道多数
       // 时刻无足印 → '—' 属预期表意）
-      let umbraWidthText = '—';
+      let umbraWidthText = "—";
       let umbraIsAntumbra = false;
-      let shadowSpeedText = '—';
-      if (s.viewMode === 'space') {
+      let shadowSpeedText = "—";
+      if (s.viewMode === "space") {
         const space = spaceRef.current;
         if (space.footExists && !s.inclinationDemo) {
-          umbraWidthText = `${Math.round(space.footMinorKm).toLocaleString('en-US')} km`;
+          umbraWidthText = `${Math.round(space.footMinorKm).toLocaleString("en-US")} km`;
           umbraIsAntumbra = space.footIsAntumbra;
           const speed = umbraGroundSpeedKmh(
             ev.geo,
             tSec,
-            s.hypoActive ? s.hypoMoonDistKm : null
+            s.hypoActive ? s.hypoMoonDistKm : null,
           );
           if (speed !== null) {
-            shadowSpeedText = `${Math.round(speed).toLocaleString('en-US')} km/h`;
+            shadowSpeedText = `${Math.round(speed).toLocaleString("en-US")} km/h`;
           }
         } else if (space.footExists && s.inclinationDemo) {
-          umbraWidthText = `${Math.round(space.footMinorKm).toLocaleString('en-US')} km`;
+          umbraWidthText = `${Math.round(space.footMinorKm).toLocaleString("en-US")} km`;
           umbraIsAntumbra = space.footIsAntumbra;
         }
       }
@@ -1774,7 +1952,9 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
         obscurationText: `${(frame.obscuration01 * 100).toFixed(1)}%`,
         sunDiamText: formatAngularDiameterDeg(frame.sunSdDeg),
         moonDiamText: formatAngularDiameterDeg(frame.moonSdDeg),
-        rateText: s.hypoActive ? '—' : `×${rate >= 10 ? rate.toFixed(0) : rate.toFixed(1)}`,
+        rateText: s.hypoActive
+          ? "—"
+          : `×${rate >= 10 ? rate.toFixed(0) : rate.toFixed(1)}`,
         kindKey: KIND_LABEL_KEYS[frame.kind],
         totalityLeftText: totalityLeft,
         umbraWidthText,
@@ -1794,21 +1974,25 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
         prev.umbraIsAntumbra === next.umbraIsAntumbra &&
         prev.shadowSpeedText === next.shadowSpeedText
           ? prev
-          : next
+          : next,
       );
       // 环境数值条（§1.4：气温降幅/天光/极限星等）
       const tempText = `−${eclipseTempDropC(frame.obscuration01).toFixed(1)} °C`;
       const skyText = `${(frame.skyFactor01 * 100).toFixed(0)}%`;
       const lmText = frame.limitingMag.toFixed(1);
       setEnv((prev) =>
-        prev.tempText === tempText && prev.skyText === skyText && prev.lmText === lmText
+        prev.tempText === tempText &&
+        prev.skyText === skyText &&
+        prev.lmText === lmText
           ? prev
-          : { tempText, skyText, lmText }
+          : { tempText, skyText, lmText },
       );
       setPhaseCard(activePhaseCardKey(tSec, ev.contacts));
-      setBandsActive(!s.hypoActive && shadowBandsStrength01(tSec, ev.contacts) > 0.001);
+      setBandsActive(
+        !s.hypoActive && shadowBandsStrength01(tSec, ev.contacts) > 0.001,
+      );
       // 可见行星评估（RA/Dec 每 tick 重算成本可忽略：4 次开普勒解）
-      const earthOrbit = PLANET_ORBIT_BY_ID.get('earth');
+      const earthOrbit = PLANET_ORBIT_BY_ID.get("earth");
       const lst = lstRadFromUnixSec(tSec, ev.observer.lonDeg);
       const vis: string[] = [];
       if (earthOrbit && renderRef.current.starGain > 0.3) {
@@ -1820,12 +2004,13 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
             eq.raDeg,
             eq.decDeg,
             ev.observer.latDeg,
-            lst
+            lst,
           );
-          if (altAz.altRad > 0 && p.typicalMag < frame.limitingMag) vis.push(p.id);
+          if (altAz.altRad > 0 && p.typicalMag < frame.limitingMag)
+            vis.push(p.id);
         }
       }
-      const visJoined = vis.join(',');
+      const visJoined = vis.join(",");
       setVisiblePlanets((prev) => (prev === visJoined ? prev : visJoined));
       // 播放期间回同步 scrubber 显示值（拖动路径由 handleSeek 即时更新）
       if (playingRef.current) setScrubSec(tSecRef.current);
@@ -1835,10 +2020,11 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
     return () => window.clearInterval(id);
   }, []);
 
-  const activeTab = ECLIPSE_TABS.find((t) => t.id === eventId) ?? ECLIPSE_TABS[0];
+  const activeTab =
+    ECLIPSE_TABS.find((t) => t.id === eventId) ?? ECLIPSE_TABS[0];
   const visiblePlanetIds = useMemo(
-    () => new Set(visiblePlanets.split(',').filter((v) => v.length > 0)),
-    [visiblePlanets]
+    () => new Set(visiblePlanets.split(",").filter((v) => v.length > 0)),
+    [visiblePlanets],
   );
 
   return (
@@ -1854,8 +2040,11 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
           far: STAR_DOME_RADIUS_UNITS * 2.5,
         }}
       >
-        <color attach="background" args={['#000004']} />
+        <color attach="background" args={["#000004"]} />
         <EclipseTimeDriver refs={refs} onEnded={() => setPlaying(false)} />
+        {/* M6-1 声景驱动器（§5：tSec 包络重建 + C2/C3 提示音；引擎未初始
+            化/音效关闭时逐帧空转零开销） */}
+        <EclipseSoundscapeDriver refs={refs} />
         <EclipseCameraAim refs={refs} eventId={eventId} />
         {/* M4 视角切换运镜（1.6s 插值；期间相机控制器卸载） */}
         <EclipseViewIntroRig
@@ -1863,39 +2052,57 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
           active={viewTransitioning}
           onDone={() => setViewTransitioning(false)}
         />
-        {settings.viewMode === 'ground' ? (
+        {settings.viewMode === "ground" ? (
           <>
             <EclipseSkyDome refs={refs} />
             {stars && (
-              <EclipseStarDome stars={stars} refs={refs} starPointMaxPx={quality.starPointMaxPx} />
+              <EclipseStarDome
+                stars={stars}
+                refs={refs}
+                starPointMaxPx={quality.starPointMaxPx}
+              />
             )}
             <EclipseSunMoonQuad
               refs={refs}
               limbTexture={limbTexture}
               prominences={prominences}
               noiseSeed01={noiseSeed01}
+              beadHaloFallback={!quality.bloomEnabled}
             />
             <EclipseGroundDisk refs={refs} />
             <EclipseHorizonRidge refs={refs} />
             <EclipseCrescentDecal refs={refs} />
             {/* 亮行星标注（全食暗天 500ms 粒度门控挂载；≤4 draw call） */}
-            {ECLIPSE_PLANETS.filter((p) => visiblePlanetIds.has(p.id)).map((p) => (
-              <EclipsePlanetMarker key={p.id} refs={refs} planetId={p.id} labelKey={p.labelKey} />
-            ))}
+            {ECLIPSE_PLANETS.filter((p) => visiblePlanetIds.has(p.id)).map(
+              (p) => (
+                <EclipsePlanetMarker
+                  key={p.id}
+                  refs={refs}
+                  planetId={p.id}
+                  labelKey={p.labelKey}
+                />
+              ),
+            )}
             {/* M5 偏折对照标记（e1919 开关门控挂载；2 draw call + ≤6 标签） */}
             {settings.deflectionDemo && deflectionMarkers.length > 0 && (
-              <EclipseDeflectionMarkers refs={refs} markers={deflectionMarkers} />
+              <EclipseDeflectionMarkers
+                refs={refs}
+                markers={deflectionMarkers}
+              />
             )}
           </>
         ) : (
           /* M4 太空视角（地球 + 月球 + 方向光日盘 + 真锥双层 + 中心线 +
              倾角叙事轨道环；§M4-1/M4-2/M4-4） */
-          <EclipseSpaceView refs={refs} inclinationDemo={settings.inclinationDemo} />
+          <EclipseSpaceView
+            refs={refs}
+            inclinationDemo={settings.inclinationDemo}
+          />
         )}
         {/* 相机控制器（运镜期卸载防争抢；结束后从当前位姿接管——流星雨
             key remount 范式；太空档 OrbitControls 原生单指旋转/双指捏合） */}
         {!viewTransitioning &&
-          (settings.viewMode === 'ground' ? (
+          (settings.viewMode === "ground" ? (
             <OrbitControls
               key={`ground-${eventId}`}
               target={[0, 0, 0]}
@@ -1924,23 +2131,37 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
               dampingFactor={0.12}
             />
           ))}
-        {settings.viewMode === 'ground' && !viewTransitioning && <TrackpadLookControls />}
+        {settings.viewMode === "ground" && !viewTransitioning && (
+          <TrackpadLookControls />
+        )}
         {/* 后期：Bloom + ACES（流星雨同配置；光球/贝利珠 HDR 由 Bloom 拾取
             成钻石环）；影带 pass 仅时段窗内挂载（排 Bloom 前，A7；reduced
             档随 Bloom 一并关闭 §4.5） */}
         {quality.bloomEnabled ? (
-          settings.viewMode === 'ground' && bandsActive ? (
+          settings.viewMode === "ground" && bandsActive ? (
             <EffectComposer multisampling={4}>
               <EclipseShadowBandsPass
                 getStrength={() => renderRef.current.bands01}
-                getTime={() => tSecRef.current - eventRef.current.event.contacts.c2}
+                getTime={() =>
+                  tSecRef.current - eventRef.current.event.contacts.c2
+                }
               />
-              <Bloom intensity={0.6} luminanceThreshold={0.6} luminanceSmoothing={0.2} mipmapBlur />
+              <Bloom
+                intensity={0.6}
+                luminanceThreshold={0.6}
+                luminanceSmoothing={0.2}
+                mipmapBlur
+              />
               <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
             </EffectComposer>
           ) : (
             <EffectComposer multisampling={4}>
-              <Bloom intensity={0.6} luminanceThreshold={0.6} luminanceSmoothing={0.2} mipmapBlur />
+              <Bloom
+                intensity={0.6}
+                luminanceThreshold={0.6}
+                luminanceSmoothing={0.2}
+                mipmapBlur
+              />
               <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
             </EffectComposer>
           )
@@ -1951,86 +2172,141 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
         )}
       </Canvas>
 
-      {/* 假想模式 HUD 明示（§3.3：与真实时间轴互斥的顶栏徽标） */}
+      {/* M6-1 声景桥（DOM 层：store 音效开关 → masterGain；卸载释放引擎） */}
+      <EclipseAudioBridge />
+
+      {/* M6-3 一次性观测安全提示（§3.4：首次进入弹出，确认后不再重复） */}
+      <EclipseSafetyNotice />
+
+      {/* 假想模式 HUD 明示（§3.3：与真实时间轴互斥的顶栏徽标；
+          safe-area 避让刘海，M6-2） */}
       {settings.hypoActive && (
-        <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-amber-500/25 px-3 py-1 text-[11px] font-semibold text-amber-200 backdrop-blur">
-          {tr('lab.eclipseHypoBadge')}
+        <div className="pointer-events-none absolute left-1/2 top-[max(0.75rem,env(safe-area-inset-top))] -translate-x-1/2 rounded-full bg-amber-500/25 px-3 py-1 text-[11px] font-semibold text-amber-200 backdrop-blur">
+          {tr("lab.eclipseHypoBadge")}
         </div>
       )}
 
-      {/* 左上：返回实验室 + 条目标题 */}
-      <div className="absolute left-4 top-4 select-none rounded-lg bg-black/60 px-3 py-2 text-xs text-gray-100 backdrop-blur">
-        <Link href={LAB_PAGE_PATH} className="text-space-accent hover:underline">
-          ← {tr('lab.backToLab')}
+      {/* 左上：返回实验室 + 条目标题（safe-area 避让横屏刘海/圆角，M6-2） */}
+      <div className="absolute left-[max(1rem,env(safe-area-inset-left))] top-[max(1rem,env(safe-area-inset-top))] select-none rounded-lg bg-black/60 px-3 py-2 text-xs text-gray-100 backdrop-blur">
+        <Link
+          href={LAB_PAGE_PATH}
+          className="text-space-accent hover:underline"
+        >
+          ← {tr("lab.backToLab")}
         </Link>
-        {entry && <div className="mt-1 font-semibold text-sky-300">{tr(entry.titleKey)}</div>}
+        {entry && (
+          <div className="mt-1 font-semibold text-sky-300 max-sm:hidden">
+            {tr(entry.titleKey)}
+          </div>
+        )}
       </div>
 
-      {/* 右上：事件页签 + 观测点 + HUD + 控件全量 + 数据来源（可滚动） */}
-      <div className="absolute right-3 top-3 max-h-[calc(100vh-8rem)] w-72 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-lg bg-black/65 p-3 text-xs text-gray-100 backdrop-blur">
-        <div role="tablist" aria-label={tr('lab.eclipseTabAria')} className="mb-2 flex gap-1">
-          {ECLIPSE_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              role="tab"
-              aria-selected={eventId === tab.id}
-              onClick={() => handleEventChange(tab.id)}
-              className={`flex-1 rounded px-1 py-1.5 text-[10px] leading-tight transition-colors max-md:min-h-11 ${
-                eventId === tab.id
-                  ? 'bg-sky-500/30 font-semibold text-sky-200'
-                  : 'bg-white/5 text-gray-400 hover:bg-white/10'
-              }`}
-            >
-              {tr(tab.labelKey)}
-            </button>
-          ))}
+      {/* 右上：事件页签 + 观测点 + HUD + 控件全量 + 数据来源（可滚动）。
+          M6-2：<sm 转底部抽屉（ObservatoryHarness 同范式——标题栏常显 +
+          ▾/▴ 开合钮 ≥44pt + aria-expanded + safe-area 底衬避让 Home 条；
+          纯 CSS max-sm 断点，禁 UA 嗅探/自建判据） */}
+      <div className="absolute right-3 top-3 max-h-[calc(100vh-8rem)] w-72 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-lg bg-black/65 p-3 text-xs text-gray-100 backdrop-blur max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:top-auto max-sm:max-h-[55vh] max-sm:w-full max-sm:max-w-none max-sm:rounded-b-none max-sm:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-sky-300">
+            {tr("lab.eclipsePanelTitle")}
+          </h2>
+          <button
+            type="button"
+            onClick={() => setDrawerOpen((open) => !open)}
+            aria-expanded={drawerOpen}
+            aria-label={tr(
+              drawerOpen ? "lab.panelCollapseAria" : "lab.panelExpandAria",
+            )}
+            className="-my-2 flex h-11 w-11 items-center justify-center rounded text-sky-300 transition-colors hover:bg-white/10 sm:hidden"
+          >
+            {drawerOpen ? "▾" : "▴"}
+          </button>
         </div>
-        <p className="mb-2 text-[10px] leading-snug text-gray-400">{tr(activeTab.observerKey)}</p>
-        {/* HUD：UTC/倍速/食型/食分/遮挡率/视直径/全食剩余（真实值常显，
+        <div className={`mt-2 ${drawerOpen ? "" : "max-sm:hidden"}`}>
+          <div
+            role="tablist"
+            aria-label={tr("lab.eclipseTabAria")}
+            className="mb-2 flex gap-1"
+          >
+            {ECLIPSE_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                role="tab"
+                aria-selected={eventId === tab.id}
+                onClick={() => handleEventChange(tab.id)}
+                className={`flex-1 rounded px-1 py-1.5 text-[10px] leading-tight transition-colors max-md:min-h-11 ${
+                  eventId === tab.id
+                    ? "bg-sky-500/30 font-semibold text-sky-200"
+                    : "bg-white/5 text-gray-400 hover:bg-white/10"
+                }`}
+              >
+                {tr(tab.labelKey)}
+              </button>
+            ))}
+          </div>
+          <p className="mb-2 text-[10px] leading-snug text-gray-400">
+            {tr(activeTab.observerKey)}
+          </p>
+          {/* HUD：UTC/倍速/食型/食分/遮挡率/视直径/全食剩余（真实值常显，
             契约 C4 + A1 登记） */}
-        <div className="mb-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 rounded bg-sky-950/60 px-2 py-1 font-mono text-[11px] text-sky-200">
-          <span className="text-gray-400">{tr('lab.eclipseHudUtc')}</span>
-          <span>{hud.utcText}</span>
-          <span className="text-gray-400">{tr('lab.eclipseHudRate')}</span>
-          <span>{hud.rateText}</span>
-          <span className="text-gray-400">{tr('lab.eclipseHudKind')}</span>
-          <span>{tr(hud.kindKey)}</span>
-          <span className="text-gray-400">{tr('lab.eclipseHudMagnitude')}</span>
-          <span>{hud.magnitudeText}</span>
-          <span className="text-gray-400">{tr('lab.eclipseHudObscuration')}</span>
-          <span>{hud.obscurationText}</span>
-          <span className="text-gray-400">{tr('lab.eclipseHudSunDiam')}</span>
-          <span>{hud.sunDiamText}</span>
-          <span className="text-gray-400">{tr('lab.eclipseHudMoonDiam')}</span>
-          <span>{hud.moonDiamText}</span>
-          <span className="text-gray-400">{tr('lab.eclipseHudTotalityLeft')}</span>
-          <span>{hud.totalityLeftText}</span>
-          {/* M4 太空档读数：本影真实宽度（A4 放大只作用显示，HUD 恒为真值）
+          <div className="mb-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 rounded bg-sky-950/60 px-2 py-1 font-mono text-[11px] text-sky-200">
+            <span className="text-gray-400">{tr("lab.eclipseHudUtc")}</span>
+            <span>{hud.utcText}</span>
+            <span className="text-gray-400">{tr("lab.eclipseHudRate")}</span>
+            <span>{hud.rateText}</span>
+            <span className="text-gray-400">{tr("lab.eclipseHudKind")}</span>
+            <span>{tr(hud.kindKey)}</span>
+            <span className="text-gray-400">
+              {tr("lab.eclipseHudMagnitude")}
+            </span>
+            <span>{hud.magnitudeText}</span>
+            <span className="text-gray-400">
+              {tr("lab.eclipseHudObscuration")}
+            </span>
+            <span>{hud.obscurationText}</span>
+            <span className="text-gray-400">{tr("lab.eclipseHudSunDiam")}</span>
+            <span>{hud.sunDiamText}</span>
+            <span className="text-gray-400">
+              {tr("lab.eclipseHudMoonDiam")}
+            </span>
+            <span>{hud.moonDiamText}</span>
+            <span className="text-gray-400">
+              {tr("lab.eclipseHudTotalityLeft")}
+            </span>
+            <span>{hud.totalityLeftText}</span>
+            {/* M4 太空档读数：本影真实宽度（A4 放大只作用显示，HUD 恒为真值）
               + 地面移动速度（§1.2 >1,700 km/h 量级锚点） */}
-          {settings.viewMode === 'space' && (
-            <>
-              <span className="text-gray-400">{tr('lab.eclipseHudUmbraWidth')}</span>
-              <span>
-                {hud.umbraWidthText}
-                {hud.umbraIsAntumbra ? `（${tr('lab.eclipseHudAntumbra')}）` : ''}
-              </span>
-              <span className="text-gray-400">{tr('lab.eclipseHudShadowSpeed')}</span>
-              <span>{hud.shadowSpeedText}</span>
-            </>
-          )}
+            {settings.viewMode === "space" && (
+              <>
+                <span className="text-gray-400">
+                  {tr("lab.eclipseHudUmbraWidth")}
+                </span>
+                <span>
+                  {hud.umbraWidthText}
+                  {hud.umbraIsAntumbra
+                    ? `（${tr("lab.eclipseHudAntumbra")}）`
+                    : ""}
+                </span>
+                <span className="text-gray-400">
+                  {tr("lab.eclipseHudShadowSpeed")}
+                </span>
+                <span>{hud.shadowSpeedText}</span>
+              </>
+            )}
+          </div>
+          {/* 控件全量（M3-6：播放模式/曝光/活动周/假想/对比/环境/科普卡） */}
+          <EclipseControlPanel
+            settings={settings}
+            onChange={handleSettingsChange}
+            env={env}
+            phaseCardKey={phaseCard}
+            onCompare={handleCompare}
+            eddington={eventId === "e1919"}
+          />
+          <p className="mt-2 border-t border-white/10 pt-2 text-[10px] leading-snug text-gray-500">
+            {tr("lab.dataSourceLabel")}：{entry?.dataSource ?? ""}
+          </p>
         </div>
-        {/* 控件全量（M3-6：播放模式/曝光/活动周/假想/对比/环境/科普卡） */}
-        <EclipseControlPanel
-          settings={settings}
-          onChange={handleSettingsChange}
-          env={env}
-          phaseCardKey={phaseCard}
-          onCompare={handleCompare}
-          eddington={eventId === 'e1919'}
-        />
-        <p className="mt-2 border-t border-white/10 pt-2 text-[10px] leading-snug text-gray-500">
-          {tr('lab.dataSourceLabel')}：{entry?.dataSource ?? ''}
-        </p>
       </div>
 
       {/* 底部：时间轴 scrubber（契约 C7 数据驱动锚点 + 贝利珠高亮刻度） */}
@@ -2044,11 +2320,12 @@ function EclipseExperience({ data }: { data: { events: SolarEclipseEventData[] }
         onTogglePlay={() => setPlaying((p) => !p)}
       />
 
-      {/* 底部操作提示（按视角档切换） */}
-      <p className="pointer-events-none absolute bottom-3 left-1/2 max-w-[calc(100%-1.5rem)] -translate-x-1/2 truncate whitespace-nowrap rounded bg-black/40 px-3 py-1 text-[10px] text-gray-400 backdrop-blur">
-        {settings.viewMode === 'space'
-          ? tr('lab.eclipseHintSpace')
-          : tr('lab.eclipseHintLookAround')}
+      {/* 底部操作提示（按视角档切换；<sm 隐藏——底部被抽屉标题栏占据，
+          触控手势提示由场景直接可发现性承担，M6-2） */}
+      <p className="pointer-events-none absolute bottom-3 left-1/2 max-w-[calc(100%-1.5rem)] -translate-x-1/2 truncate whitespace-nowrap rounded bg-black/40 px-3 py-1 text-[10px] text-gray-400 backdrop-blur max-sm:hidden">
+        {settings.viewMode === "space"
+          ? tr("lab.eclipseHintSpace")
+          : tr("lab.eclipseHintLookAround")}
       </p>
     </div>
   );
@@ -2062,20 +2339,25 @@ export function SolarEclipseLab(): JSX.Element {
   const tr = useT();
   const { data, status } = useSolarEclipses();
 
-  if (status !== 'ready' || !data) {
+  if (status !== "ready" || !data) {
     return (
       <div className="relative flex h-screen w-screen items-center justify-center bg-black">
         <div className="absolute left-4 top-4 rounded-lg bg-black/60 px-3 py-2 text-xs backdrop-blur">
-          <Link href={LAB_PAGE_PATH} className="text-space-accent hover:underline">
-            ← {tr('lab.backToLab')}
+          <Link
+            href={LAB_PAGE_PATH}
+            className="text-space-accent hover:underline"
+          >
+            ← {tr("lab.backToLab")}
           </Link>
         </div>
         <p
           className={`rounded-lg bg-black/60 px-4 py-2 text-sm text-gray-300 backdrop-blur ${
-            status === 'loading' ? 'animate-pulse' : ''
+            status === "loading" ? "animate-pulse" : ""
           }`}
         >
-          {status === 'failed' ? tr('lab.eclipseEphemerisFailed') : tr('lab.eclipseLoadingEphemeris')}
+          {status === "failed"
+            ? tr("lab.eclipseEphemerisFailed")
+            : tr("lab.eclipseLoadingEphemeris")}
         </p>
       </div>
     );

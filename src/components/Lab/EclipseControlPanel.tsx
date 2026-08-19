@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * 日全食实验室控件面板（E-M3-6，需求 §3.2/§3.3/§3.4）
@@ -13,20 +13,22 @@
  * · 99%/100% 天光断崖对比 · 环境数值条（§1.4）· 阶段科普卡（§3.1 五接触点
  * + 安全口径）· 太空视角科普卡（A3 距离压缩/影锥可见性登记）。
  *
- * 移动端条款基线：可点元素 max-md:min-h-11（全量适配随 M6）。
+ * 移动端条款（M6 全量）：可点元素 max-md:min-h-11；<sm 底部抽屉由父级
+ * 容器（SolarEclipseLab 右上面板 → 底部抽屉）承载，本组件不做布局分流。
  */
 
-import type { JSX } from 'react';
-import { useT } from '@/hooks/useI18n';
-import type { MessageKey } from '@/i18n';
+import type { JSX } from "react";
+import { useT } from "@/hooks/useI18n";
+import { useSimulationStore } from "@/store";
+import type { MessageKey } from "@/i18n";
 import {
   HYPO_MOON_DIST_MAX_KM,
   HYPO_MOON_DIST_MIN_KM,
   type EclipseExposureMode,
   type EclipsePhaseCardKey,
   type EclipsePlayMode,
-} from '@/utils/solarEclipseLab';
-import type { EclipseViewMode } from '@/utils/solarEclipseSpace';
+} from "@/utils/solarEclipseLab";
+import type { EclipseViewMode } from "@/utils/solarEclipseSpace";
 
 /** M3+M4 控件状态（父级 React state；渲染期同步 settingsRef 供 useFrame 读） */
 export interface EclipseM3Settings {
@@ -61,20 +63,20 @@ export interface EclipseEnvReadout {
 
 /** 阶段科普卡键 → i18n 文案键 */
 const PHASE_CARD_KEYS: Record<EclipsePhaseCardKey, MessageKey> = {
-  c1: 'lab.eclipseCardC1',
-  c2: 'lab.eclipseCardC2',
-  max: 'lab.eclipseCardMax',
-  c3: 'lab.eclipseCardC3',
-  c4: 'lab.eclipseCardC4',
+  c1: "lab.eclipseCardC1",
+  c2: "lab.eclipseCardC2",
+  max: "lab.eclipseCardMax",
+  c3: "lab.eclipseCardC3",
+  c4: "lab.eclipseCardC4",
 };
 
 /** 阶段科普卡键 → 标题键（复用锚点名） */
 const PHASE_CARD_TITLE_KEYS: Record<EclipsePhaseCardKey, MessageKey> = {
-  c1: 'lab.eclipseAnchorC1',
-  c2: 'lab.eclipseAnchorC2',
-  max: 'lab.eclipseAnchorMax',
-  c3: 'lab.eclipseAnchorC3',
-  c4: 'lab.eclipseAnchorC4',
+  c1: "lab.eclipseAnchorC1",
+  c2: "lab.eclipseAnchorC2",
+  max: "lab.eclipseAnchorMax",
+  c3: "lab.eclipseAnchorC3",
+  c4: "lab.eclipseAnchorC4",
 };
 
 export interface EclipseControlPanelProps {
@@ -84,7 +86,7 @@ export interface EclipseControlPanelProps {
   /** 当前阶段科普卡（activePhaseCardKey 纯函数判定） */
   phaseCardKey: EclipsePhaseCardKey;
   /** 99%/100% 一键对比（父级 seek 到对应时刻并暂停） */
-  onCompare: (which: '99' | '100') => void;
+  onCompare: (which: "99" | "100") => void;
   /** M5：当前为 1919 Eddington 历史页签（显示偏折对照控件 + 科学史科普卡） */
   eddington: boolean;
 }
@@ -120,8 +122,8 @@ function Segmented({
           onClick={() => onSelect(opt.id)}
           className={`flex-1 rounded px-1 py-1 text-[10px] leading-tight transition-colors max-md:min-h-11 ${
             value === opt.id
-              ? 'bg-sky-500/30 font-semibold text-sky-200'
-              : 'bg-white/5 text-gray-400 hover:bg-white/10'
+              ? "bg-sky-500/30 font-semibold text-sky-200"
+              : "bg-white/5 text-gray-400 hover:bg-white/10"
           }`}
         >
           {opt.label}
@@ -131,7 +133,7 @@ function Segmented({
   );
 }
 
-/** 日全食控件面板（右侧覆盖层；桌面全量，移动端抽屉随 M6） */
+/** 日全食控件面板（右侧覆盖层；<sm 抽屉化由父级容器承载，M6） */
 export function EclipseControlPanel({
   settings,
   onChange,
@@ -141,68 +143,78 @@ export function EclipseControlPanel({
   eddington,
 }: EclipseControlPanelProps): JSX.Element {
   const tr = useT();
+  // 声景开关/音量（M6-1 §5：全局 store 与主场景/流星雨同一事实源，
+  // masterGain 链天然承接静音；LabControlPanel 音效区同范式）
+  const audioEnabled = useSimulationStore((s) => s.audioEnabled);
+  const audioVolume = useSimulationStore((s) => s.audioVolume);
+  const setAudioEnabled = useSimulationStore((s) => s.setAudioEnabled);
+  const setAudioVolume = useSimulationStore((s) => s.setAudioVolume);
 
   return (
     <div className="text-xs text-gray-100">
       {/* 视角分段控件（M4 §3.2：地面 / 太空） */}
-      <SectionTitle text={tr('lab.eclipseViewTitle')} />
+      <SectionTitle text={tr("lab.eclipseViewTitle")} />
       <Segmented
-        ariaLabel={tr('lab.eclipseViewAria')}
+        ariaLabel={tr("lab.eclipseViewAria")}
         options={[
-          { id: 'ground', label: tr('lab.eclipseViewGround') },
-          { id: 'space', label: tr('lab.eclipseViewSpace') },
+          { id: "ground", label: tr("lab.eclipseViewGround") },
+          { id: "space", label: tr("lab.eclipseViewSpace") },
         ]}
         value={settings.viewMode}
         onSelect={(id) => onChange({ viewMode: id as EclipseViewMode })}
       />
-      {settings.viewMode === 'space' && (
+      {settings.viewMode === "space" && (
         <>
           {/* 本影放大开关（A4：默认关 = 真实比例；标签含倍率） */}
           <div className="mt-1 flex gap-1">
             <button
-              aria-label={tr('lab.eclipseUmbraMagnifyAria')}
+              aria-label={tr("lab.eclipseUmbraMagnifyAria")}
               aria-pressed={settings.umbraMagnify}
               onClick={() => onChange({ umbraMagnify: !settings.umbraMagnify })}
               className={`flex-1 rounded px-1 py-1 text-[10px] leading-tight transition-colors max-md:min-h-11 ${
                 settings.umbraMagnify
-                  ? 'bg-amber-500/30 font-semibold text-amber-200'
-                  : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                  ? "bg-amber-500/30 font-semibold text-amber-200"
+                  : "bg-white/5 text-gray-400 hover:bg-white/10"
               }`}
             >
-              {tr('lab.eclipseUmbraMagnifyLabel')}：{settings.umbraMagnify ? 'ON' : 'OFF'}
+              {tr("lab.eclipseUmbraMagnifyLabel")}：
+              {settings.umbraMagnify ? "ON" : "OFF"}
             </button>
             {/* 倾角叙事模式（A5：夸张倾角示意） */}
             <button
-              aria-label={tr('lab.eclipseInclinationAria')}
+              aria-label={tr("lab.eclipseInclinationAria")}
               aria-pressed={settings.inclinationDemo}
-              onClick={() => onChange({ inclinationDemo: !settings.inclinationDemo })}
+              onClick={() =>
+                onChange({ inclinationDemo: !settings.inclinationDemo })
+              }
               className={`flex-1 rounded px-1 py-1 text-[10px] leading-tight transition-colors max-md:min-h-11 ${
                 settings.inclinationDemo
-                  ? 'bg-amber-500/30 font-semibold text-amber-200'
-                  : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                  ? "bg-amber-500/30 font-semibold text-amber-200"
+                  : "bg-white/5 text-gray-400 hover:bg-white/10"
               }`}
             >
-              {tr('lab.eclipseInclinationLabel')}：{settings.inclinationDemo ? 'ON' : 'OFF'}
+              {tr("lab.eclipseInclinationLabel")}：
+              {settings.inclinationDemo ? "ON" : "OFF"}
             </button>
           </div>
           {settings.umbraMagnify && (
             <p className="mt-1 rounded bg-amber-950/40 px-2 py-1 text-[10px] leading-snug text-amber-200/90">
-              {tr('lab.eclipseUmbraMagnifyBadge')}
+              {tr("lab.eclipseUmbraMagnifyBadge")}
             </p>
           )}
           {settings.inclinationDemo && (
             <p className="mt-1 rounded bg-amber-950/40 px-2 py-1 text-[10px] leading-snug text-amber-200/90">
-              {tr('lab.eclipseInclinationBadge')}
+              {tr("lab.eclipseInclinationBadge")}
             </p>
           )}
           {settings.inclinationDemo && (
             <p className="mt-1 rounded bg-white/5 px-2 py-1 text-[10px] leading-snug text-gray-400">
-              {tr('lab.eclipseInclinationCard')}
+              {tr("lab.eclipseInclinationCard")}
             </p>
           )}
           {/* 太空视角科普卡（A3：太阳距离压缩 + 影锥可见实体登记） */}
           <p className="mt-1 rounded bg-white/5 px-2 py-1 text-[10px] leading-snug text-gray-400">
-            {tr('lab.eclipseSpaceCard')}
+            {tr("lab.eclipseSpaceCard")}
           </p>
         </>
       )}
@@ -210,30 +222,33 @@ export function EclipseControlPanel({
       {/* M5 星光引力偏折对照（1919 Eddington 页签专属；A10 登记） */}
       {eddington && (
         <>
-          <SectionTitle text={tr('lab.eclipseDeflectionTitle')} />
-          {settings.viewMode === 'ground' && (
+          <SectionTitle text={tr("lab.eclipseDeflectionTitle")} />
+          {settings.viewMode === "ground" && (
             <>
               <button
-                aria-label={tr('lab.eclipseDeflectionAria')}
+                aria-label={tr("lab.eclipseDeflectionAria")}
                 aria-pressed={settings.deflectionDemo}
-                onClick={() => onChange({ deflectionDemo: !settings.deflectionDemo })}
+                onClick={() =>
+                  onChange({ deflectionDemo: !settings.deflectionDemo })
+                }
                 className={`w-full rounded px-2 py-1 text-[10px] transition-colors max-md:min-h-11 ${
                   settings.deflectionDemo
-                    ? 'bg-amber-500/30 font-semibold text-amber-200'
-                    : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                    ? "bg-amber-500/30 font-semibold text-amber-200"
+                    : "bg-white/5 text-gray-400 hover:bg-white/10"
                 }`}
               >
-                {tr('lab.eclipseDeflectionToggle')}：{settings.deflectionDemo ? 'ON' : 'OFF'}
+                {tr("lab.eclipseDeflectionToggle")}：
+                {settings.deflectionDemo ? "ON" : "OFF"}
               </button>
               {settings.deflectionDemo && (
                 <>
                   {/* A10 徽标：夸张倍率 + 真实值 1.75″（文案数值与
                       EDDINGTON_DEFLECTION_EXAGGERATION 常量同步维护） */}
                   <p className="mt-1 rounded bg-amber-950/40 px-2 py-1 text-[10px] leading-snug text-amber-200/90">
-                    {tr('lab.eclipseDeflectionBadge')}
+                    {tr("lab.eclipseDeflectionBadge")}
                   </p>
                   <p className="mt-1 rounded bg-white/5 px-2 py-1 text-[10px] leading-snug text-gray-400">
-                    {tr('lab.eclipseDeflectionLegend')}
+                    {tr("lab.eclipseDeflectionLegend")}
                   </p>
                 </>
               )}
@@ -241,92 +256,104 @@ export function EclipseControlPanel({
           )}
           {/* 科学史科普卡（M5-3：诚实口径——当年精度接近极限、后世确认） */}
           <p className="mt-1 rounded bg-sky-950/50 px-2 py-1.5 text-[10px] leading-relaxed text-gray-300">
-            {tr('lab.eclipse1919Card')}
+            {tr("lab.eclipse1919Card")}
           </p>
         </>
       )}
 
       {/* 播放模式（A1 登记：HUD 常显真实时刻与倍速） */}
-      <SectionTitle text={tr('lab.eclipsePlayModeAria')} />
+      <SectionTitle text={tr("lab.eclipsePlayModeAria")} />
       <Segmented
-        ariaLabel={tr('lab.eclipsePlayModeAria')}
+        ariaLabel={tr("lab.eclipsePlayModeAria")}
         options={[
-          { id: 'tour', label: tr('lab.eclipsePlayModeTour') },
-          { id: 'real', label: tr('lab.eclipsePlayModeReal') },
+          { id: "tour", label: tr("lab.eclipsePlayModeTour") },
+          { id: "real", label: tr("lab.eclipsePlayModeReal") },
         ]}
         value={settings.playMode}
         onSelect={(id) => onChange({ playMode: id as EclipsePlayMode })}
       />
 
       {/* 曝光状态机（契约 C5） */}
-      <SectionTitle text={tr('lab.eclipseExposureTitle')} />
+      <SectionTitle text={tr("lab.eclipseExposureTitle")} />
       <Segmented
-        ariaLabel={tr('lab.eclipseExposureTitle')}
+        ariaLabel={tr("lab.eclipseExposureTitle")}
         options={[
-          { id: 'auto', label: tr('lab.eclipseExposureAuto') },
-          { id: 'manual', label: tr('lab.eclipseExposureManual') },
+          { id: "auto", label: tr("lab.eclipseExposureAuto") },
+          { id: "manual", label: tr("lab.eclipseExposureManual") },
         ]}
         value={settings.exposureMode}
         onSelect={(id) => onChange({ exposureMode: id as EclipseExposureMode })}
       />
-      {settings.exposureMode === 'manual' && (
+      {settings.exposureMode === "manual" && (
         <div className="mt-1 flex items-center gap-1.5">
-          <span className="text-[10px] text-gray-400">{tr('lab.eclipseExposureFiltered')}</span>
+          <span className="text-[10px] text-gray-400">
+            {tr("lab.eclipseExposureFiltered")}
+          </span>
           <input
             type="range"
             min={0}
             max={1}
             step={0.01}
             value={settings.exposureManual01}
-            aria-label={tr('lab.eclipseExposureSliderAria')}
-            onChange={(e) => onChange({ exposureManual01: Number.parseFloat(e.target.value) })}
+            aria-label={tr("lab.eclipseExposureSliderAria")}
+            onChange={(e) =>
+              onChange({ exposureManual01: Number.parseFloat(e.target.value) })
+            }
             className="h-1.5 flex-1 cursor-pointer accent-sky-400"
           />
-          <span className="text-[10px] text-gray-400">{tr('lab.eclipseExposureNaked')}</span>
+          <span className="text-[10px] text-gray-400">
+            {tr("lab.eclipseExposureNaked")}
+          </span>
         </div>
       )}
       {/* 曝光科普卡（A2 登记：色调映射非线性，6 个数量级） */}
       <p className="mt-1 rounded bg-white/5 px-2 py-1 text-[10px] leading-snug text-gray-400">
-        {tr('lab.eclipseExposureCard')}
+        {tr("lab.eclipseExposureCard")}
       </p>
 
       {/* 太阳活动周滑杆（isotropy01 → 日冕形态连续变形） */}
-      <SectionTitle text={tr('lab.eclipseActivityTitle')} />
+      <SectionTitle text={tr("lab.eclipseActivityTitle")} />
       <div className="flex items-center gap-1.5">
-        <span className="text-[10px] text-gray-400">{tr('lab.eclipseActivityMin')}</span>
+        <span className="text-[10px] text-gray-400">
+          {tr("lab.eclipseActivityMin")}
+        </span>
         <input
           type="range"
           min={0}
           max={1}
           step={0.01}
           value={settings.isotropy01}
-          aria-label={tr('lab.eclipseActivityAria')}
-          onChange={(e) => onChange({ isotropy01: Number.parseFloat(e.target.value) })}
+          aria-label={tr("lab.eclipseActivityAria")}
+          onChange={(e) =>
+            onChange({ isotropy01: Number.parseFloat(e.target.value) })
+          }
           className="h-1.5 flex-1 cursor-pointer accent-sky-400"
         />
-        <span className="text-[10px] text-gray-400">{tr('lab.eclipseActivityMax')}</span>
+        <span className="text-[10px] text-gray-400">
+          {tr("lab.eclipseActivityMax")}
+        </span>
       </div>
 
       {/* 假想模式（月地距离滑杆全食 ↔ 环食连续退化；与真实时间轴互斥） */}
-      <SectionTitle text={tr('lab.eclipseHypoTitle')} />
+      <SectionTitle text={tr("lab.eclipseHypoTitle")} />
       <button
-        aria-label={tr('lab.eclipseHypoToggleAria')}
+        aria-label={tr("lab.eclipseHypoToggleAria")}
         aria-pressed={settings.hypoActive}
         onClick={() => onChange({ hypoActive: !settings.hypoActive })}
         className={`w-full rounded px-2 py-1 text-[10px] transition-colors max-md:min-h-11 ${
           settings.hypoActive
-            ? 'bg-amber-500/30 font-semibold text-amber-200'
-            : 'bg-white/5 text-gray-400 hover:bg-white/10'
+            ? "bg-amber-500/30 font-semibold text-amber-200"
+            : "bg-white/5 text-gray-400 hover:bg-white/10"
         }`}
       >
-        {tr('lab.eclipseHypoTitle')}：{settings.hypoActive ? 'ON' : 'OFF'}
+        {tr("lab.eclipseHypoTitle")}：{settings.hypoActive ? "ON" : "OFF"}
       </button>
       {settings.hypoActive && (
         <div className="mt-1">
           <div className="flex items-center justify-between text-[10px] text-gray-400">
-            <span>{tr('lab.eclipseHypoMoonDist')}</span>
+            <span>{tr("lab.eclipseHypoMoonDist")}</span>
             <span className="font-mono text-amber-200">
-              {Math.round(settings.hypoMoonDistKm).toLocaleString('en-US')} km
+              {Math.round(settings.hypoMoonDistKm).toLocaleString("en-US")} km
             </span>
           </div>
           <input
@@ -335,38 +362,40 @@ export function EclipseControlPanel({
             max={HYPO_MOON_DIST_MAX_KM}
             step={100}
             value={settings.hypoMoonDistKm}
-            aria-label={tr('lab.eclipseHypoMoonDistAria')}
-            onChange={(e) => onChange({ hypoMoonDistKm: Number.parseFloat(e.target.value) })}
+            aria-label={tr("lab.eclipseHypoMoonDistAria")}
+            onChange={(e) =>
+              onChange({ hypoMoonDistKm: Number.parseFloat(e.target.value) })
+            }
             className="h-1.5 w-full cursor-pointer accent-amber-400"
           />
         </div>
       )}
 
       {/* 99%/100% 天光断崖对比 */}
-      <SectionTitle text={tr('lab.eclipseCompareTitle')} />
+      <SectionTitle text={tr("lab.eclipseCompareTitle")} />
       <div className="flex gap-1">
         <button
-          onClick={() => onCompare('99')}
+          onClick={() => onCompare("99")}
           className="flex-1 rounded bg-white/5 px-1 py-1 text-[10px] text-gray-300 transition-colors hover:bg-white/15 max-md:min-h-11"
         >
-          {tr('lab.eclipseCompare99')}
+          {tr("lab.eclipseCompare99")}
         </button>
         <button
-          onClick={() => onCompare('100')}
+          onClick={() => onCompare("100")}
           className="flex-1 rounded bg-white/5 px-1 py-1 text-[10px] text-gray-300 transition-colors hover:bg-white/15 max-md:min-h-11"
         >
-          {tr('lab.eclipseCompare100')}
+          {tr("lab.eclipseCompare100")}
         </button>
       </div>
 
       {/* 环境数值条（§1.4） */}
-      <SectionTitle text={tr('lab.eclipseEnvTitle')} />
+      <SectionTitle text={tr("lab.eclipseEnvTitle")} />
       <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 rounded bg-white/5 px-2 py-1 font-mono text-[10px] text-gray-300">
-        <span className="text-gray-500">{tr('lab.eclipseEnvTemp')}</span>
+        <span className="text-gray-500">{tr("lab.eclipseEnvTemp")}</span>
         <span>{env.tempText}</span>
-        <span className="text-gray-500">{tr('lab.eclipseEnvSky')}</span>
+        <span className="text-gray-500">{tr("lab.eclipseEnvSky")}</span>
         <span>{env.skyText}</span>
-        <span className="text-gray-500">{tr('lab.eclipseEnvLm')}</span>
+        <span className="text-gray-500">{tr("lab.eclipseEnvLm")}</span>
         <span>{env.lmText}</span>
       </div>
 
@@ -375,6 +404,34 @@ export function EclipseControlPanel({
       <p className="rounded bg-sky-950/50 px-2 py-1.5 text-[10px] leading-relaxed text-gray-300">
         {tr(PHASE_CARD_KEYS[phaseCardKey])}
       </p>
+
+      {/* 声景区（M6-1 §5）：开关/音量 + 可听化说明（科学口径红线：真实
+          日食无声；全食「寂静」为艺术表达——A8 用户可见登记，双语常显） */}
+      <div className="mt-3 border-t border-white/10 pt-2">
+        <label className="flex items-center gap-2 max-md:min-h-11">
+          <input
+            type="checkbox"
+            checked={audioEnabled}
+            onChange={(e) => setAudioEnabled(e.target.checked)}
+          />
+          <span>🔊 {tr("lab.eclipseAudioEnable")}</span>
+        </label>
+        {audioEnabled && (
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={audioVolume}
+            aria-label={tr("lab.audioVolumeAria")}
+            onChange={(e) => setAudioVolume(Number.parseFloat(e.target.value))}
+            className="mt-1 h-1.5 w-full cursor-pointer accent-sky-400"
+          />
+        )}
+        <p className="mt-1 text-[10px] leading-snug text-gray-400">
+          {tr("lab.eclipseAudioNote")}
+        </p>
+      </div>
     </div>
   );
 }

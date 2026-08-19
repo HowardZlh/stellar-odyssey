@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * 食事件时间轴 scrubber（E-M2-6 骨架，契约 C7 跨条目共建组件）：
@@ -12,16 +12,18 @@
  *
  * DOM 覆盖层组件（订阅 locale 合法）；seek 语义：星历插值是纯查表，任意
  * seek 无状态累积（§3.1 红线——效果由 tSec 单值可重建，父级保证）。
- * 移动端条款：按钮 ≥44pt 由 max-md:min-h-11 追加（M6 全量适配前的基线）。
+ * 移动端条款（M6 全量）：按钮 ≥44pt（max-md:min-h-11）；滑杆 thumb 由
+ * globals.css 全局放大（勿覆盖）；<sm 上移至底部抽屉标题栏之上并叠加
+ * safe-area 偏移（任意值 calc 写法，AGENTS §safe-area）。
  */
 
-import type { JSX } from 'react';
-import { useT } from '@/hooks/useI18n';
+import type { JSX } from "react";
+import { useT } from "@/hooks/useI18n";
 import type {
   EclipseTimelineAnchor,
   EclipseTimelineHighlight,
   EclipseTimelineWindow,
-} from '@/utils/solarEclipseLab';
+} from "@/utils/solarEclipseLab";
 
 export interface EclipseTimelineScrubberProps {
   /** 时间轴窗口（C1−15min → C4+15min） */
@@ -54,15 +56,15 @@ export function EclipseTimelineScrubber({
   const span = win.endSec - win.startSec;
 
   return (
-    <div className="absolute bottom-10 left-1/2 w-[min(40rem,calc(100vw-1.5rem))] -translate-x-1/2 rounded-lg bg-black/65 px-3 py-2 text-xs text-gray-100 backdrop-blur">
+    <div className="absolute bottom-10 left-1/2 w-[min(40rem,calc(100vw-1.5rem))] -translate-x-1/2 rounded-lg bg-black/65 px-3 py-2 text-xs text-gray-100 backdrop-blur max-sm:bottom-[calc(4.5rem+env(safe-area-inset-bottom))]">
       <div className="flex items-center gap-2">
         <button
           onClick={onTogglePlay}
-          aria-label={tr(playing ? 'lab.eclipsePause' : 'lab.eclipsePlay')}
+          aria-label={tr(playing ? "lab.eclipsePause" : "lab.eclipsePlay")}
           aria-pressed={playing}
           className="rounded bg-white/10 px-2 py-1 text-sky-200 transition-colors hover:bg-white/20 max-md:min-h-11 max-md:px-4"
         >
-          {playing ? '⏸' : '▶'}
+          {playing ? "⏸" : "▶"}
         </button>
         <div className="relative flex-1">
           {/* 高亮区段（贝利珠/钻石环时段，§3.1；指针事件穿透给滑杆） */}
@@ -94,7 +96,7 @@ export function EclipseTimelineScrubber({
             max={win.endSec}
             step={1}
             value={valueSec}
-            aria-label={tr('lab.eclipseTimelineAria')}
+            aria-label={tr("lab.eclipseTimelineAria")}
             onChange={(e) => onSeek(Number.parseFloat(e.target.value))}
             className="h-1.5 w-full cursor-pointer accent-sky-400"
           />
