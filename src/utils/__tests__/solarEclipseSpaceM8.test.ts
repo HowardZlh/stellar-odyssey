@@ -23,6 +23,7 @@ import {
   SPACE_ART_INTRO_END_RADIUS_UNITS,
   SPACE_ART_INTRO_START_RADIUS_UNITS,
   SPACE_ART_MOON_SCALE,
+  SPACE_ART_OVERVIEW_ALT_RAD,
   SPACE_ART_RADIUS_FACTOR,
   SPACE_AU_LINEAR_UNITS,
   SPACE_CAMERA_RADIUS_MAX_UNITS,
@@ -39,8 +40,11 @@ import {
   coneRadialScaleForMode,
   emptyArtShadowCapState,
   emptyEclipseSpaceFrameState,
+  moonOrbitRingBasis,
+  spaceArtOverviewPose,
   spaceFrameState,
   spaceIntroPose,
+  type MutableVec3,
   type ViewIntroPose,
 } from '@/utils/solarEclipseSpace';
 
@@ -208,5 +212,56 @@ describe('艺术化档相机域与运镜（§M8-4）', () => {
     expect(Math.hypot(...pose.pos)).toBeCloseTo(SPACE_ART_INTRO_START_RADIUS_UNITS, 6);
     spaceIntroPose(sunDir, 1, pose, SPACE_ART_INTRO_END_RADIUS_UNITS, SPACE_ART_INTRO_START_RADIUS_UNITS);
     expect(Math.hypot(...pose.pos)).toBeCloseTo(SPACE_ART_INTRO_END_RADIUS_UNITS, 6);
+  });
+
+  it('spaceArtOverviewPose：终点在反日侧、抬升 18°、半径 620（P1 全景机位）', () => {
+    const pose: ViewIntroPose = { pos: [0, 0, 0], fovDeg: 0 };
+    const sunDir = [0.8, 0.05, -0.6] as const;
+    const sLen = Math.hypot(...sunDir);
+    const sunUnit = [sunDir[0] / sLen, sunDir[1] / sLen, sunDir[2] / sLen] as const;
+    spaceArtOverviewPose(sunUnit, 0, pose);
+    expect(Math.hypot(...pose.pos)).toBeCloseTo(SPACE_ART_INTRO_START_RADIUS_UNITS, 6);
+    spaceArtOverviewPose(sunUnit, 1, pose);
+    const r = Math.hypot(...pose.pos);
+    expect(r).toBeCloseTo(SPACE_ART_INTRO_END_RADIUS_UNITS, 6);
+    // 反日侧：机位与太阳方向水平分量相反
+    expect(pose.pos[0] * sunUnit[0] + pose.pos[2] * sunUnit[2]).toBeLessThan(0);
+    // 抬升角 = SPACE_ART_OVERVIEW_ALT_RAD
+    expect(Math.asin(pose.pos[1] / r)).toBeCloseTo(SPACE_ART_OVERVIEW_ALT_RAD, 9);
+  });
+});
+
+describe('moonOrbitRingBasis（P4 月球绕地轨道环）', () => {
+  it('2027 食甚：e1 过当前月球位置、e1⊥e2、法向近天赤道北（18–29° 白道倾角域）', () => {
+    const e1: MutableVec3 = [0, 0, 0];
+    const e2: MutableVec3 = [0, 0, 0];
+    moonOrbitRingBasis(e2027.geo, e2027.contacts.max, e1, e2);
+    expect(Math.hypot(...e1)).toBeCloseTo(1, 9);
+    expect(Math.hypot(...e2)).toBeCloseTo(1, 6);
+    expect(Math.abs(e1[0] * e2[0] + e1[1] * e2[1] + e1[2] * e2[2])).toBeLessThan(1e-6);
+    // 环过当前月球位置：e1 与 spaceFrameState 月球方向一致
+    const space = emptyEclipseSpaceFrameState();
+    spaceFrameState(e2027.geo, e2027.contacts.max, null, null, space);
+    const mLen = Math.hypot(...space.moonPosScene);
+    const dot =
+      (e1[0] * space.moonPosScene[0] +
+        e1[1] * space.moonPosScene[1] +
+        e1[2] * space.moonPosScene[2]) /
+      mLen;
+    expect(dot).toBeGreaterThan(0.999999);
+    // 轨道面法向（e1×e2）与场景 +Y（北天极）夹角 ∈ 白道对赤道倾角域 ~[18°, 29°]
+    const ny = e1[2] * e2[0] - e1[0] * e2[2];
+    expect(Math.abs(ny)).toBeGreaterThan(Math.cos((30 * Math.PI) / 180));
+    expect(Math.abs(ny)).toBeLessThan(Math.cos((17 * Math.PI) / 180));
+  });
+
+  it('窗末钳制退化走向后差分兜底；非法 tSec 抛错', () => {
+    const win = e2027.geo;
+    const tEnd = win.t0 + (win.rows.length - 1) * win.dtSec;
+    const e1: MutableVec3 = [0, 0, 0];
+    const e2: MutableVec3 = [0, 0, 0];
+    moonOrbitRingBasis(win, tEnd, e1, e2);
+    expect(Math.hypot(...e2)).toBeCloseTo(1, 6);
+    expect(() => moonOrbitRingBasis(win, Number.NaN, e1, e2)).toThrow(RangeError);
   });
 });

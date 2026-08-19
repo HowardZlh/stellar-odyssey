@@ -59,8 +59,12 @@ Backdrop and far scenery in the space view (each can be toggled):
   constants, while the band's texture is an artistic recreation;
 - **Planet orbits** (on by default): directions and orbital phases follow real
   orbital elements, heliocentric distances are compressed (1 AU ≈ 1,500 scene units,
-  outer planets log-compressed) and body sizes are not to scale; the Sun carries a
-  permanent name label so you can always find it from any vantage.
+  outer planets log-compressed) and body sizes are not to scale; the Moon's orbit
+  ring around the Earth is drawn as well (true ephemeris orbital-plane orientation,
+  tracking the what-if Moon-distance slider); the Sun carries a permanent name label
+  so you can always find it from any vantage. Entering the space view lands on an
+  anti-sunward overview vantage (Sun centered, Earth and Moon in the foreground) —
+  you can still orbit and zoom freely.
 
 ## The five-contact timeline
 

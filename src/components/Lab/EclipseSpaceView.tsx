@@ -73,7 +73,11 @@ import { bvToTeffK, srgbToLinear01 } from '@/utils/pleiadesCatalog';
 import { blackbodyRGB } from '@/utils/starPhysics';
 import { fovPointScaleFactor } from '@/utils/labGestures';
 import { J2000_UNIX_SEC } from '@/utils/solarEclipseLab';
-import { EARTH_MEAN_RADIUS_KM, MOON_MEAN_RADIUS_KM } from '@/utils/solarEclipse';
+import {
+  EARTH_MEAN_RADIUS_KM,
+  MOON_MEAN_RADIUS_KM,
+  type EphemerisSeries,
+} from '@/utils/solarEclipse';
 import {
   ANTUMBRA_DARKEN_DEPTH,
   GALACTIC_CENTER_DEC_DEG,
@@ -109,6 +113,7 @@ import {
   equatorialSceneDir,
   j2000KmToGeodetic,
   j2000ToSceneVec,
+  moonOrbitRingBasis,
   narrativeAngles,
   narrativeOrbitBasis,
   pathSweepProgress01,
@@ -142,7 +147,7 @@ export interface EclipseSpaceRefs {
   tSecRef: { current: number };
   eventRef: {
     current: {
-      event: { contacts: { max: number }; path: number[][] };
+      event: { contacts: { max: number }; path: number[][]; geo: EphemerisSeries };
       window: { startSec: number };
     };
   };
@@ -580,14 +585,17 @@ function SpaceMoon({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
 const SUN_DISK_GLOW_EXTENT = 3;
 
 const SUN_DISK_FRAGMENT_SHADER = /* glsl */ `
+  uniform float uGlowGain;
+  uniform float uGlowFall;
   varying vec2 vUv;
   void main() {
     // r 以日盘半径为单位（quad 半宽 = ${SUN_DISK_GLOW_EXTENT} × 半径——M7-2
     // 辉光展幅上调增强远机位可辨性；核心盘几何不变）
     float r = length(vUv - 0.5) * 2.0 * ${SUN_DISK_GLOW_EXTENT.toFixed(1)};
-    // 核心 HDR 白盘（Bloom 拾取）+ 径向暖色辉光
+    // 核心 HDR 白盘（Bloom 拾取）+ 径向暖色辉光（M8 补丁 P3：艺术化档增益
+    // 降档/衰减收紧，防太阳球过曝白团——增益经 uniform 按档写入）
     float core = 1.0 - smoothstep(0.42, 0.5, r);
-    float glow = exp(-r * 1.4) * 0.8;
+    float glow = exp(-r * uGlowFall) * 0.8 * uGlowGain;
     vec3 col = vec3(1.0, 0.95, 0.85) * (core * 6.0) + vec3(1.0, 0.75, 0.4) * glow;
     float alpha = max(core, glow);
     if (alpha < 0.01) discard;
@@ -601,30 +609,57 @@ const SUN_ART_RADIUS_UNITS = artBodyRadiusUnits(SUN.radiusKm);
 /** 艺术化档辉光 quad 相对真实档的缩放（核心盘半径对齐太阳球半径） */
 const SUN_ART_DISK_SCALE = SUN_ART_RADIUS_UNITS / SPACE_SUN_DISK_RADIUS_UNITS;
 
-/** 艺术化太阳球 fragment（临边渐变 + HDR 核供 Bloom 拾取；主场景 Sun 观感
- * 轻量再现——不复用其重 shader，源文件零改动，M8-2） */
+/** 艺术化太阳球顶点（uv + 世界法向/位置） */
+const SUN_ART_SPHERE_VERTEX_SHADER = /* glsl */ `
+  varying vec2 vUv;
+  varying vec3 vNormalW;
+  varying vec3 vPosW;
+  void main() {
+    vUv = uv;
+    vNormalW = normalize(mat3(modelMatrix) * normal);
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vPosW = world.xyz;
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`;
+
+/** 艺术化太阳球 fragment（M8-2 + 补丁 P3：2k 太阳纹理质感 × 临边渐变，
+ * HDR 峰值 ~1.5 轻拾取 Bloom 不爆白；纹理未就绪暖色渐变兜底；主场景 Sun
+ * 观感轻量再现——不复用其重 shader，源文件零改动） */
 const SUN_ART_SPHERE_FRAGMENT_SHADER = /* glsl */ `
+  uniform sampler2D uMap;
+  uniform float uHasMap;
+  varying vec2 vUv;
   varying vec3 vNormalW;
   varying vec3 vPosW;
   void main() {
     vec3 n = normalize(vNormalW);
     vec3 v = normalize(cameraPosition - vPosW);
     float mu = clamp(dot(n, v), 0.0, 1.0);
-    vec3 core = vec3(1.0, 0.93, 0.78) * 2.6;
-    vec3 edge = vec3(1.0, 0.62, 0.28) * 1.15;
-    vec3 col = mix(edge, core, pow(mu, 0.6));
+    vec3 tex = mix(vec3(1.0, 0.80, 0.52), texture2D(uMap, vUv).rgb, uHasMap);
+    vec3 col = tex * mix(0.85, 1.5, pow(mu, 0.6));
     gl_FragColor = vec4(col, 1.0);
   }
 `;
+
+/** 艺术化档辉光增益/衰减（P3：降档收紧防过曝；真实档维持 M7 观感） */
+const SUN_GLOW_GAIN_REAL = 1;
+const SUN_GLOW_GAIN_ART = 0.35;
+const SUN_GLOW_FALL_REAL = 1.4;
+const SUN_GLOW_FALL_ART = 2.2;
 
 function SpaceSun({ refs, art }: { refs: EclipseSpaceRefs; art: boolean }): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
   const diskRef = useRef<THREE.Mesh>(null);
   const lightRef = useRef<THREE.DirectionalLight>(null);
+  const sunMap = useBitmapTexture(textureUrl('sun', 'surface'), SPACE_TEXTURE_PRIORITY, true);
   const material = useMemo(
     () =>
       new THREE.ShaderMaterial({
-        uniforms: {},
+        uniforms: {
+          uGlowGain: { value: SUN_GLOW_GAIN_REAL },
+          uGlowFall: { value: SUN_GLOW_FALL_REAL },
+        },
         vertexShader: /* glsl */ `
           varying vec2 vUv;
           void main() {
@@ -642,11 +677,23 @@ function SpaceSun({ refs, art }: { refs: EclipseSpaceRefs; art: boolean }): JSX.
   const sphereMaterial = useMemo(
     () =>
       new THREE.ShaderMaterial({
-        vertexShader: SPACE_ATMOSPHERE_VERTEX_SHADER,
+        uniforms: {
+          uMap: { value: null },
+          uHasMap: { value: 0 },
+        },
+        vertexShader: SUN_ART_SPHERE_VERTEX_SHADER,
         fragmentShader: SUN_ART_SPHERE_FRAGMENT_SHADER,
       }),
     []
   );
+  useEffect(() => {
+    sphereMaterial.uniforms.uMap.value = sunMap;
+    sphereMaterial.uniforms.uHasMap.value = sunMap ? 1 : 0;
+  }, [sphereMaterial, sunMap]);
+  useEffect(() => {
+    material.uniforms.uGlowGain.value = art ? SUN_GLOW_GAIN_ART : SUN_GLOW_GAIN_REAL;
+    material.uniforms.uGlowFall.value = art ? SUN_GLOW_FALL_ART : SUN_GLOW_FALL_REAL;
+  }, [material, art]);
   useEffect(() => {
     return () => {
       material.dispose();
@@ -906,6 +953,76 @@ function MoonOrbitRing({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
 }
 
 // ---------------------------------------------------------------------------
+// M8 补丁 P4：月球绕地轨道环（星历轨道面真实取向；「月球像绕太阳」观感修正）
+// ---------------------------------------------------------------------------
+
+/** 月轨环基向量刷新粒度（时间轴秒；轨道面小时尺度近静止） */
+const MOON_RING_REFRESH_SEC = 60;
+
+function MoonPathRing({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
+  const ring = useMemo(() => {
+    const segments = 128;
+    const positions = new Float32Array((segments + 1) * 3);
+    for (let i = 0; i <= segments; i += 1) {
+      const phi = (i / segments) * Math.PI * 2;
+      positions[i * 3] = Math.cos(phi);
+      positions[i * 3 + 1] = Math.sin(phi);
+      positions[i * 3 + 2] = 0;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.LineBasicMaterial({
+      color: '#9db4d8',
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false,
+    });
+    const line = new THREE.Line(geo, mat);
+    line.frustumCulled = false;
+    line.matrixAutoUpdate = false;
+    return line;
+  }, []);
+  useEffect(() => {
+    return () => {
+      ring.geometry.dispose();
+      (ring.material as THREE.Material).dispose();
+    };
+  }, [ring]);
+
+  const scratch = useMemo(
+    () => ({
+      cachedTSec: Number.NEGATIVE_INFINITY,
+      e1: [1, 0, 0] as MutableVec3,
+      e2: [0, 1, 0] as MutableVec3,
+    }),
+    []
+  );
+
+  useFrame(() => {
+    const tSec = refs.tSecRef.current;
+    // 基向量按 60s 时间轴粒度缓存（环过当前月球位置由 e1 = 月球方向保证）
+    if (Math.abs(tSec - scratch.cachedTSec) > MOON_RING_REFRESH_SEC) {
+      scratch.cachedTSec = tSec;
+      moonOrbitRingBasis(refs.eventRef.current.event.geo, tSec, scratch.e1, scratch.e2);
+    }
+    // 半径随当前月距（含假想改写）逐帧缩放（矩阵写，零 buffer 更新）
+    const r = refs.spaceRef.current.moonDistKm * SPACE_UNITS_PER_KM;
+    const { e1, e2 } = scratch;
+    const nx = e1[1] * e2[2] - e1[2] * e2[1];
+    const ny = e1[2] * e2[0] - e1[0] * e2[2];
+    const nz = e1[0] * e2[1] - e1[1] * e2[0];
+    ring.matrix.set(
+      e1[0] * r, e2[0] * r, nx, 0,
+      e1[1] * r, e2[1] * r, ny, 0,
+      e1[2] * r, e2[2] * r, nz, 0,
+      0, 0, 0, 1
+    );
+  });
+
+  return <primitive object={ring} />;
+}
+
+// ---------------------------------------------------------------------------
 // M7-1 背景星空：J2000 固定朝向星穹 + 程序化银河带（A15 登记见文件头）
 // ---------------------------------------------------------------------------
 
@@ -1142,13 +1259,27 @@ const PLANET_POINT_FRAGMENT_SHADER = /* glsl */ `
 const ORBIT_LINE_OPACITY_REAL = 0.38;
 const ORBIT_LINE_OPACITY_ART = 0.55;
 
+/** 行星近相机淡出域（P2：×行星半径——巨型外行星与相机机位空间重叠时的
+ * 黑色遮挡盘修复；< NEAR 全透明、> FAR 全显，线性渐隐） */
+const PLANET_FADE_NEAR_RADII = 2;
+const PLANET_FADE_FAR_RADII = 6;
+
+/** 行星夜面补光强度（P2：微弱自发光防背光面纯黑洞——登记艺术化补光，非物理照明） */
+const PLANET_NIGHT_FILL_INTENSITY = 0.08;
+
+/** 土星环基础透明度 */
+const PLANET_RING_OPACITY = 0.7;
+
 /**
  * 艺术化行星球（M8-2；A18 登记：半径 visualBodyRadius 同源对数放大非真实
  * 比例）：主场景纹理低优先级懒加载、未就绪配色球兜底；土星环按主场景 ring
  * 参数轻量绘制（环几何在层局部黄道面，随轴倾角整体倾斜）。挂载于行星标签
  * group 内——位置随缓存 tick 与标签同源更新，零额外位置管理。
+ * M8 补丁 P2：① 近相机线性淡出（球体与环同步，逐帧写 opacity）；
+ * ② 夜面微弱自发光补光（背光面呈暗色轮廓而非纯黑遮挡盘）。
  */
 function ArtPlanetBody({ planet }: { planet: PlanetData }): JSX.Element {
+  const groupRef = useRef<THREE.Group>(null);
   const surface = useBitmapTexture(
     textureUrl(planet.id, 'surface'),
     SPACE_TEXTURE_PRIORITY,
@@ -1160,6 +1291,9 @@ function ArtPlanetBody({ planet }: { planet: PlanetData }): JSX.Element {
         color: planet.color,
         roughness: 0.9,
         metalness: 0,
+        transparent: true,
+        emissive: new THREE.Color(planet.color),
+        emissiveIntensity: PLANET_NIGHT_FILL_INTENSITY,
       }),
     [planet]
   );
@@ -1174,7 +1308,7 @@ function ArtPlanetBody({ planet }: { planet: PlanetData }): JSX.Element {
         ? new THREE.MeshBasicMaterial({
             color: planet.ring.color,
             transparent: true,
-            opacity: 0.7,
+            opacity: PLANET_RING_OPACITY,
             side: THREE.DoubleSide,
             depthWrite: false,
           })
@@ -1189,10 +1323,27 @@ function ArtPlanetBody({ planet }: { planet: PlanetData }): JSX.Element {
   }, [material, ringMaterial]);
 
   const radius = artBodyRadiusUnits(planet.radiusKm);
+  const scratch = useMemo(() => ({ world: new THREE.Vector3() }), []);
+
+  // P2 近相机淡出（每帧只写 opacity/visible，零 buffer 更新）
+  useFrame((state) => {
+    const group = groupRef.current;
+    if (!group) return;
+    group.getWorldPosition(scratch.world);
+    const dist = scratch.world.distanceTo(state.camera.position);
+    const fade = Math.min(
+      1,
+      Math.max(0, (dist / radius - PLANET_FADE_NEAR_RADII) / (PLANET_FADE_FAR_RADII - PLANET_FADE_NEAR_RADII))
+    );
+    material.opacity = fade;
+    if (ringMaterial) ringMaterial.opacity = PLANET_RING_OPACITY * fade;
+    group.visible = fade > 0.01;
+  });
+
   // 轴倾角整体倾斜（层局部黄道系 z 为北黄极；环面天然在 x-y 黄道面）
   const tiltRad = planet.rotation.axialTiltDeg * DEG;
   return (
-    <group rotation={[tiltRad, 0, 0]}>
+    <group ref={groupRef} rotation={[tiltRad, 0, 0]}>
       <mesh material={material} frustumCulled={false}>
         <sphereGeometry args={[radius, 48, 24]} />
       </mesh>
@@ -1498,6 +1649,8 @@ export function EclipseSpaceView({
       <SpaceSun refs={refs} art={art} />
       <ShadowCones refs={refs} />
       {planetOrbits && <PlanetOrbitLayer refs={refs} art={art} belt={art && asteroidBelt} />}
+      {/* P4 月球绕地轨道环（星历轨道面；倾角叙事时由其夸张轨道环接管） */}
+      {planetOrbits && <MoonPathRing refs={refs} />}
       {inclinationDemo && <MoonOrbitRing refs={refs} />}
     </>
   );

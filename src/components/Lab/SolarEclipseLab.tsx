@@ -176,8 +176,6 @@ import {
   INCLINATION_DISPLAY_FACTOR,
   NARRATIVE_ORBIT_RADIUS_KM,
   SPACE_ART_CAMERA_RADIUS_MIN_UNITS,
-  SPACE_ART_INTRO_END_RADIUS_UNITS,
-  SPACE_ART_INTRO_START_RADIUS_UNITS,
   SPACE_CAMERA_FAR_UNITS,
   SPACE_CAMERA_NEAR_UNITS,
   SPACE_CAMERA_RADIUS_MAX_UNITS,
@@ -187,6 +185,7 @@ import {
   groundIntroAim,
   narrativeAngles,
   narrativeMoonPosKm,
+  spaceArtOverviewPose,
   spaceFrameState,
   spaceIntroPose,
   umbraGroundSpeedKmh,
@@ -482,15 +481,13 @@ function EclipseViewIntroRig({
     const t01 = Math.min(1, elapsedRef.current / VIEW_TRANSITION_SEC);
     const pc = camera as THREE.PerspectiveCamera;
     if (refs.settingsRef.current.viewMode === "space") {
-      // M8：艺术化档运镜终点外移（地球半径 ~93 单位，机位不入球）
-      const art = refs.settingsRef.current.bodyScaleMode === "art";
-      spaceIntroPose(
-        refs.spaceRef.current.sunDirScene,
-        t01,
-        scratch.pose,
-        art ? SPACE_ART_INTRO_END_RADIUS_UNITS : undefined,
-        art ? SPACE_ART_INTRO_START_RADIUS_UNITS : undefined,
-      );
+      // M8 补丁 P1：艺术化档运镜至反日侧全景默认机位（太阳居中、地月前景、
+      // 内行星轨道同框）；真实档维持 DSCOVR 日侧机位
+      if (refs.settingsRef.current.bodyScaleMode === "art") {
+        spaceArtOverviewPose(refs.spaceRef.current.sunDirScene, t01, scratch.pose);
+      } else {
+        spaceIntroPose(refs.spaceRef.current.sunDirScene, t01, scratch.pose);
+      }
       pc.position.set(
         scratch.pose.pos[0],
         scratch.pose.pos[1],
@@ -1887,6 +1884,15 @@ function EclipseExperience({
   const handleSettingsChange = (patch: Partial<EclipseM3Settings>): void => {
     if (patch.hypoActive) setPlaying(false);
     if (patch.viewMode && patch.viewMode !== settings.viewMode)
+      setViewTransitioning(true);
+    // M8 补丁 P1：太空档内切换天体比例档也触发 1.6s 运镜到对应档默认机位
+    // （艺术化 → 反日侧全景；真实 → DSCOVR 日侧）
+    if (
+      patch.bodyScaleMode &&
+      patch.bodyScaleMode !== settings.bodyScaleMode &&
+      settings.viewMode === "space" &&
+      !patch.viewMode
+    )
       setViewTransitioning(true);
     setSettings((prev) => ({ ...prev, ...patch }));
   };

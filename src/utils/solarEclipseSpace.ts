@@ -1032,10 +1032,52 @@ export function coneRadialScaleForMode(
   return coneRadialScale(kind, umbraMagnify, moonMagnify);
 }
 
-/** 艺术化档相机域/运镜（地球半径 ~93 单位：机位须在球外） */
+/** 艺术化档相机域（地球半径 ~93 单位：机位须在球外） */
 export const SPACE_ART_CAMERA_RADIUS_MIN_UNITS = 110;
-export const SPACE_ART_INTRO_END_RADIUS_UNITS = 420;
-export const SPACE_ART_INTRO_START_RADIUS_UNITS = 1600;
+
+/**
+ * 艺术化档默认全景机位（M8 补丁 P1，用户目验裁决 2026-08-19）：相机置
+ * **反日侧**、抬升 SPACE_ART_OVERVIEW_ALT_RAD、半径 620 单位，look at 地球
+ * （原点）——太阳居中偏上、地月前景、内行星轨道同框（L2 截图同款构图）；
+ * 为默认机位（进入/切档/切页签运镜至此），用户仍可自由旋转缩放。
+ */
+export const SPACE_ART_INTRO_END_RADIUS_UNITS = 620;
+export const SPACE_ART_INTRO_START_RADIUS_UNITS = 1800;
+export const SPACE_ART_OVERVIEW_ALT_RAD = (18 * Math.PI) / 180;
+
+/**
+ * 艺术化档全景运镜姿态（P1）：终点方向 = −sunDir 的水平分量抬升
+ * SPACE_ART_OVERVIEW_ALT_RAD；自远端滑入（spaceIntroPose 同款 smoothstep，
+ * 无横摆——全景构图以太阳-地球连线为轴保持稳定）。
+ */
+export function spaceArtOverviewPose(
+  sunDirScene: readonly [number, number, number] | readonly number[],
+  t01: number,
+  out: ViewIntroPose
+): ViewIntroPose {
+  const s = smooth01(t01);
+  const radius =
+    SPACE_ART_INTRO_START_RADIUS_UNITS +
+    (SPACE_ART_INTRO_END_RADIUS_UNITS - SPACE_ART_INTRO_START_RADIUS_UNITS) * s;
+  // 反日向水平分量（sunDir 近黄道面，y 分量小；退化时兜底 +X）
+  let hx = -sunDirScene[0];
+  let hz = -sunDirScene[2];
+  const hLen = Math.hypot(hx, hz);
+  if (hLen > 1e-9) {
+    hx /= hLen;
+    hz /= hLen;
+  } else {
+    hx = 1;
+    hz = 0;
+  }
+  const cA = Math.cos(SPACE_ART_OVERVIEW_ALT_RAD);
+  const sA = Math.sin(SPACE_ART_OVERVIEW_ALT_RAD);
+  out.pos[0] = hx * cA * radius;
+  out.pos[1] = sA * radius;
+  out.pos[2] = hz * cA * radius;
+  out.fovDeg = GROUND_INTRO_FOV_END_DEG;
+  return out;
+}
 
 /**
  * 艺术化档地表影斑帽状态（§M8-3 角距投影；out 复用零 GC）：
@@ -1174,4 +1216,60 @@ export function asteroidBeltLocalPoints(
     out[i * 3 + 2] = z * scale;
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// M8 补丁 P4：月球绕地轨道环（星历轨道面；「月球像绕太阳」观感修正）
+// ---------------------------------------------------------------------------
+
+/** 月轨基向量差分采样偏移（秒；600s 月球移动 ~0.09°，数值稳定且贴瞬时轨道面） */
+export const MOON_RING_SAMPLE_OFFSET_SEC = 600;
+
+/**
+ * 月球瞬时轨道面基向量（场景系，单位正交）：e1 = 当前月球方向（环过当前
+ * 月球位置的锚定保证），e2 = 轨道面内与 e1 垂直方向（沿运动向）；轨道面由
+ * geo 星历 t 与 t+Δ 两时刻月球方向叉积确定（窗端 Δ 采样被钳制退化时改用
+ * t−Δ 兜底）。环半径由调用方按当前月距（含假想改写）缩放。
+ * 环点(φ) = (e1·cosφ + e2·sinφ)·r。
+ */
+export function moonOrbitRingBasis(
+  geo: EphemerisSeries,
+  tSec: number,
+  e1Out: MutableVec3,
+  e2Out: MutableVec3
+): void {
+  if (!Number.isFinite(tSec)) throw new RangeError(`tSec 必须为有限数：${tSec}`);
+  const rowA = interpolateEphemeris(geo, tSec);
+  const a = geoSampleFromRow(rowA, tSec);
+  const cross = (bDir: readonly number[], n: MutableVec3): number => {
+    n[0] = a.moonDir[1] * bDir[2] - a.moonDir[2] * bDir[1];
+    n[1] = a.moonDir[2] * bDir[0] - a.moonDir[0] * bDir[2];
+    n[2] = a.moonDir[0] * bDir[1] - a.moonDir[1] * bDir[0];
+    return Math.hypot(n[0], n[1], n[2]);
+  };
+  const n: MutableVec3 = [0, 0, 0];
+  const rowB = interpolateEphemeris(geo, tSec + MOON_RING_SAMPLE_OFFSET_SEC);
+  const b = geoSampleFromRow(rowB, tSec + MOON_RING_SAMPLE_OFFSET_SEC);
+  let nLen = cross(b.moonDir, n);
+  if (nLen < 1e-9) {
+    // 窗末钳制退化：向后差分（法向取反保持 e2 沿运动向）
+    const rowC = interpolateEphemeris(geo, tSec - MOON_RING_SAMPLE_OFFSET_SEC);
+    const c = geoSampleFromRow(rowC, tSec - MOON_RING_SAMPLE_OFFSET_SEC);
+    nLen = cross(c.moonDir, n);
+    n[0] = -n[0];
+    n[1] = -n[1];
+    n[2] = -n[2];
+  }
+  if (nLen < 1e-12) throw new RangeError('月轨法向退化：星历采样窗过窄');
+  n[0] /= nLen;
+  n[1] /= nLen;
+  n[2] /= nLen;
+  // e2 = n × e1（轨道面内、垂直 e1、沿运动向）
+  const e2J: MutableVec3 = [
+    n[1] * a.moonDir[2] - n[2] * a.moonDir[1],
+    n[2] * a.moonDir[0] - n[0] * a.moonDir[2],
+    n[0] * a.moonDir[1] - n[1] * a.moonDir[0],
+  ];
+  j2000ToSceneVec(a.moonDir, e1Out);
+  j2000ToSceneVec(e2J, e2Out);
 }
