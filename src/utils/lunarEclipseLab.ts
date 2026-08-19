@@ -1,6 +1,7 @@
 /**
- * 月食实验室场景侧纯逻辑层（LE 迭代 M2，IMPROVEMENT_REQUIREMENTS_LUNAR_ECLIPSE
- * §M2 / 契约 C1（只消费）/ C3 / 复用日食契约 C7）
+ * 月食实验室场景侧纯逻辑层（LE 迭代 M2 骨架 + M3 血月核心，
+ * IMPROVEMENT_REQUIREMENTS_LUNAR_ECLIPSE §M2/§M3 / 契约 C1（只消费）/ C3/C4 /
+ * 复用日食契约 C7）
  *
  * 组件零内联可测逻辑纪律（§7）：LunarEclipseLab.tsx 只消费本模块——
  * - 时间轴窗口/七锚点列表（契约 C7 数据驱动：偏食无 U2/U3、半影食仅 P1/食甚/P4，
@@ -10,7 +11,10 @@
  * - 逐帧月盘/影几何状态（契约 C1 函数族只消费不改签名）：站心 topo 行驱动
  *   月亮高度角/方位角/视半径，地心 geo 行驱动影轴垂距 → 双食分/食型/影盘
  *   相对月心的切平面偏移与影半径视角量（月盘 quad shader 的全部 uniform 源）；
- * - 阶段科普卡选择（七接触点区段，缺省锚点自动跳过）。
+ * - 阶段科普卡选择（七接触点区段，缺省锚点自动跳过）；
+ * - （M3）血月逐像素照度 CPU 事实源（bloodMoonIlluminationRgb，契约 C4 GLSL
+ *   镜像纪律）/ 月缘增亮因子（B5）/ 月面物理亮度积分（星空显现链）/ 月光
+ *   环境项（天光/地面联动）/ 曝光与浑浊度控件映射。
  *
  * 影盘方位链（M2-4 目验点「缺口方位随影轴几何变化」的实现层）：
  * 地影是发生在月面上的物理现象（全球观测者看到同一暗缺），故几何在**地心
@@ -24,10 +28,11 @@
  * 状态流红线（§3.1 同日食）：一切效果由「事件时间轴秒 tSec」单值可重建——
  * 本模块全部函数为 tSec 的纯函数，禁止帧间累积量（scrubber 任意 seek 前提）。
  *
- * M2 灰度占位（契约 C4 的骨架期形态）：本影段先用灰度径向渐进
- * （umbraGrayFactor，M3 换 umbraShading 血月 GLSL 镜像）；半影段**即用**
- * penumbraShading（红线 ②「微妙变暗不得夸大」从骨架期守住）；两段在本影
- * 边界处 C0 连续（单测锁定）。
+ * M3 血月着色（契约 C4，取代 M2 灰度占位）：本影段 = umbraShading 丹戎径向
+ * 色表（红线 ①：径向梯度，禁均匀变暗）；半影段仍**直接消费** penumbraShading
+ * （红线 ②「微妙变暗不得夸大」的幅度上限不动）；本影缘以窄混合带软化
+ * （UMBRA_EDGE_BLEND_FRAC，Danjon 放大修正本就承认影缘为大气渐变带——
+ * 登记为几何软化非亮度夸大）。
  *
  * 硬性约束：不 import React/three；函数无状态、可重入；覆盖率 gate ≥90%。
  */
@@ -44,19 +49,20 @@ import {
 import {
   EARTH_EQUATORIAL_RADIUS_KM,
   NO_ECLIPSE_MAGNITUDE,
-  PENUMBRA_SHADING_MAX_DIM,
-  UMBRA_SHADING_EDGE_EXPONENT,
   lunarEclipseKind,
+  oppositionSurgeFactor,
   penumbralMagnitude,
   penumbraShading,
   shadowAxisGeometryKm,
   umbraRadiusKmAt,
+  umbraShading,
   penumbraRadiusKmAt,
   umbralMagnitude,
   moonlightLimitingMagDelta,
   type LunarEclipseKind,
+  type ShadingRgb,
 } from '@/utils/lunarEclipse';
-import { effectiveLimitingMag } from '@/utils/labSky';
+import { effectiveLimitingMag, labSkyColors, type LabSkyColors } from '@/utils/labSky';
 
 /** 度 → 弧度 */
 const DEG = Math.PI / 180;
@@ -208,6 +214,8 @@ export interface LunarFrameState {
   umbraRadRad: number;
   /** 月距处半影半径的视角量（弧度） */
   penumbraRadRad: number;
+  /** 月面物理亮度（0–1 归一，满月 = 1；星空显现链与月光环境项共用，M3-3） */
+  moonBrightness01: number;
   /** 有效极限星等（晨昏蒙影 × 月光压制；星穹剔除阈值） */
   limitingMag: number;
 }
@@ -226,6 +234,7 @@ export function emptyLunarFrameState(): LunarFrameState {
     shadowOffUpRad: 0,
     umbraRadRad: 0,
     penumbraRadRad: 0,
+    moonBrightness01: 1,
     limitingMag: 2.5,
   };
 }
@@ -233,27 +242,27 @@ export function emptyLunarFrameState(): LunarFrameState {
 /** 星穹基准极限星等（本条目无光害控件；月光压制经 moonlightLimitingMagDelta） */
 export const LUNAR_BASE_LIMITING_MAG = 6.5;
 
-/**
- * M2 月面亮度占位（0–1，满月 = 1）：星空显现链随 M3（moonBrightness 由血月
- * 着色积分驱动）；骨架期取常量满月——月光压制 ≈4 等的真实月夜星空基线。
- */
-export const LUNAR_M2_MOON_BRIGHTNESS = 1;
+/** 丹戎 L 缺省值（浑浊度控件未接线时的中性档；控件接线后由 UI 状态驱动） */
+export const LUNAR_DEFAULT_DANJON_L = 2;
 
 /**
  * 时间轴秒 → 逐帧状态（契约 C1 函数族只消费）：
  * topo 插值（moonAz 最短弧）→ 站心行解码；geo 插值 → 日月地心位置 →
- * 影轴几何/双食分/食型/影盘切平面偏移与影半径视角量（方位链见文件头）。
+ * 影轴几何/双食分/食型/影盘切平面偏移与影半径视角量（方位链见文件头）；
+ * （M3）月面物理亮度积分 → 极限星等月光压制（星空显现链）。
  *
  * @param group 事件星历序列组（topo @60s / geo @300s）
  * @param observer 观测点（纬度/经度，度；视差角与 LST 输入）
  * @param tSec 事件时间轴秒（UTC；越界由 interpolateEphemeris 钳制到端点）
  * @param out 复用输出对象（不传则新建）
+ * @param danjonL 丹戎 L（0–4 连续；全食段残余亮度的档位输入，M3-3）
  */
 export function lunarFrameState(
   group: LunarSeriesGroup,
   observer: { latDeg: number; lonDeg: number },
   tSec: number,
-  out: LunarFrameState = emptyLunarFrameState()
+  out: LunarFrameState = emptyLunarFrameState(),
+  danjonL: number = LUNAR_DEFAULT_DANJON_L
 ): LunarFrameState {
   const topoRow = interpolateEphemeris(group.topo, tSec, LUNAR_TOPO_ANGULAR_COLUMNS);
   const [moonAlt, moonAz, moonSd, sunAlt] = topoRow;
@@ -261,12 +270,6 @@ export function lunarFrameState(
   out.moonAzDeg = moonAz;
   out.moonSdDeg = moonSd;
   out.sunAltDeg = sunAlt;
-
-  // 有效极限星等：晨昏蒙影上限 ∩ 月光压制（M2 常量满月，M3 接血月亮度链）
-  out.limitingMag = effectiveLimitingMag(
-    LUNAR_BASE_LIMITING_MAG - moonlightLimitingMagDelta(LUNAR_M2_MOON_BRIGHTNESS),
-    sunAlt * DEG
-  );
 
   // geo 行 → 地心位置（行布局同日食 C2：sunX,sunY,sunZ,sunDistKm,moonX..moonDistKm；
   // 方向分量插值后重归一 × 距离列——对行存单位向量或 km 位置两种口径均稳健）
@@ -296,6 +299,11 @@ export function lunarFrameState(
     out.shadowOffUpRad = 0;
     out.umbraRadRad = 0;
     out.penumbraRadRad = 0;
+    out.moonBrightness01 = 1;
+    out.limitingMag = effectiveLimitingMag(
+      LUNAR_BASE_LIMITING_MAG - moonlightLimitingMagDelta(1),
+      sunAlt * DEG
+    );
     return out;
   }
 
@@ -304,6 +312,20 @@ export function lunarFrameState(
   out.kind = lunarEclipseKind(out.umbralMag, out.penumbralMag);
   out.umbraRadRad = umbraRadiusKmAt(axis.axialKm, sunDistKm) / moonDistKm;
   out.penumbraRadRad = penumbraRadiusKmAt(axis.axialKm, sunDistKm) / moonDistKm;
+
+  // M3-3 星空显现链：月面物理亮度积分（垂距视角量直接取 perp/月距，与切平面
+  // 分解解耦——防御分支下亮度链仍成立）→ 月光压制 → 晨昏蒙影上限
+  out.moonBrightness01 = lunarMoonBrightness01(
+    axis.perpKm / moonDistKm,
+    moonSd * DEG,
+    out.umbraRadRad,
+    out.penumbraRadRad,
+    danjonL
+  );
+  out.limitingMag = effectiveLimitingMag(
+    LUNAR_BASE_LIMITING_MAG - moonlightLimitingMagDelta(out.moonBrightness01),
+    sunAlt * DEG
+  );
 
   // 影轴中心（月距平面）− 月心 = 垂距向量（地心 J2000 赤道系）
   const invSun = 1 / Math.hypot(sunPos[0], sunPos[1], sunPos[2]);
@@ -344,54 +366,240 @@ export function lunarFrameState(
 }
 
 // ---------------------------------------------------------------------------
-// M2 月盘遮挡灰度渐进（契约 C4 骨架期形态；CPU 事实源，GLSL 照抄勿变形）
+// M3 血月逐像素照度（契约 C4 CPU 事实源；GLSL 照抄勿变形，三视角共用镜像）
 // ---------------------------------------------------------------------------
 
-/** M2 本影灰度占位·影心亮度因子（M3 换 umbraShading 血月镜像后本组常量废弃） */
-export const UMBRA_GRAY_CENTER_FACTOR = 0.02;
-
-/** 本影外缘亮度因子 = 半影内缘（1 − PENUMBRA_SHADING_MAX_DIM；两段 C0 连续） */
-export const UMBRA_GRAY_EDGE_FACTOR = 1 - PENUMBRA_SHADING_MAX_DIM;
+/** 月面贴图平均反照灰度（shader 无贴图降级同值；血月色表 ÷ 本值 = 照度乘子） */
+export const LUNAR_ALBEDO_MEAN = 0.32;
 
 /**
- * M2 本影段灰度亮度因子（CPU/GLSL 镜像事实源）：
- * factor(r) = center + (edge − center) · r^UMBRA_SHADING_EDGE_EXPONENT——
- * 与 umbraShading 同径向指数（M3 换色表时径向形态零跳变），r=1 处与
- * penumbraShading(0) 相等（本影/半影边界 C0 连续，单测锁定）。
- *
- * @param rNorm01 归一化本影半径（0 = 影心，1 = 本影边缘；越界钳制）
+ * 本影缘混合带半宽（× 本影半径）：本影/半影边界的窄软化带——Danjon 放大
+ * 修正（大气不透明层 75 km）本就承认影缘是大气渐变带而非几何锐边。
+ * 登记口径：几何软化非亮度夸大（红线 ② 的幅度上限在带外原样成立）。
  */
-export function umbraGrayFactor(rNorm01: number): number {
-  if (!Number.isFinite(rNorm01)) throw new RangeError(`rNorm01 必须为有限数，收到 ${rNorm01}`);
-  const r = Math.min(1, Math.max(0, rNorm01));
-  return (
-    UMBRA_GRAY_CENTER_FACTOR +
-    (UMBRA_GRAY_EDGE_FACTOR - UMBRA_GRAY_CENTER_FACTOR) * r ** UMBRA_SHADING_EDGE_EXPONENT
-  );
+export const UMBRA_EDGE_BLEND_FRAC = 0.05;
+
+/** 月缘增亮径向指数（对冲效应盘面分布的最小参数化；B5 简化逆反射登记） */
+export const LUNAR_LIMB_SURGE_EXPONENT = 2;
+
+/** smoothstep（GLSL 同式；镜像纪律内部工具） */
+function smoothstep01(edge0: number, edge1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
 }
 
 /**
- * 月盘遮挡总亮度因子（CPU 事实源；shader 内逐像素同式镜像）：
- * 像素到影轴视角距 ρ → ρ < 本影半径走灰度渐进；本影—半影带走
- * penumbraShading（半影径向 0 = 本影缘 → 1 = 半影缘）；半影外全亮。
+ * 月缘增亮因子（M3-4，B5 登记：简化逆反射非完整 Hapke）：
+ * gain(r) = 1 + (oppositionSurgeFactor(0) − 1) · r^LUNAR_LIMB_SURGE_EXPONENT
+ * ——盘心 1、月缘 = 对冲峰值 1.4（「天鹅绒蒙凸面：中心最暗、边缘最亮」，
+ * 底稿 §7.1）；振幅派生自契约 C1 对冲因子（勿硬编码，单测锁定）。
+ * 只乘直射照度分量（本影内由丹戎色表接管，不双计）。
+ *
+ * @param diskRNorm01 月盘径向位置（0 = 盘心，1 = 月缘；越界钳制）
+ */
+export function moonLimbSurgeGain(diskRNorm01: number): number {
+  if (!Number.isFinite(diskRNorm01)) {
+    throw new RangeError(`diskRNorm01 必须为有限数，收到 ${diskRNorm01}`);
+  }
+  const r = Math.min(1, Math.max(0, diskRNorm01));
+  return 1 + (oppositionSurgeFactor(0) - 1) * r ** LUNAR_LIMB_SURGE_EXPONENT;
+}
+
+/**
+ * 血月逐像素照度乘子（契约 C4 核心，CPU/GLSL 镜像事实源；相对月面反照的
+ * RGB 乘子——渲染侧 色 = 反照 × 本乘子 × 增益 × 曝光）：
+ * - 本影段：umbraShading(ρ/本影半径, 丹戎L) ÷ LUNAR_ALBEDO_MEAN（径向梯度：
+ *   靠影心极暗、靠影缘偏亮偏黄——红线 ①，禁均匀变暗）；
+ * - 半影段：penumbraShading 标量 × 月缘增亮（红线 ② 幅度上限原样，直接消费）；
+ * - 本影缘：±UMBRA_EDGE_BLEND_FRAC·本影半径 窄带 smoothstep 混合两段。
  *
  * @param rhoRad 像素点到影盘中心的视角距（弧度）
  * @param umbraRadRad 本影半径视角量（弧度）
  * @param penumbraRadRad 半影半径视角量（弧度，> umbraRadRad）
+ * @param danjonL 丹戎 L（0–4 连续）
+ * @param limbGain 月缘增亮因子（moonLimbSurgeGain 输出；缺省 1）
+ * @param out 复用输出（渲染外 CPU 消费可零 GC；不传则新建）
  */
-export function moonDiskShadeFactor(
+export function bloodMoonIlluminationRgb(
   rhoRad: number,
   umbraRadRad: number,
-  penumbraRadRad: number
-): number {
+  penumbraRadRad: number,
+  danjonL: number,
+  limbGain: number = 1,
+  out: [number, number, number] = [0, 0, 0]
+): [number, number, number] {
   if (!Number.isFinite(rhoRad) || rhoRad < 0) throw new RangeError(`rhoRad 非法：${rhoRad}`);
   if (!(penumbraRadRad > umbraRadRad) || !(umbraRadRad >= 0)) {
     throw new RangeError(`影半径非法：umbra=${umbraRadRad}, penumbra=${penumbraRadRad}`);
   }
-  if (umbraRadRad > 0 && rhoRad < umbraRadRad) return umbraGrayFactor(rhoRad / umbraRadRad);
-  const rPen = (rhoRad - umbraRadRad) / (penumbraRadRad - umbraRadRad);
-  return rPen >= 1 ? 1 : penumbraShading(rPen);
+  if (!Number.isFinite(limbGain) || limbGain < 0) throw new RangeError(`limbGain 非法：${limbGain}`);
+  const rPen = Math.min(1, Math.max(0, (rhoRad - umbraRadRad) / (penumbraRadRad - umbraRadRad)));
+  const direct = penumbraShading(rPen) * limbGain;
+  out[0] = direct;
+  out[1] = direct;
+  out[2] = direct;
+  if (umbraRadRad > 0) {
+    const blood: ShadingRgb = umbraShading(Math.min(1, rhoRad / umbraRadRad), danjonL);
+    const w = umbraRadRad * UMBRA_EDGE_BLEND_FRAC;
+    const s = smoothstep01(umbraRadRad - w, umbraRadRad + w, rhoRad);
+    for (let c = 0; c < 3; c += 1) {
+      out[c] = (blood[c] / LUNAR_ALBEDO_MEAN) * (1 - s) + out[c] * s;
+    }
+  }
+  return out;
 }
+
+// ---------------------------------------------------------------------------
+// M3 月面物理亮度积分（星空显现链；与美术色表解耦的物理口径）
+// ---------------------------------------------------------------------------
+
+/**
+ * 全食段月面残余亮度（0–1，相对满月）的丹戎档位锚定：
+ * log10(residual) = −5 + L/2 —— L2 → 1e-4（底稿 §7.1「食甚变暗 ~万倍」锚点）、
+ * L0 → 1e-5（皮纳图博级几乎不可见）、L4 → 1e-3（亮铜红）。
+ * 与 DANJON_UMBRA_PRESETS 美术色表**有意解耦**：色表是显示端美术映射（B6），
+ * 本函数是星空显现链的物理近似口径（对数感知域的档位内插）。
+ */
+export function danjonResidualBrightness01(danjonL: number): number {
+  if (!Number.isFinite(danjonL)) throw new RangeError(`danjonL 必须为有限数，收到 ${danjonL}`);
+  const l = Math.min(4, Math.max(0, danjonL));
+  return 10 ** (-5 + l / 2);
+}
+
+/** 月面亮度积分采样密度（径向环 × 环向；~192 采样/次，帧内 CPU 开销可忽略） */
+export const MOON_BRIGHTNESS_RADIAL_SAMPLES = 12;
+export const MOON_BRIGHTNESS_AZIMUTH_SAMPLES = 16;
+
+/**
+ * 月面物理亮度（0–1 归一，满月 = 1；M3-3 星空显现链的驱动量）：
+ * 对月盘做面积加权采样积分——每采样点直射照度 = 太阳可见比例的线性代理
+ * （本影内 0、半影内 (ρ−Ru)/(Rp−Ru)、半影外 1；物理口径，独立于红线 ②
+ * 的保守化美术半影曲线），本影覆盖部分叠加丹戎残余亮度。
+ * 无影（penumbraRadRad ≤ 0，向日侧哨兵）→ 1。
+ *
+ * @param shadowSepRad 影盘中心到月心的视角距（弧度）
+ * @param moonRadRad 月盘视半径（弧度，> 0）
+ * @param umbraRadRad 本影半径视角量（弧度）
+ * @param penumbraRadRad 半影半径视角量（弧度）
+ * @param danjonL 丹戎 L（0–4 连续；残余亮度档位）
+ */
+export function lunarMoonBrightness01(
+  shadowSepRad: number,
+  moonRadRad: number,
+  umbraRadRad: number,
+  penumbraRadRad: number,
+  danjonL: number
+): number {
+  if (!Number.isFinite(shadowSepRad) || shadowSepRad < 0) {
+    throw new RangeError(`shadowSepRad 非法：${shadowSepRad}`);
+  }
+  if (!(moonRadRad > 0)) throw new RangeError(`moonRadRad 必须 > 0，收到 ${moonRadRad}`);
+  if (penumbraRadRad <= 0) return 1;
+  if (!(penumbraRadRad > umbraRadRad) || !(umbraRadRad >= 0)) {
+    throw new RangeError(`影半径非法：umbra=${umbraRadRad}, penumbra=${penumbraRadRad}`);
+  }
+  const residual = danjonResidualBrightness01(danjonL);
+  let sum = 0;
+  let weightSum = 0;
+  for (let i = 0; i < MOON_BRIGHTNESS_RADIAL_SAMPLES; i += 1) {
+    const r = ((i + 0.5) / MOON_BRIGHTNESS_RADIAL_SAMPLES) * moonRadRad;
+    const weight = r; // 面积加权（环周长 ∝ r）
+    for (let j = 0; j < MOON_BRIGHTNESS_AZIMUTH_SAMPLES; j += 1) {
+      const a = ((j + 0.5) / MOON_BRIGHTNESS_AZIMUTH_SAMPLES) * Math.PI * 2;
+      const rho = Math.hypot(r * Math.cos(a) - shadowSepRad, r * Math.sin(a));
+      let direct: number;
+      if (rho < umbraRadRad) {
+        direct = residual;
+      } else if (rho >= penumbraRadRad) {
+        direct = 1;
+      } else {
+        direct = (rho - umbraRadRad) / (penumbraRadRad - umbraRadRad);
+      }
+      sum += direct * weight;
+      weightSum += weight;
+    }
+  }
+  return Math.min(1, sum / weightSum);
+}
+
+// ---------------------------------------------------------------------------
+// M3 月光环境项（天光/地面反照联动——全食段环境变暗的低成本高说服力链）
+// ---------------------------------------------------------------------------
+
+/** 月光天顶增量（满月 · 月高满效时；线性 RGB，偏冷蓝的月夜散射色） */
+export const MOONLIGHT_ZENITH_GAIN: readonly [number, number, number] = [0.01, 0.013, 0.02];
+
+/** 月光地平增量（低空视线路径更长，恒亮于天顶——与夜天光同分布规律） */
+export const MOONLIGHT_HORIZON_GAIN: readonly [number, number, number] = [0.016, 0.021, 0.032];
+
+/** 月光满效的月亮高度正弦阈（sin 30°；低月高时月光随大气路径衰减的线性代理） */
+export const MOONLIGHT_ALT_SIN_REF = 0.5;
+
+/**
+ * 夜天光 + 月光环境项（M3-3 环境联动）：labSkyColors 基色上叠加
+ * 月光增量 × 月面亮度 × 月高因子——GroundDisk/HorizonRidge 经
+ * labGroundColor(本输出) 自动继承（单一事实源，全食段地面同步变暗）。
+ *
+ * @param userLm 用户极限星等（本条目固定 LUNAR_BASE_LIMITING_MAG）
+ * @param sunAltRad 太阳高度角（弧度）
+ * @param moonBrightness01 月面亮度（0–1；lunarFrameState 输出）
+ * @param moonAltDeg 月亮高度角（度；地平下无月光）
+ * @param out 可选复用对象（useFrame 消费零 GC）
+ */
+export function lunarSkyColorsWithMoonlight(
+  userLm: number,
+  sunAltRad: number,
+  moonBrightness01: number,
+  moonAltDeg: number,
+  out?: LabSkyColors
+): LabSkyColors {
+  if (!Number.isFinite(moonBrightness01) || !Number.isFinite(moonAltDeg)) {
+    throw new RangeError(`月亮亮度/高度必须有限，收到 ${moonBrightness01}, ${moonAltDeg}`);
+  }
+  const sky = labSkyColors(userLm, sunAltRad, out);
+  const b = Math.min(1, Math.max(0, moonBrightness01));
+  const altFactor = Math.min(1, Math.max(0, Math.sin(moonAltDeg * DEG) / MOONLIGHT_ALT_SIN_REF));
+  const gain = b * altFactor;
+  for (let c = 0; c < 3; c += 1) {
+    sky.zenith[c] = Math.min(1, sky.zenith[c] + MOONLIGHT_ZENITH_GAIN[c] * gain);
+    sky.horizon[c] = Math.min(1, sky.horizon[c] + MOONLIGHT_HORIZON_GAIN[c] * gain);
+  }
+  return sky;
+}
+
+// ---------------------------------------------------------------------------
+// M3 控件映射（丹戎五档预设 / 浑浊度 / 曝光；契约 C1 映射的 UI 侧逆元与增益）
+// ---------------------------------------------------------------------------
+
+/**
+ * 丹戎 L → 浑浊度（turbidityToDanjonL 的逆映射；五档预设按钮与页签默认值共用）：
+ * turbidity = 1 − L/4（往返恒等，单测锁定）。
+ *
+ * @param danjonL 丹戎 L（0–4；越界钳制）
+ */
+export function defaultTurbidityForDanjonL(danjonL: number): number {
+  if (!Number.isFinite(danjonL)) throw new RangeError(`danjonL 必须为有限数，收到 ${danjonL}`);
+  return Math.min(1, Math.max(0, 1 - Math.min(4, Math.max(0, danjonL)) / 4));
+}
+
+/** 曝光增益域（×0.25 暗 → ×4 长曝光；0.5 → ×1 中性，B2 登记的用户可见侧） */
+export const LUNAR_EXPOSURE_GAIN_MIN = 0.25;
+export const LUNAR_EXPOSURE_GAIN_MAX = 4;
+
+/**
+ * 曝光滑杆 01 → 线性增益（对数内插：0 → ×0.25、0.5 → ×1、1 → ×4）。
+ * 简单曝光乘子（契约 C4：无日食式双基准曝光状态机）。
+ *
+ * @param exposure01 滑杆位置（0–1；越界钳制）
+ */
+export function lunarExposureGain(exposure01: number): number {
+  if (!Number.isFinite(exposure01)) throw new RangeError(`exposure01 必须为有限数，收到 ${exposure01}`);
+  const x = Math.min(1, Math.max(0, exposure01));
+  return (
+    LUNAR_EXPOSURE_GAIN_MIN * (LUNAR_EXPOSURE_GAIN_MAX / LUNAR_EXPOSURE_GAIN_MIN) ** x
+  );
+}
+
 
 // ---------------------------------------------------------------------------
 // 场景常量（契约 C3：真实视半径渲染；quad 只承载月盘，影几何在 shader 内）

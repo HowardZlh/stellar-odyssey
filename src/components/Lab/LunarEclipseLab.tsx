@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * 月食实验室场景（LE 迭代 M2 骨架：地面视角 + 月盘几何遮挡渐进 + 7 锚点
- * scrubber；血月丹戎着色/星空显现/三联对比随 M3，太空/月球视角随 M4/M5）
+ * 月食实验室场景（LE 迭代 M2 骨架 + M3 血月核心：地面视角 + 丹戎径向梯度
+ * 血月 shader + 五档预设/浑浊度/曝光控件 + 全食星空显现与月光环境联动 +
+ * 月缘增亮 + 三联对比 + 地圆论证；太空/月球视角随 M4/M5）
  *
  * 状态流红线（§3.1 同日食）：「事件时间轴秒 tSec」为单值状态源——一切效果
  * 由 tSec 经纯函数（utils/lunarEclipseLab + 契约 C1 函数族）逐帧重建，禁止
@@ -14,16 +15,24 @@
  * quad 内按**真实视半径**绘制（不做几何放大）；「看不清 0.5° 月盘」由 FOV
  * 缩放解决（TrackpadLookControls 手势链）+ HUD 常显双食分/月高/视直径。
  *
- * M2 月盘遮挡（契约 C4 骨架期）：shader 逐像素求「像素点到影盘中心视角距
- * ρ → 本影/半影分段」——本影段灰度径向渐进（umbraGrayFactor 镜像，M3 换
- * umbraShading 血月色表）、半影段**即用 penumbraShading**（红线 ②「微妙
- * 变暗不得夸大」从骨架期守住）；影盘方位/半径由 lunarFrameState 经地心
- * geo 星历逐帧解析（缺口方位随影轴几何真实变化，M2-CP 目验点）。
- * CPU/GLSL 镜像纪律：常量模板注入自 lunarEclipse/lunarEclipseLab，照抄勿变形。
+ * M3 血月着色（契约 C4）：shader 逐像素求「像素点到影盘中心视角距 ρ →
+ * 归一化本影半径 rNorm」→ umbraShading(rNorm, uDanjonL) 丹戎径向色表
+ * （红线 ①：本影内必须径向梯度，禁均匀变暗）；半影段仍直接消费
+ * penumbraShading（红线 ②「微妙变暗不得夸大」幅度上限不动）；直射分量
+ * 乘月缘增亮因子（对冲效应，B5 简化逆反射登记）。丹戎 L/浑浊度/曝光均为
+ * 标量 uniform（渲染循环零 buffer 更新）。CPU/GLSL 镜像纪律：常量与色表
+ * 模板注入自 lunarEclipse/lunarEclipseLab（bloodMoonIlluminationRgb 为 CPU
+ * 事实源），照抄勿变形；三视角共用本镜像（M4 复用勿重写）。
+ *
+ * M3-3 星空显现链：lunarFrameState 内月面物理亮度积分 →
+ * moonlightLimitingMagDelta → 星穹极限星等；天光穹/地面盘/山脊经
+ * lunarSkyColorsWithMoonlight 单一事实源同步变暗（环境联动）。
  *
  * 渲染架构（§4）：StarDome 1 + SkyDome 1 + 月盘 quad 1 + 地面 1 + 山脊 1
  * = 5 draw call ≤ 12 预算；渲染循环零 buffer 更新（每帧只动 uniform）。
- * 主场景与 earthShadow.ts 零改动；Canvas 子树不订阅 locale。
+ * 三联对比为独立小 Canvas（frameloop="demand"，3 quad 复用同一 shader
+ * 换 uniform——契约 C4 禁多套实现）。主场景与 earthShadow.ts 零改动；
+ * Canvas 子树不订阅 locale。
  */
 
 import type { JSX } from "react";
@@ -70,16 +79,18 @@ import {
   SKY_DOME_RADIUS_FACTOR,
   emptyLabSkyColors,
   labGroundColor,
-  labSkyColors,
   ridgeHeightProfile,
 } from "@/utils/labSky";
 import { bvToTeffK, srgbToLinear01 } from "@/utils/pleiadesCatalog";
 import { blackbodyRGB } from "@/utils/starPhysics";
 import { SKY_SHELL_RADIUS_KM } from "@/utils/solarEclipse";
 import {
+  DANJON_UMBRA_PRESETS,
   PENUMBRA_SHADING_MAX_DIM,
   UMBRA_SHADING_EDGE_EXPONENT,
+  turbidityToDanjonL,
   type LunarEclipseKind,
+  type ShadingRgb,
 } from "@/utils/lunarEclipse";
 import {
   formatAngularDiameterDeg,
@@ -89,16 +100,22 @@ import {
   type EclipseTimelineWindow,
 } from "@/utils/solarEclipseLab";
 import {
+  LUNAR_ALBEDO_MEAN,
+  LUNAR_BASE_LIMITING_MAG,
+  LUNAR_LIMB_SURGE_EXPONENT,
   LUNAR_MOON_BASE_GAIN,
   LUNAR_QUAD_HALF_ANGLE_RAD,
-  UMBRA_GRAY_CENTER_FACTOR,
-  UMBRA_GRAY_EDGE_FACTOR,
+  UMBRA_EDGE_BLEND_FRAC,
   activeLunarPhaseKey,
+  defaultTurbidityForDanjonL,
   emptyLunarFrameState,
   lunarEclipseAnchors,
+  lunarExposureGain,
   lunarFrameState,
   lunarPlayRate,
+  lunarSkyColorsWithMoonlight,
   lunarTimelineWindow,
+  moonLimbSurgeGain,
   type LunarPhaseKey,
   type LunarPlayMode,
   type LunarSeriesGroup,
@@ -152,9 +169,17 @@ const LUNAR_TABS: ReadonlyArray<{
   },
 ];
 
-/** M2 控件状态（播放模式；M3 起扩展丹戎/浑浊度/曝光等） */
-interface LunarM2Settings {
+/** 控件状态（M2 播放模式 + M3 浑浊度/曝光/地圆论证/三联对比） */
+interface LunarSettings {
   playMode: LunarPlayMode;
+  /** 大气浑浊度/火山尘埃（0–1；经 turbidityToDanjonL 连续驱动丹戎 L，M3-2） */
+  turbidity01: number;
+  /** 曝光滑杆位置（0–1 → lunarExposureGain ×0.25–×4；B2 登记） */
+  exposure01: number;
+  /** 地圆论证：叠加本影边界拟合圆（M3-6） */
+  fitCircle: boolean;
+  /** 三联对比面板显隐（M3-5） */
+  showTriptych: boolean;
 }
 
 /** 帧循环共享 refs（DOM 写入、Canvas 子树 useFrame 读取；场景不订阅 React 状态） */
@@ -173,8 +198,8 @@ interface LunarFrameRefs {
   };
   /** 逐帧状态（LunarTimeDriver 每帧重建，各叶组件只读；挂载期分配一次零 GC） */
   frameRef: { current: ReturnType<typeof emptyLunarFrameState> };
-  /** M2 控件状态（React state 渲染期同步；useFrame 只读） */
-  settingsRef: { current: LunarM2Settings };
+  /** 控件状态（React state 渲染期同步；useFrame 只读） */
+  settingsRef: { current: LunarSettings };
 }
 
 /**
@@ -207,6 +232,7 @@ function LunarTimeDriver({
       event.observer,
       refs.tSecRef.current,
       refs.frameRef.current,
+      turbidityToDanjonL(refs.settingsRef.current.turbidity01),
     );
   });
   return null;
@@ -380,7 +406,8 @@ const LUNAR_SKY_FRAGMENT_SHADER = /* glsl */ `
 
 /**
  * 夜天光穹壳（LabSkyDome 同式竖直渐变；太阳高度来自烘焙 topo 行——四事件
- * 全窗太阳在地平下，晨昏蒙影由 labSkyColors 自然承载。月光环境项随 M3）。
+ * 全窗太阳在地平下，晨昏蒙影由 labSkyColors 自然承载。M3-3：月光环境项
+ * 随月面亮度联动——全食段天光同步变暗，lunarSkyColorsWithMoonlight 单一事实源）。
  */
 function LunarSkyDome({ refs }: { refs: LunarFrameRefs }): JSX.Element {
   const material = useMemo(
@@ -407,8 +434,14 @@ function LunarSkyDome({ refs }: { refs: LunarFrameRefs }): JSX.Element {
 
   useFrame(() => {
     const frame = refs.frameRef.current;
-    // 本条目无光害控件，lm 固定 6.5（深空基线）
-    labSkyColors(6.5, frame.sunAltDeg * DEG, sky);
+    // 本条目无光害控件，lm 固定 6.5（深空基线）；月光项随月面亮度联动
+    lunarSkyColorsWithMoonlight(
+      LUNAR_BASE_LIMITING_MAG,
+      frame.sunAltDeg * DEG,
+      frame.moonBrightness01,
+      frame.moonAltDeg,
+      sky,
+    );
     (material.uniforms.uZenith.value as THREE.Color).setRGB(
       sky.zenith[0],
       sky.zenith[1],
@@ -430,7 +463,7 @@ function LunarSkyDome({ refs }: { refs: LunarFrameRefs }): JSX.Element {
   );
 }
 
-/** 地面剪影圆盘（GroundDisk 同范式：色 = 夜天光反照；月光联动随 M3） */
+/** 地面剪影圆盘（GroundDisk 同范式：色 = 夜天光反照 + 月光联动，M3-3—— 全食段地面反照同步变暗的环境说服力链） */
 function LunarGroundDisk({ refs }: { refs: LunarFrameRefs }): JSX.Element {
   const materialRef = useRef<THREE.MeshBasicMaterial>(null);
   const tmp = useMemo(
@@ -445,7 +478,13 @@ function LunarGroundDisk({ refs }: { refs: LunarFrameRefs }): JSX.Element {
     const material = materialRef.current;
     if (!material) return;
     const frame = refs.frameRef.current;
-    labSkyColors(6.5, frame.sunAltDeg * DEG, tmp.sky);
+    lunarSkyColorsWithMoonlight(
+      LUNAR_BASE_LIMITING_MAG,
+      frame.sunAltDeg * DEG,
+      frame.moonBrightness01,
+      frame.moonAltDeg,
+      tmp.sky,
+    );
     labGroundColor(tmp.sky, tmp.ground);
     material.color.setRGB(tmp.ground[0], tmp.ground[1], tmp.ground[2]);
   });
@@ -512,7 +551,13 @@ function LunarHorizonRidge({ refs }: { refs: LunarFrameRefs }): JSX.Element {
     const material = materialRef.current;
     if (!material) return;
     const frame = refs.frameRef.current;
-    labSkyColors(6.5, frame.sunAltDeg * DEG, tmp.sky);
+    lunarSkyColorsWithMoonlight(
+      LUNAR_BASE_LIMITING_MAG,
+      frame.sunAltDeg * DEG,
+      frame.moonBrightness01,
+      frame.moonAltDeg,
+      tmp.sky,
+    );
     labGroundColor(tmp.sky, tmp.ground);
     material.color.setRGB(
       tmp.ground[0] * RIDGE_DARKEN_FACTOR,
@@ -533,7 +578,7 @@ function LunarHorizonRidge({ refs }: { refs: LunarFrameRefs }): JSX.Element {
 }
 
 // ---------------------------------------------------------------------------
-// 月盘 quad（M2-4：月面贴图 + 本影/半影几何遮挡渐进；契约 C3/C4 骨架期）
+// 月盘 quad（M2-4 骨架 + M3-1 血月着色；契约 C3/C4）
 // ---------------------------------------------------------------------------
 
 /**
@@ -550,15 +595,53 @@ const LUNAR_QUAD_VERTEX_SHADER = /* glsl */ `
   }
 `;
 
+/** ShadingRgb → GLSL vec3 字面量（丹戎色表模板注入；照抄勿变形纪律） */
+function glslVec3(rgb: ShadingRgb): string {
+  return `vec3(${rgb[0].toFixed(4)}, ${rgb[1].toFixed(4)}, ${rgb[2].toFixed(4)})`;
+}
+
 /**
- * 月盘 fragment（契约 C4 骨架期两段式；常量模板注入自 lunarEclipse/
- * lunarEclipseLab——CPU/GLSL 镜像纪律，moonDiskShadeFactor 同式照抄）：
+ * umbraShading 的 GLSL 镜像段（契约 C4：CPU 事实源 = utils/lunarEclipse
+ * umbraShading，逐式照抄——档间线性内插 + 径向指数混合；色表常量模板注入
+ * 自 DANJON_UMBRA_PRESETS，三视角共用本镜像，禁止各写一套）。
+ */
+const GLSL_UMBRA_SHADING = /* glsl */ `
+  vec3 umbraShading(float rNorm, float danjonL) {
+    float t = pow(clamp(rNorm, 0.0, 1.0), ${UMBRA_SHADING_EDGE_EXPONENT.toFixed(2)});
+    float l = clamp(danjonL, 0.0, 4.0);
+    float i0 = min(floor(l), 3.0);
+    float w = l - i0;
+    vec3 center; vec3 edge;
+    if (i0 < 0.5) {
+      center = mix(${glslVec3(DANJON_UMBRA_PRESETS[0].center)}, ${glslVec3(DANJON_UMBRA_PRESETS[1].center)}, w);
+      edge = mix(${glslVec3(DANJON_UMBRA_PRESETS[0].edge)}, ${glslVec3(DANJON_UMBRA_PRESETS[1].edge)}, w);
+    } else if (i0 < 1.5) {
+      center = mix(${glslVec3(DANJON_UMBRA_PRESETS[1].center)}, ${glslVec3(DANJON_UMBRA_PRESETS[2].center)}, w);
+      edge = mix(${glslVec3(DANJON_UMBRA_PRESETS[1].edge)}, ${glslVec3(DANJON_UMBRA_PRESETS[2].edge)}, w);
+    } else if (i0 < 2.5) {
+      center = mix(${glslVec3(DANJON_UMBRA_PRESETS[2].center)}, ${glslVec3(DANJON_UMBRA_PRESETS[3].center)}, w);
+      edge = mix(${glslVec3(DANJON_UMBRA_PRESETS[2].edge)}, ${glslVec3(DANJON_UMBRA_PRESETS[3].edge)}, w);
+    } else {
+      center = mix(${glslVec3(DANJON_UMBRA_PRESETS[3].center)}, ${glslVec3(DANJON_UMBRA_PRESETS[4].center)}, w);
+      edge = mix(${glslVec3(DANJON_UMBRA_PRESETS[3].edge)}, ${glslVec3(DANJON_UMBRA_PRESETS[4].edge)}, w);
+    }
+    return mix(center, edge, t);
+  }
+`;
+
+/**
+ * 月盘 fragment（契约 C4，M3-1 血月两段式；常量模板注入自 lunarEclipse/
+ * lunarEclipseLab——CPU/GLSL 镜像纪律，bloodMoonIlluminationRgb 同式照抄）：
  * 1 月面反照：2K 月面贴图球面映射（近面中心 lon 0 = 贴图中心；静态姿态
- *   近似登记 B11），未就绪时中性灰降级；
- * 2 遮挡因子：ρ = |像素角位 − 影盘中心|——ρ < 本影半径走灰度径向渐进
- *   （中心 0.02 → 边缘 0.45，径向指数与 umbraShading 同源，M3 换血月色表
- *   零跳变）；本影—半影带走 penumbraShading（外缘无变暗、内缘 −0.55，
- *   r≥0.6 段变暗 <0.09——「半影几乎无感」红线 ② 的 GLSL 侧）；半影外全亮。
+ *   近似登记 B11），未就绪时中性灰（LUNAR_ALBEDO_MEAN）降级；
+ * 2 血月照度：ρ = |像素角位 − 影盘中心|——本影段 umbraShading 丹戎径向
+ *   色表 ÷ 平均反照（红线 ①：径向梯度，靠影心暗、靠影缘亮黄）；半影段
+ *   penumbraShading（外缘无变暗、内缘 −0.55，r≥0.6 段变暗 <0.09——「半影
+ *   几乎无感」红线 ② 的 GLSL 侧）× 月缘增亮（对冲效应，B5：直射分量独占，
+ *   本影内由色表接管不双计）；本影缘窄带 smoothstep 混合（几何软化登记）；
+ * 3 曝光：uExposure 标量乘子（契约 C4 简单曝光滑杆，无状态机；B2 登记）；
+ * 4 地圆论证（M3-6）：uFitCircle 开启时在本影边界描拟合圆弧（月盘外也
+ *   可见，quad 域内截段）——不同时刻/事件弧线曲率恒定的古希腊推理教具。
  */
 const LUNAR_QUAD_FRAGMENT_SHADER = /* glsl */ `
   uniform float uMoonR;
@@ -568,17 +651,30 @@ const LUNAR_QUAD_FRAGMENT_SHADER = /* glsl */ `
   uniform sampler2D uMoonTex;
   uniform float uHasTex;
   uniform float uGain;
+  uniform float uDanjonL;
+  uniform float uExposure;
+  uniform float uFitCircle;
   varying vec2 vAng;
 
   const float PI = 3.14159265;
   const float TWO_PI = 6.28318531;
+
+  ${GLSL_UMBRA_SHADING}
 
   void main() {
     float rm = length(vAng);
     // 盘缘软化：视半径 3% 固定角宽（FOV 放大时缘宽随真实角尺度）
     float aa = uMoonR * 0.03;
     float disk = 1.0 - smoothstep(uMoonR - aa, uMoonR + aa, rm);
-    if (disk < 0.003) discard;
+    float rho = length(vAng - uShadowOffset);
+
+    // 地圆论证拟合圆（M3-6）：本影边界描线（月盘外亦渲染，圆弧连续可见）
+    float ring = 0.0;
+    if (uFitCircle > 0.5 && uUmbraR > 0.0) {
+      float lw = uMoonR * 0.05;
+      ring = (1.0 - smoothstep(lw, lw * 2.0, abs(rho - uUmbraR))) * 0.85;
+    }
+    if (disk < 0.003 && ring < 0.01) discard;
 
     // 月面贴图球面映射（近面可见半球 lon ∈ [−90°, 90°]，中心 = 贴图中心）
     vec2 pn = vAng / uMoonR;
@@ -586,28 +682,62 @@ const LUNAR_QUAD_FRAGMENT_SHADER = /* glsl */ `
     float lon = atan(pn.x, pz);
     float lat = asin(clamp(pn.y, -1.0, 1.0));
     vec2 uv = vec2(0.5 + lon / TWO_PI, 0.5 + lat / PI);
-    vec3 albedo = uHasTex > 0.5 ? texture2D(uMoonTex, uv).rgb : vec3(0.32);
+    vec3 albedo = uHasTex > 0.5
+      ? texture2D(uMoonTex, uv).rgb
+      : vec3(${LUNAR_ALBEDO_MEAN.toFixed(2)});
 
-    // 遮挡因子（moonDiskShadeFactor GLSL 镜像；uUmbraR/uPenumbraR 由
+    // 血月照度（bloodMoonIlluminationRgb GLSL 镜像；uUmbraR/uPenumbraR 由
     // 契约 C1 影锥函数逐帧驱动——缺口方位随影轴几何真实变化）
-    float rho = length(vAng - uShadowOffset);
-    float factor = 1.0;
+    float limb = 1.0
+      + ${(moonLimbSurgeGain(1) - 1).toFixed(4)}
+        * pow(clamp(rm / uMoonR, 0.0, 1.0), ${LUNAR_LIMB_SURGE_EXPONENT.toFixed(1)});
+    vec3 illum = vec3(limb);
     if (uPenumbraR - uUmbraR > 1e-9) {
-      if (uUmbraR > 0.0 && rho < uUmbraR) {
-        float r = rho / uUmbraR;
-        factor = ${UMBRA_GRAY_CENTER_FACTOR.toFixed(4)}
-          + (${UMBRA_GRAY_EDGE_FACTOR.toFixed(4)} - ${UMBRA_GRAY_CENTER_FACTOR.toFixed(4)})
-            * pow(r, ${UMBRA_SHADING_EDGE_EXPONENT.toFixed(2)});
-      } else {
-        float rp = clamp((rho - uUmbraR) / (uPenumbraR - uUmbraR), 0.0, 1.0);
-        factor = 1.0 - ${PENUMBRA_SHADING_MAX_DIM.toFixed(2)} * (1.0 - rp) * (1.0 - rp);
+      float rp = clamp((rho - uUmbraR) / (uPenumbraR - uUmbraR), 0.0, 1.0);
+      illum = vec3(
+        (1.0 - ${PENUMBRA_SHADING_MAX_DIM.toFixed(2)} * (1.0 - rp) * (1.0 - rp)) * limb
+      );
+      if (uUmbraR > 0.0) {
+        vec3 blood = umbraShading(rho / uUmbraR, uDanjonL)
+          / ${LUNAR_ALBEDO_MEAN.toFixed(2)};
+        float w = uUmbraR * ${UMBRA_EDGE_BLEND_FRAC.toFixed(3)};
+        float s = smoothstep(uUmbraR - w, uUmbraR + w, rho);
+        illum = mix(blood, illum, s);
       }
     }
 
-    vec3 col = albedo * uGain * factor;
-    gl_FragColor = vec4(col * disk, disk);
+    vec3 col = albedo * uGain * uExposure * illum;
+    vec3 pm = mix(col * disk, vec3(0.35, 0.75, 1.0), ring);
+    gl_FragColor = vec4(pm, max(disk, ring));
   }
 `;
+
+/**
+ * 月盘 shader 材质工厂（主 quad 与三联对比小视口共用——契约 C4「同一
+ * GLSL 镜像换 uniform」，禁止复制出多套实现）。
+ */
+function createLunarMoonMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uHalfAngle: { value: LUNAR_QUAD_HALF_ANGLE_RAD },
+      uMoonR: { value: 0.259 * DEG },
+      uShadowOffset: { value: new THREE.Vector2(0, 0) },
+      uUmbraR: { value: 0 },
+      uPenumbraR: { value: 0 },
+      uMoonTex: { value: null as THREE.Texture | null },
+      uHasTex: { value: 0 },
+      uGain: { value: LUNAR_MOON_BASE_GAIN },
+      uDanjonL: { value: 2 },
+      uExposure: { value: 1 },
+      uFitCircle: { value: 0 },
+    },
+    vertexShader: LUNAR_QUAD_VERTEX_SHADER,
+    fragmentShader: LUNAR_QUAD_FRAGMENT_SHADER,
+    transparent: true,
+    depthWrite: false,
+    premultipliedAlpha: true,
+  });
+}
 
 /**
  * 月盘 quad（1 draw call；渲染循环零 buffer 更新——贴图事件级一次性设置，
@@ -620,27 +750,7 @@ function LunarMoonQuad({ refs }: { refs: LunarFrameRefs }): JSX.Element {
     MOON_TEXTURE_PRIORITY,
     true,
   );
-  const material = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        uniforms: {
-          uHalfAngle: { value: LUNAR_QUAD_HALF_ANGLE_RAD },
-          uMoonR: { value: 0.259 * DEG },
-          uShadowOffset: { value: new THREE.Vector2(0, 0) },
-          uUmbraR: { value: 0 },
-          uPenumbraR: { value: 0 },
-          uMoonTex: { value: null as THREE.Texture | null },
-          uHasTex: { value: 0 },
-          uGain: { value: LUNAR_MOON_BASE_GAIN },
-        },
-        vertexShader: LUNAR_QUAD_VERTEX_SHADER,
-        fragmentShader: LUNAR_QUAD_FRAGMENT_SHADER,
-        transparent: true,
-        depthWrite: false,
-        premultipliedAlpha: true,
-      }),
-    [],
-  );
+  const material = useMemo(() => createLunarMoonMaterial(), []);
 
   useEffect(() => {
     return () => {
@@ -681,6 +791,11 @@ function LunarMoonQuad({ refs }: { refs: LunarFrameRefs }): JSX.Element {
     );
     material.uniforms.uUmbraR.value = frame.umbraRadRad;
     material.uniforms.uPenumbraR.value = frame.penumbraRadRad;
+    // M3 控件 uniform（标量，零 buffer 更新）：丹戎 L/曝光/拟合圆开关
+    const settings = refs.settingsRef.current;
+    material.uniforms.uDanjonL.value = turbidityToDanjonL(settings.turbidity01);
+    material.uniforms.uExposure.value = lunarExposureGain(settings.exposure01);
+    material.uniforms.uFitCircle.value = settings.fitCircle ? 1 : 0;
   });
 
   return (
@@ -692,6 +807,192 @@ function LunarMoonQuad({ refs }: { refs: LunarFrameRefs }): JSX.Element {
     >
       <planeGeometry args={[quadSize, quadSize]} />
     </mesh>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 三联对比（M3-5）：半影/偏食/全食三事件食甚状态并列——同一 shader 镜像换
+// uniform 三份小视口（独立小 Canvas，frameloop="demand"，3 draw call；
+// 契约 C4 禁止复制出第二套着色实现）
+// ---------------------------------------------------------------------------
+
+/** 三联对比栏事件序（半影 → 偏食 → 全食；各取该事件食甚 tSec 的静态状态） */
+const TRIPTYCH_PANES: ReadonlyArray<{
+  id: LunarEventId;
+  labelKey: MessageKey;
+}> = [
+  { id: "l2027", labelKey: "lab.lunarTriptychPenumbral" },
+  { id: "l2026", labelKey: "lab.lunarTriptychPartial" },
+  { id: "l2029", labelKey: "lab.lunarTriptychTotal" },
+];
+
+/** 三联小视口月盘半角裕量（月盘占视口 ~74%，留缺口与软化边） */
+const TRIPTYCH_HALF_ANGLE_FACTOR = 1.35;
+
+/** 三联小视口 plane 边长 / 间距（正交场景单位） */
+const TRIPTYCH_PANE_SIZE = 2.2;
+const TRIPTYCH_PANE_PITCH = 2.3;
+
+/** 单面板静态 uniform 子集（食甚帧状态一次性求出，不逐帧） */
+interface TriptychPaneState {
+  moonRRad: number;
+  offEastRad: number;
+  offUpRad: number;
+  umbraRadRad: number;
+  penumbraRadRad: number;
+}
+
+/** 三事件食甚状态 → 面板 uniform 子集（挂载期一次；纯查表 + C1 解析） */
+function triptychPaneStates(
+  events: LunarEclipseEventData[],
+): TriptychPaneState[] {
+  return TRIPTYCH_PANES.map(({ id }) => {
+    const ev = events.find((e) => e.id === id) ?? events[0];
+    const f = lunarFrameState(
+      { topo: ev.topo, geo: ev.geo },
+      ev.observer,
+      ev.contacts.max,
+    );
+    return {
+      moonRRad: f.moonSdDeg * DEG,
+      offEastRad: f.shadowOffEastRad,
+      offUpRad: f.shadowOffUpRad,
+      umbraRadRad: f.umbraRadRad,
+      penumbraRadRad: f.penumbraRadRad,
+    };
+  });
+}
+
+/**
+ * 三联视口内层（Canvas 子树）：静态 uniform 挂载期一次写入；丹戎 L/曝光
+ * 变化经 useEffect 更新并 invalidate（frameloop="demand"——无逐帧循环，
+ * 面板闲置零 GPU 开销）。相机 zoom 按视口尺寸适配三面板宽度。
+ */
+function TriptychDisks({
+  panes,
+  danjonL,
+  exposureGain,
+  moonTexture,
+}: {
+  panes: TriptychPaneState[];
+  danjonL: number;
+  exposureGain: number;
+  moonTexture: THREE.Texture | null;
+}): JSX.Element {
+  const invalidate = useThree((s) => s.invalidate);
+  const camera = useThree((s) => s.camera);
+  const size = useThree((s) => s.size);
+
+  const materials = useMemo(
+    () => panes.map(() => createLunarMoonMaterial()),
+    [panes],
+  );
+  useEffect(() => {
+    return () => {
+      for (const m of materials) m.dispose();
+    };
+  }, [materials]);
+
+  // 静态几何 uniform（食甚状态；面板间只差 uniform——契约 C4 单镜像纪律）
+  useEffect(() => {
+    for (let i = 0; i < panes.length; i += 1) {
+      const p = panes[i];
+      const u = materials[i].uniforms;
+      u.uHalfAngle.value = p.moonRRad * TRIPTYCH_HALF_ANGLE_FACTOR;
+      u.uMoonR.value = p.moonRRad;
+      (u.uShadowOffset.value as THREE.Vector2).set(-p.offEastRad, p.offUpRad);
+      u.uUmbraR.value = p.umbraRadRad;
+      u.uPenumbraR.value = p.penumbraRadRad;
+    }
+    invalidate();
+  }, [panes, materials, invalidate]);
+
+  // 动态 uniform（丹戎 L/曝光随控件；贴图加载完成一次性换）
+  useEffect(() => {
+    for (const m of materials) {
+      m.uniforms.uDanjonL.value = danjonL;
+      m.uniforms.uExposure.value = exposureGain;
+      m.uniforms.uMoonTex.value = moonTexture;
+      m.uniforms.uHasTex.value = moonTexture ? 1 : 0;
+    }
+    invalidate();
+  }, [materials, danjonL, exposureGain, moonTexture, invalidate]);
+
+  // 正交相机适配（三面板总宽 ~7 单位、高 ~2.3 单位）
+  useEffect(() => {
+    const ortho = camera as THREE.OrthographicCamera;
+    ortho.zoom = Math.min(
+      size.width / (TRIPTYCH_PANE_PITCH * 3 + 0.2),
+      size.height / (TRIPTYCH_PANE_SIZE + 0.1),
+    );
+    ortho.updateProjectionMatrix();
+    invalidate();
+  }, [camera, size, invalidate]);
+
+  return (
+    <>
+      {panes.map((p, i) => (
+        <mesh
+          // 静态三面板（挂载期定序，无重排；index key 安全）
+          key={i}
+          material={materials[i]}
+          position={[(i - 1) * TRIPTYCH_PANE_PITCH, 0, 0]}
+        >
+          <planeGeometry args={[TRIPTYCH_PANE_SIZE, TRIPTYCH_PANE_SIZE]} />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+/**
+ * 三联对比条（DOM 容器 + 小 Canvas + 标签行）：半影/偏食/全食食甚并列，
+ * 配诚实文案「半影这一栏你几乎看不见任何变化」（§1.4——诚实呈现优先）。
+ */
+function LunarTriptychStrip({
+  events,
+  turbidity01,
+  exposure01,
+}: {
+  events: LunarEclipseEventData[];
+  turbidity01: number;
+  exposure01: number;
+}): JSX.Element {
+  const tr = useT();
+  const panes = useMemo(() => triptychPaneStates(events), [events]);
+  const moonTexture = useBitmapTexture(
+    textureUrl("moon", "surface"),
+    MOON_TEXTURE_PRIORITY,
+    true,
+  );
+  return (
+    <div className="mb-2 rounded bg-white/5 p-1.5">
+      <div className="h-20 w-full overflow-hidden rounded bg-black/70">
+        <Canvas
+          flat
+          frameloop="demand"
+          orthographic
+          camera={{ position: [0, 0, 10], zoom: 30 }}
+          gl={{ antialias: true }}
+          dpr={[1, 2]}
+        >
+          <TriptychDisks
+            panes={panes}
+            danjonL={turbidityToDanjonL(turbidity01)}
+            exposureGain={lunarExposureGain(exposure01)}
+            moonTexture={moonTexture}
+          />
+        </Canvas>
+      </div>
+      <div className="mt-1 grid grid-cols-3 gap-1 text-center text-[9px] leading-tight text-gray-400">
+        {TRIPTYCH_PANES.map((pane) => (
+          <span key={pane.id}>{tr(pane.labelKey)}</span>
+        ))}
+      </div>
+      <p className="mt-1 text-[10px] leading-snug text-gray-300">
+        {tr("lab.lunarTriptychHonest")}
+      </p>
+    </div>
   );
 }
 
@@ -729,6 +1030,15 @@ const PHASE_CARD_KEYS: Record<LunarPhaseKey, MessageKey> = {
   p4: "lab.lunarCardP4",
 };
 
+/** 丹戎档位描述键（底稿 §六 逐级目视描述直译；滑杆连续值四舍五入取档） */
+const DANJON_DESC_KEYS: Record<0 | 1 | 2 | 3 | 4, MessageKey> = {
+  0: "lab.lunarDanjonDesc0",
+  1: "lab.lunarDanjonDesc1",
+  2: "lab.lunarDanjonDesc2",
+  3: "lab.lunarDanjonDesc3",
+  4: "lab.lunarDanjonDesc4",
+};
+
 /** 事件已就绪后的场景 + 控件（数据 ready 前由外层 gate，见 LunarEclipseLab） */
 function LunarExperience({
   data,
@@ -756,10 +1066,15 @@ function LunarExperience({
     [event],
   );
 
-  // M2 控件状态（播放模式；DOM 写 React state → 渲染期同步 ref）
-  const [settings, setSettings] = useState<LunarM2Settings>({
+  // 控件状态（DOM 写 React state → 渲染期同步 ref）；浑浊度初值 = 页签
+  // danjonDefault 的逆映射（l2029 教学预设 L2；l1992 皮纳图博实测 L0）
+  const [settings, setSettings] = useState<LunarSettings>(() => ({
     playMode: "fast",
-  });
+    turbidity01: defaultTurbidityForDanjonL(event.danjonDefault),
+    exposure01: 0.5,
+    fitCircle: false,
+    showTriptych: false,
+  }));
 
   // scrubber 显示值（拖动即时更新；播放期间由 500ms tick 从 tSecRef 回同步）
   const [scrubSec, setScrubSec] = useState<number>(event.contacts.p1);
@@ -797,7 +1112,8 @@ function LunarExperience({
     ),
   );
 
-  /** 页签切换：暂停 + 时间轴对齐新事件 P1（日食 §3.5 同范式） */
+  /** 页签切换：暂停 + 时间轴对齐新事件 P1（日食 §3.5 同范式）+ 浑浊度
+   *  重置为该事件 danjonDefault（l1992 默认即 L=0 极暗，M3-2） */
   const handleEventChange = (id: LunarEventId): void => {
     if (id === eventId) return;
     setPlaying(false);
@@ -805,6 +1121,10 @@ function LunarExperience({
     tSecRef.current = next.contacts.p1;
     setScrubSec(next.contacts.p1);
     setEventId(id);
+    setSettings((s) => ({
+      ...s,
+      turbidity01: defaultTurbidityForDanjonL(next.danjonDefault),
+    }));
   };
 
   /** scrubber seek（交互事件路径：写 ref + 显示值；效果由 tSec 单值重建） */
@@ -829,7 +1149,13 @@ function LunarExperience({
     const tick = (): void => {
       const { event: ev, group: g, window: win } = eventRef.current;
       const tSec = tSecRef.current;
-      const frame = lunarFrameState(g, ev.observer, tSec);
+      const frame = lunarFrameState(
+        g,
+        ev.observer,
+        tSec,
+        undefined,
+        turbidityToDanjonL(settingsRef.current.turbidity01),
+      );
       const rate = lunarPlayRate(settingsRef.current.playMode, win);
       const next: LunarHudState = {
         utcText: formatUtcClock(tSec),
@@ -999,6 +1325,8 @@ function LunarExperience({
               {tr("lab.lunarHudPenumbralMag")}
             </span>
             <span>{hud.penumbralMagText}</span>
+            <span className="text-gray-400">{tr("lab.lunarHudDanjon")}</span>
+            <span>L={turbidityToDanjonL(settings.turbidity01).toFixed(1)}</span>
             <span className="text-gray-400">{tr("lab.lunarHudMoonAlt")}</span>
             <span>{hud.moonAltText}</span>
             <span className="text-gray-400">{tr("lab.lunarHudMoonDiam")}</span>
@@ -1020,7 +1348,7 @@ function LunarExperience({
                 key={mode}
                 role="radio"
                 aria-checked={settings.playMode === mode}
-                onClick={() => setSettings({ playMode: mode })}
+                onClick={() => setSettings((s) => ({ ...s, playMode: mode }))}
                 className={`flex-1 rounded px-1 py-1 text-[10px] transition-colors max-md:min-h-11 ${
                   settings.playMode === mode
                     ? "bg-sky-500/30 font-semibold text-sky-200"
@@ -1031,9 +1359,157 @@ function LunarExperience({
               </button>
             ))}
           </div>
+          {/* M3-2 丹戎标度：五档预设 + 浑浊度滑杆（turbidityToDanjonL 连续
+              驱动）+ B6 注记「目视主观评级，色值为美术映射」 */}
+          <h3 className="mb-1 mt-2 text-[10px] font-semibold text-gray-300">
+            {tr("lab.lunarDanjonTitle")}
+          </h3>
+          <div
+            role="radiogroup"
+            aria-label={tr("lab.lunarDanjonAria")}
+            className="mb-1 grid grid-cols-5 gap-1"
+          >
+            {([0, 1, 2, 3, 4] as const).map((l) => {
+              const active =
+                Math.abs(turbidityToDanjonL(settings.turbidity01) - l) < 0.05;
+              return (
+                <button
+                  key={l}
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      turbidity01: defaultTurbidityForDanjonL(l),
+                    }))
+                  }
+                  className={`rounded px-1 py-1 text-[10px] transition-colors max-md:min-h-11 ${
+                    active
+                      ? "bg-red-500/30 font-semibold text-orange-200"
+                      : "bg-white/5 text-gray-400 hover:bg-white/10"
+                  }`}
+                >
+                  L{l}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mb-1 text-[10px] leading-snug text-gray-400">
+            {tr(
+              DANJON_DESC_KEYS[
+                Math.round(
+                  turbidityToDanjonL(settings.turbidity01),
+                ) as 0 | 1 | 2 | 3 | 4
+              ],
+            )}
+          </p>
+          <div className="mb-1 flex items-center gap-1.5">
+            <span className="text-[10px] text-gray-400">
+              {tr("lab.lunarTurbidityClean")}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={settings.turbidity01}
+              aria-label={tr("lab.lunarTurbidityAria")}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  turbidity01: Number.parseFloat(e.target.value),
+                }))
+              }
+              className="h-1.5 flex-1 cursor-pointer accent-red-400"
+            />
+            <span className="text-[10px] text-gray-400">
+              {tr("lab.lunarTurbidityDusty")}
+            </span>
+          </div>
+          <p className="mb-2 text-[9px] leading-snug text-gray-500">
+            {tr("lab.lunarDanjonNote")}
+          </p>
+          {/* l1992 皮纳图博叙事卡（历史场景默认即 L=0 极暗） */}
+          {eventId === "l1992" && (
+            <p className="mb-2 rounded bg-red-950/40 px-2 py-1.5 text-[10px] leading-relaxed text-orange-200/90">
+              {tr("lab.lunarPinatuboCard")}
+            </p>
+          )}
+          {/* M3-2 曝光滑杆（简单乘子无状态机，契约 C4）+ B2 注记 */}
+          <h3 className="mb-1 mt-2 text-[10px] font-semibold text-gray-300">
+            {tr("lab.lunarExposureTitle")}
+          </h3>
+          <div className="mb-1 flex items-center gap-1.5">
+            <span className="text-[10px] text-gray-400">
+              {tr("lab.lunarExposureDim")}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={settings.exposure01}
+              aria-label={tr("lab.lunarExposureAria")}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  exposure01: Number.parseFloat(e.target.value),
+                }))
+              }
+              className="h-1.5 flex-1 cursor-pointer accent-sky-400"
+            />
+            <span className="text-[10px] text-gray-400">
+              {tr("lab.lunarExposureBright")}
+            </span>
+          </div>
+          <p className="mb-2 text-[9px] leading-snug text-gray-500">
+            {tr("lab.lunarExposureNote")}
+          </p>
+          {/* M3-5/M3-6 教学交互开关（三联对比 / 地圆论证拟合圆） */}
+          <div className="mb-2 flex flex-col gap-1">
+            {(
+              [
+                ["showTriptych", "lab.lunarTriptychToggle"],
+                ["fitCircle", "lab.lunarFitCircleToggle"],
+              ] as const
+            ).map(([key, labelKey]) => (
+              <button
+                key={key}
+                aria-pressed={settings[key]}
+                onClick={() =>
+                  setSettings((s) => ({ ...s, [key]: !s[key] }))
+                }
+                className={`rounded px-2 py-1 text-left text-[10px] transition-colors max-md:min-h-11 ${
+                  settings[key]
+                    ? "bg-sky-500/30 font-semibold text-sky-200"
+                    : "bg-white/5 text-gray-400 hover:bg-white/10"
+                }`}
+              >
+                {settings[key] ? "☑" : "☐"} {tr(labelKey)}
+              </button>
+            ))}
+          </div>
+          {/* 三联对比条（同 shader 换 uniform，独立小 Canvas） */}
+          {settings.showTriptych && (
+            <LunarTriptychStrip
+              events={data.events}
+              turbidity01={settings.turbidity01}
+              exposure01={settings.exposure01}
+            />
+          )}
+          {/* 地圆论证科普卡（古希腊推理链，底稿 §10.1） */}
+          {settings.fitCircle && (
+            <p className="mb-2 rounded bg-white/5 px-2 py-1.5 text-[10px] leading-relaxed text-gray-300">
+              {tr("lab.lunarFitCircleCard")}
+            </p>
+          )}
           {/* 阶段科普卡（七接触点区段，缺省锚点自动跳过） */}
           <p className="mb-2 rounded bg-white/5 px-2 py-1.5 text-[10px] leading-relaxed text-gray-300">
             {tr(PHASE_CARD_KEYS[phaseKey])}
+          </p>
+          {/* 月缘增亮科普注解（对冲效应；B5 简化逆反射登记的用户可见侧） */}
+          <p className="mb-2 rounded bg-white/5 px-2 py-1.5 text-[10px] leading-relaxed text-gray-400">
+            {tr("lab.lunarLimbSurgeCard")}
           </p>
           <p className="mt-2 border-t border-white/10 pt-2 text-[10px] leading-snug text-gray-500">
             {tr("lab.dataSourceLabel")}：{entry?.dataSource ?? ""}

@@ -631,6 +631,7 @@ export const en: I18nDict = {
     lunarHudKind: "Phase",
     lunarHudUmbralMag: "Umbral mag.",
     lunarHudPenumbralMag: "Penumbral mag.",
+    lunarHudDanjon: "Danjon L",
     lunarHudMoonAlt: "Moon altitude",
     lunarHudMoonDiam: "Moon ang. diam.",
     lunarKindNone: "No eclipse",
@@ -642,9 +643,9 @@ export const en: I18nDict = {
     lunarCardU1:
       "Umbral start: the lunar limb touches the umbra and a dark bite appears. Unlike a solar eclipse, that bite is Earth's own shadow — about 9,000 km across at the Moon's distance, some 2.6 Moon diameters. The curvature of its edge is the curvature of Earth: the ancient Greeks inferred a spherical Earth from exactly this.",
     lunarCardU2:
-      "Totality begins: the Moon is fully immersed in the umbra. It does not vanish — Earth's atmosphere refracts sunlight into the shadow cone and filters it red (the blood-moon physics arrives with M3). Totality can last nearly 107 minutes, safe for the naked eye throughout.",
+      "Totality begins: the Moon is fully immersed in the umbra. It does not vanish — Earth's atmosphere refracts sunlight into the shadow cone and filters it red: seen from the Moon, Earth's silhouette is rimmed by a burning red ring — every sunrise and sunset on Earth at once. Totality can last nearly 107 minutes, safe for the naked eye throughout.",
     lunarCardMax:
-      "Maximum: the Moon's center is closest to the shadow axis. Brightness inside the umbra grades radially — darker toward the shadow center, brighter toward its edge. The Moon is now roughly 10,000× fainter than a full moon, and the stars it had drowned out return (star emergence arrives with M3).",
+      "Maximum: the Moon's center is closest to the shadow axis. Note how brightness inside the umbra grades radially — darker toward the shadow center, brighter and yellower toward its edge; it is not a uniform red tint. The Moon is now roughly 10,000× fainter than a full moon, the stars it had drowned out return, and the ground dims with it.",
     lunarCardU3:
       "Totality ends: the lunar limb emerges on the far side of the umbra. Note the bite now sits opposite to where it entered — the shadow exits across the other limb.",
     lunarCardU4:
@@ -657,6 +658,39 @@ export const en: I18nDict = {
     lunarHintLookAround:
       "Drag or two-finger scroll to look around · pinch to zoom in on the shadowed Moon",
     lunarPanelTitle: "Observation Console",
+    /** M3 blood-moon controls: Danjon presets + turbidity + exposure (B2/B6 notes) */
+    lunarDanjonTitle: "Danjon scale (blood-moon depth)",
+    lunarDanjonAria: "Danjon five-level presets",
+    lunarDanjonDesc0: "L0 Very dark: the Moon is almost invisible, especially at maximum",
+    lunarDanjonDesc1: "L1 Dark: gray or brownish coloration, details hard to make out",
+    lunarDanjonDesc2:
+      "L2 Deep red or rust-colored: very dark central shadow, relatively bright outer umbra",
+    lunarDanjonDesc3: "L3 Brick-red: the umbra usually has a bright or yellow rim",
+    lunarDanjonDesc4: "L4 Very bright copper-red or orange: an exceptionally bright rim",
+    lunarDanjonNote:
+      "The Danjon scale is a subjective visual rating (Danjon 1921) with no standard color values — the colors here are an artistic mapping.",
+    lunarTurbidityAria: "Atmospheric turbidity / volcanic dust",
+    lunarTurbidityClean: "Clean",
+    lunarTurbidityDusty: "Volcanic dust",
+    lunarExposureTitle: "Exposure",
+    lunarExposureAria: "Exposure",
+    lunarExposureDim: "Dim",
+    lunarExposureBright: "Long exposure",
+    lunarExposureNote:
+      "Long-exposure photos are far brighter than the naked-eye view — slide up ≈ camera long exposure, down ≈ what your eyes see.",
+    lunarPinatuboCard:
+      "The 1991 Pinatubo eruption injected some twenty million tonnes of sulfur dioxide into the stratosphere. The next lunar eclipse, 1992-12-09, was widely rated Danjon L=0 — the Moon nearly vanished from the sky at maximum. This tab restores that ultra-dark state by default; drag the turbidity slider to see how atmospheric clarity sets the depth of a blood moon.",
+    lunarTriptychToggle: "Triple comparison: penumbral / partial / total",
+    lunarTriptychPenumbral: "Penumbral max · 2027",
+    lunarTriptychPartial: "Partial max · 2026",
+    lunarTriptychTotal: "Total max · 2029",
+    lunarTriptychHonest:
+      "You can barely see any change in the penumbral pane — and that is real: about 36% of lunar eclipses never leave the penumbra and are nearly invisible to the eye.",
+    lunarFitCircleToggle: "Round-Earth proof: overlay fitted umbra circle",
+    lunarFitCircleCard:
+      "Scrub the timeline and switch between eclipses: the arc laid over the bite always has the same curvature. This is exactly how the ancient Greeks reasoned — Earth's shadow edge is always a circular arc of the same curvature, and only a sphere casts a circular shadow in every direction. The lunar eclipse is one of humanity's earliest proofs of a round Earth.",
+    lunarLimbSurgeCard:
+      "A full moon looks slightly brighter at its rim than at its center: the cratered surface reflects more strongly back toward the light (the opposition surge) — like velvet stretched over a convex form, darkest in the middle, brightest at the edge. Rendered here with a simplified retroreflection model.",
   },
   helpHint: {
     controls:
