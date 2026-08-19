@@ -382,15 +382,22 @@ export function MoonOrbitRing({
 /** 月轨环基向量刷新粒度（时间轴秒；轨道面小时尺度近静止） */
 const MOON_RING_REFRESH_SEC = 60;
 
-/** 月球绕地真轨道环（星历轨道面；半径随当前月距逐帧缩放） */
+/** 月球绕地真轨道环（星历轨道面；半径随当前月距逐帧缩放）
+ *
+ * radialFactorRef（可选，月食 M4 B12/B13）：各向异性显示映射
+ * D(v) = f·v + (1−f)·(a·v)·a（a = 影轴 = −sunDirScene）为**线性映射**——
+ * 对基向量施加 D 后环与各向异性缩放的月球显示位置严格共点；
+ * 缺省不传 = 恒等映射（日食侧行为零变化）。 */
 export function MoonPathRing({
   tSecRef,
   frameRef,
   geoRef,
+  radialFactorRef,
 }: {
   tSecRef: SharedTimeRef;
   frameRef: SharedSpaceFrameRef;
   geoRef: SharedGeoEventRef;
+  radialFactorRef?: { current: number };
 }): JSX.Element {
   const ring = useMemo(() => {
     const segments = 128;
@@ -426,6 +433,8 @@ export function MoonPathRing({
       cachedTSec: Number.NEGATIVE_INFINITY,
       e1: [1, 0, 0] as MutableVec3,
       e2: [0, 1, 0] as MutableVec3,
+      d1: [1, 0, 0] as MutableVec3,
+      d2: [0, 1, 0] as MutableVec3,
     }),
     []
   );
@@ -439,7 +448,24 @@ export function MoonPathRing({
     }
     // 半径随当前月距（含假想改写）逐帧缩放（矩阵写，零 buffer 更新）
     const r = frameRef.current.moonDistKm * SPACE_UNITS_PER_KM;
-    const { e1, e2 } = scratch;
+    // 可选各向异性显示映射 D（月食侧；缺省 f=1 恒等，日食侧零变化）
+    const f = radialFactorRef ? radialFactorRef.current : 1;
+    let e1: MutableVec3 = scratch.e1;
+    let e2: MutableVec3 = scratch.e2;
+    if (f !== 1) {
+      const sd = frameRef.current.sunDirScene;
+      const applyD = (v: MutableVec3, o: MutableVec3): void => {
+        // a = −sunDirScene；D(v) = f·v + (1−f)·(a·v)·a
+        const av = -(v[0] * sd[0] + v[1] * sd[1] + v[2] * sd[2]);
+        o[0] = f * v[0] + (1 - f) * av * -sd[0];
+        o[1] = f * v[1] + (1 - f) * av * -sd[1];
+        o[2] = f * v[2] + (1 - f) * av * -sd[2];
+      };
+      applyD(scratch.e1, scratch.d1);
+      applyD(scratch.e2, scratch.d2);
+      e1 = scratch.d1;
+      e2 = scratch.d2;
+    }
     const nx = e1[1] * e2[2] - e1[2] * e2[1];
     const ny = e1[2] * e2[0] - e1[0] * e2[2];
     const nz = e1[0] * e2[1] - e1[1] * e2[0];

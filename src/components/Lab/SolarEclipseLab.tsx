@@ -2336,6 +2336,13 @@ function EclipseExperience({
             onCompare={handleCompare}
             eddington={eventId === "e1919"}
           />
+          {/* LE-M4-6 条目互链（半沙罗配对叙事桥梁；月食侧同款回链） */}
+          <Link
+            href="/lab/lunar-eclipse"
+            className="mt-2 block rounded bg-white/5 px-2 py-1.5 text-[10px] text-space-accent transition-colors hover:bg-white/10 max-md:min-h-11"
+          >
+            {tr("lab.eclipseLinkToLunar")}
+          </Link>
           <p className="mt-2 border-t border-white/10 pt-2 text-[10px] leading-snug text-gray-500">
             {tr("lab.dataSourceLabel")}：{entry?.dataSource ?? ""}
           </p>

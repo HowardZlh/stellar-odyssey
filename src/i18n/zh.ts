@@ -651,6 +651,8 @@ export const zh = {
       "历史场景：1919 年 5 月 29 日，英国两支观测队分赴巴西索布拉尔与西非普林西比测量星光经过太阳附近时的偏折（爱丁顿本人在普林西比，当日多云仅得 2 张可用底片；决定性数据出自索布拉尔 4 英寸镜的 7 张底片，1.98″±0.12″）。只有全食时才能看见日面附近的恒星——这次食甚太阳恰好行经毕宿星团，亮星密集，正是选中这次日食的原因。测得的偏折与广义相对论预言（日面边缘 1.75″）相符，约为牛顿理论值的两倍。当年的测量精度已接近实验极限，这一结论由 20 世纪后半叶的重复观测所确认。",
     /** M6 面板抽屉标题（<sm 底部抽屉标题栏常显；开合钮复用 panel*Aria 键） */
     eclipsePanelTitle: "观测控制台",
+    /** LE-M4-6 条目互链（月食侧 lunarLinkToSolar 同款回链） */
+    eclipseLinkToLunar: "→ 去月食实验室看这套几何的另一面",
     /**
      * M6 声景（§5；A8 登记：全食「寂静」为艺术表达——eclipseAudioNote
      * 双语常显注明，sonification 科学口径红线同流星雨 §5）
@@ -777,6 +779,96 @@ export const zh = {
     /** M3-4 月缘增亮科普注解（B5 简化逆反射登记的用户可见侧） */
     lunarLimbSurgeCard:
       "满月的边缘看起来比中心略亮：月面坑洼在逆光方向反射更强（对冲效应）——像天鹅绒蒙在凸面上，中心最暗、边缘最亮。本场景采用简化逆反射模型呈现。",
+    /** LE-M4 视角分段控件（地面/太空；月球视角随 M5） */
+    lunarViewTitle: "视角",
+    lunarViewAria: "切换观察视角",
+    lunarViewGround: "地面",
+    lunarViewSpace: "太空",
+    /** M4 太空档操作提示（OrbitControls 原生手势） */
+    lunarHintSpace: "拖动旋转 · 滚轮或双指捏合缩放 · 播放看月球穿过地影",
+    /** M4 太空档 HUD 行（恒真值——不随档位/开关变化，B12/B13 用户可见侧） */
+    lunarHudScale: "比例",
+    lunarHudConeLen: "地影锥长",
+    lunarHudMoonDistRow: "月地距离",
+    lunarHudUmbraWidthRow: "月距处本影",
+    lunarHudUmbraRatio: "本影/月径 · /R⊕",
+    lunarHudConeRatio: "锥长/月距",
+    /** M4-3 径向放大开关（B12 登记：文案倍率与 LUNAR_REAL_RADIAL_MAGNIFY_FACTOR=4 同步维护） */
+    lunarRadialMagnifyLabel: "径向放大 ×4",
+    lunarRadialMagnifyAria: "开关径向放大（显示辅助）",
+    lunarRadialMagnifyBadge:
+      "地月、影锥与剖面盘已横向统一 ×4 放大（轴向距离不变）——全部径向比例数字保持，HUD 数值恒为真值",
+    /** M4-2 剖面盘开关与预设机位 */
+    lunarSectionDiskLabel: "月距处影盘剖面",
+    lunarSectionDiskAria: "开关月距处影盘剖面",
+    lunarPresetAria: "预设机位",
+    lunarPresetOverview: "影锥全貌",
+    lunarPresetCloseup: "月球特写",
+    /** M4 太空视角科普卡（B3 登记：轴向真比例为卖点 + 太阳距离压缩 + 影锥可见性辅助） */
+    lunarSpaceCard:
+      "太空视角说明：影锥轴向为真实比例——地影锥长约 140 万 km、月球轨道约 38.4 万 km，「月球只走到锥长的 27%、该处本影约 2.6 倍月径」按真实比例呈现。太阳方向真实、距离压缩绘制（真实日地距离约 1.5 亿 km 超出场景域）；半透明影锥与剖面盘为表达辅助，真实地影不可见。",
+    /** M4-3 比例双模科普卡（B13 登记：统一径向因子——文案数值与派生常量同步维护） */
+    lunarScaleCard:
+      "艺术化档：地月系统、影锥与月距处剖面盘按统一径向因子约 ×14.6 放大（由主场景天体半径对数压缩派生）——所有径向教学比例严格保持：月距处本影恒约 2.6 倍月径、0.72 倍地球半径。行星与太阳沿用与日食太空档同源的对数压缩半径。切「真实」档回到严格真比例（另有径向放大 ×4 开关）。",
+    /** M4-5 交点几何望态（B4 登记：倾角夸张共用日食徽标键；朔↔望切换文案） */
+    lunarSyzygyAria: "切换朔望演示",
+    lunarSyzygyFull: "望（月食）",
+    lunarSyzygyNew: "朔（日食）",
+    lunarNodeCard:
+      "月球轨道相对黄道倾斜 5.145°——多数月份的望，月球从地影上方或下方掠过；只有望恰逢月球行至白道交点附近，才会穿入地影发生月食。切到「朔」可见影锥方向反转：月影投向地球，正是日食的几何——同一个倾角，一次建模两种食。演示为示意：轨道与交点节奏为叙事时间尺度。",
+    /** M4-6 日食 vs 月食对比卡（底稿 §八整表全量；表格数值为教学口径） */
+    lunarCompareToggle: "日食 vs 月食对比表",
+    lunarCompareColDim: "维度",
+    lunarCompareColSolar: "日全食",
+    lunarCompareColLunar: "月全食",
+    lunarCompareRow1Dim: "谁挡谁",
+    lunarCompareRow1Solar: "月球挡住太阳",
+    lunarCompareRow1Lunar: "地球的影子落在月球上",
+    lunarCompareRow2Dim: "发生月相",
+    lunarCompareRow2Solar: "朔（新月）",
+    lunarCompareRow2Lunar: "望（满月）",
+    lunarCompareRow3Dim: "可见范围",
+    lunarCompareRow3Solar: "100–160 km 宽的窄带",
+    lunarCompareRow3Lunar: "整个夜半球",
+    lunarCompareRow4Dim: "单次时长",
+    lunarCompareRow4Solar: "最长 7 分 32 秒",
+    lunarCompareRow4Lunar: "全食最长约 107 分钟，全程最长 236 分钟",
+    lunarCompareRow5Dim: "同一地点复现",
+    lunarCompareRow5Solar: "360–410 年",
+    lunarCompareRow5Lunar: "每年数次",
+    lunarCompareRow6Dim: "裸眼安全",
+    lunarCompareRow6Solar: "仅全食阶段安全",
+    lunarCompareRow6Lunar: "全程安全，无需任何防护",
+    lunarCompareRow7Dim: "接触点数量",
+    lunarCompareRow7Solar: "5 个（C1→C4 + 食甚）",
+    lunarCompareRow7Lunar: "7 个（P1/U1/U2/食甚/U3/U4/P4）",
+    lunarCompareRow8Dim: "影锥角色",
+    lunarCompareRow8Solar: "月影锥尖勉强够到地面",
+    lunarCompareRow8Lunar: "地影锥（140 万 km）远长于月距（38.4 万 km）",
+    lunarCompareRow9Dim: "延长时长的条件",
+    lunarCompareRow9Solar: "月球在近地点",
+    lunarCompareRow9Lunar: "月球在远地点",
+    lunarCompareRow10Dim: "主视觉",
+    lunarCompareRow10Solar: "日冕、色球、日珥、贝利珠、钻石环",
+    lunarCompareRow10Lunar: "血月红、本影径向梯度、月缘增亮",
+    lunarCompareRow11Dim: "颜色来源",
+    lunarCompareRow11Solar: "日冕（百万度等离子体自身发光）",
+    lunarCompareRow11Lunar: "地球大气折射 + 瑞利散射",
+    lunarCompareRow12Dim: "亮度评级体系",
+    lunarCompareRow12Solar: "无（用食分/时长）",
+    lunarCompareRow12Lunar: "丹戎标度 L = 0–4",
+    lunarCompareRow13Dim: "观测门槛",
+    lunarCompareRow13Solar: "需长途追逐（umbraphile 文化）",
+    lunarCompareRow13Lunar: "抬头就能看",
+    lunarCompareRow14Dim: "类型占比",
+    lunarCompareRow14Solar: "约 60% 的中心食是环食",
+    lunarCompareRow14Lunar: "半影 36.3% / 偏食 34.9% / 全食 28.8%",
+    lunarCompareSummary:
+      "日全食是稀缺的、瞬间的、需要追逐的；月全食是慷慨的、从容的、抬头即得的。",
+    /** M4-6 半沙罗配对科普卡（连接两条目的真实周期桥梁） */
+    lunarHalfSarosCard:
+      "半沙罗（sar）配对：一次日食之后约 9 年 5.5 天，会发生一次性质对应的月食（反之亦然）——日全食或日环食之后 9 年 5.5 天，会有一次月全食。两者是同一套日月地几何的镜像，这也是把日食与月食两个实验室连在一起的真实周期。",
+    lunarLinkToSolar: "→ 去日食实验室看这套几何的另一面",
   },
   helpHint: {
     /**

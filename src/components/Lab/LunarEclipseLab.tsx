@@ -83,15 +83,13 @@ import {
 } from "@/utils/labSky";
 import { bvToTeffK, srgbToLinear01 } from "@/utils/pleiadesCatalog";
 import { blackbodyRGB } from "@/utils/starPhysics";
-import { SKY_SHELL_RADIUS_KM } from "@/utils/solarEclipse";
+import { MOON_MEAN_RADIUS_KM, SKY_SHELL_RADIUS_KM } from "@/utils/solarEclipse";
 import {
-  DANJON_UMBRA_PRESETS,
   PENUMBRA_SHADING_MAX_DIM,
-  UMBRA_SHADING_EDGE_EXPONENT,
   turbidityToDanjonL,
   type LunarEclipseKind,
-  type ShadingRgb,
 } from "@/utils/lunarEclipse";
+import { GLSL_UMBRA_SHADING } from "@/components/Lab/lunarBloodMoonGlsl";
 import {
   formatAngularDiameterDeg,
   formatUtcClock,
@@ -99,6 +97,39 @@ import {
   type EclipseTimelineAnchor,
   type EclipseTimelineWindow,
 } from "@/utils/solarEclipseLab";
+import {
+  INCLINATION_DISPLAY_FACTOR,
+  MOON_ORBIT_INCLINATION_DEG,
+  NARRATIVE_ORBIT_RADIUS_KM,
+  SPACE_UNITS_PER_KM,
+  narrativeAngles,
+  narrativeMoonPosKm,
+  type EclipseBodyScaleMode,
+  type MutableVec3,
+  type NarrativeAngles,
+  type ViewIntroPose,
+} from "@/utils/solarEclipseSpace";
+import { LunarEclipseSpaceView } from "@/components/Lab/LunarEclipseSpaceView";
+import {
+  LUNAR_ART_RADIAL_FACTOR,
+  LUNAR_REAL_RADIAL_MAGNIFY_FACTOR,
+  LUNAR_SPACE_CAMERA_FAR_UNITS,
+  LUNAR_SPACE_CAMERA_NEAR_UNITS,
+  LUNAR_SPACE_CAMERA_RADIUS_MAX_UNITS,
+  LUNAR_SPACE_CAMERA_RADIUS_MIN_ART_UNITS,
+  LUNAR_SPACE_CAMERA_RADIUS_MIN_REAL_UNITS,
+  emptyLunarSpaceFrameState,
+  lunarDisplayMoonPos,
+  lunarMoonCloseupPose,
+  lunarRadialScaleForMode,
+  lunarSpaceFrameState,
+  lunarSpaceHudTruth,
+  lunarSpaceOverviewPose,
+  lunarSyzygyOffsetRad,
+  type LunarSpacePreset,
+  type LunarSyzygyMode,
+} from "@/utils/lunarEclipseSpace";
+
 import {
   LUNAR_ALBEDO_MEAN,
   LUNAR_BASE_LIMITING_MAG,
@@ -169,17 +200,34 @@ const LUNAR_TABS: ReadonlyArray<{
   },
 ];
 
-/** 控件状态（M2 播放模式 + M3 浑浊度/曝光/地圆论证/三联对比） */
+/** 视角档（M4：地面/太空；月球视角随 M5） */
+type LunarViewMode = "ground" | "space";
+
+/** 控件状态（M2 播放模式 + M3 浑浊度/曝光/地圆论证/三联对比 + M4 太空档） */
 interface LunarSettings {
   playMode: LunarPlayMode;
   /** 大气浑浊度/火山尘埃（0–1；经 turbidityToDanjonL 连续驱动丹戎 L，M3-2） */
   turbidity01: number;
   /** 曝光滑杆位置（0–1 → lunarExposureGain ×0.25–×4；B2 登记） */
   exposure01: number;
-  /** 地圆论证：叠加本影边界拟合圆（M3-6） */
+  /** 地圆论证：叠加本影边界拟合圆（M3-6；地面档专属） */
   fitCircle: boolean;
-  /** 三联对比面板显隐（M3-5） */
+  /** 三联对比面板显隐（M3-5；地面档专属） */
   showTriptych: boolean;
+  /** M4 视角档 */
+  viewMode: LunarViewMode;
+  /** M4-3 天体比例档（默认艺术化，决策 ⑦；B13） */
+  bodyScaleMode: EclipseBodyScaleMode;
+  /** M4-3 真实档径向放大 ×4（默认开，决策 ⑨；B12；艺术化档隐藏） */
+  radialMagnify: boolean;
+  /** M4-2 月距处影盘剖面（默认开） */
+  sectionDisk: boolean;
+  /** M4-4 行星轨道远景层（默认开；倾角叙事时自动隐藏——日食同口径） */
+  planetOrbits: boolean;
+  /** M4-5 交点几何叙事（默认关；B4） */
+  inclinationDemo: boolean;
+  /** M4-5 朔↔望档（叙事模式内；默认望 = 地影投月球） */
+  syzygy: LunarSyzygyMode;
 }
 
 /** 帧循环共享 refs（DOM 写入、Canvas 子树 useFrame 读取；场景不订阅 React 状态） */
@@ -200,7 +248,13 @@ interface LunarFrameRefs {
   frameRef: { current: ReturnType<typeof emptyLunarFrameState> };
   /** 控件状态（React state 渲染期同步；useFrame 只读） */
   settingsRef: { current: LunarSettings };
+  /** M4 太空视角逐帧状态（驱动器在太空档每帧重建；LunarEclipseSpaceView 只读） */
+  spaceRef: { current: ReturnType<typeof emptyLunarSpaceFrameState> };
 }
+
+/** 叙事轨道环显示倾角（弧度；真实 5.145° × 显示倍率 4——B4 双条目同口径） */
+const NARRATIVE_INC_RAD =
+  MOON_ORBIT_INCLINATION_DEG * INCLINATION_DISPLAY_FACTOR * DEG;
 
 /**
  * 时间轴推进 + 逐帧状态重建（首个 Canvas 子组件，同优先级 useFrame 按挂载序
@@ -215,9 +269,18 @@ function LunarTimeDriver({
   refs: LunarFrameRefs;
   onEnded: () => void;
 }): null {
+  // M4 倾角叙事草稿（挂载期分配一次；渲染循环零 GC）
+  const narrative = useMemo(
+    () => ({
+      angles: { phaseRad: 0, nodeRad: 0 } as NarrativeAngles,
+      posKm: [0, 0, 0] as MutableVec3,
+    }),
+    [],
+  );
   useFrame((_, delta) => {
     const { window: win, event, group } = refs.eventRef.current;
-    const rate = lunarPlayRate(refs.settingsRef.current.playMode, win);
+    const s = refs.settingsRef.current;
+    const rate = lunarPlayRate(s.playMode, win);
     if (refs.playingRef.current) {
       const next = refs.tSecRef.current + Math.min(delta, 0.1) * rate;
       if (next >= win.endSec) {
@@ -232,8 +295,139 @@ function LunarTimeDriver({
       event.observer,
       refs.tSecRef.current,
       refs.frameRef.current,
-      turbidityToDanjonL(refs.settingsRef.current.turbidity01),
+      turbidityToDanjonL(s.turbidity01),
     );
+    // M4 太空视角帧状态（geo 星历 → 影锥度量/双食分/朔态月影锥；只在太空档
+    // 重建。倾角叙事时月球位置走夸张倾角轨道（B4），望/朔经 syzygyOffsetRad
+    // 参数化（契约 C7——望 = π 地影投月球、朔 = 0 月影投地球）
+    if (s.viewMode === "space") {
+      let narrativePos: MutableVec3 | null = null;
+      if (s.inclinationDemo) {
+        narrativeAngles(refs.tSecRef.current, win.startSec, narrative.angles);
+        narrativeMoonPosKm(
+          narrative.angles.phaseRad,
+          narrative.angles.nodeRad,
+          NARRATIVE_INC_RAD,
+          NARRATIVE_ORBIT_RADIUS_KM,
+          narrative.posKm,
+          lunarSyzygyOffsetRad(s.syzygy),
+        );
+        narrativePos = narrative.posKm;
+      }
+      lunarSpaceFrameState(
+        group.geo,
+        refs.tSecRef.current,
+        narrativePos,
+        s.inclinationDemo && s.syzygy === "new",
+        refs.spaceRef.current,
+      );
+    }
+  });
+  return null;
+}
+
+/**
+ * M4 视角/预设机位切换运镜 rig（日食 EclipseViewIntroRig 同手法：from/to
+ * 姿态 smoothstep 插值 1.6s；期间 OrbitControls 卸载，完成后从当前位姿接管）：
+ * - 切太空（全貌）：影轴侧向机位，侧看「地球 → 影锥 → 月球」全序列；
+ * - 切太空（月球特写）：月球显示位置外侧回望地心；
+ * - 切地面：视线自月亮上方压回月亮 + FOV 广角收束（反转轨道范式）；
+ * - 近/远平面按档切换（far ≥ 相机最大半径 + 星穹壳半径——P5 结构性纪律）。
+ */
+function LunarViewIntroRig({
+  refs,
+  target,
+  onDone,
+}: {
+  refs: LunarFrameRefs;
+  /** 运镜目标（null = 不在运镜期） */
+  target: "ground" | LunarSpacePreset | null;
+  onDone: () => void;
+}): null {
+  const camera = useThree((s) => s.camera);
+  const elapsedRef = useRef(0);
+  const doneRef = useRef(false);
+  const scratch = useMemo(
+    () => ({
+      pose: {
+        pos: [0, 0, 0] as MutableVec3,
+        fovDeg: LAB_FOV_DEFAULT_DEG,
+      } as ViewIntroPose,
+      moonPos: [0, 0, 0] as MutableVec3,
+    }),
+    [],
+  );
+
+  // 激活即复位计时 + 按目标档切近/远平面（一次性投影参数，交互事件路径）
+  useEffect(() => {
+    if (!target) return;
+    elapsedRef.current = 0;
+    doneRef.current = false;
+    const pc = camera as THREE.PerspectiveCamera;
+    if (target === "ground") {
+      pc.near = 0.05;
+      pc.far = STAR_DOME_RADIUS_UNITS * 2.5;
+    } else {
+      pc.near = LUNAR_SPACE_CAMERA_NEAR_UNITS;
+      pc.far = LUNAR_SPACE_CAMERA_FAR_UNITS;
+    }
+    pc.updateProjectionMatrix();
+  }, [target, camera]);
+
+  useFrame((_, delta) => {
+    if (!target || doneRef.current) return;
+    elapsedRef.current += Math.min(delta, 0.1);
+    const t01 = Math.min(1, elapsedRef.current / 1.6);
+    const pc = camera as THREE.PerspectiveCamera;
+    const s = refs.settingsRef.current;
+    if (target === "ground") {
+      // 视线压回月亮（日食 groundIntroAim 同式的月亮版：直接对准 + FOV 默认）
+      const frame = refs.frameRef.current;
+      const dir = sceneDirFromAltAz({
+        altRad: frame.moonAltDeg * DEG,
+        azRad: frame.moonAzDeg * DEG,
+      });
+      pc.position.set(
+        -dir[0] * INITIAL_CAMERA_RADIUS,
+        -dir[1] * INITIAL_CAMERA_RADIUS,
+        -dir[2] * INITIAL_CAMERA_RADIUS,
+      );
+      pc.fov = LAB_FOV_DEFAULT_DEG;
+    } else if (target === "closeup") {
+      const factor = lunarRadialScaleForMode(s.bodyScaleMode, s.radialMagnify);
+      const posFactor = s.inclinationDemo ? 1 : factor;
+      lunarDisplayMoonPos(refs.spaceRef.current, posFactor, scratch.moonPos);
+      lunarMoonCloseupPose(
+        scratch.moonPos,
+        MOON_MEAN_RADIUS_KM * SPACE_UNITS_PER_KM * factor,
+        t01,
+        scratch.pose,
+      );
+      pc.position.set(
+        scratch.pose.pos[0],
+        scratch.pose.pos[1],
+        scratch.pose.pos[2],
+      );
+      pc.fov = scratch.pose.fovDeg;
+    } else {
+      lunarSpaceOverviewPose(
+        refs.spaceRef.current.shadowAxisScene,
+        t01,
+        scratch.pose,
+      );
+      pc.position.set(
+        scratch.pose.pos[0],
+        scratch.pose.pos[1],
+        scratch.pose.pos[2],
+      );
+      pc.fov = scratch.pose.fovDeg;
+    }
+    pc.lookAt(0, 0, 0);
+    pc.updateProjectionMatrix();
+    if (t01 >= 1) {
+      doneRef.current = true;
+      onDone();
+    }
   });
   return null;
 }
@@ -248,6 +442,8 @@ function LunarCameraAim({
 }): null {
   const camera = useThree((s) => s.camera);
   useEffect(() => {
+    // 太空档不接管相机（页签切换保持太空机位；回地面由运镜 rig 对准）
+    if (refs.settingsRef.current.viewMode !== "ground") return;
     const { event, group } = refs.eventRef.current;
     const frame = lunarFrameState(group, event.observer, refs.tSecRef.current);
     const dir = sceneDirFromAltAz({
@@ -595,39 +791,8 @@ const LUNAR_QUAD_VERTEX_SHADER = /* glsl */ `
   }
 `;
 
-/** ShadingRgb → GLSL vec3 字面量（丹戎色表模板注入；照抄勿变形纪律） */
-function glslVec3(rgb: ShadingRgb): string {
-  return `vec3(${rgb[0].toFixed(4)}, ${rgb[1].toFixed(4)}, ${rgb[2].toFixed(4)})`;
-}
-
-/**
- * umbraShading 的 GLSL 镜像段（契约 C4：CPU 事实源 = utils/lunarEclipse
- * umbraShading，逐式照抄——档间线性内插 + 径向指数混合；色表常量模板注入
- * 自 DANJON_UMBRA_PRESETS，三视角共用本镜像，禁止各写一套）。
- */
-const GLSL_UMBRA_SHADING = /* glsl */ `
-  vec3 umbraShading(float rNorm, float danjonL) {
-    float t = pow(clamp(rNorm, 0.0, 1.0), ${UMBRA_SHADING_EDGE_EXPONENT.toFixed(2)});
-    float l = clamp(danjonL, 0.0, 4.0);
-    float i0 = min(floor(l), 3.0);
-    float w = l - i0;
-    vec3 center; vec3 edge;
-    if (i0 < 0.5) {
-      center = mix(${glslVec3(DANJON_UMBRA_PRESETS[0].center)}, ${glslVec3(DANJON_UMBRA_PRESETS[1].center)}, w);
-      edge = mix(${glslVec3(DANJON_UMBRA_PRESETS[0].edge)}, ${glslVec3(DANJON_UMBRA_PRESETS[1].edge)}, w);
-    } else if (i0 < 1.5) {
-      center = mix(${glslVec3(DANJON_UMBRA_PRESETS[1].center)}, ${glslVec3(DANJON_UMBRA_PRESETS[2].center)}, w);
-      edge = mix(${glslVec3(DANJON_UMBRA_PRESETS[1].edge)}, ${glslVec3(DANJON_UMBRA_PRESETS[2].edge)}, w);
-    } else if (i0 < 2.5) {
-      center = mix(${glslVec3(DANJON_UMBRA_PRESETS[2].center)}, ${glslVec3(DANJON_UMBRA_PRESETS[3].center)}, w);
-      edge = mix(${glslVec3(DANJON_UMBRA_PRESETS[2].edge)}, ${glslVec3(DANJON_UMBRA_PRESETS[3].edge)}, w);
-    } else {
-      center = mix(${glslVec3(DANJON_UMBRA_PRESETS[3].center)}, ${glslVec3(DANJON_UMBRA_PRESETS[4].center)}, w);
-      edge = mix(${glslVec3(DANJON_UMBRA_PRESETS[3].edge)}, ${glslVec3(DANJON_UMBRA_PRESETS[4].edge)}, w);
-    }
-    return mix(center, edge, t);
-  }
-`;
+// M4：umbraShading GLSL 镜像段抽至 lunarBloodMoonGlsl.ts 共享（契约 C4
+// 三视角单镜像——地面 quad 与太空月球球体两处注入，禁止第二套实现）。
 
 /**
  * 月盘 fragment（契约 C4，M3-1 血月两段式；常量模板注入自 lunarEclipse/
@@ -1009,6 +1174,12 @@ interface LunarHudState {
   penumbralMagText: string;
   moonAltText: string;
   moonDiamText: string;
+  /** M4 太空档恒真值行（不随档位/开关变化——比例恒等红线的用户可见侧） */
+  coneLenText: string;
+  moonDistText: string;
+  umbraWidthText: string;
+  umbraRatioText: string;
+  coneRatioText: string;
 }
 
 /** 食型 → i18n 键（lunarEclipseKind 实时判定，不硬编码事件类型） */
@@ -1029,6 +1200,26 @@ const PHASE_CARD_KEYS: Record<LunarPhaseKey, MessageKey> = {
   u4: "lab.lunarCardU4",
   p4: "lab.lunarCardP4",
 };
+
+/** M4-6 日食 vs 月食对比表（底稿 §八整表全量入 i18n；[维度, 日食, 月食] 键三元组） */
+const LUNAR_COMPARE_ROWS: ReadonlyArray<
+  readonly [MessageKey, MessageKey, MessageKey]
+> = [
+  ["lab.lunarCompareRow1Dim", "lab.lunarCompareRow1Solar", "lab.lunarCompareRow1Lunar"],
+  ["lab.lunarCompareRow2Dim", "lab.lunarCompareRow2Solar", "lab.lunarCompareRow2Lunar"],
+  ["lab.lunarCompareRow3Dim", "lab.lunarCompareRow3Solar", "lab.lunarCompareRow3Lunar"],
+  ["lab.lunarCompareRow4Dim", "lab.lunarCompareRow4Solar", "lab.lunarCompareRow4Lunar"],
+  ["lab.lunarCompareRow5Dim", "lab.lunarCompareRow5Solar", "lab.lunarCompareRow5Lunar"],
+  ["lab.lunarCompareRow6Dim", "lab.lunarCompareRow6Solar", "lab.lunarCompareRow6Lunar"],
+  ["lab.lunarCompareRow7Dim", "lab.lunarCompareRow7Solar", "lab.lunarCompareRow7Lunar"],
+  ["lab.lunarCompareRow8Dim", "lab.lunarCompareRow8Solar", "lab.lunarCompareRow8Lunar"],
+  ["lab.lunarCompareRow9Dim", "lab.lunarCompareRow9Solar", "lab.lunarCompareRow9Lunar"],
+  ["lab.lunarCompareRow10Dim", "lab.lunarCompareRow10Solar", "lab.lunarCompareRow10Lunar"],
+  ["lab.lunarCompareRow11Dim", "lab.lunarCompareRow11Solar", "lab.lunarCompareRow11Lunar"],
+  ["lab.lunarCompareRow12Dim", "lab.lunarCompareRow12Solar", "lab.lunarCompareRow12Lunar"],
+  ["lab.lunarCompareRow13Dim", "lab.lunarCompareRow13Solar", "lab.lunarCompareRow13Lunar"],
+  ["lab.lunarCompareRow14Dim", "lab.lunarCompareRow14Solar", "lab.lunarCompareRow14Lunar"],
+];
 
 /** 丹戎档位描述键（底稿 §六 逐级目视描述直译；滑杆连续值四舍五入取档） */
 const DANJON_DESC_KEYS: Record<0 | 1 | 2 | 3 | 4, MessageKey> = {
@@ -1074,7 +1265,23 @@ function LunarExperience({
     exposure01: 0.5,
     fitCircle: false,
     showTriptych: false,
+    // M4 太空档初值（决策 ⑦⑨⑩：默认艺术化 + ×4 开 + 观感层/剖面盘开）
+    viewMode: "ground",
+    bodyScaleMode: "art",
+    radialMagnify: true,
+    sectionDisk: true,
+    planetOrbits: true,
+    inclinationDemo: false,
+    syzygy: "full",
   }));
+
+  // M4 视角/预设运镜期（OrbitControls 卸载 gate；rig 完成回调解除）+
+  // 当前预设机位（全貌/月球特写一键切换）
+  const [viewTransition, setViewTransition] = useState<
+    "ground" | LunarSpacePreset | null
+  >(null);
+  // M4-6 对比卡折叠态
+  const [showCompare, setShowCompare] = useState(false);
 
   // scrubber 显示值（拖动即时更新；播放期间由 500ms tick 从 tSecRef 回同步）
   const [scrubSec, setScrubSec] = useState<number>(event.contacts.p1);
@@ -1088,10 +1295,30 @@ function LunarExperience({
   const frameRef = useRef(emptyLunarFrameState());
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const spaceRef = useRef(emptyLunarSpaceFrameState());
   const refs: LunarFrameRefs = useMemo(
-    () => ({ tSecRef, playingRef, eventRef, frameRef, settingsRef }),
+    () => ({ tSecRef, playingRef, eventRef, frameRef, settingsRef, spaceRef }),
     [],
   );
+
+  /** M4 视角切换（tSec 跨视角保持；1.6s 运镜至目标档默认机位） */
+  const handleViewChange = (mode: LunarViewMode): void => {
+    if (mode === settings.viewMode) return;
+    setSettings((s) => ({ ...s, viewMode: mode }));
+    setViewTransition(mode === "space" ? "overview" : "ground");
+  };
+
+  /** M4-3 天体比例档切换（太空档内切档触发 1.6s 运镜回全貌默认机位） */
+  const handleScaleModeChange = (mode: EclipseBodyScaleMode): void => {
+    if (mode === settings.bodyScaleMode) return;
+    setSettings((s) => ({ ...s, bodyScaleMode: mode }));
+    if (settings.viewMode === "space") setViewTransition("overview");
+  };
+
+  /** M4-2 预设机位一键切换（全貌/月球特写 + 运镜插值） */
+  const handlePreset = (preset: LunarSpacePreset): void => {
+    setViewTransition(preset);
+  };
 
   // M6 移动端底部抽屉展开态（<sm 生效；日食同范式，默认收起防遮挡场景）
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1142,6 +1369,11 @@ function LunarExperience({
     penumbralMagText: "—",
     moonAltText: "—",
     moonDiamText: "—",
+    coneLenText: "—",
+    moonDistText: "—",
+    umbraWidthText: "—",
+    umbraRatioText: "—",
+    coneRatioText: "—",
   });
   const [phaseKey, setPhaseKey] = useState<LunarPhaseKey>("p1");
 
@@ -1157,6 +1389,25 @@ function LunarExperience({
         turbidityToDanjonL(settingsRef.current.turbidity01),
       );
       const rate = lunarPlayRate(settingsRef.current.playMode, win);
+      // M4 太空档恒真值行（km 域真值，径向因子不入——B12/B13 用户可见侧；
+      // 倾角叙事的示意轨道下月距 = 叙事半径，属演示语义）
+      let coneLenText = "—";
+      let moonDistText = "—";
+      let umbraWidthText = "—";
+      let umbraRatioText = "—";
+      let coneRatioText = "—";
+      if (settingsRef.current.viewMode === "space") {
+        const truth = lunarSpaceHudTruth(spaceRef.current);
+        coneLenText = `${Math.round(truth.coneLengthKm).toLocaleString("en-US")} km`;
+        moonDistText = `${Math.round(truth.moonDistKm).toLocaleString("en-US")} km`;
+        if (truth.umbraRadiusKm > 0) {
+          umbraWidthText = `${Math.round(truth.umbraRadiusKm * 2).toLocaleString("en-US")} km`;
+          umbraRatioText = `×${truth.umbraPerMoonDiam.toFixed(2)} / ×${truth.umbraPerEarthRadius.toFixed(2)}`;
+        }
+        if (truth.coneLenPerMoonDist > 0) {
+          coneRatioText = `×${truth.coneLenPerMoonDist.toFixed(2)}`;
+        }
+      }
       const next: LunarHudState = {
         utcText: formatUtcClock(tSec),
         rateText: `×${rate >= 10 ? rate.toFixed(0) : rate.toFixed(1)}`,
@@ -1165,6 +1416,11 @@ function LunarExperience({
         penumbralMagText: frame.penumbralMag.toFixed(3),
         moonAltText: `${frame.moonAltDeg.toFixed(1)}°`,
         moonDiamText: formatAngularDiameterDeg(frame.moonSdDeg),
+        coneLenText,
+        moonDistText,
+        umbraWidthText,
+        umbraRatioText,
+        coneRatioText,
       };
       setHud((prev) =>
         prev.utcText === next.utcText &&
@@ -1173,7 +1429,12 @@ function LunarExperience({
         prev.umbralMagText === next.umbralMagText &&
         prev.penumbralMagText === next.penumbralMagText &&
         prev.moonAltText === next.moonAltText &&
-        prev.moonDiamText === next.moonDiamText
+        prev.moonDiamText === next.moonDiamText &&
+        prev.coneLenText === next.coneLenText &&
+        prev.moonDistText === next.moonDistText &&
+        prev.umbraWidthText === next.umbraWidthText &&
+        prev.umbraRatioText === next.umbraRatioText &&
+        prev.coneRatioText === next.coneRatioText
           ? prev
           : next,
       );
@@ -1204,32 +1465,83 @@ function LunarExperience({
         <color attach="background" args={["#000004"]} />
         <LunarTimeDriver refs={refs} onEnded={() => setPlaying(false)} />
         <LunarCameraAim refs={refs} eventId={eventId} />
-        <LunarSkyDome refs={refs} />
-        {stars && (
-          <LunarStarDome
-            stars={stars}
+        {/* M4 视角/预设机位运镜（1.6s 插值；期间相机控制器卸载） */}
+        <LunarViewIntroRig
+          refs={refs}
+          target={viewTransition}
+          onDone={() => setViewTransition(null)}
+        />
+        {settings.viewMode === "ground" ? (
+          <>
+            <LunarSkyDome refs={refs} />
+            {stars && (
+              <LunarStarDome
+                stars={stars}
+                refs={refs}
+                starPointMaxPx={quality.starPointMaxPx}
+              />
+            )}
+            <LunarMoonQuad refs={refs} />
+            <LunarGroundDisk refs={refs} />
+            <LunarHorizonRidge refs={refs} />
+          </>
+        ) : (
+          /* M4 太空视角（地影锥全貌 + 月球穿影 + M7 观感层 + 望态叙事；
+             倾角叙事开启时行星层自动隐藏——日食同口径；reduced 档银河带/
+             小行星带随 labQualityParams 关闭，B14） */
+          <LunarEclipseSpaceView
             refs={refs}
+            stars={stars}
             starPointMaxPx={quality.starPointMaxPx}
+            milkyWay={quality.bloomEnabled}
+            bodyScaleMode={settings.bodyScaleMode}
+            radialMagnify={settings.radialMagnify}
+            sectionDisk={settings.sectionDisk}
+            planetOrbits={settings.planetOrbits && !settings.inclinationDemo}
+            inclinationDemo={settings.inclinationDemo}
+            syzygy={settings.syzygy}
+            asteroidBelt={quality.bloomEnabled}
           />
         )}
-        <LunarMoonQuad refs={refs} />
-        <LunarGroundDisk refs={refs} />
-        <LunarHorizonRidge refs={refs} />
-        {/* 反转轨道相机（流星雨/日食同配置）+ FOV 手势链 */}
-        <OrbitControls
-          key={`ground-${eventId}`}
-          target={[0, 0, 0]}
-          minDistance={CAMERA_RADIUS_MIN_UNITS}
-          maxDistance={CAMERA_RADIUS_MAX_UNITS}
-          enablePan={false}
-          enableZoom={false}
-          minPolarAngle={LAB_POLAR_MIN_RAD}
-          maxPolarAngle={LAB_POLAR_MAX_RAD}
-          rotateSpeed={0.45}
-          enableDamping
-          dampingFactor={0.12}
-        />
-        <TrackpadLookControls />
+        {/* 相机控制器（运镜期卸载防争抢；结束后从当前位姿接管——日食同范式；
+            太空档 OrbitControls 原生单指旋转/双指捏合） */}
+        {!viewTransition &&
+          (settings.viewMode === "ground" ? (
+            <OrbitControls
+              key={`ground-${eventId}`}
+              target={[0, 0, 0]}
+              minDistance={CAMERA_RADIUS_MIN_UNITS}
+              maxDistance={CAMERA_RADIUS_MAX_UNITS}
+              enablePan={false}
+              enableZoom={false}
+              minPolarAngle={LAB_POLAR_MIN_RAD}
+              maxPolarAngle={LAB_POLAR_MAX_RAD}
+              rotateSpeed={0.45}
+              enableDamping
+              dampingFactor={0.12}
+            />
+          ) : (
+            <OrbitControls
+              key="space"
+              target={[0, 0, 0]}
+              minDistance={
+                settings.bodyScaleMode === "art"
+                  ? LUNAR_SPACE_CAMERA_RADIUS_MIN_ART_UNITS
+                  : LUNAR_SPACE_CAMERA_RADIUS_MIN_REAL_UNITS
+              }
+              maxDistance={LUNAR_SPACE_CAMERA_RADIUS_MAX_UNITS}
+              enablePan={false}
+              enableZoom
+              minPolarAngle={0.03}
+              maxPolarAngle={Math.PI - 0.03}
+              rotateSpeed={0.5}
+              enableDamping
+              dampingFactor={0.12}
+            />
+          ))}
+        {settings.viewMode === "ground" && !viewTransition && (
+          <TrackpadLookControls />
+        )}
         {/* 后期：Bloom + ACES（lab 既有底座；无双基准曝光状态机，契约 C4） */}
         {quality.bloomEnabled ? (
           <EffectComposer multisampling={4}>
@@ -1331,7 +1643,309 @@ function LunarExperience({
             <span>{hud.moonAltText}</span>
             <span className="text-gray-400">{tr("lab.lunarHudMoonDiam")}</span>
             <span>{hud.moonDiamText}</span>
+            {/* M4 太空档：档位/倍率徽标 + 恒真值行（锥长/月距/月距处本影
+                2.6 月径、0.72 R⊕——不随档位与开关变化，B12/B13 用户可见侧） */}
+            {settings.viewMode === "space" && (
+              <>
+                <span className="text-gray-400">{tr("lab.lunarHudScale")}</span>
+                <span>
+                  {settings.bodyScaleMode === "art"
+                    ? `${tr("lab.eclipseBodyScaleArt")} ×${LUNAR_ART_RADIAL_FACTOR.toFixed(1)}`
+                    : `${tr("lab.eclipseBodyScaleReal")} ×${settings.radialMagnify ? LUNAR_REAL_RADIAL_MAGNIFY_FACTOR : 1}`}
+                </span>
+                <span className="text-gray-400">
+                  {tr("lab.lunarHudConeLen")}
+                </span>
+                <span>{hud.coneLenText}</span>
+                <span className="text-gray-400">
+                  {tr("lab.lunarHudMoonDistRow")}
+                </span>
+                <span>{hud.moonDistText}</span>
+                <span className="text-gray-400">
+                  {tr("lab.lunarHudUmbraWidthRow")}
+                </span>
+                <span>{hud.umbraWidthText}</span>
+                <span className="text-gray-400">
+                  {tr("lab.lunarHudUmbraRatio")}
+                </span>
+                <span>{hud.umbraRatioText}</span>
+                <span className="text-gray-400">
+                  {tr("lab.lunarHudConeRatio")}
+                </span>
+                <span>{hud.coneRatioText}</span>
+              </>
+            )}
           </div>
+          {/* M4 视角分段控件（地面/太空；切换触发 1.6s 运镜，tSec 跨视角保持） */}
+          <h3 className="mb-1 mt-2 text-[10px] font-semibold text-gray-300">
+            {tr("lab.lunarViewTitle")}
+          </h3>
+          <div
+            role="radiogroup"
+            aria-label={tr("lab.lunarViewAria")}
+            className="mb-2 flex gap-1"
+          >
+            {(
+              [
+                ["ground", "lab.lunarViewGround"],
+                ["space", "lab.lunarViewSpace"],
+              ] as const
+            ).map(([mode, key]) => (
+              <button
+                key={mode}
+                role="radio"
+                aria-checked={settings.viewMode === mode}
+                onClick={() => handleViewChange(mode)}
+                className={`flex-1 rounded px-1 py-1 text-[10px] transition-colors max-md:min-h-11 ${
+                  settings.viewMode === mode
+                    ? "bg-sky-500/30 font-semibold text-sky-200"
+                    : "bg-white/5 text-gray-400 hover:bg-white/10"
+                }`}
+              >
+                {tr(key)}
+              </button>
+            ))}
+          </div>
+          {/* M4 太空档控件（比例双模/径向放大/预设机位/剖面盘/行星层/
+              交点几何望态/对比卡；触控目标 ≥44pt 经 max-md:min-h-11） */}
+          {settings.viewMode === "space" && (
+            <>
+              {/* 天体比例分段（决策 ⑦：默认艺术化；共用日食档名键，B13） */}
+              <div
+                role="radiogroup"
+                aria-label={tr("lab.eclipseBodyScaleAria")}
+                className="mb-1 flex gap-1"
+              >
+                {(
+                  [
+                    ["art", "lab.eclipseBodyScaleArt"],
+                    ["real", "lab.eclipseBodyScaleReal"],
+                  ] as const
+                ).map(([mode, key]) => (
+                  <button
+                    key={mode}
+                    role="radio"
+                    aria-checked={settings.bodyScaleMode === mode}
+                    onClick={() => handleScaleModeChange(mode)}
+                    className={`flex-1 rounded px-1 py-1 text-[10px] transition-colors max-md:min-h-11 ${
+                      settings.bodyScaleMode === mode
+                        ? "bg-sky-500/30 font-semibold text-sky-200"
+                        : "bg-white/5 text-gray-400 hover:bg-white/10"
+                    }`}
+                  >
+                    {tr(key)}
+                  </button>
+                ))}
+              </div>
+              {/* 真实档专属：径向放大 ×4 开关（默认开；艺术化档隐藏，B12） */}
+              {settings.bodyScaleMode === "real" && (
+                <button
+                  aria-pressed={settings.radialMagnify}
+                  aria-label={tr("lab.lunarRadialMagnifyAria")}
+                  onClick={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      radialMagnify: !s.radialMagnify,
+                    }))
+                  }
+                  className={`mb-1 w-full rounded px-2 py-1 text-left text-[10px] transition-colors max-md:min-h-11 ${
+                    settings.radialMagnify
+                      ? "bg-sky-500/30 font-semibold text-sky-200"
+                      : "bg-white/5 text-gray-400 hover:bg-white/10"
+                  }`}
+                >
+                  {settings.radialMagnify ? "☑" : "☐"}{" "}
+                  {tr("lab.lunarRadialMagnifyLabel")}
+                </button>
+              )}
+              {settings.bodyScaleMode === "real" && settings.radialMagnify && (
+                <p className="mb-1 rounded bg-amber-950/40 px-2 py-1 text-[9px] leading-snug text-amber-200/80">
+                  {tr("lab.lunarRadialMagnifyBadge")}
+                </p>
+              )}
+              {/* 预设机位一键切换（全貌/月球特写 + 1.6s 运镜插值） */}
+              <div
+                role="group"
+                aria-label={tr("lab.lunarPresetAria")}
+                className="mb-1 flex gap-1"
+              >
+                {(
+                  [
+                    ["overview", "lab.lunarPresetOverview"],
+                    ["closeup", "lab.lunarPresetCloseup"],
+                  ] as const
+                ).map(([preset, key]) => (
+                  <button
+                    key={preset}
+                    onClick={() => handlePreset(preset)}
+                    className="flex-1 rounded bg-white/5 px-1 py-1 text-[10px] text-gray-300 transition-colors hover:bg-white/10 max-md:min-h-11"
+                  >
+                    {tr(key)}
+                  </button>
+                ))}
+              </div>
+              {/* 剖面盘/行星层/交点几何开关（行星层与倾角叙事互斥挂载） */}
+              <div className="mb-1 flex flex-col gap-1">
+                <button
+                  aria-pressed={settings.sectionDisk}
+                  aria-label={tr("lab.lunarSectionDiskAria")}
+                  onClick={() =>
+                    setSettings((s) => ({ ...s, sectionDisk: !s.sectionDisk }))
+                  }
+                  className={`rounded px-2 py-1 text-left text-[10px] transition-colors max-md:min-h-11 ${
+                    settings.sectionDisk
+                      ? "bg-sky-500/30 font-semibold text-sky-200"
+                      : "bg-white/5 text-gray-400 hover:bg-white/10"
+                  }`}
+                >
+                  {settings.sectionDisk ? "☑" : "☐"}{" "}
+                  {tr("lab.lunarSectionDiskLabel")}
+                </button>
+                <button
+                  aria-pressed={settings.planetOrbits}
+                  aria-label={tr("lab.eclipsePlanetOrbitsAria")}
+                  onClick={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      planetOrbits: !s.planetOrbits,
+                    }))
+                  }
+                  className={`rounded px-2 py-1 text-left text-[10px] transition-colors max-md:min-h-11 ${
+                    settings.planetOrbits
+                      ? "bg-sky-500/30 font-semibold text-sky-200"
+                      : "bg-white/5 text-gray-400 hover:bg-white/10"
+                  }`}
+                >
+                  {settings.planetOrbits ? "☑" : "☐"}{" "}
+                  {tr("lab.eclipsePlanetOrbitsLabel")}
+                </button>
+                <button
+                  aria-pressed={settings.inclinationDemo}
+                  aria-label={tr("lab.eclipseInclinationAria")}
+                  onClick={() =>
+                    setSettings((s) => ({
+                      ...s,
+                      inclinationDemo: !s.inclinationDemo,
+                    }))
+                  }
+                  className={`rounded px-2 py-1 text-left text-[10px] transition-colors max-md:min-h-11 ${
+                    settings.inclinationDemo
+                      ? "bg-sky-500/30 font-semibold text-sky-200"
+                      : "bg-white/5 text-gray-400 hover:bg-white/10"
+                  }`}
+                >
+                  {settings.inclinationDemo ? "☑" : "☐"}{" "}
+                  {tr("lab.eclipseInclinationLabel")}
+                </button>
+              </div>
+              {/* 交点几何：朔↔望开关 + 倾角夸张徽标（B4：共用日食文案键，
+                  HUD 标真实值 5.145° 与 ×4 倍率）+ 望态叙事卡 */}
+              {settings.inclinationDemo && (
+                <>
+                  <div
+                    role="radiogroup"
+                    aria-label={tr("lab.lunarSyzygyAria")}
+                    className="mb-1 flex gap-1"
+                  >
+                    {(
+                      [
+                        ["full", "lab.lunarSyzygyFull"],
+                        ["new", "lab.lunarSyzygyNew"],
+                      ] as const
+                    ).map(([mode, key]) => (
+                      <button
+                        key={mode}
+                        role="radio"
+                        aria-checked={settings.syzygy === mode}
+                        onClick={() =>
+                          setSettings((s) => ({ ...s, syzygy: mode }))
+                        }
+                        className={`flex-1 rounded px-1 py-1 text-[10px] transition-colors max-md:min-h-11 ${
+                          settings.syzygy === mode
+                            ? "bg-amber-500/30 font-semibold text-amber-200"
+                            : "bg-white/5 text-gray-400 hover:bg-white/10"
+                        }`}
+                      >
+                        {tr(key)}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mb-1 rounded bg-amber-950/40 px-2 py-1 text-[9px] leading-snug text-amber-200/80">
+                    {tr("lab.eclipseInclinationBadge")}
+                  </p>
+                  <p className="mb-2 rounded bg-white/5 px-2 py-1.5 text-[10px] leading-relaxed text-gray-300">
+                    {tr("lab.lunarNodeCard")}
+                  </p>
+                </>
+              )}
+              {/* B3/B13 科普卡：轴向真比例卖点 + 太阳距离压缩 + 比例口径 */}
+              <p className="mb-1 rounded bg-white/5 px-2 py-1.5 text-[10px] leading-relaxed text-gray-400">
+                {tr("lab.lunarSpaceCard")}
+              </p>
+              <p className="mb-2 rounded bg-white/5 px-2 py-1.5 text-[10px] leading-relaxed text-gray-400">
+                {tr("lab.lunarScaleCard")}
+              </p>
+              {settings.planetOrbits && !settings.inclinationDemo && (
+                <p className="mb-2 rounded bg-white/5 px-2 py-1.5 text-[10px] leading-relaxed text-gray-400">
+                  {tr("lab.eclipsePlanetOrbitsCard")}
+                </p>
+              )}
+              {/* M4-6 日食 vs 月食对比卡（底稿 §八整表）+ 半沙罗配对 + 互链 */}
+              <button
+                aria-pressed={showCompare}
+                onClick={() => setShowCompare((v) => !v)}
+                className={`mb-1 w-full rounded px-2 py-1 text-left text-[10px] transition-colors max-md:min-h-11 ${
+                  showCompare
+                    ? "bg-sky-500/30 font-semibold text-sky-200"
+                    : "bg-white/5 text-gray-400 hover:bg-white/10"
+                }`}
+              >
+                {showCompare ? "▾" : "▸"} {tr("lab.lunarCompareToggle")}
+              </button>
+              {showCompare && (
+                <div className="mb-2 rounded bg-white/5 p-2">
+                  <table className="w-full border-collapse text-left text-[9px] leading-snug text-gray-300">
+                    <thead>
+                      <tr className="text-gray-400">
+                        <th className="pb-1 pr-1 font-normal">
+                          {tr("lab.lunarCompareColDim")}
+                        </th>
+                        <th className="pb-1 pr-1 font-normal">
+                          {tr("lab.lunarCompareColSolar")}
+                        </th>
+                        <th className="pb-1 font-normal">
+                          {tr("lab.lunarCompareColLunar")}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {LUNAR_COMPARE_ROWS.map(([dim, sol, lun]) => (
+                        <tr key={dim} className="border-t border-white/10">
+                          <td className="py-1 pr-1 text-gray-400">
+                            {tr(dim)}
+                          </td>
+                          <td className="py-1 pr-1">{tr(sol)}</td>
+                          <td className="py-1">{tr(lun)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="mt-1.5 text-[9px] leading-snug text-sky-200/80">
+                    {tr("lab.lunarCompareSummary")}
+                  </p>
+                </div>
+              )}
+              <p className="mb-1 rounded bg-white/5 px-2 py-1.5 text-[10px] leading-relaxed text-gray-300">
+                {tr("lab.lunarHalfSarosCard")}
+              </p>
+              <Link
+                href="/lab/solar-eclipse"
+                className="mb-2 block rounded bg-white/5 px-2 py-1.5 text-[10px] text-space-accent transition-colors hover:bg-white/10 max-md:min-h-11"
+              >
+                {tr("lab.lunarLinkToSolar")}
+              </Link>
+            </>
+          )}
           {/* 播放模式（B1：加速回放全程 ~1.5 分钟 / ×1 真实；HUD 常显倍速） */}
           <div
             role="radiogroup"
@@ -1465,32 +2079,34 @@ function LunarExperience({
           <p className="mb-2 text-[9px] leading-snug text-gray-500">
             {tr("lab.lunarExposureNote")}
           </p>
-          {/* M3-5/M3-6 教学交互开关（三联对比 / 地圆论证拟合圆） */}
-          <div className="mb-2 flex flex-col gap-1">
-            {(
-              [
-                ["showTriptych", "lab.lunarTriptychToggle"],
-                ["fitCircle", "lab.lunarFitCircleToggle"],
-              ] as const
-            ).map(([key, labelKey]) => (
-              <button
-                key={key}
-                aria-pressed={settings[key]}
-                onClick={() =>
-                  setSettings((s) => ({ ...s, [key]: !s[key] }))
-                }
-                className={`rounded px-2 py-1 text-left text-[10px] transition-colors max-md:min-h-11 ${
-                  settings[key]
-                    ? "bg-sky-500/30 font-semibold text-sky-200"
-                    : "bg-white/5 text-gray-400 hover:bg-white/10"
-                }`}
-              >
-                {settings[key] ? "☑" : "☐"} {tr(labelKey)}
-              </button>
-            ))}
-          </div>
+          {/* M3-5/M3-6 教学交互开关（三联对比 / 地圆论证拟合圆——地面档专属） */}
+          {settings.viewMode === "ground" && (
+            <div className="mb-2 flex flex-col gap-1">
+              {(
+                [
+                  ["showTriptych", "lab.lunarTriptychToggle"],
+                  ["fitCircle", "lab.lunarFitCircleToggle"],
+                ] as const
+              ).map(([key, labelKey]) => (
+                <button
+                  key={key}
+                  aria-pressed={settings[key]}
+                  onClick={() =>
+                    setSettings((s) => ({ ...s, [key]: !s[key] }))
+                  }
+                  className={`rounded px-2 py-1 text-left text-[10px] transition-colors max-md:min-h-11 ${
+                    settings[key]
+                      ? "bg-sky-500/30 font-semibold text-sky-200"
+                      : "bg-white/5 text-gray-400 hover:bg-white/10"
+                  }`}
+                >
+                  {settings[key] ? "☑" : "☐"} {tr(labelKey)}
+                </button>
+              ))}
+            </div>
+          )}
           {/* 三联对比条（同 shader 换 uniform，独立小 Canvas） */}
-          {settings.showTriptych && (
+          {settings.viewMode === "ground" && settings.showTriptych && (
             <LunarTriptychStrip
               events={data.events}
               turbidity01={settings.turbidity01}
@@ -1498,7 +2114,7 @@ function LunarExperience({
             />
           )}
           {/* 地圆论证科普卡（古希腊推理链，底稿 §10.1） */}
-          {settings.fitCircle && (
+          {settings.viewMode === "ground" && settings.fitCircle && (
             <p className="mb-2 rounded bg-white/5 px-2 py-1.5 text-[10px] leading-relaxed text-gray-300">
               {tr("lab.lunarFitCircleCard")}
             </p>
@@ -1527,9 +2143,11 @@ function LunarExperience({
         onTogglePlay={() => setPlaying((p) => !p)}
       />
 
-      {/* 底部操作提示（<sm 隐藏——底部被抽屉标题栏占据，日食同范式） */}
+      {/* 底部操作提示（按视角档切换；<sm 隐藏——底部被抽屉标题栏占据，日食同范式） */}
       <p className="pointer-events-none absolute bottom-3 left-1/2 max-w-[calc(100%-1.5rem)] -translate-x-1/2 truncate whitespace-nowrap rounded bg-black/40 px-3 py-1 text-[10px] text-gray-400 backdrop-blur max-sm:hidden">
-        {tr("lab.lunarHintLookAround")}
+        {settings.viewMode === "space"
+          ? tr("lab.lunarHintSpace")
+          : tr("lab.lunarHintLookAround")}
       </p>
     </div>
   );
