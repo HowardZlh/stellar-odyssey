@@ -598,6 +598,65 @@ export const en: I18nDict = {
     eclipseSafetyCertified:
       "At all other times use ISO 12312-2 certified solar filters (eclipse glasses), or switch to indirect methods such as pinhole projection.",
     eclipseSafetyConfirm: "Got it",
+    /** LE-M2 lunar eclipse lab (/lab/lunar-eclipse): entry card / 4 tabs / HUD / 7-anchor timeline */
+    lunarEclipseTitle: "Lunar Eclipse",
+    lunarEclipseDescription:
+      "Four real lunar eclipses from authoritative ephemerides: the century's deepest totality in 2029 (magnitude 1.84), the 2026 partial that just misses totality, the almost imperceptible 2027 penumbral eclipse, and the 1992 post-Pinatubo ultra-dark blood moon (Danjon L=0). Scrub the timeline and watch Earth's shadow creep across the Moon — completely safe to watch with the naked eye.",
+    lunarTabAria: "Switch lunar eclipse event",
+    lunarTab2029: "2029-06-26 · Total",
+    lunarTab2026: "2026-08-28 · Partial",
+    lunarTab2027: "2027-02-20 · Penumbral",
+    lunarTab1992: "1992-12-09 · Historic L=0",
+    lunarObserver2029:
+      "Observer: São Paulo, Brazil (Moon at 87° altitude at maximum, near zenith; the deepest, darkest lunar eclipse of the century, Saros 130)",
+    lunarObserver2026:
+      "Observer: Manaus, Brazil (Moon at 83° at maximum; magnitude 0.93 — tantalizingly close to totality, Saros 138)",
+    lunarObserver2027:
+      "Observer: Lagos, Nigeria (Moon at 78° at maximum; a penumbral eclipse that is nearly invisible to the eye — truthfully so, Saros 143)",
+    lunarObserver1992:
+      "Historic scene · Observer: Madrid, Spain (Moon at 72° at maximum; rated Danjon L=0 after the Pinatubo eruption, Saros 125)",
+    lunarAnchorP1: "P1 penumbral start",
+    lunarAnchorU1: "U1 umbral start",
+    lunarAnchorU2: "U2 totality begins",
+    lunarAnchorMax: "Maximum",
+    lunarAnchorU3: "U3 totality ends",
+    lunarAnchorU4: "U4 umbral end",
+    lunarAnchorP4: "P4 penumbral end",
+    lunarTimelineAria: "Lunar eclipse timeline",
+    lunarPlayModeAria: "Playback mode",
+    lunarPlayModeFast: "Fast replay",
+    lunarPlayModeReal: "×1 real time",
+    lunarHudUtc: "UTC",
+    lunarHudRate: "Speed",
+    lunarHudKind: "Phase",
+    lunarHudUmbralMag: "Umbral mag.",
+    lunarHudPenumbralMag: "Penumbral mag.",
+    lunarHudMoonAlt: "Moon altitude",
+    lunarHudMoonDiam: "Moon ang. diam.",
+    lunarKindNone: "No eclipse",
+    lunarKindPenumbral: "Penumbral",
+    lunarKindPartial: "Partial",
+    lunarKindTotal: "Total",
+    lunarCardP1:
+      "Penumbral start: the Moon enters Earth's penumbra. For a while you will hardly notice anything — inside the penumbra part of the Sun still shines directly on the Moon, so the dimming is extremely subtle. That is not a rendering flaw; it is real: about 36% of lunar eclipses never leave the penumbra and are nearly invisible to the eye.",
+    lunarCardU1:
+      "Umbral start: the lunar limb touches the umbra and a dark bite appears. Unlike a solar eclipse, that bite is Earth's own shadow — about 9,000 km across at the Moon's distance, some 2.6 Moon diameters. The curvature of its edge is the curvature of Earth: the ancient Greeks inferred a spherical Earth from exactly this.",
+    lunarCardU2:
+      "Totality begins: the Moon is fully immersed in the umbra. It does not vanish — Earth's atmosphere refracts sunlight into the shadow cone and filters it red (the blood-moon physics arrives with M3). Totality can last nearly 107 minutes, safe for the naked eye throughout.",
+    lunarCardMax:
+      "Maximum: the Moon's center is closest to the shadow axis. Brightness inside the umbra grades radially — darker toward the shadow center, brighter toward its edge. The Moon is now roughly 10,000× fainter than a full moon, and the stars it had drowned out return (star emergence arrives with M3).",
+    lunarCardU3:
+      "Totality ends: the lunar limb emerges on the far side of the umbra. Note the bite now sits opposite to where it entered — the shadow exits across the other limb.",
+    lunarCardU4:
+      "Umbral end: the Moon fully leaves the umbra and the naked-eye eclipse is over. Only the subtle penumbral dimming remains as the full moon returns.",
+    lunarCardP4:
+      "Penumbral end: the Moon leaves the penumbra and the eclipse is over. The Moon recedes ~3.8 cm per year, yet lunar eclipses will not vanish in the distant future the way total solar eclipses will — Earth's shadow is far larger than the Moon.",
+    lunarLoadingEphemeris: "Loading lunar eclipse ephemerides…",
+    lunarEphemerisFailed:
+      "Failed to load lunar eclipse ephemerides — the scene is unavailable. Please refresh and try again.",
+    lunarHintLookAround:
+      "Drag or two-finger scroll to look around · pinch to zoom in on the shadowed Moon",
+    lunarPanelTitle: "Observation Console",
   },
   helpHint: {
     controls:

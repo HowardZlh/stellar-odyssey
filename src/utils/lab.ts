@@ -108,13 +108,34 @@ const SOLAR_ECLIPSE_ENTRY: LabEntry = {
 };
 
 /**
+ * 月食（LE 迭代 M2，IMPROVEMENT_REQUIREMENTS_LUNAR_ECLIPSE 契约 C5）：
+ * 四场真实月食（2029 世纪最暗全食 / 2026 食分 0.93 偏食 / 2027 半影食 /
+ * 1992 皮纳图博后丹戎 L=0 历史场景）的权威星历复现，地面视角偏食渐进随 M2、
+ * 血月核心随 M3、太空/月球视角随 M4/M5 递进。完全免费（不接 observatoryGate）。
+ */
+const LUNAR_ECLIPSE_ENTRY: LabEntry = {
+  labId: 'lunar-eclipse',
+  titleKey: 'lab.lunarEclipseTitle',
+  descriptionKey: 'lab.lunarEclipseDescription',
+  componentKey: 'lunar-eclipse-lab',
+  dataSource:
+    'NASA Lunar Eclipse Page / 5MCLE 世纪目录（Fred Espenak & Jean Meeus，食分/γ/接触时刻）；JPL Horizons（DE441 日月星历）；Danjon (1921) 亮度标度（五档色值为目视主观评级的美术映射）；Yale Bright Star Catalog 复用；主要近似：本影放大取 Danjon 法 ×1.01（与 5MCLE 同式）、星历 60s 线性插值、大气折射不建模、月面取静态天平动姿态（§1.6 登记）',
+  emoji: '🌕',
+};
+
+/**
  * 实验室注册表（后续条目在此追加）
  *
  * 以 Map 存储便于 O(1) 查找；模块加载时对每个条目做一次合法性自检，
  * 并断言 labId 唯一（重复注册即抛错）。
  */
 export const LAB_REGISTRY: ReadonlyMap<string, LabEntry> = (() => {
-  const entries: readonly LabEntry[] = [METEOR_SHOWER_ENTRY, OBSERVATORY_ENTRY, SOLAR_ECLIPSE_ENTRY];
+  const entries: readonly LabEntry[] = [
+    METEOR_SHOWER_ENTRY,
+    OBSERVATORY_ENTRY,
+    SOLAR_ECLIPSE_ENTRY,
+    LUNAR_ECLIPSE_ENTRY,
+  ];
   const map = new Map<string, LabEntry>();
   for (const e of entries) {
     validateLabEntry(e);

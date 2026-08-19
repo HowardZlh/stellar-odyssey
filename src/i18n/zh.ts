@@ -669,6 +669,73 @@ export const zh = {
     eclipseSafetyCertified:
       "其余时段必须使用符合 ISO 12312-2 认证的太阳滤镜（日食眼镜），或改用针孔投影等间接观测法。",
     eclipseSafetyConfirm: "我已了解",
+    /**
+     * LE-M2 月食实验室（/lab/lunar-eclipse）：条目卡/四页签/HUD/七锚点时间轴。
+     * 页签标题含日期与食型副标题（§0.1）；锚点名由数据驱动锚点列表引用
+     * （复用日食契约 C7 scrubber，偏食/半影食按 contacts 缺省传子集）。
+     */
+    lunarEclipseTitle: "月食",
+    lunarEclipseDescription:
+      "四场真实月食的权威星历复现：2029 本世纪最深的全食（食分 1.84）、2026「差一点就是全食」的偏食、2027 几乎无感的半影食、1992 皮纳图博火山后的极暗血月（丹戎 L=0）。拖动时间轴看地影缺口爬过月面——月食全程裸眼安全。",
+    lunarTabAria: "切换月食事件",
+    lunarTab2029: "2029-06-26 · 全食",
+    lunarTab2026: "2026-08-28 · 偏食",
+    lunarTab2027: "2027-02-20 · 半影食",
+    lunarTab1992: "1992-12-09 · 历史 L=0",
+    /** 观测点说明（固定单城市，§0.1 判据 = 食全程可见 + 食甚月高最优） */
+    lunarObserver2029:
+      "观测点：巴西圣保罗（食甚月亮高度 87°，近天顶；本世纪食分最大、最暗的月食，Saros 130）",
+    lunarObserver2026:
+      "观测点：巴西玛瑙斯（食甚月高 83°；食分 0.93——差一点点就是全食的临界感，Saros 138）",
+    lunarObserver2027:
+      "观测点：尼日利亚拉各斯（食甚月高 78°；半影食全程肉眼几乎无感——这是真实，Saros 143）",
+    lunarObserver1992:
+      "历史场景 · 观测点：西班牙马德里（食甚月高 72°；皮纳图博火山喷发后被评为丹戎 L=0 的极暗月食，Saros 125）",
+    /** 时间轴锚点名（七接触点，§1.2；数据驱动列表引用，缺省锚点自动隐藏） */
+    lunarAnchorP1: "半影食始",
+    lunarAnchorU1: "初亏",
+    lunarAnchorU2: "食既",
+    lunarAnchorMax: "食甚",
+    lunarAnchorU3: "生光",
+    lunarAnchorU4: "复圆",
+    lunarAnchorP4: "半影食终",
+    lunarTimelineAria: "月食时间轴",
+    /** 播放模式（B1 登记：加速回放全程 ~1.5 分钟，HUD 常显真实时刻与倍速） */
+    lunarPlayModeAria: "播放模式",
+    lunarPlayModeFast: "加速回放",
+    lunarPlayModeReal: "×1 真实",
+    /** HUD（500ms 刷新；双食分/食型/月高/月视直径为真实值常显，契约 C3） */
+    lunarHudUtc: "UTC",
+    lunarHudRate: "倍速",
+    lunarHudKind: "当前阶段",
+    lunarHudUmbralMag: "本影食分",
+    lunarHudPenumbralMag: "半影食分",
+    lunarHudMoonAlt: "月亮高度角",
+    lunarHudMoonDiam: "月视直径",
+    /** 食型/阶段名（lunarEclipseKind 实时判定，不硬编码事件类型） */
+    lunarKindNone: "无食",
+    lunarKindPenumbral: "半影食",
+    lunarKindPartial: "偏食",
+    lunarKindTotal: "全食",
+    /** 阶段科普卡（七接触点区段；M2 骨架文案，M3 补血月/丹戎叙事细节） */
+    lunarCardP1:
+      "半影食始：月球开始进入地球半影。接下来一小段时间你几乎看不出任何变化——半影内仍有部分阳光直射月面，变暗极其微妙。这不是模拟的缺陷，是真实：约 36% 的月食全程只走半影，肉眼几乎无感。",
+    lunarCardU1:
+      "初亏：月缘触到本影，缺口出现。与日食不同，这个暗缺是地球自己的影子——本影边缘在月距处直径约 9,000 公里，约 2.6 个月球。缺口边缘的弧度就是地球的弧度：古希腊人由此推断大地是球体。",
+    lunarCardU2:
+      "食既：月球完全没入本影，全食开始。月面不会消失——地球大气把日光折射进影锥并滤成红色（血月的物理随 M3 呈现）。全食最长可持续近 107 分钟，全程裸眼观看安全。",
+    lunarCardMax:
+      "食甚：月心最接近影轴的时刻。本影内亮度呈径向梯度——靠影心一侧更暗、靠边缘一侧偏亮。此刻的月亮比满月暗约一万倍，被月光压制的星空会重新浮现（星空显现随 M3 呈现）。",
+    lunarCardU3: "生光：月缘从本影另一侧露出，全食结束。缺口方位与初亏相反——影子从月面另一侧退场。",
+    lunarCardU4: "复圆：月球完全退出本影，肉眼可见的月食结束。此后只剩半影段的微妙变暗，逐渐回到满月。",
+    lunarCardP4: "半影食终：月球离开半影，这场月食结束。月球以每年约 3.8 厘米远离地球，但月食不会像日全食那样在遥远未来消失——地影远比月球大。",
+    /** 星历加载态（useLunarEclipses 三态） */
+    lunarLoadingEphemeris: "正在加载月食星历…",
+    lunarEphemerisFailed: "月食星历加载失败，场景暂不可用——请刷新页面重试",
+    /** 操作提示（真实视半径渲染，细节靠 FOV 缩放，契约 C3） */
+    lunarHintLookAround: "拖动或双指滚动环顾夜空 · 双指捏合放大视野看清月面缺口",
+    /** 面板标题（<sm 底部抽屉标题栏常显；开合钮复用 panel*Aria 键） */
+    lunarPanelTitle: "观测控制台",
   },
   helpHint: {
     /**
