@@ -58,6 +58,7 @@ import {
   type EphemerisSeries,
 } from '@/utils/solarEclipse';
 import { ECLIPTIC_OBLIQUITY_DEG, gmstRadFromUnixSec } from '@/utils/solarEclipseLab';
+import { SCENE_UNITS_PER_AU, visualBodyRadius } from '@/utils/scale';
 
 /** 度 → 弧度 */
 const DEG = Math.PI / 180;
@@ -724,9 +725,10 @@ export function narrativeMoonPosKm(
 export const SPACE_CAMERA_NEAR_UNITS = 0.5;
 export const SPACE_CAMERA_FAR_UNITS = 5000;
 
-/** 太空档轨道相机半径域（场景单位；§2.2：8–600） */
+/** 太空档轨道相机半径域（场景单位；§2.2 原 8–600，§M8-4 上限放宽至 3,800——
+ * 两档通用，可退到看全八行星轨道全景；星穹 4,500/far 5,000 仍在外） */
 export const SPACE_CAMERA_RADIUS_MIN_UNITS = 8;
-export const SPACE_CAMERA_RADIUS_MAX_UNITS = 600;
+export const SPACE_CAMERA_RADIUS_MAX_UNITS = 3800;
 
 /** 远景日盘距离/半径（场景单位；A3 距离压缩登记——真实 149,600 单位超域；
  * 半径按真实视半径 0.267° 折算，从地球看去日盘角尺度真实） */
@@ -778,12 +780,12 @@ export const GROUND_INTRO_ALT_OFFSET_DEG = 18;
 export function spaceIntroPose(
   sunDirScene: readonly [number, number, number] | readonly number[],
   t01: number,
-  out: ViewIntroPose
+  out: ViewIntroPose,
+  endRadiusUnits: number = SPACE_INTRO_END_RADIUS_UNITS,
+  startRadiusUnits: number = SPACE_INTRO_START_RADIUS_UNITS
 ): ViewIntroPose {
   const s = smooth01(t01);
-  const radius =
-    SPACE_INTRO_START_RADIUS_UNITS +
-    (SPACE_INTRO_END_RADIUS_UNITS - SPACE_INTRO_START_RADIUS_UNITS) * s;
+  const radius = startRadiusUnits + (endRadiusUnits - startRadiusUnits) * s;
   const swing = SPACE_INTRO_SWING_RAD * (1 - s);
   const c = Math.cos(swing);
   const sn = Math.sin(swing);
@@ -979,6 +981,197 @@ export function planetLayerSceneMatrix3(
       out[row * 3 + col] =
         r[row * 3] * b[col] + r[row * 3 + 1] * b[3 + col] + r[row * 3 + 2] * b[6 + col];
     }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// M8：「天体比例」双模（真实 / 艺术化放大，L2 观感对齐；A18 登记）
+// ---------------------------------------------------------------------------
+
+/** 天体比例档（§M8-1：真实 = M7 形态；艺术化 = L2 观感对齐，**默认档**） */
+export type EclipseBodyScaleMode = 'real' | 'art';
+
+/**
+ * 艺术化半径层比例因子（A18）：本层 1 AU = 1,500 单位 ÷ 主场景 L2 的
+ * SCENE_UNITS_PER_AU(10) = 150——半径映射与 L2 观感**严格等比**
+ * （派生断言单测锁定）。
+ */
+export const SPACE_ART_RADIUS_FACTOR = SPACE_AU_LINEAR_UNITS / SCENE_UNITS_PER_AU;
+
+/**
+ * 天体半径（艺术化档，场景单位）：主场景 `visualBodyRadius` 对数压缩公式
+ * **单一事实源**（import 不复制）× 层因子。地球 ~93、月球 ~41、木星 ~233、
+ * 太阳 ~381 单位——非真实比例，A18 登记（分段控件档名 + 科普卡明示）。
+ */
+export function artBodyRadiusUnits(radiusKm: number): number {
+  return visualBodyRadius(radiusKm) * SPACE_ART_RADIUS_FACTOR;
+}
+
+/** 艺术化地球半径与相对真实档的缩放倍率（组件按档写 group scale） */
+export const SPACE_ART_EARTH_RADIUS_UNITS = artBodyRadiusUnits(EARTH_MEAN_RADIUS_KM);
+export const SPACE_ART_EARTH_SCALE = SPACE_ART_EARTH_RADIUS_UNITS / SPACE_EARTH_RADIUS_UNITS;
+
+/** 艺术化月球缩放倍率（相对真实半径 1.7374 单位） */
+export const SPACE_ART_MOON_SCALE =
+  artBodyRadiusUnits(MOON_MEAN_RADIUS_KM) / (MOON_MEAN_RADIUS_KM * SPACE_UNITS_PER_KM);
+
+/**
+ * 影锥径向显示倍率（按档）：真实档转发 coneRadialScale（A4/A16 语义不变）；
+ * 艺术化档 = SPACE_ART_MOON_SCALE（锥基随艺术化月球同倍收敛，锥角失真
+ * 沿 A18 登记）——**艺术化档忽略 A4/A16 开关**（差异登记：影斑角距投影
+ * 在放大地球上已可辨，×8 叠加会破坏锥-月衔接；两开关在艺术化档隐藏）。
+ */
+export function coneRadialScaleForMode(
+  kind: 'umbra' | 'penumbra',
+  mode: EclipseBodyScaleMode,
+  umbraMagnify: boolean,
+  moonMagnify: boolean
+): number {
+  if (mode === 'art') return SPACE_ART_MOON_SCALE;
+  return coneRadialScale(kind, umbraMagnify, moonMagnify);
+}
+
+/** 艺术化档相机域/运镜（地球半径 ~93 单位：机位须在球外） */
+export const SPACE_ART_CAMERA_RADIUS_MIN_UNITS = 110;
+export const SPACE_ART_INTRO_END_RADIUS_UNITS = 420;
+export const SPACE_ART_INTRO_START_RADIUS_UNITS = 1600;
+
+/**
+ * 艺术化档地表影斑帽状态（§M8-3 角距投影；out 复用零 GC）：
+ * shader 按「表面方向与帽心方向的角距」绘制影斑——**半径无关映射**，
+ * 放大球面上位置与相对大小仍真实；椭圆取圆形近似（A18 登记）。
+ */
+export interface ArtShadowCapState {
+  /** 本影帽心方向（场景，单位向量 = 真实足印中心方向；无足印时置零） */
+  umbraDir: MutableVec3;
+  /** 本影帽角半径（弧度 = asin(足印短半轴/R⊕)；无足印为 0） */
+  umbraAngRad: number;
+  /** 本影压暗深度（真本影 0.88 / 伪本影 0.5，同真实档常量） */
+  umbraDepth01: number;
+  /** 半影帽心方向（影轴对地心最近点方向；轴过地心时退化取月球方向） */
+  penDir: MutableVec3;
+  /** 半影帽角半径（弧度 = asin(该处锥截面半径/R⊕)） */
+  penAngRad: number;
+}
+
+/** 空影斑帽状态（挂载期分配一次） */
+export function emptyArtShadowCapState(): ArtShadowCapState {
+  return {
+    umbraDir: [0, 0, 0],
+    umbraAngRad: 0,
+    umbraDepth01: UMBRA_DARKEN_DEPTH,
+    penDir: [1, 0, 0],
+    penAngRad: 0,
+  };
+}
+
+/** 艺术化档影斑帽（从 spaceFrameState 输出派生；每帧 CPU 侧计算写 uniform） */
+export function artShadowCap(
+  space: EclipseSpaceFrameState,
+  out: ArtShadowCapState = emptyArtShadowCapState()
+): ArtShadowCapState {
+  // 本影帽：真实足印中心方向 + 角半径（footMinorKm 为全短轴 → 半轴/R⊕）
+  if (space.footExists && space.footMinorKm > 0) {
+    const fLen = Math.hypot(
+      space.footCenterScene[0],
+      space.footCenterScene[1],
+      space.footCenterScene[2]
+    );
+    if (fLen > 1e-9) {
+      out.umbraDir[0] = space.footCenterScene[0] / fLen;
+      out.umbraDir[1] = space.footCenterScene[1] / fLen;
+      out.umbraDir[2] = space.footCenterScene[2] / fLen;
+      out.umbraAngRad = Math.asin(
+        Math.min(1, space.footMinorKm / 2 / EARTH_MEAN_RADIUS_KM)
+      );
+      out.umbraDepth01 = space.footIsAntumbra ? ANTUMBRA_DARKEN_DEPTH : UMBRA_DARKEN_DEPTH;
+    } else {
+      out.umbraAngRad = 0;
+    }
+  } else {
+    out.umbraDir[0] = 0;
+    out.umbraDir[1] = 0;
+    out.umbraDir[2] = 0;
+    out.umbraAngRad = 0;
+    out.umbraDepth01 = UMBRA_DARKEN_DEPTH;
+  }
+  // 半影帽：帽心取影轴与地球面**前交点**（月侧穿入点——与本影足印近同向）；
+  // 轴不穿球时退化取对地心最近点方向。角半径 = 该处锥截面半径 / R⊕。
+  const ax = space.penDirScene;
+  const tip = space.penTipScene;
+  const b = tip[0] * ax[0] + tip[1] * ax[1] + tip[2] * ax[2];
+  const c = tip[0] * tip[0] + tip[1] * tip[1] + tip[2] * tip[2] - SPACE_EARTH_RADIUS_UNITS ** 2;
+  const disc = b * b - c;
+  const sPen = Math.max(0, disc >= 0 ? -b - Math.sqrt(disc) : -b);
+  const cx = tip[0] + ax[0] * sPen;
+  const cy = tip[1] + ax[1] * sPen;
+  const cz = tip[2] + ax[2] * sPen;
+  const rPen = sPen * space.penTan;
+  out.penAngRad = rPen <= 0 ? 0 : Math.asin(Math.min(1, rPen / SPACE_EARTH_RADIUS_UNITS));
+  const cLen = Math.hypot(cx, cy, cz);
+  if (cLen > 1e-9) {
+    out.penDir[0] = cx / cLen;
+    out.penDir[1] = cy / cLen;
+    out.penDir[2] = cz / cLen;
+  } else {
+    // 影轴恰过地心：帽心退化取月球方向（−背日向）
+    out.penDir[0] = -ax[0];
+    out.penDir[1] = -ax[1];
+    out.penDir[2] = -ax[2];
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// M8-5：小行星带弥散点云（艺术化档专属；A18 登记：分布示意非真实星表）
+// ---------------------------------------------------------------------------
+
+/** 主带径向域（AU；2.1–3.3 主小行星带惯用口径）与厚度 */
+export const ASTEROID_BELT_INNER_AU = 2.1;
+export const ASTEROID_BELT_OUTER_AU = 3.3;
+export const ASTEROID_BELT_THICKNESS_AU = 0.25;
+
+/** 点数与确定性种子（挂载期构建一次，1 draw call） */
+export const ASTEROID_BELT_POINT_COUNT = 3000;
+export const ASTEROID_BELT_SEED = 0xa57e11d;
+
+/** mulberry32 确定性伪随机（内部工具；种子同 → 序列同） */
+function mulberry32(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * 小行星带点云（行星层局部黄道坐标，n×3 平铺）：径向均匀 [2.1, 3.3] AU、
+ * 方位均匀、厚度 ±0.125 AU，逐点经 compressAuToUnits 压缩（与行星轨道
+ * 同一比例域）。确定性种子——两次构建逐元一致（单测锁定）。
+ */
+export function asteroidBeltLocalPoints(
+  count: number = ASTEROID_BELT_POINT_COUNT,
+  seed: number = ASTEROID_BELT_SEED
+): Float32Array {
+  if (!Number.isInteger(count) || count <= 0) {
+    throw new RangeError(`点数必须为正整数：${count}`);
+  }
+  const rand = mulberry32(seed);
+  const out = new Float32Array(count * 3);
+  for (let i = 0; i < count; i += 1) {
+    const rAu = ASTEROID_BELT_INNER_AU + rand() * (ASTEROID_BELT_OUTER_AU - ASTEROID_BELT_INNER_AU);
+    const theta = rand() * Math.PI * 2;
+    const z = (rand() - 0.5) * ASTEROID_BELT_THICKNESS_AU;
+    const x = rAu * Math.cos(theta);
+    const y = rAu * Math.sin(theta);
+    const r3 = Math.hypot(x, y, z);
+    const scale = compressAuToUnits(r3) / r3;
+    out[i * 3] = x * scale;
+    out[i * 3 + 1] = y * scale;
+    out[i * 3 + 2] = z * scale;
   }
   return out;
 }

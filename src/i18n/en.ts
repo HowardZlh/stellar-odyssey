@@ -558,6 +558,12 @@ export const en: I18nDict = {
     eclipseMoonMagnifyAria: "Toggle Moon magnification (display aid)",
     eclipseMoonMagnifyBadge:
       "Moon and shadow-cone bases shown ×4 larger (the real Moon is only 27% of Earth's diameter); the ground shadow spot keeps true geometry — turn off to restore true scale",
+    /** M8-1 body-scale segmented control (A18: artistic default = L2 look) */
+    eclipseBodyScaleAria: "Switch body-scale display mode",
+    eclipseBodyScaleArt: "Artistic",
+    eclipseBodyScaleReal: "True scale",
+    eclipseBodyScaleCard:
+      "Artistic mode: body radii are log-compressed and enlarged (not to scale — the same mapping as the main Solar-System view); the shadow cones and ground shadow spot are redrawn on the enlarged Earth, keeping true sweep position and relative size (the spot uses a circular approximation); the asteroid belt is an illustrative point cloud. Switch to True scale for real proportions.",
     /** M7-4 planet-orbit backdrop (A17: compressed distances + non-scale dots) */
     eclipsePlanetOrbitsLabel: "Planet orbits",
     eclipsePlanetOrbitsAria: "Toggle the planet-orbit backdrop",

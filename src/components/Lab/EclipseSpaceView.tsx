@@ -63,7 +63,8 @@ import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { textureUrl, normalMapUrl } from '@/data/textures';
 import { useBitmapTexture } from '@/hooks/useBitmapTexture';
-import { PLANETS } from '@/data/planets';
+import { PLANETS, SUN } from '@/data/planets';
+import type { PlanetData } from '@/types';
 import type { MessageKey } from '@/i18n';
 import type { YaleBrightStar } from '@/utils/bakedData';
 import { heliocentricPosition, sampleOrbitPoints } from '@/utils/physics';
@@ -96,9 +97,15 @@ import {
   SPACE_UNITS_PER_KM,
   UMBRA_DARKEN_DEPTH,
   UMBRA_MAGNIFY_FACTOR,
+  SPACE_ART_EARTH_SCALE,
+  SPACE_ART_MOON_SCALE,
+  artBodyRadiusUnits,
+  artShadowCap,
+  asteroidBeltLocalPoints,
   buildPathLocalUnits,
   compressAuToUnits,
-  coneRadialScale,
+  coneRadialScaleForMode,
+  emptyArtShadowCapState,
   equatorialSceneDir,
   j2000KmToGeodetic,
   j2000ToSceneVec,
@@ -106,6 +113,8 @@ import {
   narrativeOrbitBasis,
   pathSweepProgress01,
   planetLayerSceneMatrix3,
+  type ArtShadowCapState,
+  type EclipseBodyScaleMode,
   type EclipseSpaceFrameState,
   type GeodeticLatLon,
   type MutableVec3,
@@ -143,6 +152,7 @@ export interface EclipseSpaceRefs {
       inclinationDemo: boolean;
       moonMagnify: boolean;
       planetOrbits: boolean;
+      bodyScaleMode: EclipseBodyScaleMode;
     };
   };
   spaceRef: { current: EclipseSpaceFrameState };
@@ -185,6 +195,12 @@ const SPACE_EARTH_FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 uPenApex;
   uniform float uPenTan;
   uniform float uUmbraMag;
+  uniform float uArtMode;
+  uniform vec3 uUmbraCapDir;
+  uniform float uUmbraCapAng;
+  uniform float uUmbraCapDepth;
+  uniform vec3 uPenCapDir;
+  uniform float uPenCapAng;
   varying vec2 vUv;
   varying vec3 vNormalW;
   varying vec3 vPosW;
@@ -198,30 +214,50 @@ const SPACE_EARTH_FRAGMENT_SHADER = /* glsl */ `
     vec3 cloudTex = texture2D(uCloudMap, cloudUv).rgb;
     float cloud = dot(cloudTex, vec3(0.299, 0.587, 0.114)) * uHasCloudMap;
     dayColor = mix(dayColor, vec3(0.94, 0.95, 0.97), cloud * 0.85);
-    // ---- 本影/半影解析锥投影（契约 C1 真锥参数逐像素判定；边缘软化
-    //      0.92/1.12 沿 earthShadow.ts 登记口径）
     float shadow = 1.0;
-    vec3 relU = vPosW - uUmbraApex;
-    float tu = dot(relU, uShadowAxis);
-    float ru = length(relU - tu * uShadowAxis);
-    float coneRu = abs(tu) * uUmbraTan * uUmbraMag;
-    float inUmbra = 1.0 - smoothstep(
-      coneRu * ${SHADOW_EDGE_SOFT_INNER.toFixed(2)},
-      coneRu * ${SHADOW_EDGE_SOFT_OUTER.toFixed(2)},
-      ru
-    );
-    // t<0 本影体（月球侧，全食）；t>0 伪本影延长区（环食，压暗更浅）
-    float depth = tu < 0.0
-      ? ${UMBRA_DARKEN_DEPTH.toFixed(2)}
-      : ${ANTUMBRA_DARKEN_DEPTH.toFixed(2)};
-    shadow *= 1.0 - inUmbra * depth;
-    vec3 relP = vPosW - uPenApex;
-    float tp = dot(relP, uShadowAxis);
-    if (tp > 0.0) {
-      float rp = length(relP - tp * uShadowAxis);
-      float frac = rp / (tp * uPenTan);
-      float inPen = 1.0 - smoothstep(0.55, 1.0, frac);
-      shadow *= 1.0 - inPen * ${PENUMBRA_DARKEN_DEPTH.toFixed(2)};
+    if (uArtMode > 0.5) {
+      // ---- M8 艺术化档：影斑角距投影帽（半径无关映射——放大球面上位置与
+      //      相对大小仍真实；椭圆取圆形近似，A18 登记；CPU 事实源 artShadowCap，
+      //      此处只消费 uniform；边缘软化因子沿真实档同口径）
+      if (uUmbraCapAng > 0.0) {
+        float angU = acos(clamp(dot(geoN, uUmbraCapDir), -1.0, 1.0));
+        float capU = 1.0 - smoothstep(
+          uUmbraCapAng * ${SHADOW_EDGE_SOFT_INNER.toFixed(2)},
+          uUmbraCapAng * ${SHADOW_EDGE_SOFT_OUTER.toFixed(2)},
+          angU
+        );
+        shadow *= 1.0 - capU * uUmbraCapDepth;
+      }
+      if (uPenCapAng > 0.0) {
+        float angP = acos(clamp(dot(geoN, uPenCapDir), -1.0, 1.0));
+        float capP = 1.0 - smoothstep(uUmbraCapAng, uPenCapAng, angP);
+        shadow *= 1.0 - capP * ${PENUMBRA_DARKEN_DEPTH.toFixed(2)};
+      }
+    } else {
+      // ---- 真实档：本影/半影解析锥投影（契约 C1 真锥参数逐像素判定；
+      //      边缘软化 0.92/1.12 沿 earthShadow.ts 登记口径）
+      vec3 relU = vPosW - uUmbraApex;
+      float tu = dot(relU, uShadowAxis);
+      float ru = length(relU - tu * uShadowAxis);
+      float coneRu = abs(tu) * uUmbraTan * uUmbraMag;
+      float inUmbra = 1.0 - smoothstep(
+        coneRu * ${SHADOW_EDGE_SOFT_INNER.toFixed(2)},
+        coneRu * ${SHADOW_EDGE_SOFT_OUTER.toFixed(2)},
+        ru
+      );
+      // t<0 本影体（月球侧，全食）；t>0 伪本影延长区（环食，压暗更浅）
+      float depth = tu < 0.0
+        ? ${UMBRA_DARKEN_DEPTH.toFixed(2)}
+        : ${ANTUMBRA_DARKEN_DEPTH.toFixed(2)};
+      shadow *= 1.0 - inUmbra * depth;
+      vec3 relP = vPosW - uPenApex;
+      float tp = dot(relP, uShadowAxis);
+      if (tp > 0.0) {
+        float rp = length(relP - tp * uShadowAxis);
+        float frac = rp / (tp * uPenTan);
+        float inPen = 1.0 - smoothstep(0.55, 1.0, frac);
+        shadow *= 1.0 - inPen * ${PENUMBRA_DARKEN_DEPTH.toFixed(2)};
+      }
     }
     float light = 0.06 + 0.94 * day * shadow;
     vec3 color = dayColor * light;
@@ -305,6 +341,12 @@ function SpaceEarth({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
           uPenApex: { value: new THREE.Vector3(0, 0, 0) },
           uPenTan: { value: 0.0046 },
           uUmbraMag: { value: 1 },
+          uArtMode: { value: 0 },
+          uUmbraCapDir: { value: new THREE.Vector3(0, 0, 0) },
+          uUmbraCapAng: { value: 0 },
+          uUmbraCapDepth: { value: UMBRA_DARKEN_DEPTH },
+          uPenCapDir: { value: new THREE.Vector3(1, 0, 0) },
+          uPenCapAng: { value: 0 },
         },
         vertexShader: SPACE_EARTH_VERTEX_SHADER,
         fragmentShader: SPACE_EARTH_FRAGMENT_SHADER,
@@ -345,16 +387,23 @@ function SpaceEarth({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
     };
   }, [surfaceMaterial, atmosphereMaterial]);
 
-  // 姿态矩阵草稿（挂载期分配一次；每帧只写矩阵元素）
-  const scratch = useMemo(() => ({ m4: new THREE.Matrix4() }), []);
+  // 姿态矩阵/艺术化影斑帽草稿（挂载期分配一次；每帧只写矩阵/uniform）
+  const scratch = useMemo(
+    () => ({ m4: new THREE.Matrix4(), cap: emptyArtShadowCapState() }),
+    []
+  );
 
   useFrame(() => {
     const group = groupRef.current;
     const space = refs.spaceRef.current;
     if (!group) return;
+    const s = refs.settingsRef.current;
+    const art = s.bodyScaleMode === 'art';
     const m = space.earthMatrix3;
     scratch.m4.set(m[0], m[1], m[2], 0, m[3], m[4], m[5], 0, m[6], m[7], m[8], 0, 0, 0, 0, 1);
     group.setRotationFromMatrix(scratch.m4);
+    // M8 艺术化档：地球 group 统一缩放（大气壳/中心线子节点随缩放，A18）
+    group.scale.setScalar(art ? SPACE_ART_EARTH_SCALE : 1);
     const su = surfaceMaterial.uniforms;
     (su.uSunDir.value as THREE.Vector3).set(...space.sunDirScene);
     su.uCloudShiftU.value = (refs.tSecRef.current * CLOUD_DRIFT_REV_PER_SEC) % 1;
@@ -363,7 +412,17 @@ function SpaceEarth({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
     su.uUmbraTan.value = space.umbraTan;
     (su.uPenApex.value as THREE.Vector3).set(...space.penApexScene);
     su.uPenTan.value = space.penTan;
-    su.uUmbraMag.value = refs.settingsRef.current.umbraMagnify ? UMBRA_MAGNIFY_FACTOR : 1;
+    su.uUmbraMag.value = s.umbraMagnify ? UMBRA_MAGNIFY_FACTOR : 1;
+    // M8 艺术化档影斑帽（角距投影；真实档分支零改动）
+    su.uArtMode.value = art ? 1 : 0;
+    if (art) {
+      artShadowCap(space, scratch.cap);
+      (su.uUmbraCapDir.value as THREE.Vector3).set(...scratch.cap.umbraDir);
+      su.uUmbraCapAng.value = scratch.cap.umbraAngRad;
+      su.uUmbraCapDepth.value = scratch.cap.umbraDepth01;
+      (su.uPenCapDir.value as THREE.Vector3).set(...scratch.cap.penDir);
+      su.uPenCapAng.value = scratch.cap.penAngRad;
+    }
     (atmosphereMaterial.uniforms.uSunDir.value as THREE.Vector3).set(...space.sunDirScene);
   });
 
@@ -489,8 +548,15 @@ function SpaceMoon({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
     if (!mesh) return;
     const space = refs.spaceRef.current;
     mesh.position.set(...space.moonPosScene);
-    // M7-3 月球放大（A16 登记：默认开 ×4；关闭回真实比例，面板徽标常显倍率）
-    mesh.scale.setScalar(refs.settingsRef.current.moonMagnify ? MOON_MAGNIFY_FACTOR : 1);
+    // M7-3/M8 月球缩放：艺术化档对数放大（A18）；真实档 ×4 开关（A16）
+    const s = refs.settingsRef.current;
+    mesh.scale.setScalar(
+      s.bodyScaleMode === 'art'
+        ? SPACE_ART_MOON_SCALE
+        : s.moonMagnify
+          ? MOON_MAGNIFY_FACTOR
+          : 1
+    );
     // 潮汐锁定近似：贴图经度 0°（局部 +X）指向地心（无天平动，登记近似）
     scratch.toEarth.set(-space.moonPosScene[0], -space.moonPosScene[1], -space.moonPosScene[2]);
     if (scratch.toEarth.lengthSq() > 1e-9) {
@@ -529,7 +595,30 @@ const SUN_DISK_FRAGMENT_SHADER = /* glsl */ `
   }
 `;
 
-function SpaceSun({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
+/** 艺术化太阳球半径（visualBodyRadius 同源 ×150 ≈ 381 单位，A18） */
+const SUN_ART_RADIUS_UNITS = artBodyRadiusUnits(SUN.radiusKm);
+
+/** 艺术化档辉光 quad 相对真实档的缩放（核心盘半径对齐太阳球半径） */
+const SUN_ART_DISK_SCALE = SUN_ART_RADIUS_UNITS / SPACE_SUN_DISK_RADIUS_UNITS;
+
+/** 艺术化太阳球 fragment（临边渐变 + HDR 核供 Bloom 拾取；主场景 Sun 观感
+ * 轻量再现——不复用其重 shader，源文件零改动，M8-2） */
+const SUN_ART_SPHERE_FRAGMENT_SHADER = /* glsl */ `
+  varying vec3 vNormalW;
+  varying vec3 vPosW;
+  void main() {
+    vec3 n = normalize(vNormalW);
+    vec3 v = normalize(cameraPosition - vPosW);
+    float mu = clamp(dot(n, v), 0.0, 1.0);
+    vec3 core = vec3(1.0, 0.93, 0.78) * 2.6;
+    vec3 edge = vec3(1.0, 0.62, 0.28) * 1.15;
+    vec3 col = mix(edge, core, pow(mu, 0.6));
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+function SpaceSun({ refs, art }: { refs: EclipseSpaceRefs; art: boolean }): JSX.Element {
+  const groupRef = useRef<THREE.Group>(null);
   const diskRef = useRef<THREE.Mesh>(null);
   const lightRef = useRef<THREE.DirectionalLight>(null);
   const material = useMemo(
@@ -550,23 +639,33 @@ function SpaceSun({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
       }),
     []
   );
+  const sphereMaterial = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: SPACE_ATMOSPHERE_VERTEX_SHADER,
+        fragmentShader: SUN_ART_SPHERE_FRAGMENT_SHADER,
+      }),
+    []
+  );
   useEffect(() => {
     return () => {
       material.dispose();
+      sphereMaterial.dispose();
     };
-  }, [material]);
+  }, [material, sphereMaterial]);
 
   useFrame(() => {
     const space = refs.spaceRef.current;
-    const disk = diskRef.current;
-    if (disk) {
-      disk.position.set(
+    const group = groupRef.current;
+    if (group) {
+      group.position.set(
         space.sunDirScene[0] * SPACE_SUN_DISK_DISTANCE_UNITS,
         space.sunDirScene[1] * SPACE_SUN_DISK_DISTANCE_UNITS,
         space.sunDirScene[2] * SPACE_SUN_DISK_DISTANCE_UNITS
       );
-      disk.lookAt(0, 0, 0);
     }
+    const disk = diskRef.current;
+    if (disk) disk.lookAt(0, 0, 0);
     const light = lightRef.current;
     if (light) {
       light.position.set(
@@ -582,16 +681,37 @@ function SpaceSun({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
       {/* 方向光（月面/标准材质照明；地球为自定义 shader 不消费） */}
       <directionalLight ref={lightRef} intensity={2.6} color="#fff4e0" />
       <ambientLight intensity={0.06} />
-      <mesh ref={diskRef} material={material} frustumCulled={false}>
-        <planeGeometry
-          args={[
-            SPACE_SUN_DISK_RADIUS_UNITS * 2 * SUN_DISK_GLOW_EXTENT,
-            SPACE_SUN_DISK_RADIUS_UNITS * 2 * SUN_DISK_GLOW_EXTENT,
-          ]}
-        />
+      <group ref={groupRef}>
+        {/* 辉光 billboard（真实档即日盘本体；艺术化档缩放为太阳球外围光晕） */}
+        <mesh
+          ref={diskRef}
+          material={material}
+          frustumCulled={false}
+          scale={art ? SUN_ART_DISK_SCALE : 1}
+        >
+          <planeGeometry
+            args={[
+              SPACE_SUN_DISK_RADIUS_UNITS * 2 * SUN_DISK_GLOW_EXTENT,
+              SPACE_SUN_DISK_RADIUS_UNITS * 2 * SUN_DISK_GLOW_EXTENT,
+            ]}
+          />
+        </mesh>
+        {art && (
+          <>
+            {/* M8-2 艺术化太阳球 + 日心点光源（艺术化行星球标准材质照明） */}
+            <mesh material={sphereMaterial} frustumCulled={false}>
+              <sphereGeometry args={[SUN_ART_RADIUS_UNITS, 48, 24]} />
+            </mesh>
+            <pointLight intensity={2.4} decay={0} distance={0} color="#fff4e0" />
+          </>
+        )}
         {/* M7-2 常显名称标签（任意机位可循标签找到太阳；locale 经叶组件） */}
         <Html
-          position={[0, -SPACE_SUN_DISK_RADIUS_UNITS * 2.2, 0]}
+          position={[
+            0,
+            art ? -SUN_ART_RADIUS_UNITS * 1.25 : -SPACE_SUN_DISK_RADIUS_UNITS * 2.2,
+            0,
+          ]}
           center
           style={{ pointerEvents: 'none' }}
         >
@@ -599,7 +719,7 @@ function SpaceSun({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
             <LabelText k="lab.eclipseSunLabel" />
           </span>
         </Html>
-      </mesh>
+      </group>
     </>
   );
 }
@@ -686,9 +806,10 @@ function ShadowCone({
     if (!mesh) return;
     const space = refs.spaceRef.current;
     const s = refs.settingsRef.current;
-    // A4 本影放大 × A16 月球放大锥基随动（coneRadialScale 单一事实源：
-    // 双开关全关 = 1 真实比例；地表影斑 shader 不消费月球倍率——物理真值）
-    const mag = coneRadialScale(kind, s.umbraMagnify, s.moonMagnify);
+    // 档位径向倍率（coneRadialScaleForMode 单一事实源）：真实档 = A4 本影
+    // 放大 × A16 月球放大锥基随动（全关 = 1 真实比例）；艺术化档 = 锥基随
+    // 艺术化月球同倍收敛（忽略两开关，A18 差异登记）。地表影斑不消费本值。
+    const mag = coneRadialScaleForMode(kind, s.bodyScaleMode, s.umbraMagnify, s.moonMagnify);
     const tip = kind === 'umbra' ? space.umbraTipScene : space.penTipScene;
     const dir = kind === 'umbra' ? space.umbraDirScene : space.penDirScene;
     const len = kind === 'umbra' ? space.umbraLenUnits : space.penLenUnits;
@@ -1017,6 +1138,129 @@ const PLANET_POINT_FRAGMENT_SHADER = /* glsl */ `
   }
 `;
 
+/** 轨道线透明度（按档；艺术化档上调至 L2 观感，§M8-4） */
+const ORBIT_LINE_OPACITY_REAL = 0.38;
+const ORBIT_LINE_OPACITY_ART = 0.55;
+
+/**
+ * 艺术化行星球（M8-2；A18 登记：半径 visualBodyRadius 同源对数放大非真实
+ * 比例）：主场景纹理低优先级懒加载、未就绪配色球兜底；土星环按主场景 ring
+ * 参数轻量绘制（环几何在层局部黄道面，随轴倾角整体倾斜）。挂载于行星标签
+ * group 内——位置随缓存 tick 与标签同源更新，零额外位置管理。
+ */
+function ArtPlanetBody({ planet }: { planet: PlanetData }): JSX.Element {
+  const surface = useBitmapTexture(
+    textureUrl(planet.id, 'surface'),
+    SPACE_TEXTURE_PRIORITY,
+    true
+  );
+  const material = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: planet.color,
+        roughness: 0.9,
+        metalness: 0,
+      }),
+    [planet]
+  );
+  useEffect(() => {
+    material.map = surface;
+    material.color.set(surface ? '#ffffff' : planet.color);
+    material.needsUpdate = true;
+  }, [material, surface, planet]);
+  const ringMaterial = useMemo(
+    () =>
+      planet.ring
+        ? new THREE.MeshBasicMaterial({
+            color: planet.ring.color,
+            transparent: true,
+            opacity: 0.7,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          })
+        : null,
+    [planet]
+  );
+  useEffect(() => {
+    return () => {
+      material.dispose();
+      ringMaterial?.dispose();
+    };
+  }, [material, ringMaterial]);
+
+  const radius = artBodyRadiusUnits(planet.radiusKm);
+  // 轴倾角整体倾斜（层局部黄道系 z 为北黄极；环面天然在 x-y 黄道面）
+  const tiltRad = planet.rotation.axialTiltDeg * DEG;
+  return (
+    <group rotation={[tiltRad, 0, 0]}>
+      <mesh material={material} frustumCulled={false}>
+        <sphereGeometry args={[radius, 48, 24]} />
+      </mesh>
+      {planet.ring && ringMaterial && (
+        <mesh material={ringMaterial} frustumCulled={false}>
+          <ringGeometry
+            args={[
+              radius * (planet.ring.innerRadiusKm / planet.radiusKm),
+              radius * (planet.ring.outerRadiusKm / planet.radiusKm),
+              64,
+            ]}
+          />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+const BELT_POINT_VERTEX_SHADER = /* glsl */ `
+  uniform float uPx;
+  void main() {
+    gl_PointSize = uPx;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const BELT_POINT_FRAGMENT_SHADER = /* glsl */ `
+  uniform vec3 uColor;
+  void main() {
+    float d = length(gl_PointCoord - vec2(0.5));
+    float alpha = (1.0 - smoothstep(0.2, 0.5, d)) * 0.55;
+    if (alpha < 0.02) discard;
+    gl_FragColor = vec4(uColor * alpha, alpha);
+  }
+`;
+
+/**
+ * 小行星带弥散点云（M8-5；A18 登记：分布示意非真实星表）：确定性种子
+ * 挂载期构建一次，1 draw call；层局部黄道坐标随行星层 group 姿态。
+ */
+function AsteroidBelt(): JSX.Element {
+  const { geometry, material, points } = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(asteroidBeltLocalPoints(), 3));
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uPx: { value: 2 },
+        uColor: { value: new THREE.Color('#cfc4a2') },
+      },
+      vertexShader: BELT_POINT_VERTEX_SHADER,
+      fragmentShader: BELT_POINT_FRAGMENT_SHADER,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const obj = new THREE.Points(geo, mat);
+    obj.frustumCulled = false;
+    return { geometry: geo, material: mat, points: obj };
+  }, []);
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+      material.dispose();
+    };
+  }, [geometry, material]);
+  return <primitive object={points} />;
+}
+
 /** 黄道 AU 位置 → 层局部坐标（compressAuToUnits 径向压缩，方向保持） */
 function compressEclPoint(
   x: number,
@@ -1046,7 +1290,17 @@ function compressEclPoint(
  * - 层姿态：planetLayerSceneMatrix3 对齐矩阵 + 日心锚位（太阳日盘同源
  *   sunDirScene；地球轨道层位置与场景原点重合，残差 <1 单位单测锁定）。
  */
-function PlanetOrbitLayer({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
+function PlanetOrbitLayer({
+  refs,
+  art,
+  belt,
+}: {
+  refs: EclipseSpaceRefs;
+  /** M8 艺术化档（行星点 → 艺术化球体、轨道线透明度上调） */
+  art: boolean;
+  /** M8-5 小行星带（艺术化档专属；reduced 档由父级关闭） */
+  belt: boolean;
+}): JSX.Element {
   const groupRef = useRef<THREE.Group>(null);
   const labelRefs = useRef<(THREE.Group | null)[]>([]);
 
@@ -1096,7 +1350,7 @@ function PlanetOrbitLayer({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
     const lineMat = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: 0.38,
+      opacity: ORBIT_LINE_OPACITY_REAL,
       depthWrite: false,
     });
     const pointMat = new THREE.ShaderMaterial({
@@ -1123,6 +1377,13 @@ function PlanetOrbitLayer({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
       pointMaterial.dispose();
     };
   }, [orbitGeometry, pointsGeometry, lineMaterial, pointMaterial]);
+
+  // M8 档位观感：轨道线透明度上调 + 行星合批点仅真实档可见（艺术化档由
+  // ArtPlanetBody 球体接管；档切换为交互事件路径，非渲染循环）
+  useEffect(() => {
+    lineMaterial.opacity = art ? ORBIT_LINE_OPACITY_ART : ORBIT_LINE_OPACITY_REAL;
+    points.visible = !art;
+  }, [lineMaterial, points, art]);
 
   const scratch = useMemo(
     () => ({
@@ -1174,6 +1435,7 @@ function PlanetOrbitLayer({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
     <group ref={groupRef}>
       <primitive object={lines} />
       <primitive object={points} />
+      {art && belt && <AsteroidBelt />}
       {LAYER_PLANETS.map((planet, i) => (
         <group
           key={planet.id}
@@ -1181,6 +1443,7 @@ function PlanetOrbitLayer({ refs }: { refs: EclipseSpaceRefs }): JSX.Element {
             labelRefs.current[i] = node;
           }}
         >
+          {art && <ArtPlanetBody planet={planet} />}
           <Html center style={{ pointerEvents: 'none' }}>
             <span className="whitespace-nowrap rounded bg-black/50 px-1.5 py-0.5 text-[10px] text-sky-100/80 backdrop-blur">
               <LabelText k={PLANET_LABEL_KEYS[planet.id]} />
@@ -1208,9 +1471,13 @@ export interface EclipseSpaceViewProps {
   starPointMaxPx: number;
   /** M7-1 银河带（reduced 档随 labQualityParams 关闭，A15） */
   milkyWay: boolean;
+  /** M8-1 天体比例档（真实 = M7 形态 / 艺术化 = L2 观感，默认艺术化，A18） */
+  bodyScaleMode: EclipseBodyScaleMode;
+  /** M8-5 小行星带（艺术化档专属；reduced 档由父级关闭） */
+  asteroidBelt: boolean;
 }
 
-/** 太空视角场景组（§M4 + §M7；挂载于 SolarEclipseLab 的 viewMode==='space' 分支） */
+/** 太空视角场景组（§M4 + §M7 + §M8；挂载于 SolarEclipseLab 的 viewMode==='space' 分支） */
 export function EclipseSpaceView({
   refs,
   inclinationDemo,
@@ -1218,16 +1485,19 @@ export function EclipseSpaceView({
   stars,
   starPointMaxPx,
   milkyWay,
+  bodyScaleMode,
+  asteroidBelt,
 }: EclipseSpaceViewProps): JSX.Element {
+  const art = bodyScaleMode === 'art';
   return (
     <>
       {stars && <SpaceStarDome stars={stars} starPointMaxPx={starPointMaxPx} />}
       {milkyWay && <MilkyWayBand />}
       <SpaceEarth refs={refs} />
       <SpaceMoon refs={refs} />
-      <SpaceSun refs={refs} />
+      <SpaceSun refs={refs} art={art} />
       <ShadowCones refs={refs} />
-      {planetOrbits && <PlanetOrbitLayer refs={refs} />}
+      {planetOrbits && <PlanetOrbitLayer refs={refs} art={art} belt={art && asteroidBelt} />}
       {inclinationDemo && <MoonOrbitRing refs={refs} />}
     </>
   );

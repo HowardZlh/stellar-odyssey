@@ -623,6 +623,12 @@ export const zh = {
     eclipseMoonMagnifyAria: "开关月球放大（显示辅助）",
     eclipseMoonMagnifyBadge:
       "月球与影锥基部已按 ×4 放大显示（真实月球直径仅为地球的 27%）；地表影斑仍为真实几何，关闭即回真实比例",
+    /** M8-1 天体比例分段（A18 登记：默认艺术化 = L2 观感；真实 = M7 形态） */
+    eclipseBodyScaleAria: "切换天体比例显示档",
+    eclipseBodyScaleArt: "艺术化",
+    eclipseBodyScaleReal: "真实",
+    eclipseBodyScaleCard:
+      "艺术化档：天体半径按对数压缩放大（非真实比例，与主场景太阳系视角同一映射）；影锥与地表影斑随放大地球重绘——扫掠位置与相对大小仍真实，影斑取圆形近似；小行星带为示意点云。切「真实」档回到真实比例。",
     /** M7-4 行星轨道远景层（A17 登记：距离压缩与非真实行星尺寸科普卡常显） */
     eclipsePlanetOrbitsLabel: "行星轨道",
     eclipsePlanetOrbitsAria: "开关行星轨道远景层",

@@ -175,6 +175,9 @@ import {
   MOON_ORBIT_INCLINATION_DEG,
   INCLINATION_DISPLAY_FACTOR,
   NARRATIVE_ORBIT_RADIUS_KM,
+  SPACE_ART_CAMERA_RADIUS_MIN_UNITS,
+  SPACE_ART_INTRO_END_RADIUS_UNITS,
+  SPACE_ART_INTRO_START_RADIUS_UNITS,
   SPACE_CAMERA_FAR_UNITS,
   SPACE_CAMERA_NEAR_UNITS,
   SPACE_CAMERA_RADIUS_MAX_UNITS,
@@ -479,7 +482,15 @@ function EclipseViewIntroRig({
     const t01 = Math.min(1, elapsedRef.current / VIEW_TRANSITION_SEC);
     const pc = camera as THREE.PerspectiveCamera;
     if (refs.settingsRef.current.viewMode === "space") {
-      spaceIntroPose(refs.spaceRef.current.sunDirScene, t01, scratch.pose);
+      // M8：艺术化档运镜终点外移（地球半径 ~93 单位，机位不入球）
+      const art = refs.settingsRef.current.bodyScaleMode === "art";
+      spaceIntroPose(
+        refs.spaceRef.current.sunDirScene,
+        t01,
+        scratch.pose,
+        art ? SPACE_ART_INTRO_END_RADIUS_UNITS : undefined,
+        art ? SPACE_ART_INTRO_START_RADIUS_UNITS : undefined,
+      );
       pc.position.set(
         scratch.pose.pos[0],
         scratch.pose.pos[1],
@@ -1717,6 +1728,7 @@ function defaultEclipseSettings(): EclipseM3Settings {
     deflectionDemo: false,
     moonMagnify: true,
     planetOrbits: true,
+    bodyScaleMode: "art",
   };
 }
 
@@ -2106,6 +2118,8 @@ function EclipseExperience({
             stars={stars}
             starPointMaxPx={quality.starPointMaxPx}
             milkyWay={quality.bloomEnabled}
+            bodyScaleMode={settings.bodyScaleMode}
+            asteroidBelt={quality.bloomEnabled}
           />
         )}
         {/* 相机控制器（运镜期卸载防争抢；结束后从当前位姿接管——流星雨
@@ -2129,7 +2143,11 @@ function EclipseExperience({
             <OrbitControls
               key="space"
               target={[0, 0, 0]}
-              minDistance={SPACE_CAMERA_RADIUS_MIN_UNITS}
+              minDistance={
+                settings.bodyScaleMode === "art"
+                  ? SPACE_ART_CAMERA_RADIUS_MIN_UNITS
+                  : SPACE_CAMERA_RADIUS_MIN_UNITS
+              }
               maxDistance={SPACE_CAMERA_RADIUS_MAX_UNITS}
               enablePan={false}
               enableZoom

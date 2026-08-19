@@ -28,7 +28,10 @@ import {
   type EclipsePhaseCardKey,
   type EclipsePlayMode,
 } from "@/utils/solarEclipseLab";
-import type { EclipseViewMode } from "@/utils/solarEclipseSpace";
+import type {
+  EclipseBodyScaleMode,
+  EclipseViewMode,
+} from "@/utils/solarEclipseSpace";
 
 /** M3+M4 控件状态（父级 React state；渲染期同步 settingsRef 供 useFrame 读） */
 export interface EclipseM3Settings {
@@ -54,6 +57,8 @@ export interface EclipseM3Settings {
   moonMagnify: boolean;
   /** 行星轨道远景层（M7-4；A17 登记：**默认开**，距离压缩艺术化科普卡常显） */
   planetOrbits: boolean;
+  /** 天体比例档（M8-1；A18 登记：**默认艺术化** = L2 观感；真实档 = M7 形态） */
+  bodyScaleMode: EclipseBodyScaleMode;
   /** 星光偏折对照（M5-2；A10 登记：偏折夸张显示，HUD 标真实角秒值与倍率） */
   deflectionDemo: boolean;
 }
@@ -169,8 +174,29 @@ export function EclipseControlPanel({
       />
       {settings.viewMode === "space" && (
         <>
+          {/* M8-1 天体比例分段（A18：默认艺术化 = L2 观感；真实 = M7 形态） */}
+          <div className="mt-1">
+            <Segmented
+              ariaLabel={tr("lab.eclipseBodyScaleAria")}
+              options={[
+                { id: "art", label: tr("lab.eclipseBodyScaleArt") },
+                { id: "real", label: tr("lab.eclipseBodyScaleReal") },
+              ]}
+              value={settings.bodyScaleMode}
+              onSelect={(id) =>
+                onChange({ bodyScaleMode: id as EclipseBodyScaleMode })
+              }
+            />
+          </div>
+          {settings.bodyScaleMode === "art" && (
+            <p className="mt-1 rounded bg-white/5 px-2 py-1 text-[10px] leading-snug text-gray-400">
+              {tr("lab.eclipseBodyScaleCard")}
+            </p>
+          )}
           {/* M7-3 月球放大（A16：默认开；徽标常显倍率）+ 本影放大（A4：
-              默认关 = 真实比例；标签含倍率） */}
+              默认关 = 真实比例；标签含倍率）——仅真实档显示（艺术化档整体
+              放大接管，两开关隐藏防叠加混淆，A18 差异登记） */}
+          {settings.bodyScaleMode === "real" && (
           <div className="mt-1 flex gap-1">
             <button
               aria-label={tr("lab.eclipseMoonMagnifyAria")}
@@ -199,6 +225,7 @@ export function EclipseControlPanel({
               {settings.umbraMagnify ? "ON" : "OFF"}
             </button>
           </div>
+          )}
           {/* M7-4 行星轨道远景层（A17：默认开）+ 倾角叙事模式（A5） */}
           <div className="mt-1 flex gap-1">
             <button
@@ -230,12 +257,12 @@ export function EclipseControlPanel({
               {settings.inclinationDemo ? "ON" : "OFF"}
             </button>
           </div>
-          {settings.moonMagnify && (
+          {settings.bodyScaleMode === "real" && settings.moonMagnify && (
             <p className="mt-1 rounded bg-amber-950/40 px-2 py-1 text-[10px] leading-snug text-amber-200/90">
               {tr("lab.eclipseMoonMagnifyBadge")}
             </p>
           )}
-          {settings.umbraMagnify && (
+          {settings.bodyScaleMode === "real" && settings.umbraMagnify && (
             <p className="mt-1 rounded bg-amber-950/40 px-2 py-1 text-[10px] leading-snug text-amber-200/90">
               {tr("lab.eclipseUmbraMagnifyBadge")}
             </p>
