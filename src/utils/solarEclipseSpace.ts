@@ -721,12 +721,20 @@ export function narrativeMoonPosKm(
 // 相机与视角切换（§M4-3；C4 太空档相机域 + 1–2s 插值运镜姿态）
 // ---------------------------------------------------------------------------
 
-/** 太空档相机近/远平面（场景单位；近 0.5 = 500 km——深度分辨率登记见组件） */
+/**
+ * 太空档相机近/远平面（场景单位；近 0.5 = 500 km——深度分辨率登记见组件）。
+ * far 约束（M8 补丁 P5，回归防守单测锁定）：**far ≥ 相机最大半径 + 星穹壳
+ * 半径**——否则反相机方向的银河带/星穹/远侧轨道线被远平面裁剪，在天空上
+ * 切出随缩放增大的圆形黑洞（M8 目验一手定位：3800 + 4500 > 原 5000 即此
+ * bug）。9000 = 3800 + 4500 + 余量；近平面 0.5 不变——透视深度精度由近
+ * 平面主导（1/near − 1/far 变化 <0.01%），M4 登记的大气壳 z-fighting
+ * 口径不受影响。
+ */
 export const SPACE_CAMERA_NEAR_UNITS = 0.5;
-export const SPACE_CAMERA_FAR_UNITS = 5000;
+export const SPACE_CAMERA_FAR_UNITS = 9000;
 
 /** 太空档轨道相机半径域（场景单位；§2.2 原 8–600，§M8-4 上限放宽至 3,800——
- * 两档通用，可退到看全八行星轨道全景；星穹 4,500/far 5,000 仍在外） */
+ * 两档通用，可退到看全八行星轨道全景；星穹 4,500/far 9,000 仍在外） */
 export const SPACE_CAMERA_RADIUS_MIN_UNITS = 8;
 export const SPACE_CAMERA_RADIUS_MAX_UNITS = 3800;
 
@@ -835,7 +843,7 @@ export type EclipseViewMode = 'ground' | 'space';
 
 /**
  * 太空档星穹壳半径（场景单位）：> 行星层最远压缩半径（海王星 <4,300）、
- * < 相机 far（5,000）——星空永远在行星轨道层之外（M7-1）。
+ * < 相机 far（9,000，且 far ≥ 相机最大半径 + 星穹——见 far 约束登记）——星空永远在行星轨道层之外（M7-1）。
  */
 export const SPACE_STAR_DOME_RADIUS_UNITS = 4500;
 
@@ -905,7 +913,7 @@ export const SPACE_PLANET_LOG_UNITS = 1800;
  * 日心距（AU）→ 行星层场景半径（A17 登记：距离压缩艺术化）：
  * r ≤ 1 AU 线性 1,500 单位/AU；r > 1 AU 对数压缩（主场景 L4
  * cosmicDistanceToSceneUnits 同手法）——海王星 30.07 AU → ~4,160 单位
- * < 星穹 4,500 < far 5,000（八大行星全量同框，单测域锚点）。
+ * < 星穹 4,500（八大行星全量同框，单测域锚点）。
  * 1 AU 处连续（log10(1)=0），斜率不连续登记为已知形变。
  */
 export function compressAuToUnits(rAu: number): number {

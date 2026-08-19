@@ -26,9 +26,11 @@ import {
   SPACE_ART_OVERVIEW_ALT_RAD,
   SPACE_ART_RADIUS_FACTOR,
   SPACE_AU_LINEAR_UNITS,
+  SPACE_CAMERA_FAR_UNITS,
   SPACE_CAMERA_RADIUS_MAX_UNITS,
   SPACE_EARTH_RADIUS_UNITS,
   SPACE_MILKY_WAY_RADIUS_UNITS,
+  SPACE_STAR_DOME_RADIUS_UNITS,
   SPACE_UNITS_PER_KM,
   UMBRA_DARKEN_DEPTH,
   UMBRA_MAGNIFY_FACTOR,
@@ -203,6 +205,14 @@ describe('艺术化档相机域与运镜（§M8-4）', () => {
     expect(SPACE_CAMERA_RADIUS_MAX_UNITS).toBeLessThan(SPACE_MILKY_WAY_RADIUS_UNITS);
     expect(SPACE_ART_INTRO_END_RADIUS_UNITS).toBeGreaterThan(SPACE_ART_CAMERA_RADIUS_MIN_UNITS);
     expect(SPACE_ART_INTRO_END_RADIUS_UNITS).toBeLessThan(SPACE_CAMERA_RADIUS_MAX_UNITS);
+  });
+
+  it('P5 远平面不裁星穹：far ≥ 相机最大半径 + 星穹壳半径（黑洞裁剪回归防守）', () => {
+    // 反相机方向的星穹/银河带面距离 = 相机半径 + 壳半径——超过 far 即被
+    // 远平面裁出以视线为中心、随缩放增大的圆形黑洞（M8 补丁 P5 一手定位）
+    expect(SPACE_CAMERA_RADIUS_MAX_UNITS + SPACE_STAR_DOME_RADIUS_UNITS).toBeLessThanOrEqual(
+      SPACE_CAMERA_FAR_UNITS
+    );
   });
 
   it('spaceIntroPose 收自定义起止半径（艺术化档运镜）', () => {
