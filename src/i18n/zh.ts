@@ -869,6 +869,32 @@ export const zh = {
     lunarHalfSarosCard:
       "半沙罗（sar）配对：一次日食之后约 9 年 5.5 天，会发生一次性质对应的月食（反之亦然）——日全食或日环食之后 9 年 5.5 天，会有一次月全食。两者是同一套日月地几何的镜像，这也是把日食与月食两个实验室连在一起的真实周期。",
     lunarLinkToSolar: "→ 去日食实验室看这套几何的另一面",
+    /** LE-M5 月球视角（§2.3；B8 登记的用户可见侧在 lunarMoonViewCard） */
+    lunarViewMoon: "月球",
+    lunarHintMoonView:
+      "拖动环顾月面与地球 · 双指捏合缩放——地球边缘那圈红环，就是把月亮染红的光",
+    lunarMoonViewCard:
+      "你正站在月面近地侧看「月球上的日食」：太阳藏进地球背后，夜半球的地球漆黑一片，只剩边缘一圈被大气折射的红环——这圈光穿过地球大气、滤掉短波后打到你脚下的月面，正是血月红色的来源。拖动浑浊度滑杆：红环变深，切回地面视角血月同步变深。红环为基于机制的艺术化再现（环宽经放大以可见，无逐日大气实况数据）；实拍对标：Surveyor 3（1967）与 Blue Ghost Mission 1（2025）均在月面拍到过这圈红环。",
+    lunarMoonGuideTip:
+      "血月的红色从哪来？切到「月球」视角——站上月面，你会看到把月亮染红的那圈地球大气红环。",
+    lunarMoonGuideGo: "去月球视角",
+    lunarMoonGuideDismissAria: "关闭引导提示",
+    /** LE-M5-3 selenelion 彩蛋（B9 登记：真实组合 l1992 北京 + 0.6° 折射抬升显式呈现） */
+    lunarSelenelionCard:
+      "Selenelion（月食日出同现）：被食的月亮与太阳同时挂在两侧地平线上——几何上月食时日月正好相对，全靠大气折射把两者都「抬」出地平线才可能同框。这不是假想：1992-12-10 清晨的北京（本页这场月食），西北方全食血月正在沉落、东南方太阳正在升起。",
+    lunarSelenelionEnter: "🌄 亲眼看看 →",
+    lunarSelenelionTitle: "Selenelion · 1992-12-10 北京晨",
+    lunarSelenelionExit: "← 返回月食实验室",
+    lunarSelenelionTimeAria: "selenelion 时间（UT 1992-12-09 23:10–23:45）",
+    lunarSelenelionHudMoon: "月亮高度（几何→视）",
+    lunarSelenelionHudSun: "太阳高度（几何→视）",
+    lunarSelenelionHudLift: "折射抬升",
+    lunarSelenelionAimMoon: "看被食之月（西北）",
+    lunarSelenelionAimSun: "看初升太阳（东南）",
+    lunarSelenelionRefractionCard:
+      "大气折射把地平附近的天体抬升约 0.6°（真实量级：地平处约 34′）——虚圈标记无折射的几何位置。拖到 07:27（UT 23:27）前后：月亮与太阳的几何位置都已在地平线下，你却能同时看见两者——这就是 selenelion 只能发生在地平线上的原因。全食中的月亮在晨光里极暗（1992 年实测丹戎 L=0），拉高曝光滑杆可辅助辨认。本场景折射抬升为教学简化曲线（地平恒定 0.6°、10° 高度收敛归零）。",
+    lunarSelenelionHint:
+      "西北方：正在沉落的被食之月 · 东南方：正在升起的太阳——拖动环顾双地平线",
   },
   helpHint: {
     /**

@@ -774,6 +774,32 @@ export const en: I18nDict = {
     lunarHalfSarosCard:
       "The half-saros (sar) pairing: about 9 years 5.5 days after a solar eclipse comes a lunar eclipse of corresponding character (and vice versa) — a total or annular solar eclipse is followed, 9 years 5.5 days later, by a total lunar eclipse. They are mirror images of the same Sun–Earth–Moon geometry, the real cycle that links these two labs.",
     lunarLinkToSolar: "→ Visit the solar eclipse lab for the other half of this geometry",
+    /** LE-M5 Moon view (§2.3; B8 registration surfaces in lunarMoonViewCard) */
+    lunarViewMoon: "Moon",
+    lunarHintMoonView:
+      "Drag to look around the regolith and Earth · pinch to zoom — that red ring on Earth's limb is the light that paints the Moon red",
+    lunarMoonViewCard:
+      "You are standing on the Moon's near side watching a solar eclipse by Earth: the Sun hides behind Earth, the night hemisphere goes pitch black, and only a ring of sunlight refracted through the atmosphere remains — the very light that crosses Earth's air, loses its short wavelengths, and lands at your feet: the source of the blood moon's red. Drag the turbidity slider: the ring deepens, and back in the ground view the blood moon deepens in sync. The ring is a mechanism-faithful artistic rendition (its width is exaggerated for visibility; no day-specific atmospheric data). Real-photo references: Surveyor 3 (1967) and Blue Ghost Mission 1 (2025) both captured this ring from the lunar surface.",
+    lunarMoonGuideTip:
+      "Where does the blood moon's red come from? Switch to the Moon view — standing on the lunar surface you'll see the ring of Earth's atmosphere that paints the Moon red.",
+    lunarMoonGuideGo: "Go to Moon view",
+    lunarMoonGuideDismissAria: "Dismiss the tip",
+    /** LE-M5-3 selenelion easter egg (B9: real combination, Beijing 1992 + explicit 0.6° refraction lift) */
+    lunarSelenelionCard:
+      "Selenelion — the eclipsed Moon and the Sun visible at once on opposite horizons. Geometrically they sit exactly opposite during a lunar eclipse, so only atmospheric refraction lifting both above the horizon makes the pairing possible. Not a thought experiment: on the morning of 1992-12-10 in Beijing (this very eclipse), the totally eclipsed Moon was setting in the northwest while the Sun rose in the southeast.",
+    lunarSelenelionEnter: "🌄 See it yourself →",
+    lunarSelenelionTitle: "Selenelion · Beijing dawn, 1992-12-10",
+    lunarSelenelionExit: "← Back to the lunar eclipse lab",
+    lunarSelenelionTimeAria: "Selenelion time (UT 1992-12-09 23:10–23:45)",
+    lunarSelenelionHudMoon: "Moon alt (geometric→apparent)",
+    lunarSelenelionHudSun: "Sun alt (geometric→apparent)",
+    lunarSelenelionHudLift: "Refraction lift",
+    lunarSelenelionAimMoon: "Eclipsed Moon (NW)",
+    lunarSelenelionAimSun: "Rising Sun (SE)",
+    lunarSelenelionRefractionCard:
+      "Atmospheric refraction lifts objects near the horizon by about 0.6° (true magnitude: ~34′ at the horizon) — the dashed circles mark the un-refracted geometric positions. Scrub to around UT 23:27: both the Moon and the Sun are geometrically below the horizon, yet you can see both at once — which is why a selenelion can only happen right at the horizon. The totally eclipsed Moon is extremely faint in dawn light (Danjon L=0 as actually rated in 1992); raise the exposure slider to spot it. The refraction lift here is a teaching simplification (constant 0.6° at the horizon, tapering to zero at 10° altitude).",
+    lunarSelenelionHint:
+      "Northwest: the eclipsed Moon setting · Southeast: the Sun rising — drag to sweep between the two horizons",
   },
   helpHint: {
     controls:

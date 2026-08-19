@@ -39,7 +39,13 @@
 
 import type { MessageKey } from '@/i18n';
 import type { LunarEclipseContacts } from '@/utils/bakedData';
-import { interpolateEphemeris, type EphemerisSeries } from '@/utils/solarEclipse';
+import {
+  MOON_MEAN_RADIUS_KM,
+  SUN_RADIUS_KM,
+  interpolateEphemeris,
+  type EphemerisSeries,
+} from '@/utils/solarEclipse';
+import { horizontalFromEquatorial } from '@/utils/meteorShower';
 import {
   TIMELINE_PAD_SEC,
   lstRadFromUnixSec,
@@ -49,6 +55,7 @@ import {
 import {
   EARTH_EQUATORIAL_RADIUS_KM,
   NO_ECLIPSE_MAGNITUDE,
+  earthRingColor,
   lunarEclipseKind,
   oppositionSurgeFactor,
   penumbralMagnitude,
@@ -218,6 +225,10 @@ export interface LunarFrameState {
   moonBrightness01: number;
   /** 有效极限星等（晨昏蒙影 × 月光压制；星穹剔除阈值） */
   limitingMag: number;
+  /** 月球地心距离（km；M5 月球视角地球视半径输入） */
+  moonDistKm: number;
+  /** 日地距离（km；M5 月球视角太阳视半径输入） */
+  sunDistKm: number;
 }
 
 /** 空帧状态（挂载期分配一次，useFrame 复用零 GC） */
@@ -236,6 +247,8 @@ export function emptyLunarFrameState(): LunarFrameState {
     penumbraRadRad: 0,
     moonBrightness01: 1,
     limitingMag: 2.5,
+    moonDistKm: 384400,
+    sunDistKm: 1.496e8,
   };
 }
 
@@ -278,6 +291,8 @@ export function lunarFrameState(
   const moonLen = Math.hypot(g[4], g[5], g[6]);
   const sunDistKm = g[3];
   const moonDistKm = g[7];
+  out.moonDistKm = moonDistKm;
+  out.sunDistKm = sunDistKm;
   const sunPos: [number, number, number] = [
     (g[0] / sunLen) * sunDistKm,
     (g[1] / sunLen) * sunDistKm,
@@ -613,3 +628,284 @@ export const LUNAR_QUAD_HALF_ANGLE_RAD = 0.5 * DEG;
 
 /** 月面基准亮度增益（满月盘面观感基准；HDR 前线性域，M3 曝光滑杆接管） */
 export const LUNAR_MOON_BASE_GAIN = 1.15;
+
+// ---------------------------------------------------------------------------
+// M5-1 月球视角（§2.3 契约 C3 月球视角段；B8 登记）：站上月面看「月球上的
+// 日食」——漆黑地球盘 + 大气红环壳 + 太阳被地球遮蔽。红环色相/亮度经契约
+// C1 earthRingColor(turbidity) 驱动——与血月着色同一浑浊度状态源（因果闭环
+// 的实现层保证，禁双滑杆）。
+// ---------------------------------------------------------------------------
+
+/**
+ * 地球在月面天空的固定高度/方位（度；封面构图：地球低垂于月壤山脊上方）。
+ * 物理口径：地球在月面天空的位置由观测点月面经纬决定（近地侧恒可见、
+ * 近月缘区地球低垂）——取近月缘观测点使前景月壤与地球同框，属观测点
+ * 选址自由度而非艺术化偏差。
+ */
+export const MOON_VIEW_EARTH_ALT_DEG = 9;
+export const MOON_VIEW_EARTH_AZ_DEG = 0;
+
+/** 月球视角运镜终点 FOV（度；地球盘 ~1.9° 的封面级构图） */
+export const MOON_VIEW_INTRO_FOV_DEG = 14;
+
+/**
+ * 地球 quad 半角（弧度）：地球视半径 ~0.95° + 红环 + 半影全窗内太阳视位置
+ * 漫游域（|shadowOff| ≤ ~1.6°）+ 盘缘软化裕量。
+ */
+export const MOON_VIEW_QUAD_HALF_ANGLE_RAD = 2.2 * DEG;
+
+/**
+ * 红环显示厚度（× 地球视半径）：真实大气不透明层 ~75 km 仅为地球半径的
+ * ~1.2%（视角上亚像素），放大至 7% 为可见环——B8 登记「机制正确的艺术化
+ * 再现」的量化侧（对标 Surveyor 3 (1967) / Blue Ghost Mission 1 (2025)
+ * 实拍中的过曝亮环观感）。
+ */
+export const EARTH_RING_WIDTH_FRAC = 0.07;
+
+/** 红环亮度增益（直射折射光远亮于月面反照；HDR 前线性域，Bloom 承接） */
+export const MOON_VIEW_RING_GAIN = 2.6;
+
+/** 太阳盘 HDR 增益（部分露出时的炫目直射；Bloom 阈值 0.6 以上触发辉光） */
+export const MOON_VIEW_SUN_GAIN = 8;
+
+/** 月面直射照明的感知压缩指数（moonBrightness01^γ → 月壤灰/红环红混合权重） */
+export const MOON_SURFACE_DIRECT_GAMMA = 0.35;
+
+/** 月壤直射照明基色（线性 RGB；月面平均反照的中性灰，微暖） */
+export const MOON_SURFACE_SUNLIT_RGB: readonly [number, number, number] = [0.5, 0.49, 0.47];
+
+/** 月壤红光照明增益（全食段月面被红环折射光照亮的观感量级） */
+export const MOON_SURFACE_RING_GAIN = 0.55;
+
+/** 月球视角逐帧状态（lunarMoonViewState 输出；out 复用零 GC） */
+export interface LunarMoonViewState {
+  /** 地球视半径（弧度，从月面看 ≈0.95°） */
+  earthRadRad: number;
+  /** 太阳视半径（弧度，从月面看 ≈0.26°——与地面所见同量级） */
+  sunRadRad: number;
+  /** 太阳相对地心视偏移·东向（弧度；滚转自由度登记见函数注释） */
+  sunOffEastRad: number;
+  /** 太阳相对地心视偏移·高度向（弧度） */
+  sunOffUpRad: number;
+  /** 太阳可见比例（0 = 全隐于地球后（全食段），1 = 完全露出；线性弦近似） */
+  sunVisibleFrac01: number;
+  /** 红环色（契约 C1 earthRingColor——与血月同一浑浊度状态源） */
+  ringRgb: [number, number, number];
+  /** 月面环境光色（直射灰 × 亮度感知权重 + 红环红 × 余量——月壤前景/地面共用） */
+  surfaceRgb: [number, number, number];
+}
+
+/** 空月球视角状态（挂载期分配一次） */
+export function emptyLunarMoonViewState(): LunarMoonViewState {
+  return {
+    earthRadRad: 0.0166,
+    sunRadRad: 0.00465,
+    sunOffEastRad: 0,
+    sunOffUpRad: 0,
+    sunVisibleFrac01: 1,
+    ringRgb: [0, 0, 0],
+    surfaceRgb: [0, 0, 0],
+  };
+}
+
+/**
+ * 月球视角逐帧状态（M5-1；tSec 单值可重建——全部量由 LunarFrameState 派生）：
+ * - 地球/太阳视半径：asin(R/d)（frame 的 moonDistKm/sunDistKm 真值）；
+ * - 太阳视偏移：与地面所见影盘偏移互为镜像——3D 小角推导：太阳自月面看
+ *   相对地心方向的偏移 = +p/a（p = 月心到影轴垂距矢量），地面所见影盘
+ *   偏移 = −p/a；对望视线下屏幕东向反号 → (E, U)_月 = (offE, −offU)。
+ *   月面天空的「上」为相机滚转自由度（月面观测者无地平系），取地面地平
+ *   系的连续映射保证入影/出影侧时序正确（B8 登记范围内）；
+ * - 太阳可见比例：线性弦近似 clamp((sep − (R⊕ − R☉)) / 2R☉)——全食段 0
+ *   （太阳全隐，纯红环）、偏食段部分露出（炫目直射 + 红环减淡）；
+ * - 红环色/月面环境色：earthRingColor(turbidity) 同源驱动（因果闭环）。
+ *
+ * @param frame 地面视角逐帧状态（lunarFrameState 输出）
+ * @param turbidity01 大气浑浊度（0–1；与丹戎 L/血月同一控件状态源）
+ * @param out 复用输出（渲染循环零 GC）
+ */
+export function lunarMoonViewState(
+  frame: LunarFrameState,
+  turbidity01: number,
+  out: LunarMoonViewState = emptyLunarMoonViewState()
+): LunarMoonViewState {
+  if (!Number.isFinite(turbidity01)) {
+    throw new RangeError(`turbidity01 必须为有限数，收到 ${turbidity01}`);
+  }
+  if (!(frame.moonDistKm > EARTH_EQUATORIAL_RADIUS_KM) || !(frame.sunDistKm > SUN_RADIUS_KM)) {
+    throw new RangeError(
+      `距离非法：moonDistKm=${frame.moonDistKm}, sunDistKm=${frame.sunDistKm}`
+    );
+  }
+  out.earthRadRad = Math.asin(EARTH_EQUATORIAL_RADIUS_KM / frame.moonDistKm);
+  out.sunRadRad = Math.asin(SUN_RADIUS_KM / frame.sunDistKm);
+  out.sunOffEastRad = frame.shadowOffEastRad;
+  out.sunOffUpRad = -frame.shadowOffUpRad;
+  const sep = Math.hypot(out.sunOffEastRad, out.sunOffUpRad);
+  out.sunVisibleFrac01 = Math.min(
+    1,
+    Math.max(0, (sep - (out.earthRadRad - out.sunRadRad)) / (2 * out.sunRadRad))
+  );
+  const ring = earthRingColor(turbidity01);
+  out.ringRgb[0] = ring[0];
+  out.ringRgb[1] = ring[1];
+  out.ringRgb[2] = ring[2];
+  // 月面环境光：直射灰按亮度感知压缩加权 + 红环红补余（全食段月面被红光照亮）
+  const w = Math.min(1, Math.max(0, frame.moonBrightness01)) ** MOON_SURFACE_DIRECT_GAMMA;
+  for (let c = 0; c < 3; c += 1) {
+    out.surfaceRgb[c] = Math.min(
+      1,
+      MOON_SURFACE_SUNLIT_RGB[c] * w + ring[c] * MOON_SURFACE_RING_GAIN * (1 - w)
+    );
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// M5-3 selenelion 彩蛋（§7.2 双地平线；B9 登记）：l1992 北京**真实组合**
+// （M1 评估结论，M5 精算刷新，见下）——1992-12-10 晨（UT 12-09 23:0x–23:4x）
+// 全食血月于西北沉落、太阳于东南升起；~23:21–23:29 UT 存在「双体几何高度
+// 均在地平下、经 ~0.6° 折射抬升双双可见」的窗口。
+//
+// M5 精算登记（对 M1 评估值的刷新，几何自 l1992 geo 星历直接推站心）：
+// 月亮几何高度 23:15 → 23:35 UT 为 +1.6° → −1.6°（M1 粗评 +0.7° → −0.9°），
+// 太阳为 −2.6° → +0.8°；几何月落/日升均在 ~23:25 UT 附近交叉——真实组合
+// 结论不变且更强（23:27 UT 双体几何均在地平下、视位置均在地平上）。
+// 站心近似登记：球形地球（忽略扁率，站位误差 ≤21 km → 月方向 ≤0.004°）、
+// GMST(IAU 1982) 恒星时链（与星穹同源）、太阳视差并入站心矢量。
+// ---------------------------------------------------------------------------
+
+/** selenelion 观测点（北京；M1 评估结论 + 天狗食月文化叙事的中文受众组合） */
+export const SELENELION_OBSERVER = { latDeg: 39.9042, lonDeg: 116.4074 } as const;
+
+/** selenelion 场景事件（皮纳图博 L=0 历史场景；入口仅在该页签） */
+export const SELENELION_EVENT_ID = 'l1992';
+
+/** selenelion 时间窗（Unix 秒；UT 1992-12-09 23:10 → 23:45 = 北京时 12-10 07:10 → 07:45，全程在 U2–U3 全食段内） */
+export const SELENELION_START_SEC = 723942600;
+export const SELENELION_END_SEC = 723944700;
+
+/** 场景默认时刻（UT 23:27——双体几何均在地平下、仅凭折射双双可见的高光时刻） */
+export const SELENELION_DEFAULT_SEC = 723943620;
+
+/** 地平处大气折射抬升（度；真实量级 ~34′–35′，HUD 标注 B9 口径取 0.6°） */
+export const SELENELION_REFRACTION_HORIZON_DEG = 0.6;
+
+/** 折射抬升线性收敛高度（度；示意曲线：地平恒定值 → 该高度归零） */
+export const SELENELION_REFRACTION_TAPER_ALT_DEG = 10;
+
+/**
+ * 大气折射抬升量（度，B9 示意口径）：地平及以下取恒定
+ * SELENELION_REFRACTION_HORIZON_DEG，向上线性收敛至 10° 高度归零——量级
+ * 与真实地平折射（~34′）一致，曲线形态为教学简化（真实折射随高度非线性
+ * 衰减）。本条目其余场景不建模折射（§1.6 登记），仅此彩蛋显式呈现。
+ *
+ * @param altGeomDeg 几何高度角（度）
+ */
+export function refractionLiftDeg(altGeomDeg: number): number {
+  if (!Number.isFinite(altGeomDeg)) {
+    throw new RangeError(`altGeomDeg 必须为有限数，收到 ${altGeomDeg}`);
+  }
+  const t = Math.min(
+    1,
+    Math.max(0, (SELENELION_REFRACTION_TAPER_ALT_DEG - altGeomDeg) / SELENELION_REFRACTION_TAPER_ALT_DEG)
+  );
+  return SELENELION_REFRACTION_HORIZON_DEG * t;
+}
+
+/** selenelion 逐帧状态（selenelionFrameState 输出；out 复用零 GC） */
+export interface SelenelionFrameState {
+  /** 影几何/亮度链（北京观测者口径；月/日高度方位已被站心值覆写） */
+  frame: LunarFrameState;
+  /** 太阳方位角（度，北起经东；frame 无此字段——双地平线摆位输入） */
+  sunAzDeg: number;
+  /** 月亮折射抬升量（度） */
+  moonLiftDeg: number;
+  /** 太阳折射抬升量（度） */
+  sunLiftDeg: number;
+  /** 月亮视高度（几何 + 折射抬升；渲染位置用） */
+  moonAppAltDeg: number;
+  /** 太阳视高度（几何 + 折射抬升） */
+  sunAppAltDeg: number;
+}
+
+/** 空 selenelion 状态（挂载期分配一次） */
+export function emptySelenelionFrameState(): SelenelionFrameState {
+  return {
+    frame: emptyLunarFrameState(),
+    sunAzDeg: 0,
+    moonLiftDeg: 0,
+    sunLiftDeg: 0,
+    moonAppAltDeg: 0,
+    sunAppAltDeg: 0,
+  };
+}
+
+/**
+ * selenelion 逐帧状态（M5-3；tSec 单值可重建）：
+ * 1. lunarFrameState（北京观测者）→ 影盘偏移（北京视差角旋转）/双食分/
+ *    月面亮度链——血月着色与主场景同一函数族（契约 C4）；
+ * 2. geo 星历 → 北京**站心**日月地平坐标：观测点地心矢量（球形地球 +
+ *    GMST 链）→ 站心矢量 → RA/Dec → alt/az（月球站心视差 ~0.95° 在此
+ *    显式入账——地平事件对视差敏感，地心口径会差半个月亮直径以上）；
+ * 3. 折射抬升：refractionLiftDeg 显式呈现（B9——本条目唯一建模折射处）。
+ *
+ * @param group l1992 事件星历序列组
+ * @param tSec 场景时间秒（SELENELION_START/END 域；越界钳制交给插值端点）
+ * @param danjonL 丹戎 L（浑浊度控件同源——血月深浅因果闭环跨场景一致）
+ * @param out 复用输出（渲染循环零 GC）
+ */
+export function selenelionFrameState(
+  group: LunarSeriesGroup,
+  tSec: number,
+  danjonL: number,
+  out: SelenelionFrameState = emptySelenelionFrameState()
+): SelenelionFrameState {
+  // 1. 影几何/亮度链（北京观测者：影盘偏移经北京视差角旋入地平系）
+  lunarFrameState(group, SELENELION_OBSERVER, tSec, out.frame, danjonL);
+
+  // 2. 北京站心日月地平坐标（geo 行 → 地心 J2000 位置；插值口径同 lunarFrameState）
+  const g = interpolateEphemeris(group.geo, tSec);
+  const sunLen = Math.hypot(g[0], g[1], g[2]);
+  const moonLen = Math.hypot(g[4], g[5], g[6]);
+  const lst = lstRadFromUnixSec(tSec, SELENELION_OBSERVER.lonDeg);
+  const latRad = SELENELION_OBSERVER.latDeg * DEG;
+  const obsX = EARTH_EQUATORIAL_RADIUS_KM * Math.cos(latRad) * Math.cos(lst);
+  const obsY = EARTH_EQUATORIAL_RADIUS_KM * Math.cos(latRad) * Math.sin(lst);
+  const obsZ = EARTH_EQUATORIAL_RADIUS_KM * Math.sin(latRad);
+  const topoAltAz = (
+    xKm: number,
+    yKm: number,
+    zKm: number
+  ): { altDeg: number; azDeg: number; distKm: number } => {
+    const vx = xKm - obsX;
+    const vy = yKm - obsY;
+    const vz = zKm - obsZ;
+    const dist = Math.hypot(vx, vy, vz);
+    const raDeg = Math.atan2(vy, vx) / DEG;
+    const decDeg = Math.asin(Math.min(1, Math.max(-1, vz / dist))) / DEG;
+    const aa = horizontalFromEquatorial(raDeg, decDeg, SELENELION_OBSERVER.latDeg, lst);
+    return { altDeg: aa.altRad / DEG, azDeg: aa.azRad / DEG, distKm: dist };
+  };
+  const moon = topoAltAz((g[4] / moonLen) * g[7], (g[5] / moonLen) * g[7], (g[6] / moonLen) * g[7]);
+  const sun = topoAltAz((g[0] / sunLen) * g[3], (g[1] / sunLen) * g[3], (g[2] / sunLen) * g[3]);
+
+  // 站心值覆写 frame（topo 行为 l1992 马德里观测点——本场景观测点为北京）
+  out.frame.moonAltDeg = moon.altDeg;
+  out.frame.moonAzDeg = moon.azDeg;
+  out.frame.moonSdDeg = Math.asin(MOON_MEAN_RADIUS_KM / moon.distKm) / DEG;
+  out.frame.sunAltDeg = sun.altDeg;
+  out.sunAzDeg = sun.azDeg;
+  // 极限星等重算（北京站心太阳高度——晨光蒙影链口径与主场景一致）
+  out.frame.limitingMag = effectiveLimitingMag(
+    LUNAR_BASE_LIMITING_MAG - moonlightLimitingMagDelta(out.frame.moonBrightness01),
+    sun.altDeg * DEG
+  );
+
+  // 3. 折射抬升（B9 显式呈现）
+  out.moonLiftDeg = refractionLiftDeg(moon.altDeg);
+  out.sunLiftDeg = refractionLiftDeg(sun.altDeg);
+  out.moonAppAltDeg = moon.altDeg + out.moonLiftDeg;
+  out.sunAppAltDeg = sun.altDeg + out.sunLiftDeg;
+  return out;
+}
