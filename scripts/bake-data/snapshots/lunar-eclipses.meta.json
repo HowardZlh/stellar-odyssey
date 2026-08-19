@@ -1,0 +1,7 @@
+{
+  "source": "JPL Horizons API (DE441, ssd.jpl.nasa.gov/api/horizons.api) + NASA GSFC Five Millennium Catalog of Lunar Eclipses (Espenak & Meeus, TP-2009-214173, eclipse.gsfc.nasa.gov/LEcat5/)",
+  "query": "Horizons OBSERVER（月球 QUANTITIES=4,13 / 太阳 QUANTITIES=4，AIRLESS，站心 GEODETIC 观测点，P1−30min→P4+30min @1m）+ VECTORS（VEC_TABLE=1，CENTER=500@399，REF_PLANE=FRAME/J2000 赤道系，食甚 ±12h @5m）；5MCLE 世纪目录页 LE1901-2000.html / LE2001-2100.html（食甚 TD/ΔT/saros/类型/γ/双食分/三段时长，Danjon 影放大约定）",
+  "events": "l2029=2029-06-26 全食（São Paulo）/ l2026=2026-08-28 偏食（Manaus）/ l2027=2027-02-20 半影食（Lagos）/ l1992=1992-12-09 全食（Madrid，丹戎 L=0 历史场景）",
+  "retrievedAt": "2026-08-19T07:19:09.989Z",
+  "license": "NASA/JPL Horizons 与 NASA GSFC Eclipse Web Site 均为美国政府公开科学数据（public domain）；引用 Espenak & Meeus, Five Millennium Canon/Catalog of Lunar Eclipses (NASA TP-2009-214172/214173)"
+}

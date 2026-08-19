@@ -41,6 +41,7 @@ import { bakeGalaxyCatalog, refetch2mrsSnapshot } from './galaxyCatalog.ts';
 import { bakeBrightStars, refetchBsc5Snapshot } from './brightStars.ts';
 import { bakeSolarEclipses, refetchSolarEclipseSnapshots } from './solarEclipses.ts';
 import { bakeLunarLimbProfile, refetchLolaSnapshot } from './lunarLimb.ts';
+import { bakeLunarEclipses, refetchLunarEclipseSnapshots } from './lunarEclipses.ts';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SNAPSHOT_DIR = join(SCRIPT_DIR, 'snapshots');
@@ -468,6 +469,9 @@ async function main(): Promise<void> {
   if (process.argv.includes('--fetch-lola')) {
     await refetchLolaSnapshot(SNAPSHOT_DIR);
   }
+  if (process.argv.includes('--fetch-lunar-eclipses')) {
+    await refetchLunarEclipseSnapshots(SNAPSHOT_DIR);
+  }
 
   mkdirSync(OUT_DIR, { recursive: true });
 
@@ -516,6 +520,11 @@ async function main(): Promise<void> {
     [
       'lunar_limb_profile.json',
       writeProduct('lunar_limb_profile.json', bakeLunarLimbProfile(SNAPSHOT_DIR), false),
+    ],
+    // LE-M1-1：四事件月食星历（契约 C2，自校验在 bakeLunarEclipses 内，<400 KB）
+    [
+      'lunar_eclipses.json',
+      writeProduct('lunar_eclipses.json', bakeLunarEclipses(SNAPSHOT_DIR), false),
     ],
     ...galaxyMaps.sizes,
   ];

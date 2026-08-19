@@ -604,6 +604,159 @@ export function validateSolarEclipses(raw: unknown): SolarEclipsesData | null {
   return { events };
 }
 
+// ---------------------------------------------------------------------------
+// LE-M1 月食星历（契约 C2；scripts/bake-data/lunarEclipses.ts 文件头登记来源——
+// JPL Horizons DE441 + NASA GSFC 5MCLE / Espenak & Meeus，Danjon 影放大约定）
+// ---------------------------------------------------------------------------
+
+/** 月食事件类型（契约 C2） */
+export type LunarEclipseKindData = 'total' | 'partial' | 'penumbral';
+
+/** 七接触点（UTC 秒；偏食无 u2/u3、半影食仅 p1/max/p4，缺省为 null） */
+export interface LunarEclipseContacts {
+  p1: number;
+  u1: number | null;
+  u2: number | null;
+  max: number;
+  u3: number | null;
+  u4: number | null;
+  p4: number;
+}
+
+/** 单场月食事件（契约 C2） */
+export interface LunarEclipseEventData {
+  id: 'l2029' | 'l2026' | 'l2027' | 'l1992';
+  /** 事件日期（UTC，YYYY-MM-DD） */
+  dateUtc: string;
+  saros: number;
+  kind: LunarEclipseKindData;
+  /** 本影食分（5MCLE 目录值；<0 半影食 / 0–1 偏食 / >1 全食） */
+  umbralMag: number;
+  /** 半影食分（5MCLE 目录值） */
+  penumbralMag: number;
+  /** γ（月心过影轴最小距离，地球赤道半径单位，带符号） */
+  gamma: number;
+  /** 丹戎滑杆初值（l1992=0 为观测值，其余为教学预设，登记见烘焙脚本） */
+  danjonDefault: number;
+  /** 地面视角固定观测点 */
+  observer: { latDeg: number; lonDeg: number; altM: number; label: string };
+  contacts: LunarEclipseContacts;
+  /** 站心序列（P1−30min→P4+30min @60s；行 = [moonAlt,moonAz,moonSdDeg,sunAlt] 度） */
+  topo: SolarEclipseSeriesData;
+  /** 地心 J2000 赤道系序列（食甚 ±12h @300s；行同日食 geo 8 列） */
+  geo: SolarEclipseSeriesData;
+}
+
+export interface LunarEclipsesData {
+  events: LunarEclipseEventData[];
+}
+
+const LUNAR_ECLIPSE_IDS = ['l2029', 'l2026', 'l2027', 'l1992'] as const;
+
+const LUNAR_ECLIPSE_KINDS: Record<(typeof LUNAR_ECLIPSE_IDS)[number], LunarEclipseKindData> = {
+  l2029: 'total',
+  l2026: 'partial',
+  l2027: 'penumbral',
+  l1992: 'total',
+};
+
+function validateNullableContact(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  if (isFiniteNumber(value)) return value;
+  return undefined;
+}
+
+/**
+ * 校验月食星历产物（契约 C2）：四事件齐全且顺序固定、类型 ↔ 食分/接触时刻
+ * 缺省一致、接触时刻有序且落在采样窗内、序列结构/数值域完整。
+ * 失败返回 null（消费方显示降级提示，实验室不渲染）。
+ */
+export function validateLunarEclipses(raw: unknown): LunarEclipsesData | null {
+  if (!isRecord(raw) || !Array.isArray(raw.events)) return null;
+  if (raw.events.length !== LUNAR_ECLIPSE_IDS.length) return null;
+  const events: LunarEclipseEventData[] = [];
+  for (let i = 0; i < LUNAR_ECLIPSE_IDS.length; i += 1) {
+    const id = LUNAR_ECLIPSE_IDS[i];
+    const ev = raw.events[i] as unknown;
+    if (!isRecord(ev)) return null;
+    if (ev.id !== id) return null;
+    if (!isNonEmptyString(ev.dateUtc)) return null;
+    if (ev.kind !== LUNAR_ECLIPSE_KINDS[id]) return null;
+    if (!isFiniteNumber(ev.saros) || !Number.isInteger(ev.saros) || ev.saros <= 0) return null;
+    if (!isFiniteNumber(ev.umbralMag) || Math.abs(ev.umbralMag) > 3.2) return null;
+    if (!isFiniteNumber(ev.penumbralMag) || ev.penumbralMag <= 0 || ev.penumbralMag > 3.2) {
+      return null;
+    }
+    if (!isFiniteNumber(ev.gamma) || Math.abs(ev.gamma) >= 1.6) return null;
+    if (!isFiniteNumber(ev.danjonDefault) || ev.danjonDefault < 0 || ev.danjonDefault > 4) {
+      return null;
+    }
+    const obs = ev.observer;
+    if (!isRecord(obs)) return null;
+    const { latDeg, lonDeg, altM, label } = obs;
+    if (!isFiniteNumber(latDeg) || Math.abs(latDeg) > 90) return null;
+    if (!isFiniteNumber(lonDeg) || Math.abs(lonDeg) > 180) return null;
+    if (!isFiniteNumber(altM) || !isNonEmptyString(label)) return null;
+    const rawContacts = ev.contacts;
+    if (!isRecord(rawContacts)) return null;
+    if (!isFiniteNumber(rawContacts.p1) || !isFiniteNumber(rawContacts.max) || !isFiniteNumber(rawContacts.p4)) {
+      return null;
+    }
+    const u1 = validateNullableContact(rawContacts.u1);
+    const u2 = validateNullableContact(rawContacts.u2);
+    const u3 = validateNullableContact(rawContacts.u3);
+    const u4 = validateNullableContact(rawContacts.u4);
+    if (u1 === undefined || u2 === undefined || u3 === undefined || u4 === undefined) return null;
+    const contacts: LunarEclipseContacts = {
+      p1: rawContacts.p1,
+      u1,
+      u2,
+      max: rawContacts.max,
+      u3,
+      u4,
+      p4: rawContacts.p4,
+    };
+    // 类型 ↔ 缺省一致性（契约 C2）
+    if (ev.kind === 'total' && (u1 === null || u2 === null || u3 === null || u4 === null)) {
+      return null;
+    }
+    if (ev.kind === 'partial' && (u1 === null || u4 === null || u2 !== null || u3 !== null)) {
+      return null;
+    }
+    if (ev.kind === 'penumbral' && (u1 !== null || u2 !== null || u3 !== null || u4 !== null)) {
+      return null;
+    }
+    const ordered = [contacts.p1, u1, u2, contacts.max, u3, u4, contacts.p4].filter(
+      (v): v is number => v !== null
+    );
+    for (let k = 1; k < ordered.length; k += 1) {
+      if (!(ordered[k] > ordered[k - 1])) return null;
+    }
+    const topo = validateSeries(ev.topo, 4);
+    const geo = validateSeries(ev.geo, 8);
+    if (!topo || !geo) return null;
+    const topoEnd = topo.t0 + (topo.rows.length - 1) * topo.dtSec;
+    if (!(topo.t0 <= contacts.p1 && topoEnd >= contacts.p4)) return null;
+    const geoEnd = geo.t0 + (geo.rows.length - 1) * geo.dtSec;
+    if (!(geo.t0 <= contacts.p1 && geoEnd >= contacts.p4)) return null;
+    events.push({
+      id,
+      dateUtc: ev.dateUtc,
+      saros: ev.saros,
+      kind: LUNAR_ECLIPSE_KINDS[id],
+      umbralMag: ev.umbralMag,
+      penumbralMag: ev.penumbralMag,
+      gamma: ev.gamma,
+      danjonDefault: ev.danjonDefault,
+      observer: { latDeg, lonDeg, altM, label },
+      contacts,
+      topo,
+      geo,
+    });
+  }
+  return { events };
+}
+
 /**
  * 校验月缘剖面产物（契约 C3）：720 点、偏差 ∈ [−9, +9] km、平均半径 1737.4。
  * 失败返回 null（消费方降级——贝利珠退化为均匀月缘，M3 登记）。
@@ -708,6 +861,11 @@ export async function loadYaleBrightStars(baseUrl = '/data'): Promise<YaleBright
 /** 加载三事件日食星历（E-M1，契约 C2；失败返回 null，消费方显示降级提示） */
 export async function loadSolarEclipses(baseUrl = '/data'): Promise<SolarEclipsesData | null> {
   return loadValidated(`${baseUrl}/solar_eclipses.json`, validateSolarEclipses);
+}
+
+/** 加载四事件月食星历（LE-M1，契约 C2；失败返回 null，消费方显示降级提示） */
+export async function loadLunarEclipses(baseUrl = '/data'): Promise<LunarEclipsesData | null> {
+  return loadValidated(`${baseUrl}/lunar_eclipses.json`, validateLunarEclipses);
 }
 
 /** 加载月缘高程剖面（E-M1，契约 C3；失败返回 null，贝利珠降级均匀月缘） */
