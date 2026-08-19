@@ -826,3 +826,159 @@ export function groundIntroAim(
 
 /** 视角档（§3.2 地面/太空分段控件） */
 export type EclipseViewMode = 'ground' | 'space';
+
+// ---------------------------------------------------------------------------
+// M7：太空视角观感增强（版本 1.1；A15/A16/A17 登记）
+// ---------------------------------------------------------------------------
+
+/**
+ * 太空档星穹壳半径（场景单位）：> 行星层最远压缩半径（海王星 <4,300）、
+ * < 相机 far（5,000）——星空永远在行星轨道层之外（M7-1）。
+ */
+export const SPACE_STAR_DOME_RADIUS_UNITS = 4500;
+
+/** 银河带壳半径（星穹内侧一线；additive 无深度写，与星点无遮挡语义） */
+export const SPACE_MILKY_WAY_RADIUS_UNITS = 4400;
+
+/**
+ * J2000 赤道系 → 场景轴映射矩阵（行主序 3×3；j2000ToSceneVec 的矩阵形，
+ * 太空档星穹 shader 以常量 uEqToScene 消费——J2000 固定朝向，无周日旋转）。
+ */
+export const J2000_SCENE_MATRIX3: readonly number[] = [1, 0, 0, 0, 0, 1, 0, -1, 0];
+
+/** 北银极 J2000（度；A15 登记：银道面方位按真实常量取向，带形态为艺术再现） */
+export const GALACTIC_POLE_RA_DEG = 192.85948;
+export const GALACTIC_POLE_DEC_DEG = 27.12825;
+
+/** 银心方向 J2000（度；人马座 A* 方位——银河带核球增亮的真实取向锚点） */
+export const GALACTIC_CENTER_RA_DEG = 266.405;
+export const GALACTIC_CENTER_DEC_DEG = -28.93617;
+
+/** RA/Dec（度，J2000）→ 场景单位方向（xe = cosδ·cosα 约定 + 契约 C4 轴映射） */
+export function equatorialSceneDir(raDeg: number, decDeg: number, out: MutableVec3): MutableVec3 {
+  if (!Number.isFinite(raDeg) || !Number.isFinite(decDeg)) {
+    throw new RangeError(`RA/Dec 必须为有限数：${raDeg}, ${decDeg}`);
+  }
+  const ra = raDeg * DEG;
+  const dec = decDeg * DEG;
+  const cosDec = Math.cos(dec);
+  return j2000ToSceneVec([cosDec * Math.cos(ra), cosDec * Math.sin(ra), Math.sin(dec)], out);
+}
+
+/**
+ * 月球放大倍率（M7-3；A16 登记：**默认开**——真实比例下月球直径仅地球的
+ * 27%、默认机位视直径 ~0.5° 近似亮点；×4 后视觉半径 ~7 单位与地球同量级。
+ * HUD/面板徽标常显倍率，关闭即回真实比例；i18n 文案数值与本常量同步维护）。
+ */
+export const MOON_MAGNIFY_FACTOR = 4;
+
+/**
+ * 影锥径向显示倍率（A16 衔接口径）：月球放大时本影/半影锥**基部随月球同倍
+ * 径向放大**保持「锥从月缘收敛」视觉连贯（锥角失真登记艺术化）；A4 本影
+ * 放大 ×UMBRA_MAGNIFY_FACTOR 正交叠乘（只作用本影）。地表影斑 shader
+ * **不消费本函数**——影斑仍由真锥几何/A4 开关独立控制（物理真值不随动）。
+ * 双开关全关时严格 = 1（真实比例回归防守，单测锁定）。
+ */
+export function coneRadialScale(
+  kind: 'umbra' | 'penumbra',
+  umbraMagnify: boolean,
+  moonMagnify: boolean
+): number {
+  const moonScale = moonMagnify ? MOON_MAGNIFY_FACTOR : 1;
+  if (kind === 'penumbra') return moonScale;
+  return moonScale * (umbraMagnify ? UMBRA_MAGNIFY_FACTOR : 1);
+}
+
+/**
+ * 行星轨道远景层线性比例（M7-4；契约 C4 增补比例域）：日心距 ≤1 AU 按
+ * 1 AU = 1,500 场景单位线性——与 SPACE_SUN_DISK_DISTANCE_UNITS 同值源，
+ * 太阳日盘即艺术化轨道层的日心锚（A3/A17 几何自洽）。
+ */
+export const SPACE_AU_LINEAR_UNITS = SPACE_SUN_DISK_DISTANCE_UNITS;
+
+/** 行星层对数压缩系数（场景单位/十倍日心距；>1 AU 外行星收进相机域） */
+export const SPACE_PLANET_LOG_UNITS = 1800;
+
+/**
+ * 日心距（AU）→ 行星层场景半径（A17 登记：距离压缩艺术化）：
+ * r ≤ 1 AU 线性 1,500 单位/AU；r > 1 AU 对数压缩（主场景 L4
+ * cosmicDistanceToSceneUnits 同手法）——海王星 30.07 AU → ~4,160 单位
+ * < 星穹 4,500 < far 5,000（八大行星全量同框，单测域锚点）。
+ * 1 AU 处连续（log10(1)=0），斜率不连续登记为已知形变。
+ */
+export function compressAuToUnits(rAu: number): number {
+  if (!Number.isFinite(rAu) || rAu < 0) {
+    throw new RangeError(`日心距必须为非负有限数：${rAu}`);
+  }
+  if (rAu <= 1) return rAu * SPACE_AU_LINEAR_UNITS;
+  return SPACE_AU_LINEAR_UNITS + SPACE_PLANET_LOG_UNITS * Math.log10(rAu);
+}
+
+/**
+ * 行星层对齐矩阵（行主序 3×3；黄道日心系 → 场景）：基础旋转 = 平黄赤交角
+ * Rx(ε) 接契约 C4 轴映射，再叠加**小旋转对齐**——把平轨道要素地球日心方向
+ * 精确转到星历 −sunDirScene（平要素 vs 真星历日地连线偏差 ≪1°，A14 同口径；
+ * 对齐后地球轨道层位置与场景原点重合，残差单测锁定 <1 单位）。
+ *
+ * @param earthHelioEcl 地球日心黄道位置（AU，任意模长非零；physics 链输出）
+ * @param sunDirScene 星历太阳方向（场景，单位向量；spaceFrameState 输出）
+ * @param out 9 元行主序输出（复用零 GC）
+ */
+export function planetLayerSceneMatrix3(
+  earthHelioEcl: readonly number[],
+  sunDirScene: readonly number[],
+  out: number[] | Float64Array
+): number[] | Float64Array {
+  if (out.length !== 9) throw new RangeError(`需要 9 元输出，收到 ${out.length}`);
+  const [ex, ey, ez] = earthHelioEcl;
+  if (!Number.isFinite(ex) || !Number.isFinite(ey) || !Number.isFinite(ez)) {
+    throw new RangeError(`地球位置分量必须为有限数：${ex}, ${ey}, ${ez}`);
+  }
+  const eLen = Math.hypot(ex, ey, ez);
+  if (!(eLen > 0)) throw new RangeError('地球位置不能为零向量');
+  // 基础旋转 B（行主序）：scene = (eq.x, eq.z, −eq.y)，eq = Rx(ε)·ecl
+  const eps = ECLIPTIC_OBLIQUITY_DEG * DEG;
+  const cE = Math.cos(eps);
+  const sE = Math.sin(eps);
+  // B 行 0/1/2：scene.x = ecl.x；scene.y = eq.z = y·sε + z·cε；scene.z = −eq.y = −y·cε + z·sε
+  const b = [1, 0, 0, 0, sE, cE, 0, -cE, sE];
+  // v0 = normalize(B·ê_e)；t = −sunDirScene（单位）
+  const v0x = (b[0] * ex + b[1] * ey + b[2] * ez) / eLen;
+  const v0y = (b[3] * ex + b[4] * ey + b[5] * ez) / eLen;
+  const v0z = (b[6] * ex + b[7] * ey + b[8] * ez) / eLen;
+  const tx = -sunDirScene[0];
+  const ty = -sunDirScene[1];
+  const tz = -sunDirScene[2];
+  // Rodrigues：R 把 v0 转到 t（轴 = v0×t）
+  const ax = v0y * tz - v0z * ty;
+  const ay = v0z * tx - v0x * tz;
+  const az = v0x * ty - v0y * tx;
+  const s2 = ax * ax + ay * ay + az * az;
+  const c = v0x * tx + v0y * ty + v0z * tz;
+  if (s2 < 1e-24) {
+    // 已对齐（平要素与星历完全一致的退化情形）：修正为恒等
+    for (let i = 0; i < 9; i += 1) out[i] = b[i];
+    return out;
+  }
+  const k = (1 - c) / s2;
+  // R = I + [a]× + k·[a]×²（行主序）
+  const r = [
+    1 + k * (-ay * ay - az * az),
+    -az + k * ax * ay,
+    ay + k * ax * az,
+    az + k * ax * ay,
+    1 + k * (-ax * ax - az * az),
+    -ax + k * ay * az,
+    -ay + k * ax * az,
+    ax + k * ay * az,
+    1 + k * (-ax * ax - ay * ay),
+  ];
+  // out = R·B
+  for (let row = 0; row < 3; row += 1) {
+    for (let col = 0; col < 3; col += 1) {
+      out[row * 3 + col] =
+        r[row * 3] * b[col] + r[row * 3 + 1] * b[3 + col] + r[row * 3 + 2] * b[6 + col];
+    }
+  }
+  return out;
+}

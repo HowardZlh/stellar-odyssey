@@ -40,6 +40,22 @@ tilt is shown exaggerated (the HUD notes the true value and display factor) to e
 why the shadow misses the Earth above or below at most new moons — eclipses do not
 happen every month.
 
+Backdrop and far scenery in the space view (each can be toggled):
+
+- **Real starry sky + Milky Way band**: the background shows the 8,404 real bright
+  stars of the Yale catalog (fixed J2000 orientation) plus a procedural Milky Way
+  band — the galactic plane and galactic-center directions follow true celestial
+  constants, while the band's texture is an artistic recreation;
+- **Magnify Moon ×4** (on by default): at true scale the Moon is only 27% of Earth's
+  diameter and nearly a dot at its real distance, so it is shown ×4 larger by default,
+  with the shadow-cone bases scaled along to keep the cones visually attached (the
+  ground shadow spot always keeps true geometry); turn the toggle off for true scale;
+- **Planet orbits** (on by default): an artistic panorama of all eight planetary
+  orbits at compressed distances — directions and orbital phases follow real orbital
+  elements, heliocentric distances are compressed (1 AU ≈ 1,500 scene units, outer
+  planets log-compressed) and planet dots are not to scale; the Sun carries a
+  permanent name label so you can always find it from any vantage.
+
 ## The five-contact timeline
 
 The bottom timeline spans from 15 minutes before first contact to 15 minutes after
@@ -133,9 +149,12 @@ the diamond ring approximates its glow with an analytic halo).
   bead, not a separate effect;
 - Registered presentation choices: guided-pace time compression, tone-mapped (non-linear)
   corona brightness, compressed Sun distance and visible shadow cones in the space
-  view, the umbra ×8 / inclination / deflection exaggeration toggles (HUD always shows
-  true values), prominences as typical-form recreations, shadow bands as a procedural
-  stylization, and the "silence" of totality as artistic expression;
+  view, the umbra ×8 / Moon ×4 / inclination / deflection exaggeration toggles (HUD
+  and panel always show true values and factors), the planet-orbit backdrop's
+  compressed distances and non-scale planet dots, the procedural Milky Way band
+  (true galactic-plane orientation, artistic texture), prominences as typical-form
+  recreations, shadow bands as a procedural stylization, and the "silence" of
+  totality as artistic expression;
 - Data sources: NASA Eclipse Web Site / EclipseWise (Fred Espenak — Besselian elements
   and contact times); JPL Horizons (DE441 solar/lunar ephemerides); LRO LOLA LDEM_4
   (lunar limb elevations); Yale Bright Star Catalog, 5th Revised Ed. (Hoffleit &

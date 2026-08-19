@@ -50,6 +50,10 @@ export interface EclipseM3Settings {
   umbraMagnify: boolean;
   /** 倾角叙事模式（M4-4；A5 登记：倾角夸张显示，HUD 标真实值与倍率） */
   inclinationDemo: boolean;
+  /** 月球放大 ×4 开关（M7-3；A16 登记：**默认开**，徽标常显倍率，锥基随动） */
+  moonMagnify: boolean;
+  /** 行星轨道远景层（M7-4；A17 登记：**默认开**，距离压缩艺术化科普卡常显） */
+  planetOrbits: boolean;
   /** 星光偏折对照（M5-2；A10 登记：偏折夸张显示，HUD 标真实角秒值与倍率） */
   deflectionDemo: boolean;
 }
@@ -165,8 +169,22 @@ export function EclipseControlPanel({
       />
       {settings.viewMode === "space" && (
         <>
-          {/* 本影放大开关（A4：默认关 = 真实比例；标签含倍率） */}
+          {/* M7-3 月球放大（A16：默认开；徽标常显倍率）+ 本影放大（A4：
+              默认关 = 真实比例；标签含倍率） */}
           <div className="mt-1 flex gap-1">
+            <button
+              aria-label={tr("lab.eclipseMoonMagnifyAria")}
+              aria-pressed={settings.moonMagnify}
+              onClick={() => onChange({ moonMagnify: !settings.moonMagnify })}
+              className={`flex-1 rounded px-1 py-1 text-[10px] leading-tight transition-colors max-md:min-h-11 ${
+                settings.moonMagnify
+                  ? "bg-amber-500/30 font-semibold text-amber-200"
+                  : "bg-white/5 text-gray-400 hover:bg-white/10"
+              }`}
+            >
+              {tr("lab.eclipseMoonMagnifyLabel")}：
+              {settings.moonMagnify ? "ON" : "OFF"}
+            </button>
             <button
               aria-label={tr("lab.eclipseUmbraMagnifyAria")}
               aria-pressed={settings.umbraMagnify}
@@ -180,7 +198,22 @@ export function EclipseControlPanel({
               {tr("lab.eclipseUmbraMagnifyLabel")}：
               {settings.umbraMagnify ? "ON" : "OFF"}
             </button>
-            {/* 倾角叙事模式（A5：夸张倾角示意） */}
+          </div>
+          {/* M7-4 行星轨道远景层（A17：默认开）+ 倾角叙事模式（A5） */}
+          <div className="mt-1 flex gap-1">
+            <button
+              aria-label={tr("lab.eclipsePlanetOrbitsAria")}
+              aria-pressed={settings.planetOrbits}
+              onClick={() => onChange({ planetOrbits: !settings.planetOrbits })}
+              className={`flex-1 rounded px-1 py-1 text-[10px] leading-tight transition-colors max-md:min-h-11 ${
+                settings.planetOrbits
+                  ? "bg-sky-500/30 font-semibold text-sky-200"
+                  : "bg-white/5 text-gray-400 hover:bg-white/10"
+              }`}
+            >
+              {tr("lab.eclipsePlanetOrbitsLabel")}：
+              {settings.planetOrbits ? "ON" : "OFF"}
+            </button>
             <button
               aria-label={tr("lab.eclipseInclinationAria")}
               aria-pressed={settings.inclinationDemo}
@@ -197,9 +230,19 @@ export function EclipseControlPanel({
               {settings.inclinationDemo ? "ON" : "OFF"}
             </button>
           </div>
+          {settings.moonMagnify && (
+            <p className="mt-1 rounded bg-amber-950/40 px-2 py-1 text-[10px] leading-snug text-amber-200/90">
+              {tr("lab.eclipseMoonMagnifyBadge")}
+            </p>
+          )}
           {settings.umbraMagnify && (
             <p className="mt-1 rounded bg-amber-950/40 px-2 py-1 text-[10px] leading-snug text-amber-200/90">
               {tr("lab.eclipseUmbraMagnifyBadge")}
+            </p>
+          )}
+          {settings.planetOrbits && (
+            <p className="mt-1 rounded bg-white/5 px-2 py-1 text-[10px] leading-snug text-gray-400">
+              {tr("lab.eclipsePlanetOrbitsCard")}
             </p>
           )}
           {settings.inclinationDemo && (

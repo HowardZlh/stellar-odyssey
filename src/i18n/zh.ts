@@ -578,11 +578,16 @@ export const zh = {
       "生光：月缘另一侧先漏出钻石环，再散成贝利珠，色球红环一闪即逝。注意：光球一旦重现即不可裸眼直视，现实中此刻必须重新戴上滤镜。",
     eclipseCardC4:
       "复圆：月盘完全退出日面，这场日食结束。同一地点平均要等约 375 年才会再逢全食；而随着月球以每年约 3.8 厘米远离地球，日全食将在数亿年后永久终结——我们正好活在能看到它的地质窗口里。",
-    /** 亮行星标注（§2.1：按事件历元真实方位；星等为典型值近似登记） */
+    /** 亮行星标注（§2.1：按事件历元真实方位；星等为典型值近似登记）
+     * + M7 太空档行星层补齐（土/天/海 + 太阳标签） */
     eclipsePlanetVenus: "金星",
     eclipsePlanetJupiter: "木星",
     eclipsePlanetMercury: "水星",
     eclipsePlanetMars: "火星",
+    eclipsePlanetSaturn: "土星",
+    eclipsePlanetUranus: "天王星",
+    eclipsePlanetNeptune: "海王星",
+    eclipseSunLabel: "太阳",
     /** 星历加载态（useSolarEclipses 三态） */
     eclipseLoadingEphemeris: "正在加载日食星历…",
     eclipseEphemerisFailed: "日食星历加载失败，场景暂不可用——请刷新页面重试",
@@ -613,6 +618,16 @@ export const zh = {
       "太空视角说明：太阳方向真实、距离压缩绘制（真实日地距离约 1.5 亿 km，超出场景域）；半透明影锥为表达辅助，真实影锥不可见。本影/半影与地表影斑由真锥几何逐帧解析，真实比例下地表本影仅百余公里宽。",
     /** 太空档操作提示（OrbitControls 原生手势） */
     eclipseHintSpace: "拖动旋转 · 滚轮或双指捏合缩放 · 播放看本影扫过地表",
+    /** M7-3 月球放大开关（A16 登记：文案倍率与 MOON_MAGNIFY_FACTOR=4 同步维护） */
+    eclipseMoonMagnifyLabel: "月球放大 ×4",
+    eclipseMoonMagnifyAria: "开关月球放大（显示辅助）",
+    eclipseMoonMagnifyBadge:
+      "月球与影锥基部已按 ×4 放大显示（真实月球直径仅为地球的 27%）；地表影斑仍为真实几何，关闭即回真实比例",
+    /** M7-4 行星轨道远景层（A17 登记：距离压缩与非真实行星尺寸科普卡常显） */
+    eclipsePlanetOrbitsLabel: "行星轨道",
+    eclipsePlanetOrbitsAria: "开关行星轨道远景层",
+    eclipsePlanetOrbitsCard:
+      "行星轨道为艺术化远景层：各行星方向与轨道相位按真实轨道要素计算，但日心距离经压缩绘制（1 AU ≈ 1,500 场景单位、外行星对数收拢），行星点尺寸非真实比例。背景为耶鲁亮星表真实星空与程序化银河带（银道面方位真实、形态为艺术再现）。",
     /**
      * M5 Eddington 星光偏折对照（§M5-2/§M5-3；A10 登记：badge 中倍率数值
      * 与 solarEclipseLab.EDDINGTON_DEFLECTION_EXAGGERATION = 2500 同步维护，

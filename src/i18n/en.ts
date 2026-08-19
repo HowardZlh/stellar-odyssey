@@ -523,6 +523,10 @@ export const en: I18nDict = {
     eclipsePlanetJupiter: "Jupiter",
     eclipsePlanetMercury: "Mercury",
     eclipsePlanetMars: "Mars",
+    eclipsePlanetSaturn: "Saturn",
+    eclipsePlanetUranus: "Uranus",
+    eclipsePlanetNeptune: "Neptune",
+    eclipseSunLabel: "Sun",
     eclipseLoadingEphemeris: "Loading eclipse ephemerides…",
     eclipseEphemerisFailed:
       "Failed to load the eclipse ephemerides — the scene is unavailable. Please refresh and retry.",
@@ -549,6 +553,16 @@ export const en: I18nDict = {
       "Space view notes: the Sun is drawn with its true direction but compressed distance (the real 150 million km is beyond the scene); the translucent shadow cones are a visual aid — real shadow cones are invisible. Umbra/penumbra and the ground shadow spot are solved each frame from true cone geometry; at true scale the umbra is only ~100–270 km wide.",
     eclipseHintSpace:
       "Drag to orbit · Scroll or pinch to zoom · Press play to watch the umbra sweep",
+    /** M7-3 Moon magnification (A16: ×4 synced with MOON_MAGNIFY_FACTOR) */
+    eclipseMoonMagnifyLabel: "Magnify Moon ×4",
+    eclipseMoonMagnifyAria: "Toggle Moon magnification (display aid)",
+    eclipseMoonMagnifyBadge:
+      "Moon and shadow-cone bases shown ×4 larger (the real Moon is only 27% of Earth's diameter); the ground shadow spot keeps true geometry — turn off to restore true scale",
+    /** M7-4 planet-orbit backdrop (A17: compressed distances + non-scale dots) */
+    eclipsePlanetOrbitsLabel: "Planet orbits",
+    eclipsePlanetOrbitsAria: "Toggle the planet-orbit backdrop",
+    eclipsePlanetOrbitsCard:
+      "The planet backdrop is artistic: directions and orbital phases follow real orbital elements, but heliocentric distances are compressed (1 AU ≈ 1,500 scene units, outer planets log-compressed) and planet dots are not to scale. The background shows the real Yale bright-star sky plus a procedural Milky Way band (true galactic-plane orientation, artistic texture).",
     /** M5 Eddington starlight deflection (A10: ×2500 synced with EDDINGTON_DEFLECTION_EXAGGERATION) */
     eclipseDeflectionTitle: "Starlight deflection (1919)",
     eclipseDeflectionToggle: "Show gravitational deflection",

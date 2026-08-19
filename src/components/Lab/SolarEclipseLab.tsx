@@ -1700,8 +1700,9 @@ const KIND_LABEL_KEYS: Record<EclipseFrameState["kind"], MessageKey> = {
   annular: "lab.eclipsePhaseAnnular",
 };
 
-/** M3+M4+M5 控件初值（地面视角 + 导览变速 + 自动曝光；活动周取中庸 0.3；
- * 本影放大默认关 = 真实比例（A4）、倾角叙事默认关、偏折对照默认关（A10）） */
+/** M3+M4+M5+M7 控件初值（地面视角 + 导览变速 + 自动曝光；活动周取中庸 0.3；
+ * 本影放大默认关 = 真实比例（A4）、倾角叙事默认关、偏折对照默认关（A10）；
+ * M7 用户裁决：月球放大 ×4 默认开（A16）、行星轨道远景层默认开（A17）） */
 function defaultEclipseSettings(): EclipseM3Settings {
   return {
     viewMode: "ground",
@@ -1714,6 +1715,8 @@ function defaultEclipseSettings(): EclipseM3Settings {
     umbraMagnify: false,
     inclinationDemo: false,
     deflectionDemo: false,
+    moonMagnify: true,
+    planetOrbits: true,
   };
 }
 
@@ -2093,10 +2096,16 @@ function EclipseExperience({
           </>
         ) : (
           /* M4 太空视角（地球 + 月球 + 方向光日盘 + 真锥双层 + 中心线 +
-             倾角叙事轨道环；§M4-1/M4-2/M4-4） */
+             倾角叙事轨道环；§M4-1/M4-2/M4-4）+ M7 观感增强（J2000 星穹 +
+             银河带（reduced 档随 Bloom 关）+ 行星轨道远景层——倾角叙事
+             开启时行星层自动隐藏防轨道环视觉混淆，§M7-4） */
           <EclipseSpaceView
             refs={refs}
             inclinationDemo={settings.inclinationDemo}
+            planetOrbits={settings.planetOrbits && !settings.inclinationDemo}
+            stars={stars}
+            starPointMaxPx={quality.starPointMaxPx}
+            milkyWay={quality.bloomEnabled}
           />
         )}
         {/* 相机控制器（运镜期卸载防争抢；结束后从当前位姿接管——流星雨
