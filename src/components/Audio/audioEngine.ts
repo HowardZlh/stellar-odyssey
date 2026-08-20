@@ -58,6 +58,12 @@ export class AudioEngine {
   /** E-M6 日食声景·空气感底噪层增益（全食段近寂静的极低垫层，A8） */
   private eclipseAirGain: GainNode | null = null;
 
+  /** LE-M6 月食声景·夜环境底噪层增益（虫鸣抽象化，惰性构建；仅月食实验室消费） */
+  private lunarNightGain: GainNode | null = null;
+
+  /** LE-M6 月食声景·空气感低频垫层增益（夜色沉降的补偿层，B15） */
+  private lunarAirGain: GainNode | null = null;
+
   /** 是否已成功初始化 */
   get initialized(): boolean {
     return this.context !== null;
@@ -552,6 +558,218 @@ export class AudioEngine {
   }
 
   /**
+   * LE-M6 月食实验室夜声景层（需求 §5）：惰性构建两条常驻循环层（幂等）。
+   *
+   * - 夜环境底噪：**虫鸣抽象化**——粉噪 → 高位窄带通（4.2 kHz、Q=3.5，
+   *   夏夜虫声的「细密高频」质感）× 双 LFO 交错幅度调制（0.23 Hz 与
+   *   0.61 Hz 互质近似，避免机械的周期感）+ 低位带通（320 Hz，夜风体量）
+   *   → 增益（初始 0）→ master；
+   * - 空气感低频垫层：粉噪 → 低通 180 Hz → 增益（初始 0）→ master
+   *   （食甚渐深时微升的「夜色沉降」补偿，B15 登记艺术表达）。
+   *
+   * 与日食声景层各自独立（两条目互不复用增益节点，切页面时各自惰性构建）；
+   * 全链严禁直连 destination（走 masterGain → 压缩器总线）；增益由
+   * setLunarSoundscapeGains 按包络逐帧平滑调节。
+   */
+  ensureLunarSoundscape(): void {
+    if (!this.context || !this.masterGain || this.lunarNightGain) return;
+    try {
+      const context = this.context;
+      const master = this.masterGain;
+      // —— 夜环境底噪层（虫鸣 + 夜风）——
+      const nightGain = context.createGain();
+      nightGain.gain.value = 0;
+      nightGain.connect(master);
+      const chirpNoise = context.createBufferSource();
+      chirpNoise.buffer = this.createNoiseBuffer(context);
+      chirpNoise.loop = true;
+      const chirpBand = context.createBiquadFilter();
+      chirpBand.type = "bandpass";
+      chirpBand.frequency.value = 4200;
+      chirpBand.Q.value = 3.5;
+      const chirpLevel = context.createGain();
+      chirpLevel.gain.value = 0.62;
+      // 双 LFO 交错（互质近似频率）：虫鸣的疏密起伏，非稳态嘶声
+      for (const [freq, depth] of [
+        [0.23, 0.26],
+        [0.61, 0.14],
+      ] as const) {
+        const lfo = context.createOscillator();
+        lfo.frequency.value = freq;
+        const lfoGain = context.createGain();
+        lfoGain.gain.value = depth;
+        lfo.connect(lfoGain);
+        lfoGain.connect(chirpLevel.gain);
+        lfo.start();
+      }
+      chirpNoise.connect(chirpBand);
+      chirpBand.connect(chirpLevel);
+      chirpLevel.connect(nightGain);
+      const breezeNoise = context.createBufferSource();
+      breezeNoise.buffer = this.createNoiseBuffer(context);
+      breezeNoise.loop = true;
+      const breezeBand = context.createBiquadFilter();
+      breezeBand.type = "bandpass";
+      breezeBand.frequency.value = 320;
+      breezeBand.Q.value = 0.5;
+      const breezeLevel = context.createGain();
+      breezeLevel.gain.value = 0.42;
+      breezeNoise.connect(breezeBand);
+      breezeBand.connect(breezeLevel);
+      breezeLevel.connect(nightGain);
+      chirpNoise.start();
+      breezeNoise.start();
+      this.lunarNightGain = nightGain;
+      // —— 空气感低频垫层 ——
+      const airGain = context.createGain();
+      airGain.gain.value = 0;
+      airGain.connect(master);
+      const airNoise = context.createBufferSource();
+      airNoise.buffer = this.createNoiseBuffer(context);
+      airNoise.loop = true;
+      const airLow = context.createBiquadFilter();
+      airLow.type = "lowpass";
+      airLow.frequency.value = 180;
+      airNoise.connect(airLow);
+      airLow.connect(airGain);
+      airNoise.start();
+      this.lunarAirGain = airGain;
+    } catch {
+      // 静默降级
+      this.lunarNightGain = null;
+      this.lunarAirGain = null;
+    }
+  }
+
+  /**
+   * LE-M6：设置月食夜声景两层增益（已含峰值缩放与用户音量；0–1 钳制）。
+   * 包络节奏由调用方按本影食分（tSec 派生）经 utils/lunarEclipseAudio
+   * 纯函数逐帧驱动，此处 setTargetAtTime 短平滑（tc 0.3s）防爆音。
+   */
+  setLunarSoundscapeGains(night: number, air: number): void {
+    if (!this.context) return;
+    try {
+      const now = this.context.currentTime;
+      if (this.lunarNightGain) {
+        this.lunarNightGain.gain.setTargetAtTime(
+          Math.min(1, Math.max(0, night)),
+          now,
+          0.3,
+        );
+      }
+      if (this.lunarAirGain) {
+        this.lunarAirGain.gain.setTargetAtTime(
+          Math.min(1, Math.max(0, air)),
+          now,
+          0.3,
+        );
+      }
+    } catch {
+      // 静默降级
+    }
+  }
+
+  /**
+   * LE-M6 接触点可听化提示音（sonification 口径，UI 双语注明——真实月食
+   * 无声）：基频 + 三度泛音的柔和短音，参数由调用方按音色分组
+   * （半影/本影/食甚，LUNAR_CHIME_TONE_PARAMS）传入。
+   */
+  playLunarContactChime(
+    freq: number,
+    peak: number,
+    decaySec: number,
+    volume = 1,
+  ): void {
+    if (!this.context || !this.masterGain) return;
+    try {
+      const context = this.context;
+      const now = context.currentTime;
+      // 基频 + 五度 + 两个八度（泛音递减；月食声景克制，峰值远低于日食钻石环音）
+      const partials: ReadonlyArray<{ ratio: number; scale: number }> = [
+        { ratio: 1, scale: 1 },
+        { ratio: 1.5, scale: 0.35 },
+        { ratio: 4, scale: 0.12 },
+      ];
+      for (const partial of partials) {
+        const osc = context.createOscillator();
+        osc.type = "sine";
+        osc.frequency.value = freq * partial.ratio;
+        const gain = context.createGain();
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(
+          peak * partial.scale * volume,
+          now + 0.05,
+        );
+        gain.gain.exponentialRampToValueAtTime(0.001, now + decaySec);
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start(now);
+        osc.stop(now + decaySec + 0.1);
+      }
+    } catch {
+      // 静默降级
+    }
+  }
+
+  /**
+   * LE-M6 文化卡钟声（B10 登记：**文化演绎**，与科学声景分离——仅文化史
+   * 折叠卡内按钮触发，不进声景包络、不随时间轴自动出声）：
+   * 「鸣钟击鼓驱天狗」的一声铜钟——非谐泛音列（钟体金属声的心理声学特征）
+   * + 起音噪声瞬态（槌击）+ 长指数衰减。
+   */
+  playLunarCultureBell(volume = 1): void {
+    if (!this.context || !this.masterGain) return;
+    try {
+      const context = this.context;
+      const now = context.currentTime;
+      // 铜钟非谐泛音比（近似钟体模态：hum/prime/tierce/quint/nominal）
+      const partials: ReadonlyArray<{
+        ratio: number;
+        peak: number;
+        decaySec: number;
+      }> = [
+        { ratio: 0.5, peak: 0.16, decaySec: 6.5 },
+        { ratio: 1, peak: 0.2, decaySec: 5 },
+        { ratio: 1.2, peak: 0.12, decaySec: 3.4 },
+        { ratio: 1.5, peak: 0.08, decaySec: 2.6 },
+        { ratio: 2.0, peak: 0.06, decaySec: 1.8 },
+        { ratio: 2.7, peak: 0.035, decaySec: 1.2 },
+      ];
+      const base = 174; // 低沉大钟基频（F3 附近）
+      for (const partial of partials) {
+        const osc = context.createOscillator();
+        osc.type = "sine";
+        osc.frequency.value = base * partial.ratio;
+        const gain = context.createGain();
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(partial.peak * volume, now + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0005, now + partial.decaySec);
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start(now);
+        osc.stop(now + partial.decaySec + 0.1);
+      }
+      // 槌击瞬态（带通噪声极短包络）
+      const noise = context.createBufferSource();
+      noise.buffer = this.createNoiseBuffer(context);
+      const strike = context.createBiquadFilter();
+      strike.type = "bandpass";
+      strike.Q.value = 1.1;
+      strike.frequency.value = 2200;
+      const strikeGain = context.createGain();
+      strikeGain.gain.setValueAtTime(0.14 * volume, now);
+      strikeGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+      noise.connect(strike);
+      strike.connect(strikeGain);
+      strikeGain.connect(this.masterGain);
+      noise.start(now);
+      noise.stop(now + 0.3);
+    } catch {
+      // 静默降级
+    }
+  }
+
+  /**
    * UI 操作音效（可选需求 3.4.2）：短促点击音（开关/按钮）
    */
   playUiClick(volume = 1): void {
@@ -753,6 +971,8 @@ export class AudioEngine {
     this.sunBoilGain = null;
     this.eclipseAmbientGain = null;
     this.eclipseAirGain = null;
+    this.lunarNightGain = null;
+    this.lunarAirGain = null;
     if (this.context) {
       void this.context.close().catch(() => undefined);
     }

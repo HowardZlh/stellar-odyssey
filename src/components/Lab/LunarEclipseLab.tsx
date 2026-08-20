@@ -48,6 +48,7 @@ import {
 import { ToneMappingMode } from "postprocessing";
 import * as THREE from "three";
 import { useT } from "@/hooks/useI18n";
+import { useSimulationStore } from "@/store";
 import { useYaleBrightStars } from "@/hooks/useYaleBrightStars";
 import { useLunarEclipses } from "@/hooks/useLunarEclipses";
 import { useBitmapTexture } from "@/hooks/useBitmapTexture";
@@ -68,6 +69,7 @@ import {
 } from "@/utils/meteorShower";
 import {
   LAB_FOV_DEFAULT_DEG,
+  LAB_FOV_TELESCOPIC_MIN_DEG,
   LAB_POLAR_MAX_RAD,
   LAB_POLAR_MIN_RAD,
   fovPointScaleFactor,
@@ -109,6 +111,12 @@ import {
   type ViewIntroPose,
 } from "@/utils/solarEclipseSpace";
 import { LunarEclipseSpaceView } from "@/components/Lab/LunarEclipseSpaceView";
+import {
+  LunarAudioBridge,
+  LunarSoundscapeDriver,
+} from "@/components/Lab/LunarEclipseAudio";
+import { LunarCultureCard } from "@/components/Lab/LunarCultureCard";
+import { LabPanelDrawer } from "@/components/Lab/LabPanelDrawer";
 import {
   LUNAR_ART_RADIAL_FACTOR,
   LUNAR_REAL_RADIAL_MAGNIFY_FACTOR,
@@ -1237,10 +1245,14 @@ function LunarExperience({
     setViewTransition(preset);
   };
 
-  // M6 移动端底部抽屉展开态（<sm 生效；日食同范式，默认收起防遮挡场景）
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // M6-1 声景开关/音量（全局 store 单一事实源；masterGain 链承接静音）
+  const audioEnabled = useSimulationStore((s) => s.audioEnabled);
+  const audioVolume = useSimulationStore((s) => s.audioVolume);
+  const setAudioEnabled = useSimulationStore((s) => s.setAudioEnabled);
+  const setAudioVolume = useSimulationStore((s) => s.setAudioVolume);
 
-  // 画质档（流星雨同链：挂载时判定一次；reduced 关 Bloom、DPR≤2）
+  // 画质档（流星雨同链：挂载时判定一次；reduced 关 Bloom、DPR≤2、
+  // 银河带/小行星带关闭、红环壳降采样——M6-2 §4）
   const [quality] = useState<LabQualityParams>(() =>
     labQualityParams(
       typeof window === "undefined"
@@ -1391,6 +1403,10 @@ function LunarExperience({
 
   return (
     <div className="relative h-screen w-screen bg-black">
+      {/* M6-1 声景桥（DOM 层）：全局音效开关 → masterGain + 惰性构建夜声景层。
+          selenelion 彩蛋场景为独立换入（本树整体卸载）→ 引擎释放、彩蛋场景
+          静默，退出后按开关重建（M6-1 差异登记） */}
+      <LunarAudioBridge />
       <Canvas
         flat
         gl={{ antialias: true }}
@@ -1404,6 +1420,9 @@ function LunarExperience({
       >
         <color attach="background" args={["#000004"]} />
         <LunarTimeDriver refs={refs} onEnded={() => setPlaying(false)} />
+        {/* M6-1 声景驱动器（§5：夜声包络由本影食分逐帧重建 + 七接触点
+            可听化提示音；真实月食无声——lunarAudioNote 双语常显注明） */}
+        <LunarSoundscapeDriver refs={refs} />
         <LunarCameraAim refs={refs} eventId={eventId} />
         {/* M4 视角/预设机位运镜（1.6s 插值；期间相机控制器卸载） */}
         <LunarViewIntroRig
@@ -1433,6 +1452,7 @@ function LunarExperience({
             refs={refs}
             stars={stars}
             starPointMaxPx={quality.starPointMaxPx}
+            reduced={!quality.bloomEnabled}
           />
         )}
         {settings.viewMode === "space" && (
@@ -1461,6 +1481,7 @@ function LunarExperience({
                契约 C3 月球视角段） */
             <OrbitControls
               key={`${settings.viewMode}-${eventId}`}
+              makeDefault
               target={[0, 0, 0]}
               minDistance={CAMERA_RADIUS_MIN_UNITS}
               maxDistance={CAMERA_RADIUS_MAX_UNITS}
@@ -1491,8 +1512,10 @@ function LunarExperience({
               dampingFactor={0.12}
             />
           ))}
+        {/* 望远档 FOV（补丁 P1）：月盘/日盘 0.5° 需捏合到 ~3° 才看得清缺口；
+            旋转速度由 TrackpadLookControls 随 FOV 自适应（makeDefault 控制器） */}
         {settings.viewMode !== "space" && !viewTransition && (
-          <TrackpadLookControls />
+          <TrackpadLookControls minFovDeg={LAB_FOV_TELESCOPIC_MIN_DEG} />
         )}
         {/* 后期：Bloom + ACES（lab 既有底座；无双基准曝光状态机，契约 C4） */}
         {quality.bloomEnabled ? (
@@ -1528,26 +1551,15 @@ function LunarExperience({
       </div>
 
       {/* 右上：事件页签 + 观测点 + HUD + 阶段科普卡 + 数据来源（可滚动）。
-          <sm 转底部抽屉（日食/ObservatoryHarness 同范式——标题栏常显 +
-          ▾/▴ 开合钮 ≥44pt + aria-expanded + safe-area 底衬） */}
-      <div className="absolute right-3 top-3 max-h-[calc(100vh-8rem)] w-72 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-lg bg-black/65 p-3 text-xs text-gray-100 backdrop-blur max-sm:bottom-0 max-sm:left-0 max-sm:right-0 max-sm:top-auto max-sm:max-h-[55vh] max-sm:w-full max-sm:max-w-none max-sm:rounded-b-none max-sm:pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-sky-300">
-            {tr("lab.lunarPanelTitle")}
-          </h2>
-          <button
-            type="button"
-            onClick={() => setDrawerOpen((open) => !open)}
-            aria-expanded={drawerOpen}
-            aria-label={tr(
-              drawerOpen ? "lab.panelCollapseAria" : "lab.panelExpandAria",
-            )}
-            className="-my-2 flex h-11 w-11 items-center justify-center rounded text-sky-300 transition-colors hover:bg-white/10 sm:hidden"
-          >
-            {drawerOpen ? "▾" : "▴"}
-          </button>
-        </div>
-        <div className={`mt-2 ${drawerOpen ? "" : "max-sm:hidden"}`}>
+          <sm 转底部抽屉（M6-2：共享外壳 LabPanelDrawer——标题栏常显 +
+          ▾/▴ 开合钮 44pt + aria-expanded + safe-area 底衬，纯 CSS 断点） */}
+      <LabPanelDrawer
+        title={tr("lab.lunarPanelTitle")}
+        expandLabel={tr("lab.panelExpandAria")}
+        collapseLabel={tr("lab.panelCollapseAria")}
+        containerClassName="max-h-[calc(100vh-8rem)] max-sm:max-h-[55vh]"
+      >
+        <>
           <div
             role="tablist"
             aria-label={tr("lab.lunarTabAria")}
@@ -2103,11 +2115,56 @@ function LunarExperience({
           <p className="mb-2 rounded bg-white/5 px-2 py-1.5 text-[10px] leading-relaxed text-gray-400">
             {tr("lab.lunarLimbSurgeCard")}
           </p>
+          {/* M6 NGC 6629 掩星科普卡（2029 页签专属，§3.3；诚实口径：
+              10 等星云不在耶鲁亮星表内，场景不作图示） */}
+          {eventId === "l2029" && (
+            <p className="mb-2 rounded bg-white/5 px-2 py-1.5 text-[10px] leading-relaxed text-gray-300">
+              {tr("lab.lunarNgcCard")}
+            </p>
+          )}
+          {/* M6-1 文化史折叠卡（§3.3 与科学内容明确分区；卡内钟声 B10） */}
+          <LunarCultureCard />
+          {/* M6-1 声景区（§5）：开关/音量走全局 store（与主场景/流星雨/
+              日食同一事实源，masterGain 链天然承接静音）+ 可听化说明
+              （B15 用户可见登记：真实月食无声、夜声变化为艺术表达） */}
+          <div className="mt-3 border-t border-white/10 pt-2">
+            <label className="flex items-center gap-2 max-md:min-h-11">
+              <input
+                type="checkbox"
+                checked={audioEnabled}
+                onChange={(e) => setAudioEnabled(e.target.checked)}
+              />
+              <span>🔊 {tr("lab.lunarAudioEnable")}</span>
+            </label>
+            {audioEnabled && (
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={audioVolume}
+                aria-label={tr("lab.audioVolumeAria")}
+                onChange={(e) =>
+                  setAudioVolume(Number.parseFloat(e.target.value))
+                }
+                className="mt-1 h-1.5 w-full cursor-pointer accent-sky-400"
+              />
+            )}
+            <p className="mt-1 text-[10px] leading-snug text-gray-400">
+              {tr("lab.lunarAudioNote")}
+            </p>
+          </div>
+          {/* M6-2 降级档提示（reduced 档常显；几何与数值不变的诚实口径） */}
+          {!quality.bloomEnabled && (
+            <p className="mt-2 rounded bg-white/5 px-2 py-1 text-[9px] leading-snug text-gray-500">
+              {tr("lab.lunarReducedNote")}
+            </p>
+          )}
           <p className="mt-2 border-t border-white/10 pt-2 text-[10px] leading-snug text-gray-500">
             {tr("lab.dataSourceLabel")}：{entry?.dataSource ?? ""}
           </p>
-        </div>
-      </div>
+        </>
+      </LabPanelDrawer>
 
       {/* 底部：时间轴 scrubber（契约 C7 复用日食组件，7 锚点按事件缺省） */}
       <EclipseTimelineScrubber

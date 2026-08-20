@@ -17,7 +17,15 @@ import { earthRingColor, turbidityToDanjonL } from '../lunarEclipse';
 import { EARTH_EQUATORIAL_RADIUS_KM } from '../lunarEclipse';
 import {
   MOON_VIEW_EARTH_ALT_DEG,
+  MOON_VIEW_EDGE_FADE_END_FRAC,
+  MOON_VIEW_EDGE_FADE_START_FRAC,
+  MOON_VIEW_INTRO_FOV_DEG,
+  MOON_VIEW_MILKY_WAY_INTENSITY,
   MOON_VIEW_QUAD_HALF_ANGLE_RAD,
+  MOON_VIEW_STAR_GAIN,
+  MOON_VIEW_SUN_GLOW_GAIN,
+  MOON_VIEW_SUN_GLOW_SCALE,
+  MOON_VIEW_SUN_ROAM_MAX_RAD,
   SELENELION_DEFAULT_SEC,
   SELENELION_END_SEC,
   SELENELION_EVENT_ID,
@@ -153,6 +161,51 @@ describe('lunarMoonViewState（M5-1 月球视角；B8）', () => {
     // 山脊仰角上限 ~1.7°（labSky RIDGE 域）；地球需高于山脊且低垂近地平
     expect(MOON_VIEW_EARTH_ALT_DEG).toBeGreaterThan(3);
     expect(MOON_VIEW_EARTH_ALT_DEG).toBeLessThan(30);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LE-M6 补丁 P2：quad 边缘淡出窗 + 构图（月壤前景入画）
+// ---------------------------------------------------------------------------
+
+describe('LE-M6 P2 月球视角 quad 边缘窗与构图', () => {
+  it('边缘淡出窗完全在太阳漫游域之外（防淡出吃掉日盘/红环）', () => {
+    const fadeStartRad =
+      MOON_VIEW_QUAD_HALF_ANGLE_RAD * MOON_VIEW_EDGE_FADE_START_FRAC;
+    expect(MOON_VIEW_SUN_ROAM_MAX_RAD).toBeLessThan(fadeStartRad);
+  });
+
+  it('淡出窗在 quad 几何边界内闭合（边界处输出恒 0——方块的结构性根治）', () => {
+    expect(MOON_VIEW_EDGE_FADE_START_FRAC).toBeGreaterThan(0);
+    expect(MOON_VIEW_EDGE_FADE_START_FRAC).toBeLessThan(
+      MOON_VIEW_EDGE_FADE_END_FRAC,
+    );
+    expect(MOON_VIEW_EDGE_FADE_END_FRAC).toBeLessThanOrEqual(1);
+  });
+
+  it('太阳辉光收紧：衰减尺度落在日盘近旁（quad 半角内充分衰减，不再被硬切）', () => {
+    // 角落处（√2 × 半角）的辉光残余必须可忽略（<1% 幅度）
+    const sunRadRad = 0.267 * (Math.PI / 180);
+    const cornerRad = Math.SQRT2 * MOON_VIEW_QUAD_HALF_ANGLE_RAD;
+    const residual =
+      Math.exp(-cornerRad / (sunRadRad * MOON_VIEW_SUN_GLOW_SCALE)) *
+      MOON_VIEW_SUN_GLOW_GAIN;
+    expect(residual).toBeLessThan(0.01);
+  });
+
+  it('默认机位让月壤前景入画（画面下缘落到地平线以下）', () => {
+    // 地球居中 → 画面下缘 = 地球高度 − FOV/2，须为负（地平线在画面内）
+    expect(MOON_VIEW_EARTH_ALT_DEG - MOON_VIEW_INTRO_FOV_DEG / 2).toBeLessThan(0);
+    // 但地球仍完整在画面内（视半径 ~0.95° + 红环）
+    expect(MOON_VIEW_EARTH_ALT_DEG).toBeGreaterThan(2);
+  });
+
+  it('背景提亮走物理正确路径：星穹增益与银河带强度高于太空档', () => {
+    expect(MOON_VIEW_STAR_GAIN).toBeGreaterThan(0.9);
+    expect(MOON_VIEW_MILKY_WAY_INTENSITY).toBeGreaterThan(0.16);
+    // 克制口径：不是把画面整体抬亮（月面天空仍是纯黑）
+    expect(MOON_VIEW_STAR_GAIN).toBeLessThan(2.5);
+    expect(MOON_VIEW_MILKY_WAY_INTENSITY).toBeLessThan(0.6);
   });
 });
 

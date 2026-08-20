@@ -531,7 +531,7 @@ export const en: I18nDict = {
     eclipseEphemerisFailed:
       "Failed to load the eclipse ephemerides — the scene is unavailable. Please refresh and retry.",
     eclipseHintLookAround:
-      "Drag or two-finger scroll to look around · Pinch to zoom in on the eclipsed Sun",
+      "Drag or two-finger scroll to look around · pinch to zoom in (up to ~×20) on the eclipsed Sun and Baily's beads",
     eclipseViewTitle: "View",
     eclipseViewAria: "Switch viewpoint",
     eclipseViewGround: "Ground",
@@ -657,7 +657,7 @@ export const en: I18nDict = {
     lunarEphemerisFailed:
       "Failed to load lunar eclipse ephemerides — the scene is unavailable. Please refresh and try again.",
     lunarHintLookAround:
-      "Drag or two-finger scroll to look around · pinch to zoom in on the shadowed Moon",
+      "Drag or two-finger scroll to look around · pinch to zoom in (up to ~×20) on the umbral bite and the gradient inside it",
     lunarPanelTitle: "Observation Console",
     /** M3 blood-moon controls: Danjon presets + turbidity + exposure (B2/B6 notes) */
     lunarDanjonTitle: "Danjon scale (blood-moon depth)",
@@ -777,7 +777,7 @@ export const en: I18nDict = {
     /** LE-M5 Moon view (§2.3; B8 registration surfaces in lunarMoonViewCard) */
     lunarViewMoon: "Moon",
     lunarHintMoonView:
-      "Drag to look around the regolith and Earth · pinch to zoom — that red ring on Earth's limb is the light that paints the Moon red",
+      "Drag to look around the regolith and Earth · pinch to zoom in (up to ~×20) on that red ring on Earth's limb — the light that paints the Moon red",
     lunarMoonViewCard:
       "You are standing on the Moon's near side watching a solar eclipse by Earth: the Sun hides behind Earth, the night hemisphere goes pitch black, and only a ring of sunlight refracted through the atmosphere remains — the very light that crosses Earth's air, loses its short wavelengths, and lands at your feet: the source of the blood moon's red. Drag the turbidity slider: the ring deepens, and back in the ground view the blood moon deepens in sync. The ring is a mechanism-faithful artistic rendition (its width is exaggerated for visibility; no day-specific atmospheric data). Real-photo references: Surveyor 3 (1967) and Blue Ghost Mission 1 (2025) both captured this ring from the lunar surface.",
     lunarMoonGuideTip:
@@ -800,6 +800,35 @@ export const en: I18nDict = {
       "Atmospheric refraction lifts objects near the horizon by about 0.6° (true magnitude: ~34′ at the horizon) — the dashed circles mark the un-refracted geometric positions. Scrub to around UT 23:27: both the Moon and the Sun are geometrically below the horizon, yet you can see both at once — which is why a selenelion can only happen right at the horizon. The totally eclipsed Moon is extremely faint in dawn light (Danjon L=0 as actually rated in 1992); raise the exposure slider to spot it. The refraction lift here is a teaching simplification (constant 0.6° at the horizon, tapering to zero at 10° altitude).",
     lunarSelenelionHint:
       "Northwest: the eclipsed Moon setting · Southeast: the Sun rising — drag to sweep between the two horizons",
+    /** LE-M6-1 soundscape (§5; B15: the subtle night-ambience shift is an artistic rendering) */
+    lunarAudioEnable: "Lunar eclipse soundscape (sonification)",
+    lunarAudioNote:
+      "Soundscape note: a real lunar eclipse makes no sound of its own. The subtle shift in the night ambience (stylised insect chorus) as the eclipse deepens is an artistic rendering of the mood — deliberately kept faint, because a lunar eclipse has nothing like the abrupt hush reported at a total solar eclipse. The chimes at the seven contacts (P1/U1/U2/greatest/U3/U4/P4) are sonification by design: lightest for the penumbral contacts, brighter for the umbral ones.",
+    /** LE-M6-1 cultural-history card (§3.3 kept clearly apart from the physics; B10 bell = cultural rendition) */
+    lunarCultureTitle: "Cultural history: how people explained lunar eclipses",
+    lunarCultureTag: "Historical records and mythology (not a scientific explanation)",
+    lunarCultureItemCn:
+      "China — “the celestial dog eats the Moon”: people believed a hound was swallowing it and drove the beast off with bells, drums, gongs and firecrackers. The Moon always came back, so the “remedy” was handed down for millennia. The Zhou dynasty already had a rite for “rescuing the Moon” (drums beaten at the altar, per the Rites of Zhou) — while the imperial astronomical bureau was simultaneously computing eclipse times with precision.",
+    lunarCultureItemIndia:
+      "India — Rahu drank the nectar of immortality and was beheaded by Vishnu after the Sun and Moon exposed him. His head lives on and chases them to swallow them; having no body, the Moon always reappears from the severed neck.",
+    lunarCultureItemInca:
+      "Inca — a jaguar was biting the Moon, the blood-red colour being the wound. People beat objects and made dogs bark, fearing the jaguar would turn on them once it finished with the Moon.",
+    lunarCultureItemMeso:
+      "Mesopotamia — an eclipse threatened the king, so the Babylonians installed a “substitute king” to absorb the omen. They also left centuries of continuous eclipse records: exactly the data that revealed the saros cycle.",
+    lunarCultureItemNorse:
+      "Norse — the wolf Hati chases the Moon; when he catches it there is an eclipse, and at Ragnarök he swallows it for good.",
+    lunarCultureBellLabel: "Ring the bell to drive off the dog (one strike)",
+    lunarCultureBellAria: "Play one cultural-rendition bell strike",
+    lunarCultureBellNote:
+      "The bell is a cultural rendition (registered as B10): one strike per click inside this card only — it never sounds on its own along the timeline, and is kept apart from the scientific soundscape above.",
+    lunarCultureBellMuted:
+      "Turn on sound in the panel's soundscape section first to hear the bell.",
+    /** LE-M6 NGC 6629 occultation card (2029 tab only; §3.3) */
+    lunarNgcCard:
+      "Bonus feature (2029-06-26): during this eclipse the darkened Moon occults NGC 6629, a planetary nebula in Sagittarius (~10th magnitude, ~6,600 light-years away) — with the Moon almost fully dimmed, a nebula normally drowned in moonlight becomes recordable. This lab's star dome only draws the Yale Bright Star Catalogue (to ~6.5 mag), so this 10th-magnitude nebula is not among them: it appears as a science note only, not as an object in the scene.",
+    /** LE-M6-2 reduced-quality tier note (§4) */
+    lunarReducedNote:
+      "Automatically stepped down for this device: bloom off, render resolution capped, and the Milky Way band / asteroid belt in the space view plus the shading detail of the Moon-view atmospheric ring simplified accordingly — all geometry and numbers are unchanged.",
   },
   helpHint: {
     controls:

@@ -605,9 +605,17 @@ const SECTION_DISK_VERTEX_SHADER = /* glsl */ `
   }
 `;
 
-/** 半透明双圆：本影盘（实）+ 半影盘（淡）+ 双缘描线（quad 半宽 = 半影显示半径 × 1.06） */
+/**
+ * 半透明双圆：本影盘（实）+ 半影盘（淡）+ 双缘描线（quad 半宽 = 半影显示半径 × 1.06）
+ *
+ * LE-M6 补丁 P4：**补回 `varying vec2 vUv` 声明**——此前片元侧漏声明导致
+ * program 编译失败（`ERROR: 'vUv' : undeclared identifier`），「月距处影盘
+ * 剖面」自 M4-2 起从未真正渲染过（WebGL 编译在运行时，Jest/构建都拦不住）。
+ * 配套 `__tests__/glslVaryings.test.ts` 静态扫描全仓 glsl 模板串防同类静默失效。
+ */
 const SECTION_DISK_FRAGMENT_SHADER = /* glsl */ `
   uniform float uRatio;
+  varying vec2 vUv;
   void main() {
     float r = length(vUv - 0.5) * 2.0 * 1.06;
     float penFill = (1.0 - smoothstep(0.985, 1.0, r)) * 0.05;
@@ -935,8 +943,16 @@ export function LunarEclipseSpaceView({
           belt={art && asteroidBelt}
         />
       )}
-      {/* 月球绕地真轨道环（radialFactorRef 各向异性共点；倾角叙事时由夸张环接管） */}
-      {!inclinationDemo && (
+      {/* 月球绕地真轨道环：**仅真比例档（factor === 1）绘制**。
+          LE-M6 补丁 P3（M6-CP 目验发现）：各向异性显示映射
+          D(v)=f·v+(1−f)(a·v)a 只在月球近旁成立——整圈轨道被映射后，沿影轴
+          的基向量保持 384 单位、垂直影轴的基向量放大到 384×f（艺术化档
+          ≈5,600 单位 > 相机域 3,800），画面上是一条横穿全屏的巨型长椭圆
+          （长短轴 14.6:1），几何上无意义。改为 f≠1 时不绘制：轨迹语义由
+          下方 MoonTrajectoryLine 承担——它按事件时间窗逐点走同一显示映射，
+          与月球严格共点，长度约 3.5 倍本影显示直径，与真实 P1→P4 行程
+          比例一致（正确且够用）。 */}
+      {!inclinationDemo && factor === 1 && (
         <MoonPathRing
           tSecRef={refs.tSecRef}
           frameRef={refs.spaceRef}

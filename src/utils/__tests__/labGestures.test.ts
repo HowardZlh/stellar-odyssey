@@ -6,6 +6,8 @@ import {
   LAB_FOV_DEFAULT_DEG,
   LAB_FOV_MAX_DEG,
   LAB_FOV_MIN_DEG,
+  LAB_FOV_TELESCOPIC_MIN_DEG,
+  LAB_ROTATE_SPEED_MIN_RATIO,
   LAB_POLAR_MAX_RAD,
   LAB_POLAR_MIN_RAD,
   WHEEL_LOOK_SIGN,
@@ -15,6 +17,7 @@ import {
   clampLabPolar,
   followOrbitDelta,
   fovPointScaleFactor,
+  labRotateSpeedForFov,
   pinchFovDeg,
   safariGestureFovDeg,
   touchPinchScale,
@@ -187,5 +190,96 @@ describe('M3.6-2 跟随环绕手势（followOrbitDelta / clampFollowElevation / 
     expect(clampFollowDistance(0.01, 0)).toBe(FOLLOW_DISTANCE_MIN_KM);
     expect(clampFollowDistance(Number.NaN, 0)).toBe(FOLLOW_DISTANCE_DEFAULT_KM);
     expect(clampFollowDistance(1.5, Number.NaN)).toBe(1.5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LE-M6 补丁 P1：望远档 FOV 下限 + 旋转速度自适应
+// ---------------------------------------------------------------------------
+
+describe('LE-M6 P1 望远档（LAB_FOV_TELESCOPIC_MIN_DEG）', () => {
+  it('缺省档口径不变（流星雨/观察站逐像素零回归）', () => {
+    expect(LAB_FOV_MIN_DEG).toBe(30);
+    expect(clampLabFovDeg(10)).toBe(30);
+    expect(pinchFovDeg(31, -500)).toBe(30);
+    expect(safariGestureFovDeg(65, 10)).toBe(30);
+    expect(wheelLookDelta(0, 100, 1000, 10).dPhiRad).toBeCloseTo(
+      (30 * Math.PI) / 180 / 1000 * 100,
+      12,
+    );
+  });
+
+  it('望远档下限 3°，且足以把 0.5° 量级的日月盘放大到视口高 >15%', () => {
+    expect(LAB_FOV_TELESCOPIC_MIN_DEG).toBe(3);
+    expect(clampLabFovDeg(1, LAB_FOV_TELESCOPIC_MIN_DEG)).toBe(3);
+    expect(clampLabFovDeg(8, LAB_FOV_TELESCOPIC_MIN_DEG)).toBe(8);
+    // 月视直径 0.542°（2029 事件 HUD 实测）在下限处占视口高的比例
+    expect(0.542 / LAB_FOV_TELESCOPIC_MIN_DEG).toBeGreaterThan(0.15);
+    // 相对缺省档的放大倍数
+    expect(LAB_FOV_MIN_DEG / LAB_FOV_TELESCOPIC_MIN_DEG).toBe(10);
+  });
+
+  it('望远档贯通捏合三链（ctrl+wheel / Safari gesture / 触屏双指）', () => {
+    expect(pinchFovDeg(31, -500, LAB_FOV_TELESCOPIC_MIN_DEG)).toBe(3);
+    expect(safariGestureFovDeg(65, 100, LAB_FOV_TELESCOPIC_MIN_DEG)).toBe(3);
+    expect(
+      safariGestureFovDeg(
+        65,
+        touchPinchScale(50, 5000),
+        LAB_FOV_TELESCOPIC_MIN_DEG,
+      ),
+    ).toBe(3);
+    // 上限与非法入参行为不随下限变化
+    expect(pinchFovDeg(84, 500, LAB_FOV_TELESCOPIC_MIN_DEG)).toBe(85);
+    expect(safariGestureFovDeg(65, 0, LAB_FOV_TELESCOPIC_MIN_DEG)).toBe(65);
+    expect(pinchFovDeg(65, Number.NaN, LAB_FOV_TELESCOPIC_MIN_DEG)).toBe(65);
+  });
+
+  it('望远档下环顾步长随 FOV 变细（每像素角度恒定的手感前提）', () => {
+    const wide = wheelLookDelta(0, 100, 1000, 65, LAB_FOV_TELESCOPIC_MIN_DEG);
+    const tele = wheelLookDelta(0, 100, 1000, 3, LAB_FOV_TELESCOPIC_MIN_DEG);
+    expect(tele.dPhiRad).toBeCloseTo(wide.dPhiRad * (3 / 65), 12);
+  });
+
+  it('minDeg 非法/越界入参安全钳回合法域（防调用方传脏值）', () => {
+    expect(clampLabFovDeg(1, Number.NaN)).toBe(LAB_FOV_MIN_DEG);
+    expect(clampLabFovDeg(1, 0)).toBe(LAB_FOV_TELESCOPIC_MIN_DEG);
+    expect(clampLabFovDeg(1, 200)).toBe(LAB_FOV_MAX_DEG);
+  });
+
+  it('星点尺度补偿在望远档下不再继续放大（恒星是不可分辨点源）', () => {
+    expect(fovPointScaleFactor(3)).toBe(fovPointScaleFactor(30));
+    expect(fovPointScaleFactor(1)).toBe(fovPointScaleFactor(LAB_FOV_MIN_DEG));
+  });
+});
+
+describe('labRotateSpeedForFov（望远档旋转速度自适应）', () => {
+  it('默认 FOV 处恒等于基准速度（既有手感零变化）', () => {
+    expect(labRotateSpeedForFov(0.45, LAB_FOV_DEFAULT_DEG)).toBeCloseTo(0.45, 12);
+  });
+
+  it('速度 ∝ FOV：望远档下拖拽的屏幕像素手感恒定', () => {
+    expect(labRotateSpeedForFov(0.45, 32.5)).toBeCloseTo(0.225, 12);
+    expect(labRotateSpeedForFov(0.45, 13)).toBeCloseTo(0.09, 12);
+    // 3° 时约为默认的 1/21——否则一次拖拽会扫过数十个屏宽
+    expect(labRotateSpeedForFov(0.45, 3) / 0.45).toBeCloseTo(3 / 65, 12);
+  });
+
+  it('单调递增且恒为正（下限比例防归零卡死）', () => {
+    let prev = 0;
+    for (let fov = 3; fov <= 85; fov += 1) {
+      const s = labRotateSpeedForFov(0.5, fov);
+      expect(s).toBeGreaterThan(prev);
+      prev = s;
+    }
+    expect(labRotateSpeedForFov(0.5, 0.01)).toBeGreaterThan(0);
+    expect(LAB_ROTATE_SPEED_MIN_RATIO).toBeGreaterThan(0);
+  });
+
+  it('非法入参：基准 ≤0 返回 0，FOV 非有限退回默认档速度', () => {
+    expect(labRotateSpeedForFov(0, 30)).toBe(0);
+    expect(labRotateSpeedForFov(-1, 30)).toBe(0);
+    expect(labRotateSpeedForFov(Number.NaN, 30)).toBe(0);
+    expect(labRotateSpeedForFov(0.45, Number.NaN)).toBeCloseTo(0.45, 12);
   });
 });

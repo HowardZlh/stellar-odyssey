@@ -10,13 +10,23 @@
  * 监听挂画布元素、非被动（preventDefault 阻止页面缩放/回弹）。
  * 消费前提：反转轨道相机（target 原点、polar 钳制与 OrbitControls props
  * 同一事实源 labGestures 常量）。
+ *
+ * LE-M6 补丁 P1（望远档）：`minFovDeg` 入参（缺省 `LAB_FOV_MIN_DEG` = 30
+ * ——流星雨/观察站逐像素零变化），日月食条目传 `LAB_FOV_TELESCOPIC_MIN_DEG`
+ * （3°，日月盘 0.5° 可放大到视口高 ~18%）。配套**旋转速度随 FOV 自适应**：
+ * 逐帧把 `labRotateSpeedForFov(基准, 当前FOV)` 写回默认轨道控制器
+ * （`makeDefault` 的 OrbitControls 实例），保证望远档下拖拽的**屏幕像素
+ * 手感恒定**——否则 3° 视场下一次拖拽会扫过数十个屏宽。基准速度取控制器
+ * 实例首见时的 `rotateSpeed`（组件侧 props 即事实源，本组件只做缩放）。
  */
 
-import { useEffect } from 'react';
-import { useThree } from '@react-three/fiber';
+import { useEffect, useRef } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import {
+  LAB_FOV_MIN_DEG,
   clampLabPolar,
+  labRotateSpeedForFov,
   pinchFovDeg,
   safariGestureFovDeg,
   touchPinchScale,
@@ -28,9 +38,37 @@ interface SafariGestureEvent extends Event {
   readonly scale?: number;
 }
 
-export function TrackpadLookControls(): null {
+export interface TrackpadLookControlsProps {
+  /**
+   * FOV 缩放下限（度）：缺省 30（`LAB_FOV_MIN_DEG`，流星雨/观察站原口径）；
+   * 日月食条目传 `LAB_FOV_TELESCOPIC_MIN_DEG`（3°）开望远档。
+   */
+  minFovDeg?: number;
+}
+
+export function TrackpadLookControls({
+  minFovDeg = LAB_FOV_MIN_DEG,
+}: TrackpadLookControlsProps = {}): null {
   const camera = useThree((s) => s.camera);
   const gl = useThree((s) => s.gl);
+  const controls = useThree((s) => s.controls) as {
+    rotateSpeed?: number;
+  } | null;
+
+  /** 基准 rotateSpeed（按控制器实例记忆一次，防被自适应写入值污染） */
+  const baseSpeedRef = useRef<{ obj: unknown; base: number } | null>(null);
+
+  // 旋转速度自适应（逐帧读 FOV → 写控制器；运镜 rig 直改 FOV 的路径同样覆盖）
+  useFrame(() => {
+    if (!controls || typeof controls.rotateSpeed !== 'number') return;
+    if (baseSpeedRef.current?.obj !== controls) {
+      baseSpeedRef.current = { obj: controls, base: controls.rotateSpeed };
+    }
+    controls.rotateSpeed = labRotateSpeedForFov(
+      baseSpeedRef.current.base,
+      (camera as THREE.PerspectiveCamera).fov
+    );
+  });
 
   useEffect(() => {
     const el = gl.domElement;
@@ -49,7 +87,7 @@ export function TrackpadLookControls(): null {
       e.preventDefault();
       if (e.ctrlKey || e.metaKey) {
         // 触控板捏合（Chrome/Firefox/Edge 映射为 wheel+ctrlKey）→ FOV
-        if (!gestureActive) applyFov(pinchFovDeg(cam.fov, e.deltaY));
+        if (!gestureActive) applyFov(pinchFovDeg(cam.fov, e.deltaY, minFovDeg));
         return;
       }
       // 双指滚动 → 环顾（deltaMode 换行/换页按近似像素预乘）
@@ -58,7 +96,8 @@ export function TrackpadLookControls(): null {
         e.deltaX * unit,
         e.deltaY * unit,
         el.clientHeight,
-        cam.fov
+        cam.fov,
+        minFovDeg
       );
       if (dThetaRad === 0 && dPhiRad === 0) return;
       // 相机球坐标绕 target（原点）旋转，半径不变；polar 钳制与
@@ -90,7 +129,11 @@ export function TrackpadLookControls(): null {
       if (e.touches.length !== 2 || touchStartDistPx <= 0) return;
       e.preventDefault();
       applyFov(
-        safariGestureFovDeg(touchStartFovDeg, touchPinchScale(touchStartDistPx, touchDistPx(e.touches)))
+        safariGestureFovDeg(
+          touchStartFovDeg,
+          touchPinchScale(touchStartDistPx, touchDistPx(e.touches)),
+          minFovDeg
+        )
       );
     };
     const onTouchEnd = (e: TouchEvent): void => {
@@ -106,7 +149,7 @@ export function TrackpadLookControls(): null {
       e.preventDefault();
       const scale = (e as SafariGestureEvent).scale;
       if (typeof scale === 'number') {
-        applyFov(safariGestureFovDeg(gestureStartFovDeg, scale));
+        applyFov(safariGestureFovDeg(gestureStartFovDeg, scale, minFovDeg));
       }
     };
     const onGestureEnd = (e: Event): void => {
@@ -132,7 +175,7 @@ export function TrackpadLookControls(): null {
       el.removeEventListener('touchend', onTouchEnd);
       el.removeEventListener('touchcancel', onTouchEnd);
     };
-  }, [camera, gl]);
+  }, [camera, gl, minFovDeg]);
 
   return null;
 }

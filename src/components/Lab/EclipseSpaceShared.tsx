@@ -529,9 +529,15 @@ const SPACE_STAR_FRAGMENT_SHADER = /* glsl */ `
 export function SpaceStarDome({
   stars,
   starPointMaxPx,
+  gain = SPACE_STAR_GAIN,
 }: {
   stars: readonly YaleBrightStar[];
   starPointMaxPx: number;
+  /**
+   * 星点亮度增益（缺省 `SPACE_STAR_GAIN` = 0.9——两条目太空档零变化）。
+   * LE-M6 补丁 P2：月球视角传更高值（无大气零消光，物理正确的提亮）。
+   */
+  gain?: number;
 }): JSX.Element {
   const { geometry, material } = useMemo(() => {
     const n = stars.length;
@@ -563,7 +569,7 @@ export function SpaceStarDome({
         uScale: { value: 400 },
         uDomeRadius: { value: SPACE_STAR_DOME_RADIUS_UNITS },
         uPointMax: { value: starPointMaxPx },
-        uGain: { value: SPACE_STAR_GAIN },
+        uGain: { value: gain },
       },
       vertexShader: SPACE_STAR_VERTEX_SHADER,
       fragmentShader: SPACE_STAR_FRAGMENT_SHADER,
@@ -573,7 +579,7 @@ export function SpaceStarDome({
       blending: THREE.AdditiveBlending,
     });
     return { geometry: geo, material: mat };
-  }, [stars, starPointMaxPx]);
+  }, [stars, starPointMaxPx, gain]);
 
   useEffect(() => {
     return () => {
@@ -633,7 +639,15 @@ const MILKY_WAY_FRAGMENT_SHADER = /* glsl */ `
 const MILKY_WAY_INTENSITY = 0.16;
 
 /** 银河带壳（1 draw call；uniform 全常量，零帧更新） */
-export function MilkyWayBand(): JSX.Element {
+export function MilkyWayBand({
+  intensity = MILKY_WAY_INTENSITY,
+}: {
+  /**
+   * 弥散亮度（缺省 `MILKY_WAY_INTENSITY` = 0.16——两条目太空档零变化）。
+   * LE-M6 补丁 P2：月球视角传更高值（无大气月面所见银河远比地面壮观）。
+   */
+  intensity?: number;
+} = {}): JSX.Element {
   const material = useMemo(() => {
     const pole: MutableVec3 = [0, 0, 0];
     const center: MutableVec3 = [0, 0, 0];
@@ -643,7 +657,7 @@ export function MilkyWayBand(): JSX.Element {
       uniforms: {
         uPole: { value: new THREE.Vector3(...pole) },
         uCenter: { value: new THREE.Vector3(...center) },
-        uIntensity: { value: MILKY_WAY_INTENSITY },
+        uIntensity: { value: intensity },
       },
       vertexShader: MILKY_WAY_VERTEX_SHADER,
       fragmentShader: MILKY_WAY_FRAGMENT_SHADER,
@@ -652,7 +666,7 @@ export function MilkyWayBand(): JSX.Element {
       blending: THREE.AdditiveBlending,
       side: THREE.BackSide,
     });
-  }, []);
+  }, [intensity]);
   useEffect(() => {
     return () => {
       material.dispose();

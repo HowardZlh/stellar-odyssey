@@ -25,8 +25,17 @@
  * 月面天空 ~27.3 天/圈的缓慢周日运动在场景时窗内 <3°，静态近似并入 B11）。
  *
  * 渲染红线（§4）：禁粒子（环壳 + shader 解析绘制）；渲染循环零 buffer 更新
- * （每帧只写 uniform/材质色）；draw call = 星穹 1 + 地球红环 quad 1 +
- * 月壤地面盘 1 + 月壤山脊 1 = 4 ≤ 10 预算。本组件不订阅 locale。
+ * （每帧只写 uniform/材质色）；draw call = 星穹 1 + 银河带 1（补丁 P2，
+ * reduced 档关）+ 地球红环 quad 1 + 月壤地面盘 1 + 月壤山脊 1 = 5 ≤ 10 预算。
+ * 本组件不订阅 locale。
+ *
+ * LE-M6 补丁 P2（M6-CP 目验发现）：① 片元**边缘淡出窗**——原实现的太阳
+ * 辉光衰减尺度（5× 太阳视半径 = 1.33°）在 2.2° 的 quad 内衰减不掉，被 quad
+ * 几何边界硬切成一个明显的亮灰方块；现 col/alpha 同乘边缘窗，边界处恒为 0
+ * （结构性防守，后续新增发光项自动受收）；② 辉光收紧至 2× 太阳视半径、
+ * 幅度 0.45（月面无大气，本项只是相机眩光的再现）；③ 背景不再空洞——
+ * 星穹增益提高 + 挂载银河带 + 默认机位下调让月壤前景入画（三项均为
+ * 物理正确的做法，**不抬全局曝光底**：月面天空仍是纯黑）。
  */
 
 import type { JSX } from 'react';
@@ -46,15 +55,24 @@ import {
   EARTH_RING_WIDTH_FRAC,
   MOON_VIEW_EARTH_ALT_DEG,
   MOON_VIEW_EARTH_AZ_DEG,
+  MOON_VIEW_EDGE_FADE_END_FRAC,
+  MOON_VIEW_EDGE_FADE_START_FRAC,
+  MOON_VIEW_MILKY_WAY_INTENSITY,
   MOON_VIEW_QUAD_HALF_ANGLE_RAD,
   MOON_VIEW_RING_GAIN,
+  MOON_VIEW_STAR_GAIN,
   MOON_VIEW_SUN_GAIN,
+  MOON_VIEW_SUN_GLOW_GAIN,
+  MOON_VIEW_SUN_GLOW_SCALE,
   emptyLunarMoonViewState,
   lunarExposureGain,
   lunarMoonViewState,
   type LunarFrameState,
 } from '@/utils/lunarEclipseLab';
-import { SpaceStarDome } from '@/components/Lab/EclipseSpaceShared';
+import {
+  MilkyWayBand,
+  SpaceStarDome,
+} from '@/components/Lab/EclipseSpaceShared';
 
 /** 度 → 弧度 */
 const DEG = Math.PI / 180;
@@ -128,13 +146,23 @@ const EARTH_RING_FRAGMENT_SHADER = /* glsl */ `
     float w = uEarthR * ${EARTH_RING_WIDTH_FRAC.toFixed(3)};
     float t = (r - uEarthR) / max(w, 1e-6);
     float ringShape = t < 0.0 ? exp(t * 3.0) : exp(-t * 1.2);
+    // 边缘淡出窗（补丁 P2）：quad 几何边界处强制归零——任何发光项都不再
+    // 被硬切出方块（结构性防守，勿删）
+    float edge = 1.0 - smoothstep(
+      uHalfAngle * ${MOON_VIEW_EDGE_FADE_START_FRAC.toFixed(3)},
+      uHalfAngle * ${MOON_VIEW_EDGE_FADE_END_FRAC.toFixed(3)},
+      r
+    );
     // 前向散射方位调制：太阳偏心时朝日侧更亮（全食深处 sep→0 趋于均匀）
-    float sep = length(uSunOff);
+    // reduced 档降采样：省去逐像素方位求解，取均匀环（形状/色相/亮度基准不变）
     float azMod = 1.0;
-    if (sep > 1e-6 && r > 1e-6) {
-      azMod = 1.0
-        + 0.45 * dot(vAng / r, uSunOff / sep) * clamp(sep / uEarthR, 0.0, 1.0);
-    }
+    #ifndef LUNAR_RING_REDUCED
+      float sep = length(uSunOff);
+      if (sep > 1e-6 && r > 1e-6) {
+        azMod = 1.0
+          + 0.45 * dot(vAng / r, uSunOff / sep) * clamp(sep / uEarthR, 0.0, 1.0);
+      }
+    #endif
     vec3 ringCol = uRing * ringShape * azMod
       * ${MOON_VIEW_RING_GAIN.toFixed(2)} * (1.0 - 0.85 * uSunVis);
     // 太阳（偏食段部分露出；地球盘几何遮挡）
@@ -142,12 +170,18 @@ const EARTH_RING_FRAGMENT_SHADER = /* glsl */ `
     float sunAa = uSunR * 0.25;
     float sunMask = (1.0 - smoothstep(uSunR - sunAa, uSunR + sunAa, ds)) * (1.0 - disk);
     vec3 sunCol = vec3(1.0, 0.95, 0.86) * ${MOON_VIEW_SUN_GAIN.toFixed(1)} * sunMask;
-    // 太阳辉光包络（露出时随可见比增强）
-    vec3 glow = vec3(1.0, 0.9, 0.75) * exp(-ds / (uSunR * 5.0)) * 0.7
-      * uSunVis * (1.0 - disk);
+    // 太阳辉光包络（露出时随可见比增强）；reduced 档省去 exp 长尾。
+    // 补丁 P2：衰减尺度与幅度收紧（月面无大气，本项只是相机眩光的再现）
+    vec3 glow = vec3(0.0);
+    #ifndef LUNAR_RING_REDUCED
+      glow = vec3(1.0, 0.9, 0.75)
+        * exp(-ds / (uSunR * ${MOON_VIEW_SUN_GLOW_SCALE.toFixed(2)}))
+        * ${MOON_VIEW_SUN_GLOW_GAIN.toFixed(2)} * uSunVis * (1.0 - disk);
+    #endif
 
-    vec3 col = (earthCol * disk + ringCol + sunCol + glow) * uExposure;
-    float alpha = max(disk, max(ringShape * (1.0 - 0.85 * uSunVis), sunMask));
+    vec3 col = (earthCol * disk + ringCol + sunCol + glow) * uExposure * edge;
+    float alpha =
+      max(disk, max(ringShape * (1.0 - 0.85 * uSunVis), sunMask)) * edge;
     if (alpha < 0.004 && max(col.r, max(col.g, col.b)) < 0.004) discard;
     gl_FragColor = vec4(col, clamp(alpha, 0.0, 1.0));
   }
@@ -156,12 +190,25 @@ const EARTH_RING_FRAGMENT_SHADER = /* glsl */ `
 /**
  * 地球红环 quad（1 draw call；位姿固定挂载期一次，逐帧只写标量/vec2/vec3
  * uniform——零 buffer 更新）。
+ *
+ * reduced 档「红环壳降采样」（M6-2，需求 §4 画质分档）：`uReduced` 关闭
+ * 两项**逐像素附加项**——前向散射方位调制（依赖 length/dot 的方位求解）
+ * 与太阳辉光包络（exp 长尾），改由常数/硬边替代。红环的形状、色相、
+ * 亮度基准与地球/太阳的几何尺寸**全部不变**（只减片元指令数，非改物理），
+ * 用户可见侧为 `lab.lunarReducedNote`。
  */
-function EarthRingQuad({ refs }: { refs: LunarMoonViewRefs }): JSX.Element {
+function EarthRingQuad({
+  refs,
+  reduced,
+}: {
+  refs: LunarMoonViewRefs;
+  reduced: boolean;
+}): JSX.Element {
   const meshRef = useRef<THREE.Mesh>(null);
   const material = useMemo(
     () =>
       new THREE.ShaderMaterial({
+        defines: reduced ? { LUNAR_RING_REDUCED: '' } : {},
         uniforms: {
           uHalfAngle: { value: MOON_VIEW_QUAD_HALF_ANGLE_RAD },
           uEarthR: { value: 0.0166 },
@@ -177,7 +224,8 @@ function EarthRingQuad({ refs }: { refs: LunarMoonViewRefs }): JSX.Element {
         depthWrite: false,
         premultipliedAlpha: true,
       }),
-    []
+    // 画质档为挂载期常量（labQualityParams 同链，切档不发生）——依赖登记
+    [reduced]
   );
   useEffect(() => {
     return () => {
@@ -226,7 +274,13 @@ function EarthRingQuad({ refs }: { refs: LunarMoonViewRefs }): JSX.Element {
 // ---------------------------------------------------------------------------
 
 /** 月壤地面盘（1 draw call；色 = surfaceRgb——直射灰/红环红随食相混合） */
-function MoonRegolithGround({ refs }: { refs: LunarMoonViewRefs }): JSX.Element {
+function MoonRegolithGround({
+  refs,
+  reduced,
+}: {
+  refs: LunarMoonViewRefs;
+  reduced: boolean;
+}): JSX.Element {
   const materialRef = useRef<THREE.MeshBasicMaterial>(null);
   const scratch = useMemo(() => emptyLunarMoonViewState(), []);
 
@@ -245,7 +299,7 @@ function MoonRegolithGround({ refs }: { refs: LunarMoonViewRefs }): JSX.Element 
 
   return (
     <mesh rotation-x={-Math.PI / 2} position={[0, MOON_GROUND_Y_UNITS, 0]}>
-      <circleGeometry args={[STAR_DOME_RADIUS_UNITS, 96]} />
+      <circleGeometry args={[STAR_DOME_RADIUS_UNITS, reduced ? 48 : 96]} />
       <meshBasicMaterial ref={materialRef} color="#050505" side={THREE.DoubleSide} />
     </mesh>
   );
@@ -320,6 +374,11 @@ export interface LunarEclipseMoonViewProps {
   stars: readonly YaleBrightStar[] | null;
   /** 星点尺寸上限（labQualityParams 同链） */
   starPointMaxPx: number;
+  /**
+   * 画质降级档（M6-2，§4：reduced 档「红环壳降采样」）——红环片元省去
+   * 方位调制与辉光长尾、月壤地面盘分段减半；几何尺寸与色值口径不变。
+   */
+  reduced?: boolean;
 }
 
 /** 月球视角场景组（挂载于 LunarEclipseLab 的 viewMode==='moon' 分支） */
@@ -327,12 +386,22 @@ export function LunarEclipseMoonView({
   refs,
   stars,
   starPointMaxPx,
+  reduced = false,
 }: LunarEclipseMoonViewProps): JSX.Element {
   return (
     <>
-      {stars && <SpaceStarDome stars={stars} starPointMaxPx={starPointMaxPx} />}
-      <EarthRingQuad refs={refs} />
-      <MoonRegolithGround refs={refs} />
+      {/* 星穹（无大气零消光 → 增益高于太空档，补丁 P2） */}
+      {stars && (
+        <SpaceStarDome
+          stars={stars}
+          starPointMaxPx={starPointMaxPx}
+          gain={MOON_VIEW_STAR_GAIN}
+        />
+      )}
+      {/* 银河带（补丁 P2）：月面天空的真实主角，填充背景；reduced 档不挂载 */}
+      {!reduced && <MilkyWayBand intensity={MOON_VIEW_MILKY_WAY_INTENSITY} />}
+      <EarthRingQuad refs={refs} reduced={reduced} />
+      <MoonRegolithGround refs={refs} reduced={reduced} />
       <MoonRegolithRidge refs={refs} />
     </>
   );

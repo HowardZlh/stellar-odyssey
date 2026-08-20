@@ -50,6 +50,7 @@ import {
 } from '@/utils/meteorShower';
 import {
   LAB_FOV_DEFAULT_DEG,
+  LAB_FOV_TELESCOPIC_MIN_DEG,
   LAB_POLAR_MAX_RAD,
   LAB_POLAR_MIN_RAD,
 } from '@/utils/labGestures';
@@ -83,6 +84,7 @@ import {
 } from '@/utils/lunarEclipseLab';
 import { createLunarMoonMaterial } from '@/components/Lab/lunarMoonDiskMaterial';
 import { TrackpadLookControls } from '@/components/Lab/TrackpadLookControls';
+import { LabPanelDrawer } from '@/components/Lab/LabPanelDrawer';
 
 /** 度 → 弧度 */
 const DEG = Math.PI / 180;
@@ -573,6 +575,7 @@ export function LunarSelenelionScene({
         <SelenelionGround refs={refs} />
         <OrbitControls
           key={`sel-${aim.target}-${aim.count}`}
+          makeDefault
           target={[0, 0, 0]}
           minDistance={CAMERA_RADIUS_MIN_UNITS}
           maxDistance={CAMERA_RADIUS_MAX_UNITS}
@@ -584,7 +587,7 @@ export function LunarSelenelionScene({
           enableDamping
           dampingFactor={0.12}
         />
-        <TrackpadLookControls />
+        <TrackpadLookControls minFovDeg={LAB_FOV_TELESCOPIC_MIN_DEG} />
         {bloomEnabled ? (
           <EffectComposer multisampling={4}>
             <Bloom
@@ -616,8 +619,15 @@ export function LunarSelenelionScene({
         </div>
       </div>
 
-      {/* 右上：HUD + 折射说明（B9 用户可见侧） */}
-      <div className="absolute right-3 top-3 w-72 max-w-[calc(100vw-1.5rem)] rounded-lg bg-black/65 p-3 text-xs text-gray-100 backdrop-blur max-sm:bottom-auto">
+      {/* 右上：HUD + 折射说明（B9 用户可见侧）。<sm 转底部抽屉
+          （M6-2 共享外壳；标题即场景名，桌面左上标题保持） */}
+      <LabPanelDrawer
+        title={tr('lab.lunarSelenelionTitle')}
+        expandLabel={tr('lab.panelExpandAria')}
+        collapseLabel={tr('lab.panelCollapseAria')}
+        containerClassName="max-h-[calc(100vh-8rem)] max-sm:max-h-[55vh]"
+        titleClassName="text-amber-300"
+      >
         <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 rounded bg-sky-950/60 px-2 py-1 font-mono text-[11px] text-sky-200">
           <span className="text-gray-400">UTC</span>
           <span>{formatUtcClock(tSec)}</span>
@@ -658,10 +668,10 @@ export function LunarSelenelionScene({
         <p className="mt-2 rounded bg-amber-950/40 px-2 py-1.5 text-[10px] leading-relaxed text-amber-200/90">
           {tr('lab.lunarSelenelionRefractionCard')}
         </p>
-      </div>
+      </LabPanelDrawer>
 
-      {/* 底部：时间滑杆（20 分钟真实窗口） */}
-      <div className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-1/2 w-[min(34rem,calc(100vw-1.5rem))] -translate-x-1/2 rounded-lg bg-black/60 px-3 py-2 backdrop-blur">
+      {/* 底部：时间滑杆（35 分钟真实窗口）；<sm 抬高避让抽屉标题栏 + Home 条 */}
+      <div className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-1/2 w-[min(34rem,calc(100vw-1.5rem))] -translate-x-1/2 rounded-lg bg-black/60 px-3 py-2 backdrop-blur max-sm:bottom-[calc(4.5rem+env(safe-area-inset-bottom))]">
         <input
           type="range"
           min={SELENELION_START_SEC}

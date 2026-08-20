@@ -642,17 +642,68 @@ export const LUNAR_MOON_BASE_GAIN = 1.15;
  * 近月缘区地球低垂）——取近月缘观测点使前景月壤与地球同框，属观测点
  * 选址自由度而非艺术化偏差。
  */
-export const MOON_VIEW_EARTH_ALT_DEG = 9;
+export const MOON_VIEW_EARTH_ALT_DEG = 6;
 export const MOON_VIEW_EARTH_AZ_DEG = 0;
 
-/** 月球视角运镜终点 FOV（度；地球盘 ~1.9° 的封面级构图） */
-export const MOON_VIEW_INTRO_FOV_DEG = 14;
+/**
+ * 月球视角运镜终点 FOV（度；地球盘 ~1.9° 的封面级构图）
+ *
+ * LE-M6 补丁 P2（构图修正）：地球高度 9°→6°、FOV 14°→15° —— 原参数下
+ * 画面下缘落在 alt +2°，M5-1 交付的**月壤前景剪影根本不在画面里**，
+ * 默认机位只剩黑底 + 地球盘。改后下缘 ≈ −1.5°，月壤地平线进入画面底部
+ * （非食时段被日光照亮、全食段被红环染红），画面不再是空洞的黑。
+ */
+export const MOON_VIEW_INTRO_FOV_DEG = 15;
 
 /**
  * 地球 quad 半角（弧度）：地球视半径 ~0.95° + 红环 + 半影全窗内太阳视位置
- * 漫游域（|shadowOff| ≤ ~1.6°）+ 盘缘软化裕量。
+ * 漫游域（|shadowOff| ≤ ~1.6°）+ 盘缘软化裕量 + **边缘淡出窗**裕量。
+ *
+ * LE-M6 补丁 P2：2.2° → 3.0°，为 `MOON_VIEW_EDGE_FADE_*` 的淡出带腾出空间
+ * （淡出起点 0.72×3.0 = 2.16° > 太阳漫游域上界 1.87°，单测锁定）。
  */
-export const MOON_VIEW_QUAD_HALF_ANGLE_RAD = 2.2 * DEG;
+export const MOON_VIEW_QUAD_HALF_ANGLE_RAD = 3.0 * DEG;
+
+/**
+ * 太阳视位置在 quad 内的漫游域上界（弧度）= 半影全窗内 |shadowOff| 上界
+ * (~1.6°) + 太阳视半径 (~0.27°)。边缘淡出窗必须完全在其外侧（单测锁定）。
+ */
+export const MOON_VIEW_SUN_ROAM_MAX_RAD = 1.87 * DEG;
+
+/**
+ * 地球 quad **边缘淡出窗**（× quad 半角；LE-M6 补丁 P2 的结构性防守）
+ *
+ * 病灶：太阳辉光项在 quad 内是连续的、到 quad 几何边界被**硬切**——
+ * 于是月球视角出现一个明显的亮灰方块（quad 轮廓）。根治办法不是调参而是
+ * 在片元侧强制「边界处输出恒为 0」：col 与 alpha 同乘
+ * `1 − smoothstep(START·H, END·H, r)`。任何后续新增的发光项都自动被这道
+ * 窗口收住，不会再切出方块。
+ */
+export const MOON_VIEW_EDGE_FADE_START_FRAC = 0.72;
+export const MOON_VIEW_EDGE_FADE_END_FRAC = 0.98;
+
+/**
+ * 太阳辉光包络参数（LE-M6 补丁 P2 收紧）：衰减尺度 5→2 倍太阳视半径、
+ * 幅度 0.7→0.45。月面**没有大气**，本项只是相机眩光的再现，原参数
+ * （1.33° 衰减尺度）在 2.2° 的 quad 内根本衰减不掉——既是方块的成因，
+ * 也偏离物理。收紧后辉光集中在日盘近旁 ~0.5° 内。
+ */
+export const MOON_VIEW_SUN_GLOW_SCALE = 2.0;
+export const MOON_VIEW_SUN_GLOW_GAIN = 0.45;
+
+/**
+ * 月球视角星穹增益（LE-M6 补丁 P2）：太空档 0.9 → 1.4。月面无大气 =
+ * 零消光，同一批恒星在月面天空确实比地面所见更亮——物理正确的提亮
+ * （不是抬全局曝光底：天空仍是纯黑，亮的只有恒星本身）。
+ */
+export const MOON_VIEW_STAR_GAIN = 1.4;
+
+/**
+ * 月球视角银河带强度（LE-M6 补丁 P2）：太空档 0.16 → 0.30。
+ * 从无大气的月面看银河是真实且壮观的景象——填充背景的正确手段。
+ * reduced 档不挂载（画质分档 §4）。
+ */
+export const MOON_VIEW_MILKY_WAY_INTENSITY = 0.3;
 
 /**
  * 红环显示厚度（× 地球视半径）：真实大气不透明层 ~75 km 仅为地球半径的

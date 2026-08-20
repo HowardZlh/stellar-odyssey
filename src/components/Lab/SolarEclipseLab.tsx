@@ -84,6 +84,7 @@ import {
 } from "@/utils/meteorShower";
 import {
   LAB_FOV_DEFAULT_DEG,
+  LAB_FOV_TELESCOPIC_MIN_DEG,
   LAB_POLAR_MAX_RAD,
   LAB_POLAR_MIN_RAD,
   fovPointScaleFactor,
@@ -2134,6 +2135,7 @@ function EclipseExperience({
           (settings.viewMode === "ground" ? (
             <OrbitControls
               key={`ground-${eventId}`}
+              makeDefault
               target={[0, 0, 0]}
               minDistance={CAMERA_RADIUS_MIN_UNITS}
               maxDistance={CAMERA_RADIUS_MAX_UNITS}
@@ -2164,8 +2166,10 @@ function EclipseExperience({
               dampingFactor={0.12}
             />
           ))}
+        {/* 望远档 FOV（LE-M6 补丁 P1 跨条目同治）：日盘 0.5° 需捏合到 ~3°
+            才看得清贝利珠/日面缺角；旋转速度随 FOV 自适应（makeDefault） */}
         {settings.viewMode === "ground" && !viewTransitioning && (
-          <TrackpadLookControls />
+          <TrackpadLookControls minFovDeg={LAB_FOV_TELESCOPIC_MIN_DEG} />
         )}
         {/* 后期：Bloom + ACES（流星雨同配置；光球/贝利珠 HDR 由 Bloom 拾取
             成钻石环）；影带 pass 仅时段窗内挂载（排 Bloom 前，A7；reduced
