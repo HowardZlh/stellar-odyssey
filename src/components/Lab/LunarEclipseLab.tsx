@@ -70,7 +70,7 @@ import {
 import {
   LAB_FOV_DEFAULT_DEG,
   LAB_FOV_TELESCOPIC_MIN_DEG,
-  LAB_POLAR_MAX_RAD,
+  LAB_POLAR_MAX_TELESCOPIC_RAD,
   LAB_POLAR_MIN_RAD,
   fovPointScaleFactor,
 } from "@/utils/labGestures";
@@ -116,6 +116,7 @@ import {
   LunarSoundscapeDriver,
 } from "@/components/Lab/LunarEclipseAudio";
 import { LunarCultureCard } from "@/components/Lab/LunarCultureCard";
+import { BodyFollowRig } from "@/components/Lab/BodyFollowRig";
 import { LabPanelDrawer } from "@/components/Lab/LabPanelDrawer";
 import {
   LUNAR_ART_RADIAL_FACTOR,
@@ -239,6 +240,12 @@ interface LunarSettings {
   inclinationDemo: boolean;
   /** M4-5 朔↔望档（叙事模式内；默认望 = 地影投月球） */
   syzygy: LunarSyzygyMode;
+  /**
+   * P5 地面视角天体跟随（**默认开**）：相机随月亮周日运动差量旋转，
+   * 保留用户手动偏移（等效赤道仪跟踪，非硬居中）。关闭 = 补丁前的
+   * 「只在挂载/切页签对准一次」行为。
+   */
+  followBody: boolean;
 }
 
 /** 帧循环共享 refs（DOM 写入、Canvas 子树 useFrame 读取；场景不订阅 React 状态） */
@@ -1178,7 +1185,13 @@ function LunarExperience({
     planetOrbits: true,
     inclinationDemo: false,
     syzygy: "full",
+    // P5：跟随默认开（望远档下不跟随即不可用）
+    followBody: true,
   }));
+
+  /** P5 复位令牌：递增即触发一次 0.5s 平滑归中（按钮 / 跟随关→开） */
+  const [recenterToken, setRecenterToken] = useState(0);
+  const recenterBody = (): void => setRecenterToken((n) => n + 1);
 
   // M4/M5 视角/预设运镜期（OrbitControls 卸载 gate；rig 完成回调解除）+
   // 当前预设机位（全貌/月球特写一键切换）
@@ -1424,6 +1437,25 @@ function LunarExperience({
             可听化提示音；真实月食无声——lunarAudioNote 双语常显注明） */}
         <LunarSoundscapeDriver refs={refs} />
         <LunarCameraAim refs={refs} eventId={eventId} />
+        {/* P5 天体跟随（地面档专属；运镜期不介入——相机归 rig 所有）。
+            方向读自 frameRef（LunarTimeDriver 每帧先行写入，挂载序保证） */}
+        {settings.viewMode === "ground" && !viewTransition && (
+          <BodyFollowRig
+            enabled={settings.followBody}
+            recenterToken={recenterToken}
+            getBodyDir={(out) => {
+              const f = refs.frameRef.current;
+              const d = sceneDirFromAltAz({
+                altRad: f.moonAltDeg * DEG,
+                azRad: f.moonAzDeg * DEG,
+              });
+              out[0] = d[0];
+              out[1] = d[1];
+              out[2] = d[2];
+              return out;
+            }}
+          />
+        )}
         {/* M4 视角/预设机位运镜（1.6s 插值；期间相机控制器卸载） */}
         <LunarViewIntroRig
           refs={refs}
@@ -1488,7 +1520,7 @@ function LunarExperience({
               enablePan={false}
               enableZoom={false}
               minPolarAngle={LAB_POLAR_MIN_RAD}
-              maxPolarAngle={LAB_POLAR_MAX_RAD}
+              maxPolarAngle={LAB_POLAR_MAX_TELESCOPIC_RAD}
               rotateSpeed={0.45}
               enableDamping
               dampingFactor={0.12}
@@ -1515,7 +1547,10 @@ function LunarExperience({
         {/* 望远档 FOV（补丁 P1）：月盘/日盘 0.5° 需捏合到 ~3° 才看得清缺口；
             旋转速度由 TrackpadLookControls 随 FOV 自适应（makeDefault 控制器） */}
         {settings.viewMode !== "space" && !viewTransition && (
-          <TrackpadLookControls minFovDeg={LAB_FOV_TELESCOPIC_MIN_DEG} />
+          <TrackpadLookControls
+            minFovDeg={LAB_FOV_TELESCOPIC_MIN_DEG}
+            maxPolarRad={LAB_POLAR_MAX_TELESCOPIC_RAD}
+          />
         )}
         {/* 后期：Bloom + ACES（lab 既有底座；无双基准曝光状态机，契约 C4） */}
         {quality.bloomEnabled ? (
@@ -1671,6 +1706,43 @@ function LunarExperience({
               </button>
             ))}
           </div>
+          {/* P5 天体跟随（地面档专属；默认开）+ 回到月亮复位钮 */}
+          {settings.viewMode === "ground" && (
+            <>
+              <div className="mb-1 flex gap-1">
+                <button
+                  aria-pressed={settings.followBody}
+                  aria-label={tr("lab.lunarFollowAria")}
+                  onClick={() =>
+                    setSettings((s) => {
+                      // 关→开：先复位一次（否则开了跟随却看不见月亮）
+                      if (!s.followBody) recenterBody();
+                      return { ...s, followBody: !s.followBody };
+                    })
+                  }
+                  className={`flex-[3] rounded px-2 py-1 text-left text-[10px] transition-colors max-md:min-h-11 ${
+                    settings.followBody
+                      ? "bg-sky-500/30 font-semibold text-sky-200"
+                      : "bg-white/5 text-gray-400 hover:bg-white/10"
+                  }`}
+                >
+                  {settings.followBody ? "☑" : "☐"}{" "}
+                  {tr("lab.lunarFollowLabel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={recenterBody}
+                  aria-label={tr("lab.lunarRecenterAria")}
+                  className="flex-[2] rounded bg-white/5 px-2 py-1 text-[10px] text-gray-300 transition-colors hover:bg-white/10 max-md:min-h-11"
+                >
+                  {tr("lab.lunarRecenterLabel")}
+                </button>
+              </div>
+              <p className="mb-2 text-[9px] leading-snug text-gray-500">
+                {tr("lab.lunarFollowNote")}
+              </p>
+            </>
+          )}
           {/* M4 太空档控件（比例双模/径向放大/预设机位/剖面盘/行星层/
               交点几何望态/对比卡；触控目标 ≥44pt 经 max-md:min-h-11） */}
           {settings.viewMode === "space" && (

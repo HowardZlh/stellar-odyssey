@@ -25,6 +25,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import {
   LAB_FOV_MIN_DEG,
+  LAB_POLAR_MAX_RAD,
   clampLabPolar,
   labRotateSpeedForFov,
   pinchFovDeg,
@@ -44,10 +45,17 @@ export interface TrackpadLookControlsProps {
    * 日月食条目传 `LAB_FOV_TELESCOPIC_MIN_DEG`（3°）开望远档。
    */
   minFovDeg?: number;
+  /**
+   * polar 上限（弧度）：须与同场景 OrbitControls 的 `maxPolarAngle` 同值。
+   * 缺省 `LAB_POLAR_MAX_RAD`（流星雨/观察站原口径）；日月食地面视角传
+   * 望远档上限（补丁 P5：近天顶天体跟随的前提）。
+   */
+  maxPolarRad?: number;
 }
 
 export function TrackpadLookControls({
   minFovDeg = LAB_FOV_MIN_DEG,
+  maxPolarRad = LAB_POLAR_MAX_RAD,
 }: TrackpadLookControlsProps = {}): null {
   const camera = useThree((s) => s.camera);
   const gl = useThree((s) => s.gl);
@@ -104,7 +112,7 @@ export function TrackpadLookControls({
       // OrbitControls props 同一事实源（labGestures 常量）
       spherical.setFromVector3(cam.position);
       spherical.theta += dThetaRad;
-      spherical.phi = clampLabPolar(spherical.phi + dPhiRad);
+      spherical.phi = clampLabPolar(spherical.phi + dPhiRad, maxPolarRad);
       cam.position.setFromSpherical(spherical);
       cam.lookAt(0, 0, 0);
     };
@@ -175,7 +183,7 @@ export function TrackpadLookControls({
       el.removeEventListener('touchend', onTouchEnd);
       el.removeEventListener('touchcancel', onTouchEnd);
     };
-  }, [camera, gl, minFovDeg]);
+  }, [camera, gl, minFovDeg, maxPolarRad]);
 
   return null;
 }

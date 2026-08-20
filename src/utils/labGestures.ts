@@ -58,8 +58,19 @@ export const LAB_FOV_DEFAULT_DEG = 65;
  */
 export const LAB_POLAR_MIN_RAD = Math.PI / 2 - 0.35;
 
-/** 相机 polar 角上限（弧度）：仰角上限 ≈88°，避开天顶极点奇异 */
+/** 相机 polar 角上限（弧度）：仰角上限 ≈88.85°，避开天顶极点奇异 */
 export const LAB_POLAR_MAX_RAD = Math.PI - 0.02;
+
+/**
+ * **望远档** polar 角上限（弧度，LE-M6 补丁 P5）：仰角 ≈89.89°。
+ *
+ * 缺省档留的 0.02 rad（1.15°）天顶禁区在跟随场景下会被看见——l2029 观测点
+ * 圣保罗的月亮几乎正穿天顶，跟随时相机被钳在禁区边缘，望远档（3° FOV）下
+ * 月亮会被推到画面边缘。收紧到 0.002 rad（0.11°）后残余偏心 ≤3.8% 画面高，
+ * 同时仍远离 three OrbitControls 的极点奇异（其内部 EPS = 1e-6）。
+ * 仅日月食地面视角消费；流星雨/观察站保持缺省档。
+ */
+export const LAB_POLAR_MAX_TELESCOPIC_RAD = Math.PI - 0.002;
 
 /** 双指滚动 → 环顾的符号（+1 = 自然滚动下与拖拽同向；目验相反则取 -1） */
 export const WHEEL_LOOK_SIGN = 1;
@@ -93,10 +104,20 @@ export function clampLabFovDeg(
   return Math.max(lo, Math.min(LAB_FOV_MAX_DEG, fovDeg));
 }
 
-/** polar 角钳制（弧度）——wheel 环顾与 OrbitControls props 同一事实源 */
-export function clampLabPolar(polarRad: number): number {
+/**
+ * polar 角钳制（弧度）——wheel 环顾、跟随 rig 与 OrbitControls props 同一
+ * 事实源。`maxRad` 缺省 `LAB_POLAR_MAX_RAD`（日月食地面视角传望远档上限）。
+ */
+export function clampLabPolar(
+  polarRad: number,
+  maxRad: number = LAB_POLAR_MAX_RAD,
+): number {
+  const hi =
+    Number.isFinite(maxRad)
+      ? Math.max(LAB_POLAR_MIN_RAD, Math.min(LAB_POLAR_MAX_TELESCOPIC_RAD, maxRad))
+      : LAB_POLAR_MAX_RAD;
   if (!Number.isFinite(polarRad)) return LAB_POLAR_MIN_RAD;
-  return Math.max(LAB_POLAR_MIN_RAD, Math.min(LAB_POLAR_MAX_RAD, polarRad));
+  return Math.max(LAB_POLAR_MIN_RAD, Math.min(hi, polarRad));
 }
 
 /**

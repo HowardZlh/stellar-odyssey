@@ -61,6 +61,12 @@ export interface EclipseM3Settings {
   bodyScaleMode: EclipseBodyScaleMode;
   /** 星光偏折对照（M5-2；A10 登记：偏折夸张显示，HUD 标真实角秒值与倍率） */
   deflectionDemo: boolean;
+  /**
+   * P5 地面视角天体跟随（**默认开**）：相机随太阳周日运动差量旋转，
+   * 保留用户手动偏移（等效赤道仪跟踪，非硬居中）。关闭 = 补丁前的
+   * 「只在挂载/切页签对准一次」行为。
+   */
+  followBody: boolean;
 }
 
 /** 环境数值条读数（父级 500ms tick 经纯函数计算后的展示文本） */
@@ -98,6 +104,8 @@ export interface EclipseControlPanelProps {
   onCompare: (which: "99" | "100") => void;
   /** M5：当前为 1919 Eddington 历史页签（显示偏折对照控件 + 科学史科普卡） */
   eddington: boolean;
+  /** P5「回到太阳」复位（父级递增复位令牌 → BodyFollowRig 平滑归中） */
+  onRecenter: () => void;
 }
 
 /** 分区标题（统一样式） */
@@ -150,6 +158,7 @@ export function EclipseControlPanel({
   phaseCardKey,
   onCompare,
   eddington,
+  onRecenter,
 }: EclipseControlPanelProps): JSX.Element {
   const tr = useT();
   // 声景开关/音量（M6-1 §5：全局 store 与主场景/流星雨同一事实源，
@@ -172,6 +181,41 @@ export function EclipseControlPanel({
         value={settings.viewMode}
         onSelect={(id) => onChange({ viewMode: id as EclipseViewMode })}
       />
+      {/* P5 天体跟随（地面档专属；默认开）+ 回到太阳复位钮 */}
+      {settings.viewMode === "ground" && (
+        <>
+          <div className="mt-1 flex gap-1">
+            <button
+              aria-pressed={settings.followBody}
+              aria-label={tr("lab.eclipseFollowAria")}
+              onClick={() => {
+                // 关→开：先复位一次（否则开了跟随却看不见太阳）
+                if (!settings.followBody) onRecenter();
+                onChange({ followBody: !settings.followBody });
+              }}
+              className={`flex-[3] rounded px-2 py-1 text-left text-[10px] transition-colors max-md:min-h-11 ${
+                settings.followBody
+                  ? "bg-sky-500/30 font-semibold text-sky-200"
+                  : "bg-white/5 text-gray-400 hover:bg-white/10"
+              }`}
+            >
+              {settings.followBody ? "☑" : "☐"}{" "}
+              {tr("lab.eclipseFollowLabel")}
+            </button>
+            <button
+              type="button"
+              onClick={onRecenter}
+              aria-label={tr("lab.eclipseRecenterAria")}
+              className="flex-[2] rounded bg-white/5 px-2 py-1 text-[10px] text-gray-300 transition-colors hover:bg-white/10 max-md:min-h-11"
+            >
+              {tr("lab.eclipseRecenterLabel")}
+            </button>
+          </div>
+          <p className="mt-1 text-[9px] leading-snug text-gray-500">
+            {tr("lab.eclipseFollowNote")}
+          </p>
+        </>
+      )}
       {settings.viewMode === "space" && (
         <>
           {/* M8-1 天体比例分段（A18：默认艺术化 = L2 观感；真实 = M7 形态） */}

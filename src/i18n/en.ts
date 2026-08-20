@@ -532,6 +532,13 @@ export const en: I18nDict = {
       "Failed to load the eclipse ephemerides — the scene is unavailable. Please refresh and retry.",
     eclipseHintLookAround:
       "Drag or two-finger scroll to look around · pinch to zoom in (up to ~×20) on the eclipsed Sun and Baily's beads",
+    /** LE-M6 patch P5 body tracking (ground view only, on by default) */
+    eclipseFollowLabel: "Track the Sun (auto-centre)",
+    eclipseFollowAria: "Track the Sun and keep it centred",
+    eclipseRecenterLabel: "⊙ Back to the Sun",
+    eclipseRecenterAria: "Smoothly recentre the view on the Sun",
+    eclipseFollowNote:
+      "While tracking, the Sun stays in view (any offset you drag to is preserved); the stars and horizon move with the tracking in turn — the equivalent of an equatorial mount. Turn it off for a fixed pointing.",
     eclipseViewTitle: "View",
     eclipseViewAria: "Switch viewpoint",
     eclipseViewGround: "Ground",
@@ -658,6 +665,13 @@ export const en: I18nDict = {
       "Failed to load lunar eclipse ephemerides — the scene is unavailable. Please refresh and try again.",
     lunarHintLookAround:
       "Drag or two-finger scroll to look around · pinch to zoom in (up to ~×20) on the umbral bite and the gradient inside it",
+    /** LE-M6 patch P5 body tracking (ground view only, on by default) */
+    lunarFollowLabel: "Track the Moon (auto-centre)",
+    lunarFollowAria: "Track the Moon and keep it centred",
+    lunarRecenterLabel: "⊙ Back to the Moon",
+    lunarRecenterAria: "Smoothly recentre the view on the Moon",
+    lunarFollowNote:
+      "While tracking, the Moon stays in view (any offset you drag to is preserved); the stars and horizon move with the tracking in turn — the equivalent of an equatorial mount. Turn it off for a fixed pointing.",
     lunarPanelTitle: "Observation Console",
     /** M3 blood-moon controls: Danjon presets + turbidity + exposure (B2/B6 notes) */
     lunarDanjonTitle: "Danjon scale (blood-moon depth)",

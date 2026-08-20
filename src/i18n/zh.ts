@@ -594,6 +594,16 @@ export const zh = {
     /** 操作提示（偏食段白昼恒星不可见属科学事实，提示捏合放大看日面） */
     eclipseHintLookAround:
       "拖动或双指滚动环顾 · 双指捏合放大（最高约 ×20）看清日面缺角与贝利珠",
+    /**
+     * LE-M6 补丁 P5 天体跟随（地面档专属，默认开）：相机随太阳周日运动
+     * 差量旋转、保留用户手动偏移（等效赤道仪跟踪，非硬居中）
+     */
+    eclipseFollowLabel: "跟随太阳（自动居中）",
+    eclipseFollowAria: "跟随太阳自动居中",
+    eclipseRecenterLabel: "⊙ 回到太阳",
+    eclipseRecenterAria: "把视野平滑归中到太阳",
+    eclipseFollowNote:
+      "跟随开启时太阳始终留在视野内（手动拖开多少度就保持多少度）；相应地，星空与地平线会随跟踪移动——等效于赤道仪跟踪。关闭则回到固定指向。",
     /** M4 视角分段控件（§3.2：地面/太空；切换触发 1–2s 运镜） */
     eclipseViewTitle: "视角",
     eclipseViewAria: "切换观察视角",
@@ -739,6 +749,16 @@ export const zh = {
     /** 操作提示（真实视半径渲染，细节靠 FOV 缩放，契约 C3） */
     lunarHintLookAround:
       "拖动或双指滚动环顾夜空 · 双指捏合放大（最高约 ×20）看清月面缺口与本影内的径向渐变",
+    /**
+     * LE-M6 补丁 P5 天体跟随（地面档专属，默认开）：相机随月亮周日运动
+     * 差量旋转、保留用户手动偏移（等效赤道仪跟踪，非硬居中）
+     */
+    lunarFollowLabel: "跟随月亮（自动居中）",
+    lunarFollowAria: "跟随月亮自动居中",
+    lunarRecenterLabel: "⊙ 回到月亮",
+    lunarRecenterAria: "把视野平滑归中到月亮",
+    lunarFollowNote:
+      "跟随开启时月亮始终留在视野内（手动拖开多少度就保持多少度）；相应地，星空与地平线会随跟踪移动——等效于赤道仪跟踪。关闭则回到固定指向。",
     /** 面板标题（<sm 底部抽屉标题栏常显；开合钮复用 panel*Aria 键） */
     lunarPanelTitle: "观测控制台",
     /**

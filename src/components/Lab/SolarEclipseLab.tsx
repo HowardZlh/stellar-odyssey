@@ -85,7 +85,7 @@ import {
 import {
   LAB_FOV_DEFAULT_DEG,
   LAB_FOV_TELESCOPIC_MIN_DEG,
-  LAB_POLAR_MAX_RAD,
+  LAB_POLAR_MAX_TELESCOPIC_RAD,
   LAB_POLAR_MIN_RAD,
   fovPointScaleFactor,
 } from "@/utils/labGestures";
@@ -197,6 +197,7 @@ import {
 } from "@/utils/solarEclipseSpace";
 import { EclipseSpaceView } from "@/components/Lab/EclipseSpaceView";
 import { TrackpadLookControls } from "@/components/Lab/TrackpadLookControls";
+import { BodyFollowRig } from "@/components/Lab/BodyFollowRig";
 import { EclipseTimelineScrubber } from "@/components/Lab/EclipseTimelineScrubber";
 import {
   EclipseControlPanel,
@@ -1727,6 +1728,8 @@ function defaultEclipseSettings(): EclipseM3Settings {
     moonMagnify: true,
     planetOrbits: true,
     bodyScaleMode: "art",
+    // P5：地面视角天体跟随默认开（望远档下不跟随即不可用）
+    followBody: true,
   };
 }
 
@@ -1807,6 +1810,10 @@ function EclipseExperience({
   const [settings, setSettings] = useState<EclipseM3Settings>(
     defaultEclipseSettings,
   );
+
+  /** P5 复位令牌：递增即触发一次 0.5s 平滑归中（按钮 / 跟随关→开） */
+  const [recenterToken, setRecenterToken] = useState(0);
+  const recenterBody = (): void => setRecenterToken((n) => n + 1);
 
   // scrubber 显示值（拖动即时更新；播放期间由 500ms tick 从 tSecRef 回同步）
   const [scrubSec, setScrubSec] = useState<number>(event.contacts.c1);
@@ -2068,6 +2075,25 @@ function EclipseExperience({
             化/音效关闭时逐帧空转零开销） */}
         <EclipseSoundscapeDriver refs={refs} />
         <EclipseCameraAim refs={refs} eventId={eventId} />
+        {/* P5 天体跟随（地面档专属；运镜期不介入——相机归 rig 所有）。
+            方向读自 frameRef（时间驱动器每帧先行写入，挂载序保证） */}
+        {settings.viewMode === "ground" && !viewTransitioning && (
+          <BodyFollowRig
+            enabled={settings.followBody}
+            recenterToken={recenterToken}
+            getBodyDir={(out) => {
+              const f = refs.frameRef.current;
+              const d = sceneDirFromAltAz({
+                altRad: f.sunAltDeg * DEG,
+                azRad: f.sunAzDeg * DEG,
+              });
+              out[0] = d[0];
+              out[1] = d[1];
+              out[2] = d[2];
+              return out;
+            }}
+          />
+        )}
         {/* M4 视角切换运镜（1.6s 插值；期间相机控制器卸载） */}
         <EclipseViewIntroRig
           refs={refs}
@@ -2142,7 +2168,7 @@ function EclipseExperience({
               enablePan={false}
               enableZoom={false}
               minPolarAngle={LAB_POLAR_MIN_RAD}
-              maxPolarAngle={LAB_POLAR_MAX_RAD}
+              maxPolarAngle={LAB_POLAR_MAX_TELESCOPIC_RAD}
               rotateSpeed={0.45}
               enableDamping
               dampingFactor={0.12}
@@ -2169,7 +2195,10 @@ function EclipseExperience({
         {/* 望远档 FOV（LE-M6 补丁 P1 跨条目同治）：日盘 0.5° 需捏合到 ~3°
             才看得清贝利珠/日面缺角；旋转速度随 FOV 自适应（makeDefault） */}
         {settings.viewMode === "ground" && !viewTransitioning && (
-          <TrackpadLookControls minFovDeg={LAB_FOV_TELESCOPIC_MIN_DEG} />
+          <TrackpadLookControls
+            minFovDeg={LAB_FOV_TELESCOPIC_MIN_DEG}
+            maxPolarRad={LAB_POLAR_MAX_TELESCOPIC_RAD}
+          />
         )}
         {/* 后期：Bloom + ACES（流星雨同配置；光球/贝利珠 HDR 由 Bloom 拾取
             成钻石环）；影带 pass 仅时段窗内挂载（排 Bloom 前，A7；reduced
@@ -2339,6 +2368,7 @@ function EclipseExperience({
             phaseCardKey={phaseCard}
             onCompare={handleCompare}
             eddington={eventId === "e1919"}
+            onRecenter={recenterBody}
           />
           {/* LE-M4-6 条目互链（半沙罗配对叙事桥梁；月食侧同款回链） */}
           <Link

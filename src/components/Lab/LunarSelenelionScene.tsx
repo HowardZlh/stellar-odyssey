@@ -51,7 +51,7 @@ import {
 import {
   LAB_FOV_DEFAULT_DEG,
   LAB_FOV_TELESCOPIC_MIN_DEG,
-  LAB_POLAR_MAX_RAD,
+  LAB_POLAR_MAX_TELESCOPIC_RAD,
   LAB_POLAR_MIN_RAD,
 } from '@/utils/labGestures';
 import {
@@ -85,6 +85,7 @@ import {
 import { createLunarMoonMaterial } from '@/components/Lab/lunarMoonDiskMaterial';
 import { TrackpadLookControls } from '@/components/Lab/TrackpadLookControls';
 import { LabPanelDrawer } from '@/components/Lab/LabPanelDrawer';
+import { BodyFollowRig } from '@/components/Lab/BodyFollowRig';
 
 /** 度 → 弧度 */
 const DEG = Math.PI / 180;
@@ -569,6 +570,31 @@ export function LunarSelenelionScene({
         <color attach="background" args={['#000004']} />
         <SelenelionDriver refs={refs} group={group} />
         <SelenelionAim refs={refs} target={aim.target} aimCount={aim.count} />
+        {/* P5 天体跟随（跟随当前「一键对准」选中的那个天体；35 分钟窗内
+            日月各走 ~5.6°，望远档下不跟随即漂出画面）。复位令牌复用对准
+            计数 aim.count——点「看被食之月/看初升太阳」即同时完成复位 */}
+        <BodyFollowRig
+          enabled
+          recenterToken={aim.count}
+          getBodyDir={(out) => {
+            const st = refs.stateRef.current;
+            const d = sceneDirFromAltAz(
+              aim.target === 'moon'
+                ? {
+                    altRad: Math.max(st.moonAppAltDeg, 0.5) * DEG,
+                    azRad: st.frame.moonAzDeg * DEG,
+                  }
+                : {
+                    altRad: Math.max(st.sunAppAltDeg, 0.5) * DEG,
+                    azRad: st.sunAzDeg * DEG,
+                  }
+            );
+            out[0] = d[0];
+            out[1] = d[1];
+            out[2] = d[2];
+            return out;
+          }}
+        />
         <SelenelionSkyDome refs={refs} />
         <SelenelionMoon refs={refs} />
         <SelenelionSun refs={refs} />
@@ -582,12 +608,15 @@ export function LunarSelenelionScene({
           enablePan={false}
           enableZoom={false}
           minPolarAngle={LAB_POLAR_MIN_RAD}
-          maxPolarAngle={LAB_POLAR_MAX_RAD}
+          maxPolarAngle={LAB_POLAR_MAX_TELESCOPIC_RAD}
           rotateSpeed={0.45}
           enableDamping
           dampingFactor={0.12}
         />
-        <TrackpadLookControls minFovDeg={LAB_FOV_TELESCOPIC_MIN_DEG} />
+        <TrackpadLookControls
+          minFovDeg={LAB_FOV_TELESCOPIC_MIN_DEG}
+          maxPolarRad={LAB_POLAR_MAX_TELESCOPIC_RAD}
+        />
         {bloomEnabled ? (
           <EffectComposer multisampling={4}>
             <Bloom
