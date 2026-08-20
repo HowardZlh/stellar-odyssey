@@ -17,11 +17,16 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { validateLunarEclipses } from "../bakedData";
 import {
+  LAB_FOLLOW_MAX_ROLL_RATE_RAD_PER_SEC,
   LAB_FOLLOW_RECENTER_TAU_SEC,
   angleBetweenDirs,
+  cameraBasisFromView,
   followRecenterFraction,
+  rollFromCameraBasis,
+  rollTowardTarget,
   rotateVectorBetweenDirs,
   slerpDirections,
+  wrapAngleRad,
 } from "../labCameraFollow";
 import {
   LAB_POLAR_MAX_TELESCOPIC_RAD,
@@ -289,5 +294,221 @@ describe("l2029 全窗跟随仿真（真实星历性质测试）", () => {
       expect(a).toBeGreaterThan(4.8);
       expect(a).toBeLessThan(5.2);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LE-M6 补丁 P6：天顶通过的画面 roll 限幅
+// ---------------------------------------------------------------------------
+
+describe("wrapAngleRad / rollTowardTarget（P6 roll 限幅）", () => {
+  it("wrapAngleRad 归一到 (−π, π]，非有限返回 0", () => {
+    expect(wrapAngleRad(0)).toBe(0);
+    expect(wrapAngleRad(Math.PI)).toBeCloseTo(Math.PI, 12);
+    expect(wrapAngleRad(-Math.PI)).toBeCloseTo(Math.PI, 12);
+    expect(wrapAngleRad(3 * Math.PI)).toBeCloseTo(Math.PI, 12);
+    expect(wrapAngleRad(-2.5 * Math.PI)).toBeCloseTo(-0.5 * Math.PI, 12);
+    expect(wrapAngleRad(Number.NaN)).toBe(0);
+  });
+
+  it("限幅生效：单帧步长 ≤ 速率 × dt；差值在步长内直接到达", () => {
+    const rate = LAB_FOLLOW_MAX_ROLL_RATE_RAD_PER_SEC;
+    const dt = 1 / 60;
+    const big = rollTowardTarget(100 * DEG, 0, dt);
+    expect(Math.abs(big - 100 * DEG)).toBeCloseTo(rate * dt, 12);
+    const small = rollTowardTarget(0.1 * DEG, 0, dt);
+    expect(small).toBe(0);
+  });
+
+  it("最短路径：359° → 1° 走 2°（跨 ±180° 绕行），不走 358°", () => {
+    const next = rollTowardTarget(359 * DEG, 1 * DEG, 10, Math.PI);
+    // 差值 +2°（最短），10s × π/s 足够一步到达 → 359°+2° = 361°
+    expect(wrapAngleRad(next)).toBeCloseTo(wrapAngleRad(361 * DEG), 10);
+  });
+
+  it("帧率无关：同一时长内 30 FPS 与 120 FPS 走过的总角度一致（限幅段）", () => {
+    const run = (fps: number): number => {
+      let roll = 170 * DEG;
+      for (let i = 0; i < fps; i += 1) roll = rollTowardTarget(roll, 0, 1 / fps);
+      return roll;
+    };
+    expect(run(30)).toBeCloseTo(run(120), 10);
+  });
+
+  it("守卫：dt≤0/目标非有限不动；当前非有限取目标；速率非法回退默认", () => {
+    expect(rollTowardTarget(1, 0, 0)).toBe(1);
+    expect(rollTowardTarget(1, Number.NaN, 0.016)).toBe(1);
+    expect(rollTowardTarget(Number.NaN, 0.5, 0.016)).toBe(0.5);
+    expect(rollTowardTarget(Number.NaN, Number.NaN, 0.016)).toBe(0);
+    const d = rollTowardTarget(1, 0, 1 / 60, Number.NaN);
+    expect(Math.abs(d - 1)).toBeCloseTo(
+      LAB_FOLLOW_MAX_ROLL_RATE_RAD_PER_SEC / 60,
+      12,
+    );
+  });
+});
+
+describe("cameraBasisFromView / rollFromCameraBasis（P6 朝向组装）", () => {
+  it("roll=0 时与 lookAt(up=+Y) 基一致（水平视线锚点）", () => {
+    const b: number[] = new Array(9).fill(0);
+    // 视线 −Z（正北）：right=+... view×(0,1,0) = (−fz,0,fx) = (1,0,0)
+    expect(cameraBasisFromView([0, 0, -1], 0, b)).toBe(true);
+    const expected = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    for (let i = 0; i < 9; i += 1) expect(b[i]).toBeCloseTo(expected[i], 12);
+  });
+
+  it("基是右手正交系（任意视线 + 任意 roll）", () => {
+    const b: number[] = new Array(9).fill(0);
+    expect(cameraBasisFromView([0.3, 0.8, -0.5], 0.7, b)).toBe(true);
+    const r = b.slice(0, 3);
+    const u = b.slice(3, 6);
+    const k = b.slice(6, 9);
+    const dot = (a: number[], c: number[]): number =>
+      a[0] * c[0] + a[1] * c[1] + a[2] * c[2];
+    expect(dot(r, u)).toBeCloseTo(0, 12);
+    expect(dot(r, k)).toBeCloseTo(0, 12);
+    expect(dot(u, k)).toBeCloseTo(0, 12);
+    expect(dot(r, r)).toBeCloseTo(1, 12);
+    // 右手系：r × u = k
+    expect(r[1] * u[2] - r[2] * u[1]).toBeCloseTo(k[0], 12);
+  });
+
+  it("组装 ↔ 反解往返自洽（含近天顶视线的 +X 参考轴回退）", () => {
+    const b: number[] = new Array(9).fill(0);
+    for (const view of [
+      [0.2, 0.4, -0.6],
+      [0.001, 0.9999995, 0.0002], // 近天顶（up 投影退化 → +X 回退）
+      [0, 1, 0], // 正天顶
+    ]) {
+      for (const roll of [-2.5, -0.4, 0, 0.9, 3]) {
+        expect(cameraBasisFromView(view, roll, b)).toBe(true);
+        const got = rollFromCameraBasis(view, b.slice(0, 3));
+        expect(wrapAngleRad(got - roll)).toBeCloseTo(0, 9);
+      }
+    }
+  });
+
+  it("守卫：零向量/非有限入参返回 false / 0", () => {
+    const b: number[] = new Array(9).fill(0);
+    expect(cameraBasisFromView([0, 0, 0], 0, b)).toBe(false);
+    expect(cameraBasisFromView([1, 0, 0], Number.NaN, b)).toBe(false);
+    expect(cameraBasisFromView([Number.NaN, 0, 0], 0, b)).toBe(false);
+    expect(rollFromCameraBasis([0, 0, 0], [1, 0, 0])).toBe(0);
+    expect(rollFromCameraBasis([0, 0, -1], [Number.NaN, 0, 0])).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P6 真实星历性质测试：l2029 天顶通过段的画面旋转限幅
+// ---------------------------------------------------------------------------
+
+describe("l2029 天顶通过段 roll 限幅仿真（×243 加速、60 FPS 墙钟）", () => {
+  /** topo 星历 → 场景方向（60s 行线性插值足够——测的是旋转率量级） */
+  function makeDirAt(): (tSec: number) => MutableVec3 {
+    const raw: unknown = JSON.parse(
+      readFileSync(
+        join(process.cwd(), "public/data/lunar_eclipses.json"),
+        "utf8",
+      ),
+    );
+    const data = validateLunarEclipses(raw);
+    if (!data) throw new Error("lunar_eclipses.json 校验失败");
+    const event = data.events.find((e) => e.id === "l2029");
+    if (!event) throw new Error("l2029 事件缺失");
+    const group = { topo: event.topo, geo: event.geo };
+    const frame = emptyLunarFrameState();
+    return (tSec: number): MutableVec3 => {
+      lunarFrameState(group, event.observer, tSec, frame);
+      const d = sceneDirFromAltAz({
+        altRad: frame.moonAltDeg * DEG,
+        azRad: frame.moonAzDeg * DEG,
+      });
+      return [d[0], d[1], d[2]];
+    };
+  }
+
+  /** 仿真：跟随开启跨天顶（03:00–03:20 UT），返回逐帧画面自旋率（°/s 墙钟） */
+  function simulate(pipeline: "lookAt" | "limited"): number[] {
+    const dirAt = makeDirAt();
+    const RATE = 243; // 加速档倍率（l2029 量级）
+    const FPS = 60;
+    const t0 = Date.UTC(2029, 5, 26, 3, 0, 0) / 1000;
+    const t1 = Date.UTC(2029, 5, 26, 3, 20, 0) / 1000;
+    let dir = dirAt(t0);
+    // 相机对准月亮；朝向初始为 roll=0 基准
+    const basis: number[] = new Array(9).fill(0);
+    cameraBasisFromView(dir, 0, basis);
+    let right: MutableVec3 = [basis[0], basis[1], basis[2]];
+    let view: MutableVec3 = [dir[0], dir[1], dir[2]];
+    const rates: number[] = [];
+    for (let t = t0; t <= t1; t += (RATE * 1) / FPS) {
+      const next = dirAt(t);
+      // 跟随：视线 = 月亮方向（零偏移）
+      const newView: MutableVec3 = [next[0], next[1], next[2]];
+      let newRight: MutableVec3;
+      if (pipeline === "lookAt") {
+        cameraBasisFromView(newView, 0, basis); // lookAt ≡ roll=0 快照
+        newRight = [basis[0], basis[1], basis[2]];
+      } else {
+        // P6 管线：对齐上帧右轴 → roll 限幅回正 → 组装
+        const aligned: MutableVec3 = [0, 0, 0];
+        rotateVectorBetweenDirs(view, newView, right, aligned);
+        const roll = rollFromCameraBasis(newView, aligned);
+        const newRoll = rollTowardTarget(roll, 0, 1 / FPS);
+        cameraBasisFromView(newView, newRoll, basis);
+        newRight = [basis[0], basis[1], basis[2]];
+      }
+      // 画面自旋率 = 上帧右轴（对齐视线变化后）与本帧右轴的夹角 / dt
+      const alignedPrev: MutableVec3 = [0, 0, 0];
+      rotateVectorBetweenDirs(view, newView, right, alignedPrev);
+      rates.push((angleBetweenDirs(alignedPrev, newRight) / DEG) * FPS);
+      view = newView;
+      right = newRight;
+      dir = next;
+    }
+    return rates;
+  }
+
+  it("lookAt 基线（病灶）：天顶甩尾段画面自旋率峰值 > 100°/s", () => {
+    const rates = simulate("lookAt");
+    expect(Math.max(...rates)).toBeGreaterThan(100);
+  });
+
+  it("P6 管线：画面自旋率处处 ≤ 25°/s 限幅（+1% 数值容差）", () => {
+    const rates = simulate("limited");
+    const limit = (LAB_FOLLOW_MAX_ROLL_RATE_RAD_PER_SEC / DEG) * 1.01;
+    for (const r of rates) expect(r).toBeLessThanOrEqual(limit);
+  });
+
+  it("P6 管线：甩尾产生的 roll 债在段末已还清（回到地平线水平 <2°）", () => {
+    const dirAt = makeDirAt();
+    const RATE = 243;
+    const FPS = 60;
+    const t0 = Date.UTC(2029, 5, 26, 3, 0, 0) / 1000;
+    // 04:00 止：甩尾段（03:05–03:13 事件时间 ≈2s 墙钟）+ 追平余量
+    // （×243 下 60 事件分 = 14.8 墙钟秒 ≫ 167°/25°/s ≈ 6.7s）
+    const t1 = Date.UTC(2029, 5, 26, 4, 0, 0) / 1000;
+    const basis: number[] = new Array(9).fill(0);
+    let view = dirAt(t0);
+    cameraBasisFromView(view, 0, basis);
+    let right: MutableVec3 = [basis[0], basis[1], basis[2]];
+    let maxAbsRoll = 0;
+    let lastRoll = 0;
+    for (let t = t0; t <= t1; t += (RATE * 1) / FPS) {
+      const newView = dirAt(t);
+      const aligned: MutableVec3 = [0, 0, 0];
+      rotateVectorBetweenDirs(view, newView, right, aligned);
+      const roll = rollFromCameraBasis(newView, aligned);
+      const newRoll = rollTowardTarget(roll, 0, 1 / FPS);
+      cameraBasisFromView(newView, newRoll, basis);
+      right = [basis[0], basis[1], basis[2]];
+      view = newView;
+      maxAbsRoll = Math.max(maxAbsRoll, Math.abs(newRoll));
+      lastRoll = newRoll;
+    }
+    // 甩尾段确实积累了大额 roll 债（>60°，证明不是瞬间快照）……
+    expect(maxAbsRoll / DEG).toBeGreaterThan(60);
+    // ……且 20 分钟（事件时间 ≈ 4.9 墙钟秒的甩尾 + 其余时间追平）后已还清
+    expect(Math.abs(lastRoll) / DEG).toBeLessThan(2);
   });
 });

@@ -187,3 +187,144 @@ export function angleBetweenDirs(
   const c = (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) / (al * bl);
   return Math.acos(Math.min(1, Math.max(-1, c)));
 }
+
+// ---------------------------------------------------------------------------
+// LE-M6 补丁 P6：天顶通过的画面 roll 限幅
+// ---------------------------------------------------------------------------
+
+/**
+ * 画面 roll 最大角速度（弧度/秒，**墙钟计**；≈25°/s）。
+ *
+ * 病灶：`lookAt(up = 世界+Y)` 使画面 roll ≡ −方位角。l2029（圣保罗）的
+ * 月亮以 89.80° 峰值高度几乎正穿天顶，方位角在 4 分钟事件时间内甩过 167°
+ * （峰值 −53°/min）——×243 加速下即**约 1 秒内画面翻滚 167°**。抬头看月亮
+ * 的人不会经历这种翻滚：它是「地平线保持水平」参数化在天顶盲区（keyhole）
+ * 的产物，真实地平式望远镜同样追不动这一段。
+ *
+ * 折中（F1，用户裁决）：roll 按墙钟限幅——远离天顶时 roll 速率 <1°/s，
+ * 限幅永不触发（观感零变化）；天顶甩尾段画面以 ≤25°/s 平缓转过（167° ≈ 7s），
+ * 之后自动追平回「地平线水平」。
+ */
+export const LAB_FOLLOW_MAX_ROLL_RATE_RAD_PER_SEC = (25 * Math.PI) / 180;
+
+/** 角度归一到 (−π, π]（roll 差取最短路径用） */
+export function wrapAngleRad(rad: number): number {
+  if (!Number.isFinite(rad)) return 0;
+  const twoPi = Math.PI * 2;
+  let a = rad % twoPi;
+  if (a > Math.PI) a -= twoPi;
+  if (a <= -Math.PI) a += twoPi;
+  return a;
+}
+
+/**
+ * roll 角向目标逼近一步（P6 限幅核心；帧率无关——步长 = 速率 × dt）：
+ * 沿 ±180° 绕行的**最短路径**走，单帧步长钳制 `maxRatePerSec × dtSec`；
+ * 差值在步长内则直接到达。返回新的 roll 角（弧度，未归一——调用方连续
+ * 累积语义；差值经 wrapAngleRad 取最短）。
+ *
+ * 守卫：非有限入参保持当前值；dt ≤ 0 不动；速率非法回退默认限幅。
+ */
+export function rollTowardTarget(
+  currentRollRad: number,
+  targetRollRad: number,
+  dtSec: number,
+  maxRatePerSec: number = LAB_FOLLOW_MAX_ROLL_RATE_RAD_PER_SEC,
+): number {
+  if (!Number.isFinite(currentRollRad)) {
+    return Number.isFinite(targetRollRad) ? targetRollRad : 0;
+  }
+  if (!Number.isFinite(targetRollRad) || !Number.isFinite(dtSec) || dtSec <= 0) {
+    return currentRollRad;
+  }
+  const rate =
+    Number.isFinite(maxRatePerSec) && maxRatePerSec > 0
+      ? maxRatePerSec
+      : LAB_FOLLOW_MAX_ROLL_RATE_RAD_PER_SEC;
+  const diff = wrapAngleRad(targetRollRad - currentRollRad);
+  const step = Math.min(Math.abs(diff), rate * dtSec);
+  return currentRollRad + Math.sign(diff) * step;
+}
+
+/**
+ * 「地平线水平」的目标 roll 恒为 0 的约定下，由视线方向与世界 +Y 组装
+ * 相机基（右/上/后三轴，列主序 9 元素写 out）——`lookAt` 的显式展开，
+ * 供 rig 在其上再施加受限 roll。视线近平行 ±Y（天顶盲区）时，up 投影
+ * 退化——回退用世界 +X 作参考轴（此时 roll 语义本就由限幅接管）。
+ *
+ * @param viewDir 视线方向（单位向量非必需，内部归一；非法时返回 false）
+ * @param rollRad 绕视线的 roll 角（弧度；0 = 地平线水平）
+ * @param out 9 元素列主序基（right, up, back 三列——three Matrix4 左上块）
+ */
+export function cameraBasisFromView(
+  viewDir: readonly number[],
+  rollRad: number,
+  out: number[],
+): boolean {
+  if (!finite3(viewDir) || !Number.isFinite(rollRad)) return false;
+  const l = norm3(viewDir[0], viewDir[1], viewDir[2]);
+  if (l <= 0) return false;
+  const fx = viewDir[0] / l;
+  const fy = viewDir[1] / l;
+  const fz = viewDir[2] / l;
+  // right0 = normalize(view × worldUp)（roll=0 基准；lookAt 同式）
+  let rx = -fz; // view × (0,1,0) = (−fz, 0, fx)
+  let ry = 0;
+  let rz = fx;
+  let rl = norm3(rx, ry, rz);
+  if (rl < 1e-9) {
+    // 视线 ≈ ±Y：改用世界 +X 参考（view × (1,0,0) 的正交化等价）
+    rx = 0;
+    ry = fz;
+    rz = -fy;
+    rl = norm3(rx, ry, rz);
+    if (rl <= 0) return false;
+  }
+  rx /= rl;
+  ry /= rl;
+  rz /= rl;
+  // up0 = right0 × view
+  const ux = ry * fz - rz * fy;
+  const uy = rz * fx - rx * fz;
+  const uz = rx * fy - ry * fx;
+  // 施加 roll：right = right0·cos + up0·sin；up = −right0·sin + up0·cos
+  const c = Math.cos(rollRad);
+  const s = Math.sin(rollRad);
+  out[0] = rx * c + ux * s;
+  out[1] = ry * c + uy * s;
+  out[2] = rz * c + uz * s;
+  out[3] = -rx * s + ux * c;
+  out[4] = -ry * s + uy * c;
+  out[5] = -rz * s + uz * c;
+  // back = −view（three 相机 −Z 看向前）
+  out[6] = -fx;
+  out[7] = -fy;
+  out[8] = -fz;
+  return true;
+}
+
+/**
+ * 由相机基反解当前 roll（弧度，(−π, π]）：与 `cameraBasisFromView(view, 0)`
+ * 的 roll=0 基准比较 right 轴的偏转角。视线近 ±Y 时同样走 +X 参考轴回退
+ * （与组装侧一致，往返自洽）。非法入参返回 0。
+ */
+export function rollFromCameraBasis(
+  viewDir: readonly number[],
+  rightDir: readonly number[],
+): number {
+  if (!finite3(viewDir) || !finite3(rightDir)) return 0;
+  const basis: number[] = new Array(9).fill(0);
+  if (!cameraBasisFromView(viewDir, 0, basis)) return 0;
+  const r0x = basis[0];
+  const r0y = basis[1];
+  const r0z = basis[2];
+  const u0x = basis[3];
+  const u0y = basis[4];
+  const u0z = basis[5];
+  const c = rightDir[0] * r0x + rightDir[1] * r0y + rightDir[2] * r0z;
+  const s = rightDir[0] * u0x + rightDir[1] * u0y + rightDir[2] * u0z;
+  if (!Number.isFinite(c) || !Number.isFinite(s) || (c === 0 && s === 0)) {
+    return 0;
+  }
+  return Math.atan2(s, c);
+}

@@ -51,11 +51,19 @@ export interface TrackpadLookControlsProps {
    * 望远档上限（补丁 P5：近天顶天体跟随的前提）。
    */
   maxPolarRad?: number;
+  /**
+   * 朝向由 BodyFollowRig 接管（补丁 P6）：true 时滚轮环顾只写 position、
+   * 不再 lookAt——否则本组件的 lookAt（up=+Y 方位角快照）会与 rig 的
+   * roll 限幅朝向在天顶附近互相打架。**仅在同场景挂有 BodyFollowRig 时
+   * 传 true**；流星雨/观察站缺省 false（原行为逐像素零变化）。
+   */
+  orientationManaged?: boolean;
 }
 
 export function TrackpadLookControls({
   minFovDeg = LAB_FOV_MIN_DEG,
   maxPolarRad = LAB_POLAR_MAX_RAD,
+  orientationManaged = false,
 }: TrackpadLookControlsProps = {}): null {
   const camera = useThree((s) => s.camera);
   const gl = useThree((s) => s.gl);
@@ -114,7 +122,8 @@ export function TrackpadLookControls({
       spherical.theta += dThetaRad;
       spherical.phi = clampLabPolar(spherical.phi + dPhiRad, maxPolarRad);
       cam.position.setFromSpherical(spherical);
-      cam.lookAt(0, 0, 0);
+      // P6：rig 在场时朝向归 rig（下一 rAF 内 rig 先于渲染写入限幅朝向）
+      if (!orientationManaged) cam.lookAt(0, 0, 0);
     };
 
     // 触屏双指捏合（M4-2 触控）：起始双指距为基准 → touchPinchScale →
@@ -183,7 +192,7 @@ export function TrackpadLookControls({
       el.removeEventListener('touchend', onTouchEnd);
       el.removeEventListener('touchcancel', onTouchEnd);
     };
-  }, [camera, gl, minFovDeg, maxPolarRad]);
+  }, [camera, gl, minFovDeg, maxPolarRad, orientationManaged]);
 
   return null;
 }

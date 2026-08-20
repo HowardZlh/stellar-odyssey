@@ -1,19 +1,27 @@
 "use client";
 
 /**
- * 地面视角「天体跟随」相机 rig（LE-M6 补丁 P5；日食/月食/selenelion 共用）
+ * 地面视角「天体跟随」相机 rig（LE-M6 补丁 P5 立、P6 扩；日食/月食/
+ * selenelion 共用）
  *
- * 语义与算法见 `utils/labCameraFollow.ts` 文件头（差量刚体旋转 = 等效赤道仪
- * 跟踪，保留用户手动偏移；**非硬锁定居中**）。本组件只做三件事：
- * 1. 逐帧取天体方向（调用方注入 `getBodyDir`，读自各条目的 frameRef）；
- * 2. `recenterToken` 变化 → 进入 0.5s 量级的平滑复位（τ 收敛，帧率无关）；
- * 3. 跟随开启时把 `d(t−1)→d(t)` 的最小旋转施加到相机位置，再过 polar 钳制
- *    （与 OrbitControls props 同一事实源 `clampLabPolar`）后 lookAt 原点。
+ * P5（跟随）：差量刚体旋转 = 等效赤道仪跟踪，保留用户手动偏移（**非硬锁定
+ * 居中**）——算法见 `utils/labCameraFollow.ts` 文件头。
  *
- * 与 OrbitControls 的协作：three 的 OrbitControls 每次 update 都从
- * `camera.position − target` 重算球坐标，因此外部直接改写 position 是被
- * 支持的（TrackpadLookControls 的滚轮环顾已是同一手法）。drei 的
- * OrbitControls 以 priority −1 更新，本 rig 走缺省 0 → 每帧在其之后生效。
+ * P6（天顶 roll 限幅）：`lookAt(up=+Y)` 在天顶盲区会把方位甩尾直接变成画面
+ * 翻滚（l2029 月亮 89.8° 过天顶，×243 加速下 ≈1 秒翻 167°）。本 rig 因此
+ * **接管挂载期间的相机朝向**（不再依赖 lookAt）：
+ * 1. 视线变化经最小旋转对齐（画面连续，不产生自旋）；
+ * 2. 与「地平线水平」基准的 roll 偏差按墙钟限幅 ≤25°/s 逐帧回正
+ *    （`rollTowardTarget`）——远离天顶时每帧偏差 ≪ 限幅、瞬时追平，与
+ *    lookAt 逐像素等价；天顶甩尾段画面平缓转过、随后自动回到水平。
+ *
+ * 与 OrbitControls 的协作：three 的 OrbitControls 每次 update 从
+ * `position − target` 重算球坐标（读 position，不读 quaternion），外部改写
+ * position 被支持；其内部的 lookAt 会先写一次朝向，本 rig 以缺省 priority 0
+ * 晚于 drei 控制器（priority −1）运行、随即以限幅朝向覆写——远离天顶时两者
+ * 逐像素一致。`camera.up` 保持世界 +Y 不动（它是控制器极角钳制的参考轴）。
+ * 同场景 TrackpadLookControls 须传 `orientationManaged`（其滚轮环顾不再
+ * lookAt，朝向统一归本 rig——否则两者会在天顶附近互相打架）。
  *
  * 挂载纪律：仅地面档（含 selenelion 场景）挂载；运镜 rig 工作期间与太空/
  * 月球档不挂（相机归运镜/其它控制器所有）。月球视角**无需跟随**——地球在
@@ -31,7 +39,10 @@ import {
 import {
   LAB_FOLLOW_RECENTER_DONE_RAD,
   angleBetweenDirs,
+  cameraBasisFromView,
   followRecenterFraction,
+  rollFromCameraBasis,
+  rollTowardTarget,
   rotateVectorBetweenDirs,
   slerpDirections,
 } from "@/utils/labCameraFollow";
@@ -71,6 +82,13 @@ export function BodyFollowRig({
     rotated: MutableVec3;
     viewDir: MutableVec3;
     nextView: MutableVec3;
+    /** P6 朝向管线状态：上帧视线/右轴（roll 连续性的事实源） */
+    orientView: MutableVec3;
+    orientRight: MutableVec3;
+    hasOrient: boolean;
+    basis: number[];
+    matrix: THREE.Matrix4;
+    scratchV: THREE.Vector3;
     token: number;
     recentering: boolean;
     spherical: THREE.Spherical;
@@ -81,6 +99,12 @@ export function BodyFollowRig({
     rotated: [0, 0, 0],
     viewDir: [0, 1, 0],
     nextView: [0, 1, 0],
+    orientView: [0, 0, -1],
+    orientRight: [1, 0, 0],
+    hasOrient: false,
+    basis: new Array(9).fill(0),
+    matrix: new THREE.Matrix4(),
+    scratchV: new THREE.Vector3(),
     token: recenterToken,
     recentering: false,
     spherical: new THREE.Spherical(),
@@ -105,8 +129,8 @@ export function BodyFollowRig({
 
     const pos = camera.position;
     const radius = pos.length();
-    let changed = false;
 
+    // ---- 位置更新（P5：复位收敛 / 差量跟随）----
     if (s.recentering && radius > 0) {
       // 当前视线方向 = −相机位置（反转轨道相机看向原点）
       s.viewDir[0] = -pos.x / radius;
@@ -123,7 +147,6 @@ export function BodyFollowRig({
           -s.nextView[1] * radius,
           -s.nextView[2] * radius,
         );
-        changed = true;
       }
     } else if (enabled && s.hasPrev) {
       // 差量跟随：把 prevDir→dir 的最小旋转施加到相机位置（刚体，半径不变）
@@ -131,14 +154,7 @@ export function BodyFollowRig({
       s.rotated[1] = pos.y;
       s.rotated[2] = pos.z;
       rotateVectorBetweenDirs(s.prevDir, dir, s.rotated, s.rotated);
-      if (
-        s.rotated[0] !== pos.x ||
-        s.rotated[1] !== pos.y ||
-        s.rotated[2] !== pos.z
-      ) {
-        pos.set(s.rotated[0], s.rotated[1], s.rotated[2]);
-        changed = true;
-      }
+      pos.set(s.rotated[0], s.rotated[1], s.rotated[2]);
     }
 
     // 方向历史始终更新（跟随关闭期间也记，重新开启不产生累计跳变）
@@ -147,16 +163,64 @@ export function BodyFollowRig({
     s.prevDir[2] = dir[2];
     s.hasPrev = true;
 
-    if (!changed) return;
     // 仰角钳制（与 OrbitControls props 同一事实源）：天体逼近天顶/地平线
     // 下时相机停在域边界，天体略微偏心属边界真实行为
-    s.spherical.setFromVector3(pos);
-    const clamped = clampLabPolar(s.spherical.phi, maxPolarRad);
-    if (clamped !== s.spherical.phi) {
-      s.spherical.phi = clamped;
-      pos.setFromSpherical(s.spherical);
+    if (radius > 0) {
+      s.spherical.setFromVector3(pos);
+      const clamped = clampLabPolar(s.spherical.phi, maxPolarRad);
+      if (clamped !== s.spherical.phi) {
+        s.spherical.phi = clamped;
+        pos.setFromSpherical(s.spherical);
+      }
     }
-    camera.lookAt(0, 0, 0);
+
+    // ---- 朝向管线（P6：挂载期间每帧接管，不再 lookAt）----
+    const r2 = pos.length();
+    if (!(r2 > 0)) return;
+    s.nextView[0] = -pos.x / r2;
+    s.nextView[1] = -pos.y / r2;
+    s.nextView[2] = -pos.z / r2;
+    if (!s.hasOrient) {
+      // 首帧：从相机现有朝向播种（接受运镜/lookAt 留下的任何 roll）
+      const v = s.scratchV;
+      v.set(0, 0, -1).applyQuaternion(camera.quaternion);
+      s.orientView[0] = v.x;
+      s.orientView[1] = v.y;
+      s.orientView[2] = v.z;
+      v.set(1, 0, 0).applyQuaternion(camera.quaternion);
+      s.orientRight[0] = v.x;
+      s.orientRight[1] = v.y;
+      s.orientRight[2] = v.z;
+      s.hasOrient = true;
+    }
+    // 1. 视线变化经最小旋转对齐上帧右轴（画面连续、零自旋）
+    rotateVectorBetweenDirs(
+      s.orientView,
+      s.nextView,
+      s.orientRight,
+      s.orientRight,
+    );
+    // 2. 相对「地平线水平」基准的 roll 偏差，按墙钟限幅回正
+    const roll = rollFromCameraBasis(s.nextView, s.orientRight);
+    const newRoll = rollTowardTarget(roll, 0, delta);
+    // 3. 组装基并写入相机（camera.up 不动——控制器极角钳制的参考轴）
+    if (cameraBasisFromView(s.nextView, newRoll, s.basis)) {
+      const b = s.basis;
+      s.matrix.set(
+        b[0], b[3], b[6], 0,
+        b[1], b[4], b[7], 0,
+        b[2], b[5], b[8], 0,
+        0, 0, 0, 1,
+      );
+      camera.quaternion.setFromRotationMatrix(s.matrix);
+      // 记录本帧终态（roll 连续性事实源）
+      s.orientView[0] = s.nextView[0];
+      s.orientView[1] = s.nextView[1];
+      s.orientView[2] = s.nextView[2];
+      s.orientRight[0] = b[0];
+      s.orientRight[1] = b[1];
+      s.orientRight[2] = b[2];
+    }
   });
 
   return null;

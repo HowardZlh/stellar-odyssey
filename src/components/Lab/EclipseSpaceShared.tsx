@@ -384,20 +384,25 @@ const MOON_RING_REFRESH_SEC = 60;
 
 /** 月球绕地真轨道环（星历轨道面；半径随当前月距逐帧缩放）
  *
- * radialFactorRef（可选，月食 M4 B12/B13）：各向异性显示映射
- * D(v) = f·v + (1−f)·(a·v)·a（a = 影轴 = −sunDirScene）为**线性映射**——
- * 对基向量施加 D 后环与各向异性缩放的月球显示位置严格共点；
- * 缺省不传 = 恒等映射（日食侧行为零变化）。 */
+ * getDisplayPos（可选，月食 LE-M6 补丁 P7「过月圆环」）：月食放大档会把
+ * 月球**位置**横向 ×f（B12/B13），真实半径圆环不再穿过显示月球；而把整圈
+ * 环过同一各向异性映射会产出长轴 ~5,400 单位的巨椭圆（> 相机域 3,800，
+ * M4-0 差异 ③ 的原方案，P3 目验打回）。P7 终态：**环取显示月球位置的
+ * 方向与模长**（e1 = 显示月位方向、半径 = |显示月位|、e2 经 Gram-Schmidt
+ * 对 e1 正交化）——环每帧严格穿过显示月球、半径随窗内横向偏移微幅呼吸
+ * （l2029 艺术化档 373→410 单位，+9.9%），远侧为干净的圆形轨道**示意**
+ * （不是显示轨迹的真实映射——那是巨椭圆；代码注释 + 月食 lunarScaleCard
+ * 口径登记）。缺省不传 = 真实月位圆环（日食侧行为零变化）。 */
 export function MoonPathRing({
   tSecRef,
   frameRef,
   geoRef,
-  radialFactorRef,
+  getDisplayPos,
 }: {
   tSecRef: SharedTimeRef;
   frameRef: SharedSpaceFrameRef;
   geoRef: SharedGeoEventRef;
-  radialFactorRef?: { current: number };
+  getDisplayPos?: (out: MutableVec3) => MutableVec3;
 }): JSX.Element {
   const ring = useMemo(() => {
     const segments = 128;
@@ -435,6 +440,7 @@ export function MoonPathRing({
       e2: [0, 1, 0] as MutableVec3,
       d1: [1, 0, 0] as MutableVec3,
       d2: [0, 1, 0] as MutableVec3,
+      pos: [0, 0, 0] as MutableVec3,
     }),
     []
   );
@@ -447,24 +453,35 @@ export function MoonPathRing({
       moonOrbitRingBasis(geoRef.current.event.geo, tSec, scratch.e1, scratch.e2);
     }
     // 半径随当前月距（含假想改写）逐帧缩放（矩阵写，零 buffer 更新）
-    const r = frameRef.current.moonDistKm * SPACE_UNITS_PER_KM;
-    // 可选各向异性显示映射 D（月食侧；缺省 f=1 恒等，日食侧零变化）
-    const f = radialFactorRef ? radialFactorRef.current : 1;
+    let r = frameRef.current.moonDistKm * SPACE_UNITS_PER_KM;
     let e1: MutableVec3 = scratch.e1;
     let e2: MutableVec3 = scratch.e2;
-    if (f !== 1) {
-      const sd = frameRef.current.sunDirScene;
-      const applyD = (v: MutableVec3, o: MutableVec3): void => {
-        // a = −sunDirScene；D(v) = f·v + (1−f)·(a·v)·a
-        const av = -(v[0] * sd[0] + v[1] * sd[1] + v[2] * sd[2]);
-        o[0] = f * v[0] + (1 - f) * av * -sd[0];
-        o[1] = f * v[1] + (1 - f) * av * -sd[1];
-        o[2] = f * v[2] + (1 - f) * av * -sd[2];
-      };
-      applyD(scratch.e1, scratch.d1);
-      applyD(scratch.e2, scratch.d2);
-      e1 = scratch.d1;
-      e2 = scratch.d2;
+    if (getDisplayPos) {
+      // P7 过月圆环：e1 = 显示月位方向、半径 = |显示月位|；e2 对 e1
+      // Gram-Schmidt 正交化（显示方向偏离真实方向 ≤ ~21°，条件数良好）
+      const p = getDisplayPos(scratch.pos);
+      const pl = Math.hypot(p[0], p[1], p[2]);
+      if (pl > 0) {
+        r = pl;
+        scratch.d1[0] = p[0] / pl;
+        scratch.d1[1] = p[1] / pl;
+        scratch.d1[2] = p[2] / pl;
+        const dot =
+          scratch.e2[0] * scratch.d1[0] +
+          scratch.e2[1] * scratch.d1[1] +
+          scratch.e2[2] * scratch.d1[2];
+        scratch.d2[0] = scratch.e2[0] - dot * scratch.d1[0];
+        scratch.d2[1] = scratch.e2[1] - dot * scratch.d1[1];
+        scratch.d2[2] = scratch.e2[2] - dot * scratch.d1[2];
+        const l2 = Math.hypot(scratch.d2[0], scratch.d2[1], scratch.d2[2]);
+        if (l2 > 1e-9) {
+          scratch.d2[0] /= l2;
+          scratch.d2[1] /= l2;
+          scratch.d2[2] /= l2;
+          e1 = scratch.d1;
+          e2 = scratch.d2;
+        }
+      }
     }
     const nx = e1[1] * e2[2] - e1[2] * e2[1];
     const ny = e1[2] * e2[0] - e1[0] * e2[2];

@@ -1550,6 +1550,7 @@ function LunarExperience({
           <TrackpadLookControls
             minFovDeg={LAB_FOV_TELESCOPIC_MIN_DEG}
             maxPolarRad={LAB_POLAR_MAX_TELESCOPIC_RAD}
+            orientationManaged={settings.viewMode === "ground"}
           />
         )}
         {/* 后期：Bloom + ACES（lab 既有底座；无双基准曝光状态机，契约 C4） */}

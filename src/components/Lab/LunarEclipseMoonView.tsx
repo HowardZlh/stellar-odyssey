@@ -127,6 +127,7 @@ const EARTH_RING_VERTEX_SHADER = /* glsl */ `
  * 4 uExposure：与血月同一曝光滑杆（B2 口径跨视角一致）。
  */
 const EARTH_RING_FRAGMENT_SHADER = /* glsl */ `
+  uniform float uHalfAngle;
   uniform float uEarthR;
   uniform float uSunR;
   uniform vec2 uSunOff;

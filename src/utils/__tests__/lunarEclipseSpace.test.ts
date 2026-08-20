@@ -273,6 +273,30 @@ describe('lunarSpaceFrameState（l2029 真实星历锚点）', () => {
     expect(() => lunarDisplayMoonPos(state, 0, pos1)).toThrow(RangeError);
   });
 
+  it('P7 过月圆环几何：|显示月位| 呼吸域有界（远小于相机域）且 f=1 时 = 真实月距', () => {
+    // 全窗采样（P1−30min → P4+30min @300s）：过月圆环的半径 = |显示月位|
+    const win = lunarTimelineWindow(l2029.contacts);
+    const pos: MutableVec3 = [0, 0, 0];
+    let minR = Number.POSITIVE_INFINITY;
+    let maxR = 0;
+    for (let t = win.startSec; t <= win.endSec; t += 300) {
+      const st = lunarSpaceFrameState(l2029.geo, t, null, false);
+      lunarDisplayMoonPos(st, LUNAR_ART_RADIAL_FACTOR, pos);
+      const r = Math.hypot(pos[0], pos[1], pos[2]);
+      minR = Math.min(minR, r);
+      maxR = Math.max(maxR, r);
+      // f=1（真实档关 ×4）：显示位模长 = 真实月距（与日食真圆环恒等）
+      lunarDisplayMoonPos(st, 1, pos);
+      expect(Math.hypot(pos[0], pos[1], pos[2])).toBeCloseTo(
+        st.moonDistKm * SPACE_UNITS_PER_KM,
+        6,
+      );
+    }
+    // 呼吸域：≤ +12% 且远小于相机域（P3 巨椭圆病灶 ~5,400 单位的反面断言）
+    expect(maxR / minR).toBeLessThan(1.12);
+    expect(maxR).toBeLessThan(LUNAR_SPACE_CAMERA_RADIUS_MAX_UNITS * 0.2);
+  });
+
   it('半影食事件（l2027）食甚：kind = penumbral、本影食分 < 0', () => {
     const s = lunarSpaceFrameState(l2027.geo, l2027.contacts.max, null, false);
     expect(s.kind).toBe('penumbral');

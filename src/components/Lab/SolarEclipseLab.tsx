@@ -2198,6 +2198,7 @@ function EclipseExperience({
           <TrackpadLookControls
             minFovDeg={LAB_FOV_TELESCOPIC_MIN_DEG}
             maxPolarRad={LAB_POLAR_MAX_TELESCOPIC_RAD}
+            orientationManaged
           />
         )}
         {/* 后期：Bloom + ACES（流星雨同配置；光球/贝利珠 HDR 由 Bloom 拾取

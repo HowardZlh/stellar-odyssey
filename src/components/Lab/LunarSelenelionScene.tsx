@@ -616,6 +616,7 @@ export function LunarSelenelionScene({
         <TrackpadLookControls
           minFovDeg={LAB_FOV_TELESCOPIC_MIN_DEG}
           maxPolarRad={LAB_POLAR_MAX_TELESCOPIC_RAD}
+          orientationManaged
         />
         {bloomEnabled ? (
           <EffectComposer multisampling={4}>

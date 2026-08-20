@@ -922,9 +922,6 @@ export function LunarEclipseSpaceView({
 }: LunarEclipseSpaceViewProps): JSX.Element {
   const art = bodyScaleMode === 'art';
   const factor = lunarRadialScaleForMode(bodyScaleMode, radialMagnify);
-  // 月轨环各向异性共点因子（settingsRef 派生 ref——React 状态变化即重建值）
-  const radialFactorRef = useRef(factor);
-  radialFactorRef.current = factor;
   return (
     <>
       {stars && <SpaceStarDome stars={stars} starPointMaxPx={starPointMaxPx} />}
@@ -943,21 +940,24 @@ export function LunarEclipseSpaceView({
           belt={art && asteroidBelt}
         />
       )}
-      {/* 月球绕地真轨道环：**仅真比例档（factor === 1）绘制**。
-          LE-M6 补丁 P3（M6-CP 目验发现）：各向异性显示映射
-          D(v)=f·v+(1−f)(a·v)a 只在月球近旁成立——整圈轨道被映射后，沿影轴
-          的基向量保持 384 单位、垂直影轴的基向量放大到 384×f（艺术化档
-          ≈5,600 单位 > 相机域 3,800），画面上是一条横穿全屏的巨型长椭圆
-          （长短轴 14.6:1），几何上无意义。改为 f≠1 时不绘制：轨迹语义由
-          下方 MoonTrajectoryLine 承担——它按事件时间窗逐点走同一显示映射，
-          与月球严格共点，长度约 3.5 倍本影显示直径，与真实 P1→P4 行程
-          比例一致（正确且够用）。 */}
-      {!inclinationDemo && factor === 1 && (
+      {/* 月球绕地轨道环（P7「过月圆环」终态，三档恒挂）：放大档下月球位置
+          横向 ×f，真实半径圆环不穿过显示月球（P3 曾因整圈各向异性映射产出
+          巨椭圆而藏环）。现环取显示月位的方向与模长——每帧严格穿过月球、
+          半径窗内微幅呼吸（艺术化档 373→410 单位），远侧为圆形轨道示意
+          （详见 MoonPathRing 头注释；用户可见口径并入 lunarScaleCard）。
+          真实档关 ×4 时 f=1，显示位 = 真实位——与日食同款真圆环恒等。 */}
+      {!inclinationDemo && (
         <MoonPathRing
           tSecRef={refs.tSecRef}
           frameRef={refs.spaceRef}
           geoRef={refs.eventRef}
-          radialFactorRef={radialFactorRef}
+          getDisplayPos={(out) =>
+            lunarDisplayMoonPos(
+              refs.spaceRef.current,
+              frameRadialFactor(refs),
+              out,
+            )
+          }
         />
       )}
       {inclinationDemo && (
