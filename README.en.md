@@ -143,6 +143,8 @@ Once open: **scroll to zoom**, press `1`–`4` to switch levels, and **click any
 | [docs/en/launch-params.md](docs/en/launch-params.md) | Launch URL parameters: deep links, kiosk deployment, logo/language |
 | [docs/en/events-guide.md](docs/en/events-guide.md) | Dynamic events: flares / CMEs / supernovae / galaxy merger preview |
 | [docs/en/meteor-shower-lab.md](docs/en/meteor-shower-lab.md) | Astronomy Lab: midsummer twin meteor showers guide (Perseids / kappa-Cygnids / 1966 Leonid storm) |
+| [docs/en/solar-eclipse-lab.md](docs/en/solar-eclipse-lab.md) | Astronomy Lab: total solar eclipse guide (2027 Egypt / 2035 Beijing / 1919 Eddington) |
+| [docs/en/lunar-eclipse-lab.md](docs/en/lunar-eclipse-lab.md) | Astronomy Lab: lunar eclipse (blood moon) guide (2029 deepest total / 2026 partial / 2027 penumbral / 1992 Pinatubo L=0) |
 | [docs/en/science-notes.md](docs/en/science-notes.md) | Scientific integrity: real data sources & registered artistic liberties |
 | [docs/en/unlock-guide.md](docs/en/unlock-guide.md) | Supporter Unlock: tiers & pricing, redemption channels, token usage, FAQ |
 | [docs/en/how-it-works.md](docs/en/how-it-works.md) | Under the hood: multi-scale rendering, volumetrics, lensing, data baking |

@@ -2,8 +2,9 @@
  * 天文实验室注册表（M2-1，IMPROVEMENT_REQUIREMENTS_METEOR_SHOWERS §M2 / 契约 C4）
  *
  * 纯逻辑模块：为 `/lab`（实验室首页条目卡片）与 `/lab/<labId>`（场景页）提供
- * 「实验条目 → i18n 键 / 场景组件标识 / 数据来源」的查找。后续条目（如日全食，
- * 另立 IMPROVEMENT_REQUIREMENTS_SOLAR_ECLIPSE.md）在 `LAB_REGISTRY` 追加。
+ * 「实验条目 → i18n 键 / 场景组件标识 / 数据来源」的查找。后续条目在
+ * `LAB_REGISTRY` 追加（日全食条目已随 E 迭代 M2 注册，
+ * 见 IMPROVEMENT_REQUIREMENTS_SOLAR_ECLIPSE.md）。
  *
  * 设计约束（devPreview.ts 同范式）：
  * - 本文件不 import React / three，保持纯 TS 可单测（覆盖率 gate ≥90%）。
@@ -91,13 +92,50 @@ const OBSERVATORY_ENTRY: LabEntry = {
 };
 
 /**
+ * 日全食（E 迭代 M2，IMPROVEMENT_REQUIREMENTS_SOLAR_ECLIPSE 契约 C6）：
+ * 三场真实日全食（2027-08-02 / 2035-09-02 / 1919-05-29 Eddington）的
+ * 权威星历复现，地面视角偏食渐进随 M2、全食景观随 M3、太空视角随 M4 递进。
+ * 完全免费（流星雨同策略，不接 observatoryGate）。
+ */
+const SOLAR_ECLIPSE_ENTRY: LabEntry = {
+  labId: 'solar-eclipse',
+  titleKey: 'lab.solarEclipseTitle',
+  descriptionKey: 'lab.solarEclipseDescription',
+  componentKey: 'solar-eclipse-lab',
+  dataSource:
+    'NASA Eclipse Web Site / EclipseWise（Fred Espenak，贝塞尔要素与接触时刻）；JPL Horizons（DE441 日月星历）；LRO LOLA LDEM_4（月缘高程剖面）；Yale Bright Star Catalog 复用；主要近似：星历 60s 线性插值（C2/C3±3min 段 1s 细采样）、大气折射不建模、月缘取静态平均天平动姿态（§1.5 登记）',
+  emoji: '🌒',
+};
+
+/**
+ * 月食（LE 迭代 M2，IMPROVEMENT_REQUIREMENTS_LUNAR_ECLIPSE 契约 C5）：
+ * 四场真实月食（2029 世纪最暗全食 / 2026 食分 0.93 偏食 / 2027 半影食 /
+ * 1992 皮纳图博后丹戎 L=0 历史场景）的权威星历复现，地面视角偏食渐进随 M2、
+ * 血月核心随 M3、太空/月球视角随 M4/M5 递进。完全免费（不接 observatoryGate）。
+ */
+const LUNAR_ECLIPSE_ENTRY: LabEntry = {
+  labId: 'lunar-eclipse',
+  titleKey: 'lab.lunarEclipseTitle',
+  descriptionKey: 'lab.lunarEclipseDescription',
+  componentKey: 'lunar-eclipse-lab',
+  dataSource:
+    'NASA Lunar Eclipse Page / 5MCLE 世纪目录（Fred Espenak & Jean Meeus，食分/γ/接触时刻）；JPL Horizons（DE441 日月星历）；Danjon (1921) 亮度标度（五档色值为目视主观评级的美术映射）；Yale Bright Star Catalog 复用；主要近似：本影放大取 Danjon 法 ×1.01（与 5MCLE 同式）、星历 60s 线性插值、大气折射不建模、月面取静态天平动姿态（§1.6 登记）',
+  emoji: '🌕',
+};
+
+/**
  * 实验室注册表（后续条目在此追加）
  *
  * 以 Map 存储便于 O(1) 查找；模块加载时对每个条目做一次合法性自检，
  * 并断言 labId 唯一（重复注册即抛错）。
  */
 export const LAB_REGISTRY: ReadonlyMap<string, LabEntry> = (() => {
-  const entries: readonly LabEntry[] = [METEOR_SHOWER_ENTRY, OBSERVATORY_ENTRY];
+  const entries: readonly LabEntry[] = [
+    METEOR_SHOWER_ENTRY,
+    OBSERVATORY_ENTRY,
+    SOLAR_ECLIPSE_ENTRY,
+    LUNAR_ECLIPSE_ENTRY,
+  ];
   const map = new Map<string, LabEntry>();
   for (const e of entries) {
     validateLabEntry(e);

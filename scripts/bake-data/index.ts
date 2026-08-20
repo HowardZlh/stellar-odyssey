@@ -39,6 +39,9 @@ import { bakeAntennae } from './antennae.ts';
 import { bakeGalaxyMaps } from './galaxyMaps.ts';
 import { bakeGalaxyCatalog, refetch2mrsSnapshot } from './galaxyCatalog.ts';
 import { bakeBrightStars, refetchBsc5Snapshot } from './brightStars.ts';
+import { bakeSolarEclipses, refetchSolarEclipseSnapshots } from './solarEclipses.ts';
+import { bakeLunarLimbProfile, refetchLolaSnapshot } from './lunarLimb.ts';
+import { bakeLunarEclipses, refetchLunarEclipseSnapshots } from './lunarEclipses.ts';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SNAPSHOT_DIR = join(SCRIPT_DIR, 'snapshots');
@@ -460,6 +463,15 @@ async function main(): Promise<void> {
   if (process.argv.includes('--fetch-bsc')) {
     await refetchBsc5Snapshot(SNAPSHOT_DIR);
   }
+  if (process.argv.includes('--fetch-eclipses')) {
+    await refetchSolarEclipseSnapshots(SNAPSHOT_DIR);
+  }
+  if (process.argv.includes('--fetch-lola')) {
+    await refetchLolaSnapshot(SNAPSHOT_DIR);
+  }
+  if (process.argv.includes('--fetch-lunar-eclipses')) {
+    await refetchLunarEclipseSnapshots(SNAPSHOT_DIR);
+  }
 
   mkdirSync(OUT_DIR, { recursive: true });
 
@@ -498,6 +510,21 @@ async function main(): Promise<void> {
     [
       'yale_bright_stars.json',
       writeProduct('yale_bright_stars.json', bakeBrightStars(SNAPSHOT_DIR), false),
+    ],
+    // E-M1-1：三事件日食星历（契约 C2，自校验在 bakeSolarEclipses 内，<500 KB）
+    [
+      'solar_eclipses.json',
+      writeProduct('solar_eclipses.json', bakeSolarEclipses(SNAPSHOT_DIR), false),
+    ],
+    // E-M1-2：LOLA 月缘高程剖面（契约 C3，自校验在 bakeLunarLimbProfile 内）
+    [
+      'lunar_limb_profile.json',
+      writeProduct('lunar_limb_profile.json', bakeLunarLimbProfile(SNAPSHOT_DIR), false),
+    ],
+    // LE-M1-1：四事件月食星历（契约 C2，自校验在 bakeLunarEclipses 内，<400 KB）
+    [
+      'lunar_eclipses.json',
+      writeProduct('lunar_eclipses.json', bakeLunarEclipses(SNAPSHOT_DIR), false),
     ],
     ...galaxyMaps.sizes,
   ];
