@@ -66,8 +66,17 @@ import {
   windSpeedFactorForDirection,
   cirBrightnessFactor,
   cmeArrivalDelayDays,
-  AURORA_ENHANCEMENT_DAYS,
 } from '@/utils/solarActivity';
+import {
+  angleBetweenDeg,
+  dirToLatLonDeg,
+  overrideCmeRoll,
+  overrideFlareRoll,
+  roundTo,
+  simDaysToRealSeconds,
+} from '@/utils/recordingTuning';
+import { isRecLogEnabled, recLog } from '@/utils/devRecLog';
+import { timeCompressionForContinuousLevel } from '@/utils/time';
 import { CORONAL_HOLE_DIR } from '@/utils/sunSurface';
 import { solarRotationAngleRad } from '@/utils/solarRotation';
 import type { SunspotGroup } from '@/utils/sunspots';
@@ -75,6 +84,7 @@ import {
   SUNSPOT_PAIR_SLOTS,
   activeRegionLatLon,
   createSunspotGroup,
+  strongestSunspot,
   sunspotDirection,
   sunspotEarthCount,
   sunspotGroupInto,
@@ -129,6 +139,49 @@ export function earthDirectionAt(simDays: number): Vec3 {
   return { x: scene.x / len, y: scene.y / len, z: scene.z / len };
 }
 
+/** 录制诊断：当前最强黑子对方位/强度（cme.roll / flare.roll 附带输出） */
+function logStrongestSunspot(simDays: number): void {
+  const best = strongestSunspot(simDays);
+  recLog(
+    'sunspot.strongest',
+    best === null
+      ? { present: false }
+      : {
+          present: true,
+          latDeg: roundTo((best.latRad * 180) / Math.PI, 1),
+          lonDeg: roundTo((best.lonRad * 180) / Math.PI, 1),
+          strength: roundTo(best.strength01, 2),
+        },
+  );
+}
+
+/** 录制诊断：CME 事件参数（实际夹角/方向/抵达 ETA 模拟天+当前倍速真实秒） */
+function logCmeRoll(
+  params: { direction: Vec3; speedKmS: number; earthDirected: boolean },
+  earthDir: Vec3,
+  simDays: number,
+): void {
+  if (!isRecLogEnabled()) return;
+  logStrongestSunspot(simDays);
+  const state = useSimulationStore.getState();
+  const { latDeg, lonDeg } = dirToLatLonDeg(params.direction);
+  const etaSimDays = cmeArrivalDelayDays(params.speedKmS);
+  const etaRealSec = simDaysToRealSeconds(
+    etaSimDays,
+    timeCompressionForContinuousLevel(state.continuousLevel),
+    state.speedMultiplier,
+  );
+  recLog('cme.roll', {
+    speedKmS: Math.round(params.speedKmS),
+    earthDirected: params.earthDirected,
+    earthAngleDeg: roundTo(angleBetweenDeg(params.direction, earthDir), 1),
+    dirLatDeg: roundTo(latDeg, 1),
+    dirLonDeg: roundTo(lonDeg, 1),
+    etaSimDays: roundTo(etaSimDays, 2),
+    etaRealSec: etaRealSec === null ? null : roundTo(etaRealSec, 1),
+  });
+}
+
 /** 耀斑事件参数（自动触发/手动演示共用；级别/量级/活动区锚定/CME 联动判定） */
 export function rollFlareParams(
   simDays: number,
@@ -140,15 +193,34 @@ export function rollFlareParams(
   startedAtSimDays: number;
   cmeLinked: boolean;
 } {
-  const flareClass = flareClassRoll(rand());
+  const rec = useSimulationStore.getState().launch.rec;
+  const rolledClass = flareClassRoll(rand());
   const region = activeRegionLatLon(simDays, rand());
-  return {
+  const rolledMagnitude = flareMagnitudeRoll(rand());
+  // dev 录制调参覆盖（recordingTuning.ts：未激活时原样透传，生产零差异）；
+  // 覆盖后的级别参与联动概率判定（X → 90% 联动 CME，走既有概率）
+  const { flareClass, magnitude } = overrideFlareRoll(
+    { flareClass: rolledClass, magnitude: rolledMagnitude },
+    rec,
+  );
+  const params = {
     flareClass,
-    magnitude: flareMagnitudeRoll(rand()),
+    magnitude,
     sourceDir: sunspotDirection(region.latRad, region.lonRad),
     startedAtSimDays: simDays,
     cmeLinked: rand() < cmeLinkProbability(flareClass),
   };
+  if (isRecLogEnabled()) {
+    logStrongestSunspot(simDays);
+    recLog('flare.roll', {
+      class: params.flareClass,
+      mag: params.magnitude,
+      regionLatDeg: roundTo((region.latRad * 180) / Math.PI, 1),
+      regionLonDeg: roundTo((region.lonRad * 180) / Math.PI, 1),
+      cmeLinked: params.cmeLinked,
+    });
+  }
+  return params;
 }
 
 /** CME 事件参数（独立触发/手动演示共用；方向源自活动区、朝地球判定） */
@@ -156,14 +228,24 @@ export function rollCmeParams(
   simDays: number,
   rand: () => number = Math.random,
 ): { direction: Vec3; speedKmS: number; startedAtSimDays: number; earthDirected: boolean } {
+  const rec = useSimulationStore.getState().launch.rec;
   const region = activeRegionLatLon(simDays, rand());
   const direction = sunspotDirection(region.latRad, region.lonRad);
-  return {
-    direction,
-    speedKmS: cmeSpeedForClass(flareClassRoll(rand()), rand()),
-    startedAtSimDays: simDays,
-    earthDirected: cmeIsEarthDirected(direction, earthDirectionAt(simDays)),
-  };
+  const earthDir = earthDirectionAt(simDays);
+  // dev 录制调参覆盖（recCmeEarth 方向直取日→地 + earthDirected 恒真 /
+  // recCmeSpeed 固定速度；未激活原样透传，生产零差异）
+  const params = overrideCmeRoll(
+    {
+      direction,
+      speedKmS: cmeSpeedForClass(flareClassRoll(rand()), rand()),
+      startedAtSimDays: simDays,
+      earthDirected: cmeIsEarthDirected(direction, earthDir),
+    },
+    rec,
+    earthDir,
+  );
+  logCmeRoll(params, earthDir, simDays);
+  return params;
 }
 
 /** 日珥/日冕环单位弧线（utils/solarActivity.loopArcPoint 包装） */
@@ -579,15 +661,23 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
         progress >= FLARE_RISE_FRACTION &&
         linkedFlareIdRef.current !== activeSolarFlare.id
       ) {
-        // 耀斑峰值联动 CME（§4.3-2/3）：方向沿耀斑源区
+        // 耀斑峰值联动 CME（§4.3-2/3）：方向沿耀斑源区；
+        // dev 录制调参同样覆盖（recCmeEarth/recCmeSpeed，生产零差异）
         linkedFlareIdRef.current = activeSolarFlare.id;
         const dir = activeSolarFlare.sourceDir;
-        state.triggerCme({
-          direction: dir,
-          speedKmS: cmeSpeedForClass(activeSolarFlare.flareClass, Math.random()),
-          startedAtSimDays: simDays,
-          earthDirected: cmeIsEarthDirected(dir, earthDirectionAt(simDays)),
-        });
+        const earthDir = earthDirectionAt(simDays);
+        const linkedParams = overrideCmeRoll(
+          {
+            direction: dir,
+            speedKmS: cmeSpeedForClass(activeSolarFlare.flareClass, Math.random()),
+            startedAtSimDays: simDays,
+            earthDirected: cmeIsEarthDirected(dir, earthDir),
+          },
+          state.launch.rec,
+          earthDir,
+        );
+        logCmeRoll(linkedParams, earthDir, simDays);
+        state.triggerCme(linkedParams);
       }
     } else if (!sunCutawayMode && !timeJumped && solarAutoTriggerInScope) {
       // S3 周期联动（§4.4）：耀斑泊松均值按活动周期频率因子缩放
@@ -661,10 +751,12 @@ export function SunActivity({ radius }: SunActivityProps): JSX.Element {
     ) {
       state.triggerCmeArrival(simDays);
     }
-    // 极光增强窗口结束后清除（Planet.tsx 读取 auroraStartedAtSimDays 增亮大气）
+    // 极光增强窗口结束后清除（Planet.tsx 读取 auroraStartedAtSimDays 增亮大气）；
+    // 窗口时长走 launch.rec.auroraDays（默认 = AURORA_ENHANCEMENT_DAYS，
+    // dev 录制调参 `?recAuroraDays=` 可覆盖，生产零差异）
     if (state.auroraStartedAtSimDays !== null) {
       const since = simDays - state.auroraStartedAtSimDays;
-      if (since < 0 || since >= AURORA_ENHANCEMENT_DAYS) {
+      if (since < 0 || since >= state.launch.rec.auroraDays) {
         state.completeAurora();
       }
     }

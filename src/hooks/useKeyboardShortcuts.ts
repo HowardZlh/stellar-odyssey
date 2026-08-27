@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import type { ViewLevel } from '@/types';
 import { useSimulationStore } from '@/store';
+import { recLog } from '@/utils/devRecLog';
 
 /** 数字键 → 视角层级映射 */
 const LEVEL_KEYS: Record<string, ViewLevel> = {
@@ -51,6 +52,8 @@ export function useKeyboardShortcuts(): void {
           break;
         case 'l':
         case 'L':
+          // dev 录制诊断（devRecLog：未启用/生产态 no-op）
+          recLog('ui.toggle', { control: 'labels', key: 'L', visible: !state.showLabels });
           state.setShowLabels(!state.showLabels);
           break;
         case 'f':
@@ -85,6 +88,8 @@ export function useKeyboardShortcuts(): void {
           // "任意输入"消费——touring → 暂停并显 UI / paused → 重置恢复
           // 计时，若再 toggle 会与暂停显 UI 语义互相抵消
           if (state.kiosk.phase === 'inactive') {
+            // dev 录制诊断（devRecLog：未启用/生产态 no-op）
+            recLog('ui.toggle', { control: 'uiVisible', key: 'H', visible: !state.uiVisible });
             state.toggleUiVisible();
           }
           break;

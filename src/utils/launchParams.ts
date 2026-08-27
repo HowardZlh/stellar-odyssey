@@ -15,6 +15,7 @@
  */
 
 import type { LaunchParams, LaunchTour, Locale } from '@/types';
+import { DEFAULT_RECORDING_TUNING, parseRecordingTuning } from '@/utils/recordingTuning';
 
 /** dwell 合法下限（秒） */
 export const DWELL_MIN_SEC = 5;
@@ -51,6 +52,7 @@ export const DEFAULT_LAUNCH_PARAMS: Readonly<LaunchParams> = Object.freeze({
   logo: null,
   lang: null,
   token: null,
+  rec: DEFAULT_RECORDING_TUNING,
 });
 
 /** `?mode=kiosk`（大小写不敏感）；其余值回退 null */
@@ -127,5 +129,7 @@ export function parseLaunchParams(search: string): LaunchParams {
     logo: parseLogo(params.get('logo')),
     lang: parseLang(params.get('lang')),
     token: parseToken(params.get('token')),
+    // dev 专用录制调参（recordingTuning.ts：生产构建恒默认值，零行为差异）
+    rec: parseRecordingTuning(params),
   };
 }

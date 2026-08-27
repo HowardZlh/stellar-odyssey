@@ -846,11 +846,14 @@ export function Planet({ data }: PlanetProps): JSX.Element {
     if (cloudRef.current) {
       cloudRef.current.rotation.y = rotation * 1.12;
     }
-    // S3 §4.3-3：地球极光增强（CME 抵达后极区大气短暂增亮，克制可退化）
+    // S3 §4.3-3：地球极光增强（CME 抵达后极区大气短暂增亮，克制可退化）；
+    // dev 录制调参（launch.rec 默认值 = 现状，生产零差异）：窗口时长
+    // recAuroraDays、峰值 opacity 乘数 recAuroraBoost（封顶 1.0）
     if (auroraMatRef.current && data.id === 'earth') {
       const started = state.auroraStartedAtSimDays;
-      const enh = started === null ? 0 : auroraEnhancement01(simDays - started);
-      auroraMatRef.current.opacity = 0.5 * enh;
+      const rec = state.launch.rec;
+      const enh = started === null ? 0 : auroraEnhancement01(simDays - started, rec.auroraDays);
+      auroraMatRef.current.opacity = Math.min(1, 0.5 * enh * rec.auroraBoost);
       (auroraMatRef.current as unknown as { visible?: boolean }).visible = enh > 0.001;
     }
     // 夜灯层与地表同步旋转（灯光固定在大陆上）

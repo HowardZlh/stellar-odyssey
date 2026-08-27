@@ -6,6 +6,7 @@
 import type { LaunchParams } from '@/types';
 import { useSimulationStore } from '@/store';
 import { DEFAULT_LAUNCH_PARAMS } from '@/utils/launchParams';
+import { DEFAULT_RECORDING_TUNING } from '@/utils/recordingTuning';
 
 afterEach(() => {
   useSimulationStore.setState({ launch: DEFAULT_LAUNCH_PARAMS });
@@ -21,6 +22,7 @@ describe('launch 状态（B4 启动 URL 参数）', () => {
       logo: null,
       lang: null,
       token: null,
+      rec: DEFAULT_RECORDING_TUNING,
     });
   });
 
@@ -33,6 +35,7 @@ describe('launch 状态（B4 启动 URL 参数）', () => {
       logo: 'https://example.com/logo.png',
       lang: 'en',
       token: null,
+      rec: DEFAULT_RECORDING_TUNING,
     };
     useSimulationStore.getState().setLaunchParams(params);
     expect(useSimulationStore.getState().launch).toEqual(params);

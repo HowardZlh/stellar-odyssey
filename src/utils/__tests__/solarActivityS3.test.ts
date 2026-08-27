@@ -161,4 +161,19 @@ describe('auroraEnhancement01（极光增强强度）', () => {
       expect(v).toBeLessThanOrEqual(1);
     }
   });
+
+  it('自定义窗口时长（dev 录制调参 recAuroraDays）：曲线随时长缩放', () => {
+    // 默认时长在 8 天窗口内仍处增强中；8 天整点归零
+    expect(auroraEnhancement01(AURORA_ENHANCEMENT_DAYS, 8)).toBeGreaterThan(0);
+    expect(auroraEnhancement01(8, 8)).toBe(0);
+    // 相对相位等价：t/duration 相同 → 强度相同
+    expect(auroraEnhancement01(0.8, 8)).toBeCloseTo(
+      auroraEnhancement01(AURORA_ENHANCEMENT_DAYS * 0.1),
+    );
+  });
+
+  it('非正窗口时长抛错', () => {
+    expect(() => auroraEnhancement01(1, 0)).toThrow(RangeError);
+    expect(() => auroraEnhancement01(1, -2)).toThrow(RangeError);
+  });
 });

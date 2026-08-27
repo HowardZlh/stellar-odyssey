@@ -785,6 +785,23 @@ export function filamentDarkening(
 }
 
 /**
+ * 当前最强黑子对的前导黑子（活动区锚定/录制诊断日志共用）：
+ * 遍历全部槽位取 strength01 最大者；无活跃黑子时返回 null。
+ *
+ * @param simDays 模拟时间（天）
+ */
+export function strongestSunspot(simDays: number): SunspotInstance | null {
+  let best: SunspotInstance | null = null;
+  for (let slot = 0; slot < SUNSPOT_PAIR_SLOTS; slot += 1) {
+    const pair = sunspotPairState(slot, simDays);
+    if (pair && (!best || pair[0].strength01 > best.strength01)) {
+      best = pair[0];
+    }
+  }
+  return best;
+}
+
+/**
  * 活动区方位（耀斑/日冕环锚定用）：优先取当前最强黑子对的中心方位；
  * 无活跃黑子时按确定性哈希回退到中低纬随机方位。
  *
@@ -795,13 +812,7 @@ export function activeRegionLatLon(
   simDays: number,
   rand01: number,
 ): { latRad: number; lonRad: number } {
-  let best: SunspotInstance | null = null;
-  for (let slot = 0; slot < SUNSPOT_PAIR_SLOTS; slot += 1) {
-    const pair = sunspotPairState(slot, simDays);
-    if (pair && (!best || pair[0].strength01 > best.strength01)) {
-      best = pair[0];
-    }
-  }
+  const best = strongestSunspot(simDays);
   if (best) {
     return { latRad: best.latRad, lonRad: best.lonRad };
   }

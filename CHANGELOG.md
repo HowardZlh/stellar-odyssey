@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- 新增 dev 专用录制调参参数与结构化诊断日志（仅开发构建生效，生产零行为差异）：URL 参数 `recCmeEarth`/`recCmeSpeed`/`recFlareClass`/`recFlareMag`/`recAuroraDays`/`recAuroraBoost`/`recLog` 可定向/放大太阳事件链演示效果（CME 定向朝地球、固定速度、耀斑定级、极光时长与亮度增强），并输出 `[rec]` 前缀单行 JSON 诊断日志（CME/耀斑参数、抵达 ETA、极光窗口、运镜、门控、UI 开合、倍速变更）供视频录制自动化消费
+
 ## [0.1.11] - 2026-08-20
 
 ### 新增

@@ -15,6 +15,8 @@ import { advanceTransitionProgress, interpolateCameraState } from '@/utils/anima
 import { resolveFocusTarget, supernovaFocusTarget } from '@/utils/cameraFocus';
 import type { FocusTarget } from '@/utils/cameraFocus';
 import { levelBlendWeights } from '@/utils/scale';
+import { recLog } from '@/utils/devRecLog';
+import { roundTo } from '@/utils/recordingTuning';
 import {
   ROAM_MAX_DISTANCE,
   ROAM_MIN_DISTANCE,
@@ -47,6 +49,8 @@ interface TransitionState {
   /** 飞往模式：进场方向与观察距离（触发时刻捕获，保持运镜方向稳定） */
   approachDir: Vec3 | null;
   viewDistance: number;
+  /** 运镜累计真实秒（dev 录制诊断 camera.arrived 耗时，帧循环 delta 累加） */
+  elapsedSec: number;
 }
 
 /**
@@ -129,6 +133,7 @@ export function CameraController(): JSX.Element {
       flyToId: null,
       approachDir: null,
       viewDistance: 0,
+      elapsedSec: 0,
     };
     followRef.current = null;
   };
@@ -174,6 +179,7 @@ export function CameraController(): JSX.Element {
       flyToId: id,
       approachDir,
       viewDistance: d,
+      elapsedSec: 0,
     };
     followRef.current = null;
   };
@@ -220,6 +226,7 @@ export function CameraController(): JSX.Element {
         delta,
         transition.flyToId ? FLY_TO_SECONDS : VIEW_TRANSITION_SECONDS,
       );
+      transition.elapsedSec += delta;
       const state = interpolateCameraState(transition.from, transition.to, transition.progress);
       camera.position.set(state.position.x, state.position.y, state.position.z);
       camera.fov = state.fov;
@@ -230,6 +237,13 @@ export function CameraController(): JSX.Element {
       }
       if (transition.progress >= 1) {
         transition.active = false;
+        // dev 录制诊断：运镜抵达（devRecLog：未启用/生产态 no-op）
+        if (transition.flyToId) {
+          recLog('camera.arrived', {
+            target: transition.flyToId,
+            elapsedSec: roundTo(transition.elapsedSec, 2),
+          });
+        }
         // 飞往运镜完成（P5 自查修复）：立即以落点位置播种跟随基准。
         // 否则下一帧跟随分支仅初始化 followRef 而不平移，该帧目标天体的
         // 位移被永久丢失——高时间压缩下（如 L2 跟随冥王星，单帧位移可达

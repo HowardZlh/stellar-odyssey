@@ -17,6 +17,31 @@ export type Locale = 'zh' | 'en';
 export type LaunchTour = 'solar' | 'galaxy' | 'universe' | 'all';
 
 /**
+ * dev 专用录制调参快照（`utils/recordingTuning.ts` 解析+消毒）：
+ * 视频录制时经 URL 参数放大/定向太阳事件链演示效果。**仅开发构建生效**
+ * （`NODE_ENV !== 'production'` 时解析，生产恒返回默认值，零行为差异）；
+ * 越界/非法值静默消毒回默认。会话级只读快照（store `launch.rec`）。
+ */
+export interface RecordingTuning {
+  /** `?recCmeEarth=1`：CME 方向直接取日→地方向，earthDirected 恒真 */
+  cmeEarth: boolean;
+  /** `?recCmeSpeed=<250–3000>`：固定 CME 速度（km/s）；null = 不覆盖 */
+  cmeSpeedKmS: number | null;
+  /** `?recFlareClass=C|M|X`：演示耀斑级别；null = 不覆盖 */
+  flareClass: SolarFlareClass | null;
+  /** `?recFlareMag=<1–9.9>`：演示耀斑量级；null = 不覆盖 */
+  flareMag: number | null;
+  /** `?recAuroraDays=<0.1–30>`：极光增强时长（模拟天），默认 1.5 */
+  auroraDays: number;
+  /** `?recAuroraBoost=<0.5–3>`：极光层峰值 opacity 乘数（消费侧封顶 1.0），默认 1 */
+  auroraBoost: number;
+  /** `?recLog=1`：单独开启诊断日志（不改任何调参行为） */
+  log: boolean;
+  /** 任一 rec* 参数出现（诊断日志门控依据；生产构建恒 false） */
+  active: boolean;
+}
+
+/**
  * 启动 URL 参数解析结果（B4，方案 K4：`utils/launchParams.ts` 纯逻辑解析）
  *
  * 非法值静默回退默认（不抛错、控制台零错误）；`mode`/`tour`/`dwell`
@@ -41,6 +66,8 @@ export interface LaunchParams {
    * console.warn。仅接受 `SO1.` 前缀且长度 ≤2048（防御口径同 logo）。
    */
   token: string | null;
+  /** dev 专用录制调参快照（仅开发构建生效，生产恒默认值——零行为差异） */
+  rec: RecordingTuning;
 }
 
 /** 三维向量（与 three.js 解耦，便于纯函数测试） */

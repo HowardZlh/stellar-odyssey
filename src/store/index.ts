@@ -57,7 +57,13 @@ import { continuousLevelForDistance, discreteLevelFromContinuous } from '@/utils
 import { CME_SPEED_KM_S_MAX, CME_SPEED_KM_S_MIN, FLARE_DURATION_DAYS } from '@/utils/solarActivity';
 import type { SunCutawayLayerId } from '@/utils/sunCutaway';
 import { SN_MAX_REMNANTS, clampSupernovaDuration } from '@/utils/supernova';
-import { advanceSimTimeContinuous, clampSpeedMultiplier } from '@/utils/time';
+import {
+  advanceSimTimeContinuous,
+  clampSpeedMultiplier,
+  timeCompressionForContinuousLevel,
+} from '@/utils/time';
+import { recLog } from '@/utils/devRecLog';
+import { roundTo, simDaysToRealSeconds } from '@/utils/recordingTuning';
 import { MERGE_PREVIEW_DURATION_SEC, mergePreviewSimDays } from '@/utils/universe';
 import { UNLOCK_PUBLIC_KEY_HEX } from '@/data/unlockPublicKey';
 import { FREE_DEMO_DAILY_LIMIT, demoQuotaRemaining, demoQuotaUpdate } from '@/utils/demoQuota';
@@ -1014,9 +1020,16 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       });
       return;
     }
+    const remainingDays = tokenRemainingDays(result.payload.exp, nowSec);
+    // dev 录制诊断：权益恢复（吊销名单来源=缓存；devRecLog no-op 口径同上）
+    recLog('gate.restore', {
+      tier: result.payload.tier,
+      remainingDays,
+      revocationSource: 'cache',
+    });
     set({
       entitlement: { tier: result.payload.tier, expSec: result.payload.exp },
-      entitlementRemainingDays: tokenRemainingDays(result.payload.exp, nowSec),
+      entitlementRemainingDays: remainingDays,
       entitlementTokenHash: hash,
     });
   },
@@ -1048,9 +1061,16 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
         });
         return;
       }
+      const remainingDays = tokenRemainingDays(result.payload.exp, nowSec);
+      // dev 录制诊断：挂起权益补恢复（吊销名单来源=拉取；devRecLog no-op）
+      recLog('gate.restore', {
+        tier: result.payload.tier,
+        remainingDays,
+        revocationSource: 'fetch',
+      });
       set({
         entitlement: { tier: result.payload.tier, expSec: result.payload.exp },
-        entitlementRemainingDays: tokenRemainingDays(result.payload.exp, nowSec),
+        entitlementRemainingDays: remainingDays,
         entitlementTokenHash: hash,
       });
       return;
@@ -1076,6 +1096,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     if (!get().revocationListReady) {
       // 失败 + 无任何名单来源（新设备/无痕首次）：挂起的权益不恢复 +
       // 网络提示；后续粘贴激活同被 fail-closed 拒绝（裁决 ④⑥）
+      // dev 录制诊断：吊销名单来源=失败（devRecLog no-op 口径同上）
+      recLog('gate.restore', { tier: null, remainingDays: null, revocationSource: 'fail' });
       set({ revocationCheckPending: false, revocationCheckFailed: true });
     }
     // 失败 + 有缓存：restore 已凭缓存比对放行，静默（缓存软化）
@@ -1153,9 +1175,14 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   requestDemoEvent: (nowMs = Date.now()) => {
     const state = get();
     // 有权益不限次（entitlementTick 维护 entitlement 时效，见字段登记）
-    if (state.entitlement !== null) return true;
+    if (state.entitlement !== null) {
+      // dev 录制诊断：权益直通（devRecLog：未启用/生产态 no-op）
+      recLog('gate.demoQuota', { entitled: true, allowed: true });
+      return true;
+    }
     // A3：demo 限免窗口期内放行不计次（观察站免费期同口径，配额零触碰）
     if (remoteFreeWindowActive(state.remoteGateConfig.demo?.freeWindow, nowMs)) {
+      recLog('gate.demoQuota', { freeWindow: true, allowed: true });
       return true;
     }
     const result = demoQuotaUpdate(
@@ -1163,6 +1190,11 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       nowMs,
       state.remoteGateConfig.demo?.dailyLimit,
     );
+    recLog('gate.demoQuota', {
+      used: result.state.used,
+      remaining: result.remaining,
+      allowed: result.allowed,
+    });
     persistDemoQuota(result.state);
     if (result.allowed) {
       set({ demoQuota: result.state, demoRemainingToday: result.remaining });
@@ -1321,7 +1353,15 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
 
   togglePaused: () => set((state) => ({ paused: !state.paused })),
 
-  setSpeedMultiplier: (multiplier) => set({ speedMultiplier: clampSpeedMultiplier(multiplier) }),
+  setSpeedMultiplier: (multiplier) => {
+    const next = clampSpeedMultiplier(multiplier);
+    const prev = get();
+    if (next !== prev.speedMultiplier) {
+      // dev 录制诊断（devRecLog：未启用/生产态 no-op）
+      recLog('sim.speed', { from: prev.speedMultiplier, to: next, simDays: prev.simDays });
+    }
+    set({ speedMultiplier: next });
+  },
 
   setViewLevel: (level) =>
     set((state) => {
@@ -1422,7 +1462,11 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   setAudioVolume: (volume) => set({ audioVolume: Math.min(1, Math.max(0, volume)) }),
   setAudioResumeFailed: (failed) => set({ audioResumeFailed: failed }),
 
-  selectBody: (id) => set({ selectedBodyId: id }),
+  selectBody: (id) => {
+    // dev 录制诊断：信息面板开合（devRecLog：未启用/生产态 no-op）
+    recLog('ui.toggle', { control: 'infoPanel', open: id !== null, bodyId: id });
+    set({ selectedBodyId: id });
+  },
 
   setRateClampNotice: (active) => set({ rateClampNotice: active }),
   setPlanetRateClampNotice: (active) => set({ planetRateClampNotice: active }),
@@ -1449,6 +1493,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       // R3-2：飞往 = 切换到该天体，简介面板跟随显示（超新星事件无
       // 信息目录条目，维持现状不改写选中）
       const isSupernova = id.startsWith('sn-');
+      // dev 录制诊断：运镜发起（devRecLog：未启用/生产态 no-op）
+      recLog('camera.flyTo', { target: id });
       return {
         flyToBodyId: id,
         flyToRequestId: state.flyToRequestId + 1,
@@ -1607,6 +1653,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
         sourceDir: params.sourceDir,
         cmeLinked: params.cmeLinked,
       };
+      // dev 录制诊断：通知卡出现（devRecLog：未启用/生产态 no-op）
+      recLog('ui.toggle', { control: 'notice', kind: 'flare', visible: true });
       return {
         activeSolarFlare: event,
         solarFlareCounter: counter,
@@ -1629,8 +1677,10 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       return { activeSolarFlare: null };
     }),
 
-  dismissSolarFlareNotice: () =>
-    set({ solarFlareNoticeVisible: false, solarFlareNoticeInfo: null, solarFlareNoticeAgeSec: 0 }),
+  dismissSolarFlareNotice: () => {
+    recLog('ui.toggle', { control: 'notice', kind: 'flare', visible: false });
+    set({ solarFlareNoticeVisible: false, solarFlareNoticeInfo: null, solarFlareNoticeAgeSec: 0 });
+  },
 
   triggerCme: (params) =>
     set((state) => {
@@ -1646,6 +1696,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
         startedAtSimDays: params.startedAtSimDays,
         earthDirected: params.earthDirected,
       };
+      // dev 录制诊断：通知卡出现（devRecLog：未启用/生产态 no-op）
+      recLog('ui.toggle', { control: 'notice', kind: 'cme', visible: true });
       return {
         activeCme: event,
         cmeCounter: counter,
@@ -1662,14 +1714,36 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       return { activeCme: null };
     }),
 
-  dismissCmeNotice: () =>
-    set({ cmeNoticeVisible: false, cmeNoticeInfo: null, cmeNoticeAgeSec: 0 }),
+  dismissCmeNotice: () => {
+    recLog('ui.toggle', { control: 'notice', kind: 'cme', visible: false });
+    set({ cmeNoticeVisible: false, cmeNoticeInfo: null, cmeNoticeAgeSec: 0 });
+  },
 
   scheduleCmeArrival: (arrivalSimDays) => set({ cmeArrivalSimDays: arrivalSimDays }),
 
   triggerCmeArrival: (atSimDays) =>
     set((state) => {
       if (!Number.isFinite(atSimDays)) return state;
+      // dev 录制诊断：CME 抵达 + 极光增强窗口（devRecLog：未启用/生产态
+      // no-op）。窗口时长/峰值走 launch.rec（默认 = 现状，生产零差异）
+      const rec = state.launch.rec;
+      const windowRealSec = simDaysToRealSeconds(
+        rec.auroraDays,
+        timeCompressionForContinuousLevel(state.continuousLevel),
+        state.speedMultiplier,
+      );
+      recLog('cme.arrival', {
+        simDays: roundTo(atSimDays, 2),
+        auroraStartDays: roundTo(atSimDays, 2),
+        auroraEndDays: roundTo(atSimDays + rec.auroraDays, 2),
+        windowRealSec: windowRealSec === null ? null : roundTo(windowRealSec, 1),
+      });
+      recLog('aurora.window', {
+        startDays: roundTo(atSimDays, 2),
+        endDays: roundTo(atSimDays + rec.auroraDays, 2),
+        peakOpacity: roundTo(Math.min(1, 0.5 * rec.auroraBoost), 3),
+      });
+      recLog('ui.toggle', { control: 'notice', kind: 'cmeArrival', visible: true });
       return {
         cmeArrivalSimDays: null,
         auroraStartedAtSimDays: atSimDays,
@@ -1684,8 +1758,10 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       return { auroraStartedAtSimDays: null };
     }),
 
-  dismissCmeArrivalNotice: () =>
-    set({ cmeArrivalNoticeVisible: false, cmeArrivalNoticeAgeSec: 0 }),
+  dismissCmeArrivalNotice: () => {
+    recLog('ui.toggle', { control: 'notice', kind: 'cmeArrival', visible: false });
+    set({ cmeArrivalNoticeVisible: false, cmeArrivalNoticeAgeSec: 0 });
+  },
 
   setSelectedSolarFeature: (feature) => set({ selectedSolarFeature: feature }),
 

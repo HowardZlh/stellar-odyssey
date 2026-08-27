@@ -13,6 +13,7 @@ import {
   parseLaunchParams,
   TOUR_DEFAULT,
 } from '@/utils/launchParams';
+import { DEFAULT_RECORDING_TUNING } from '@/utils/recordingTuning';
 
 describe('parseLaunchParams 空/默认路径', () => {
   it.each([[''], ['?'], ['?foo=1&bar=2']])('%j → 全默认', (search) => {
@@ -24,6 +25,7 @@ describe('parseLaunchParams 空/默认路径', () => {
       logo: null,
       lang: null,
       token: null,
+      rec: DEFAULT_RECORDING_TUNING,
     });
   });
 
@@ -177,6 +179,7 @@ describe('组合与健壮性', () => {
       logo: 'https://example.com/l.svg',
       lang: 'en',
       token: null,
+      rec: DEFAULT_RECORDING_TUNING,
     });
   });
 
