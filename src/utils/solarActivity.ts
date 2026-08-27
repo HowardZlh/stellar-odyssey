@@ -501,11 +501,19 @@ export function cmeArrivalDelayDays(speedKmS: number): number {
  * 快速起亮 → 缓慢消退（克制、可退化）。
  *
  * @param daysSinceArrival 自抵达起经过的模拟天
+ * @param durationDays 增强窗口时长（模拟天，默认 AURORA_ENHANCEMENT_DAYS；
+ *   dev 录制调参 `?recAuroraDays=` 可覆盖，见 utils/recordingTuning.ts）
  * @returns 增强强度 ∈ [0,1]（窗口外为 0）
  */
-export function auroraEnhancement01(daysSinceArrival: number): number {
-  if (daysSinceArrival <= 0 || daysSinceArrival >= AURORA_ENHANCEMENT_DAYS) return 0;
-  const t = daysSinceArrival / AURORA_ENHANCEMENT_DAYS;
+export function auroraEnhancement01(
+  daysSinceArrival: number,
+  durationDays: number = AURORA_ENHANCEMENT_DAYS,
+): number {
+  if (!(durationDays > 0)) {
+    throw new RangeError(`窗口时长必须为正数，收到 ${durationDays}`);
+  }
+  if (daysSinceArrival <= 0 || daysSinceArrival >= durationDays) return 0;
+  const t = daysSinceArrival / durationDays;
   // 前 15% 快速起亮，其后指数消退
   if (t < 0.15) return t / 0.15;
   const x = (t - 0.15) / 0.85;

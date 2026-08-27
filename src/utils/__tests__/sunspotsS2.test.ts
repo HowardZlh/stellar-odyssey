@@ -16,6 +16,7 @@ import {
   SUNSPOT_RADIUS_MIN_RAD,
   SUNSPOT_UMBRA_BRIGHTNESS,
   activeRegionLatLon,
+  strongestSunspot,
   fillSunspotShaderData,
   sunspotDarkening,
   sunspotDirection,
@@ -210,5 +211,24 @@ describe('activeRegionLatLon（耀斑锚定）', () => {
 
   it('确定性：同输入同输出', () => {
     expect(activeRegionLatLon(1234, 0.3)).toEqual(activeRegionLatLon(1234, 0.3));
+  });
+});
+
+describe('strongestSunspot（活动区锚定/录制诊断共用）', () => {
+  it('有活跃黑子时返回强度最大的前导黑子，且与 activeRegionLatLon 方位一致', () => {
+    for (let day = 0; day < 3000; day += 5) {
+      const best = strongestSunspot(day);
+      if (best === null) continue;
+      expect(best.strength01).toBeGreaterThan(0);
+      const region = activeRegionLatLon(day, 0.5);
+      expect(region.latRad).toBe(best.latRad);
+      expect(region.lonRad).toBe(best.lonRad);
+      return;
+    }
+    throw new Error('3000 天内未找到活跃黑子');
+  });
+
+  it('确定性：同输入同输出', () => {
+    expect(strongestSunspot(1234)).toEqual(strongestSunspot(1234));
   });
 });

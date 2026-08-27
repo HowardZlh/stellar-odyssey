@@ -14,6 +14,7 @@
  */
 import { useEffect } from 'react';
 import { parseLaunchParams } from '@/utils/launchParams';
+import { configureRecLog } from '@/utils/devRecLog';
 import { getTextureManager } from '@/components/CelestialBody/textureManager';
 import { useSimulationStore } from '@/store';
 
@@ -33,6 +34,9 @@ export function useLaunchInit(): void {
   useEffect(() => {
     const params = parseLaunchParams(window.location.search);
     setLaunchParams(params);
+    // dev 录制诊断日志门控（devRecLog）：任一 rec* 参数出现即开
+    // （rec.active 生产构建恒 false——生产零输出）
+    configureRecLog(params.rec.active);
 
     const body = params.body;
     if (body === null) return undefined;
