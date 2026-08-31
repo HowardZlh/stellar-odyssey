@@ -250,6 +250,46 @@ describe("FakeD1 引擎自检", () => {
     expect(await count("SELECT * FROM revocations WHERE exp <> ?", 100)).toBe(1);
   });
 
+  it("ON CONFLICT DO UPDATE 原子累加：首插 → 建行，再插 → 逐列累加（G8）", async () => {
+    const db = new FakeD1();
+    const upsert =
+      "INSERT INTO funnel_daily (d, lock_shown, lock_cta) VALUES (?, ?, ?) " +
+      "ON CONFLICT(d) DO UPDATE SET lock_shown = lock_shown + excluded.lock_shown, " +
+      "lock_cta = lock_cta + excluded.lock_cta";
+    await db.prepare(upsert).bind("2026-08-31", 2, 1).run();
+    expect(db.rows("funnel_daily")).toEqual([
+      { d: "2026-08-31", lock_shown: 2, lock_cta: 1 },
+    ]);
+    await db.prepare(upsert).bind("2026-08-31", 3, 0).run();
+    expect(db.rows("funnel_daily")).toEqual([
+      { d: "2026-08-31", lock_shown: 5, lock_cta: 1 },
+    ]);
+    // 不同主键 → 新行互不影响
+    await db.prepare(upsert).bind("2026-09-01", 1, 1).run();
+    expect(db.rows("funnel_daily")).toHaveLength(2);
+  });
+
+  it.each([
+    [
+      "OR REPLACE 与 ON CONFLICT 同用",
+      "INSERT OR REPLACE INTO funnel_daily (d, lock_shown) VALUES (?, ?) ON CONFLICT(d) DO UPDATE SET lock_shown = lock_shown + excluded.lock_shown",
+      /OR REPLACE 与 ON CONFLICT 不可同用/,
+    ],
+    [
+      "冲突列非主键",
+      "INSERT INTO funnel_daily (d, lock_shown) VALUES (?, ?) ON CONFLICT(lock_shown) DO UPDATE SET lock_shown = lock_shown + excluded.lock_shown",
+      /ON CONFLICT 列必须是主键/,
+    ],
+    [
+      "SET 子句非同列自加",
+      "INSERT INTO funnel_daily (d, lock_shown) VALUES (?, ?) ON CONFLICT(d) DO UPDATE SET lock_shown = lock_cta + excluded.lock_shown",
+      /不支持的 DO UPDATE SET 子句/,
+    ],
+  ])("ON CONFLICT 防御（%s）→ 抛错", async (_l, sql, re) => {
+    const db = new FakeD1();
+    await expect(db.prepare(sql).bind("2026-08-31", 1).run()).rejects.toThrow(re);
+  });
+
   it("run() 对 SELECT 语句也可执行（D1 行为对齐）", async () => {
     const db = new FakeD1();
     db.seed("kv_state", { k: "a", v: "1", updated_at: "t" });

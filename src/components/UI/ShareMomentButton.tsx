@@ -23,6 +23,7 @@ import type { JSX, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useLocale, useT } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
+import { trackFunnelEvent } from '@/utils/funnel';
 import { buildShareUrl, type ShareContext } from '@/utils/shareLink';
 
 /** 复制反馈气泡自动复位延时（ms） */
@@ -60,6 +61,7 @@ export function ShareMomentButton({
   }, [feedback]);
 
   const handleShare = async (): Promise<void> => {
+    trackFunnelEvent('share_click'); // G8 漏斗：分享入口点击（M2 追加裁决键）
     const url = buildShareUrl(window.location.origin, context, locale);
     if (isTouch) {
       const nav = navigator as Navigator & {

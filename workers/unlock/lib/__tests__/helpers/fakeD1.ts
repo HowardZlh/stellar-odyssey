@@ -7,6 +7,8 @@
  * prepare().bind().first()/all()/run() 与 batch()。
  * 只支持本项目实际使用的 SQL 子集（全部参数绑定，不支持字面量条件）：
  *   INSERT [OR REPLACE] INTO t (c1, ...) VALUES (?, ...)
+ *     [ON CONFLICT(pk) DO UPDATE SET c1 = c1 + excluded.c1, ...]
+ *     （G8 漏斗宽行原子累加专用形态，仅支持"自身 + excluded 同列"累加）
  *   SELECT <cols|*> FROM t [a] [LEFT JOIN t2 [b] ON a.c = b.c]
  *     [WHERE c <op> ? AND ...] [ORDER BY c [DESC|ASC]] [LIMIT n]
  *   UPDATE t SET c1 = ?, ... WHERE c <op> ? AND ...
@@ -32,12 +34,13 @@ export interface FakeTableMeta {
 
 export type FakeSchema = Record<string, FakeTableMeta>;
 
-/** 与 migrations/0001_init.sql 对齐的表约束 */
+/** 与 migrations/0001_init.sql + 0002_funnel.sql 对齐的表约束 */
 export const SCHEMA: FakeSchema = {
   orders: { pk: "id", unique: ["ext_order_no"] },
   contributors: { pk: "id", unique: [] },
   revocations: { pk: "token_hash", unique: [] },
   kv_state: { pk: "k", unique: [] },
+  funnel_daily: { pk: "d", unique: [] },
 };
 
 function normalizeSql(sql: string): string {
@@ -146,7 +149,10 @@ export class FakeD1 implements UnlockDbLike {
 
   // -- 内部：写路径 ---------------------------------------------------------
   _write(sql: string, params: readonly unknown[]): number {
-    let m = /^INSERT (OR REPLACE )?INTO (\w+) \(([^)]*)\) VALUES \(([^)]*)\)$/i.exec(sql);
+    let m =
+      /^INSERT (OR REPLACE )?INTO (\w+) \(([^)]*)\) VALUES \(([^)]*)\)(?: ON CONFLICT\((\w+)\) DO UPDATE SET (.+))?$/i.exec(
+        sql,
+      );
     if (m) {
       const orReplace = Boolean(m[1]);
       const table = m[2];
@@ -162,6 +168,13 @@ export class FakeD1 implements UnlockDbLike {
       cols.forEach((c, i) => {
         row[c] = params[i];
       });
+      if (m[5] !== undefined) {
+        if (orReplace) {
+          throw new Error(`FakeD1: OR REPLACE 与 ON CONFLICT 不可同用: ${sql}`);
+        }
+        this._upsertIncrement(table, row, m[5], m[6]);
+        return 1;
+      }
       this._insert(table, row, orReplace);
       return 1;
     }
@@ -222,6 +235,39 @@ export class FakeD1 implements UnlockDbLike {
       }
     }
     table.push(row);
+  }
+
+  /**
+   * ON CONFLICT(pk) DO UPDATE 原子累加（G8 漏斗宽行专用形态）：
+   * SET 子句只允许 `col = col + excluded.col`（同列自加，防语义漂移）；
+   * 冲突列必须是 schema 声明的主键（与真实 D1 的冲突目标约束对齐）。
+   */
+  private _upsertIncrement(
+    name: string,
+    row: FakeRow,
+    conflictCol: string,
+    setText: string,
+  ): void {
+    const meta: FakeTableMeta | undefined = this.schema[name];
+    if (meta?.pk !== conflictCol) {
+      throw new Error(`FakeD1: ON CONFLICT 列必须是主键: ${name}.${conflictCol}`);
+    }
+    const incCols = setText.split(",").map((clause) => {
+      const cm = /^(\w+)\s*=\s*(\w+)\s*\+\s*excluded\.(\w+)$/.exec(clause.trim());
+      if (!cm || cm[1] !== cm[2] || cm[1] !== cm[3]) {
+        throw new Error(`FakeD1: 不支持的 DO UPDATE SET 子句: ${clause}`);
+      }
+      return cm[1];
+    });
+    const table = this._table(name);
+    const existing = table.find((r) => r[conflictCol] === row[conflictCol]);
+    if (existing === undefined) {
+      this._insert(name, row, false);
+      return;
+    }
+    for (const col of incCols) {
+      existing[col] = (Number(existing[col]) || 0) + (Number(row[col]) || 0);
+    }
   }
 
   // -- 内部：读路径 ---------------------------------------------------------

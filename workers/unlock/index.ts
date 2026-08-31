@@ -18,6 +18,7 @@ import {
 } from "./lib/alipayHandlers";
 import { buildCorsHeaders, resolveCorsOrigin } from "./lib/cors";
 import type { UnlockDbLike } from "./lib/db";
+import { handleFunnelEvent } from "./lib/funnel";
 import { handleGateConfig } from "./lib/gateConfig";
 import { handleRedeem } from "./lib/redeem";
 import { handleRevocations } from "./lib/revocations";
@@ -143,6 +144,36 @@ const worker = {
       return new Response(JSON.stringify(contribBody), {
         status: 200,
         headers: { ...headers, "Cache-Control": "public, max-age=300" },
+      });
+    }
+
+    // M4（G8）：POST /api/ev（匿名漏斗计数——text/plain beacon 简单请求；
+    // 零 KV 访问、无用户标识落库，校验/UPSERT 全在 lib/funnel.ts 纯逻辑）
+    if (pathname === "/api/ev") {
+      if (request.method !== "POST") {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: "method_not_allowed",
+            message: "仅支持 POST。",
+          }),
+          { status: 405, headers },
+        );
+      }
+      let evRaw = "";
+      try {
+        evRaw = await request.text();
+      } catch {
+        evRaw = ""; // 读体失败 → 空串 → invalid_body 400
+      }
+      const evOut = await handleFunnelEvent(
+        evRaw,
+        env.UNLOCK_DB ?? null,
+        Date.now(),
+      );
+      return new Response(JSON.stringify(evOut.body), {
+        status: evOut.status,
+        headers,
       });
     }
 

@@ -41,6 +41,7 @@ import {
   resolveAlipayApiUrl,
   type AlipayCreateSuccess,
 } from '@/utils/alipayOrder';
+import { trackFunnelEvent } from '@/utils/funnel';
 import { renderQrToCanvas } from '@/utils/qrEncoder';
 
 /** 档位 → 名称 i18n 键（unlock 页同表——各自持有不跨文件 import 组件常量） */
@@ -85,6 +86,11 @@ export function UnlockAlipayModal({
   /** 付款码生成时刻（轮询 elapsed 基准；ref 不触发重渲） */
   const createdAtRef = useRef(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // G8 漏斗：支付 modal 打开（组件仅在档位 CTA 打开时挂载，mount 即计数）
+  useEffect(() => {
+    trackFunnelEvent('pay_open');
+  }, []);
 
   /** 生成付款码（前端长度预检 → create → 进入轮询态） */
   async function handleCreate(): Promise<void> {

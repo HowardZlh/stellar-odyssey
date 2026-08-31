@@ -45,6 +45,7 @@ import {
 } from '@/data/donationPlatforms';
 import { CONTACT_EMAIL, SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
 import { UnlockAlipayModal } from '@/components/UI/UnlockAlipayModal';
+import { trackFunnelEvent } from '@/utils/funnel';
 import { tokenRemainingDays } from '@/utils/unlockToken';
 import { readStoredUnlockToken } from '@/utils/unlockStorage';
 import { parseLaunchParams } from '@/utils/launchParams';
@@ -137,6 +138,12 @@ export default function UnlockPage(): JSX.Element {
   // M2：支付宝付款 modal（档位卡片 CTA 打开；null = 关闭）
   const [alipayTier, setAlipayTier] = useState<UnlockTier | null>(null);
 
+  /** 档位卡 CTA（G8 漏斗计数 + 打开支付宝付款 modal；紧凑/桌面共用） */
+  function handleTierCta(tier: UnlockTier): void {
+    trackFunnelEvent('tier_cta');
+    setAlipayTier(tier);
+  }
+
   /** 激活收口：store applyUnlockToken（验签 + 吊销核对 + persist 由 store 承担） */
   function applyToken(
     raw: string,
@@ -159,6 +166,7 @@ export default function UnlockPage(): JSX.Element {
   // 前缀的非法 token 参数被 parseLaunchParams 形态过滤静默回退 null
   // （与主应用口径一致，不展示报错）。
   useEffect(() => {
+    trackFunnelEvent('unlock_view'); // G8 漏斗：解锁页曝光（mount 一次）
     const store = useSimulationStore.getState();
     store.restoreUnlockState();
     // A6：吊销名单异步拉取（restore 已同步用缓存比对；无缓存时挂起的
@@ -187,6 +195,7 @@ export default function UnlockPage(): JSX.Element {
     setPending: (pending: boolean) => void,
     setDone: (done: boolean) => void,
   ): Promise<void> {
+    trackFunnelEvent('redeem_submit'); // G8 漏斗：订单号兑换提交（双渠道共用）
     setPending(true);
     setError(null);
     try {
@@ -528,7 +537,7 @@ export default function UnlockPage(): JSX.Element {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setAlipayTier(tier)}
+                    onClick={() => handleTierCta(tier)}
                     aria-label={trf('unlock.alipay.tierCtaAria', {
                       tier: tr(TIER_NAME_KEYS[tier]),
                     })}
@@ -581,7 +590,7 @@ export default function UnlockPage(): JSX.Element {
                     <td className="px-4 py-2.5 text-right">
                       <button
                         type="button"
-                        onClick={() => setAlipayTier(tier)}
+                        onClick={() => handleTierCta(tier)}
                         aria-label={trf('unlock.alipay.tierCtaAria', {
                           tier: tr(TIER_NAME_KEYS[tier]),
                         })}
