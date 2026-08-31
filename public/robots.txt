@@ -1,0 +1,10 @@
+# stellar.guushu.com robots.txt（G 迭代 M3 G7 增补，D5 裁决口径）
+# 生效前置：Cloudflare 面板已关闭 managed robots.txt——否则 CF 托管内容
+# 会 prepend 在本文件之前（REQUIREMENTS_GROWTH §0「D5 与 M3 的执行顺序约束」）。
+# Content-Signal 口径：可搜索、可被 AI 引用、不供模型训练。
+
+User-agent: *
+Content-Signal: search=yes, ai-input=yes, ai-train=no
+Allow: /
+
+Sitemap: https://stellar.guushu.com/sitemap.xml

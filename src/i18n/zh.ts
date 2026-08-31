@@ -13,6 +13,10 @@
  *   本身）：覆盖信息面板标签列与天体类型行的有限集合，消费侧经
  *   `localizeCatalogText(locale, zhText)` 查找，zh 态零开销直返、
  *   未收录条目回退中文原文（登记）。
+ * - 天体观察站落地页服务端正文（G 迭代 M3，`utils/observatoryLanding.ts`
+ *   拼装 + `[body]/page.tsx` metadata）为构建期 zh 静态输出：静态导出无
+ *   独立语言路由，不入字典、不订阅 locale（页内 zh/EN 切换仅作用于客户端
+ *   场景层；豁免理由登记于 REQUIREMENTS_GROWTH §6 M3）。
  *
  * en/zh 键集合一致性由 `I18nDict` 类型强制（en.ts 以该类型标注：
  * 缺键报 TS2741 缺属性、多键报 TS2353 对象字面量多余属性，均编译期报错）。
