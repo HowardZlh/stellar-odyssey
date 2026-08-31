@@ -77,9 +77,13 @@ describe('HelpHint 触屏分流（M4-5 引导文案 + M4-4 触摸暂停）', () 
     expect(screen.queryByText(/H 隐藏\/显示界面/)).toBeNull();
   });
 
-  it('桌面：键鼠口径与快捷键段落原样（零变化）', () => {
+  it('桌面：键鼠口径原样；快捷键段落在「?」重开的完整帮助内（G3 拆分）', () => {
     render(<HelpHint />);
     expect(screen.getByText(/拖动旋转 · 滚轮缩放 · 右键平移/)).toBeInTheDocument();
+    // G3：首屏只留操作提示行，kiosk/H 键说明移入完整帮助面板
+    expect(screen.queryByText(/H 隐藏\/显示界面/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '关闭引导' }));
+    fireEvent.click(screen.getByRole('button', { name: '重新打开操作引导' }));
     expect(screen.getByText(/H 隐藏\/显示界面/)).toBeInTheDocument();
   });
 

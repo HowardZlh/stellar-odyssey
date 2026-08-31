@@ -355,6 +355,17 @@ export interface SimulationState {
    */
   kiosk: KioskState;
   /**
+   * kiosk 巡游门控回落说明可见性（G2：tour=galaxy/universe 且无权益时
+   * 启动即回落 L2 太阳系巡游，KioskBadge 处给一次性说明；✕ 或退出
+   * kiosk 关闭）
+   */
+  kioskGateNotice: boolean;
+  /**
+   * 本次 kiosk 会话已展示过回落说明（一次性语义：说明被 ✕ 后同会话内
+   * 后续推进不再重弹；退出 kiosk 复位，下次会话重新可见）
+   */
+  kioskGateNoticeShown: boolean;
+  /**
    * 设备渲染档位（M1-1，utils/deviceCapability.ts 判定表）：SSR/桌面
    * （pointer fine）恒 'high'——默认值即桌面现状，M2 渲染降档消费。
    * SolarSystemApp 启动时经 useDeviceTierInit 一次性写入。
@@ -553,6 +564,8 @@ export interface SimulationState {
    * 全屏进入/退出属 DOM 层（ControlPanel/KioskBadge），本 action 不触达。
    */
   kioskEvent: (event: KioskEvent, nowSec: number) => void;
+  /** 关闭 kiosk 巡游门控回落说明（G2：✕ 按钮；同会话不再重弹） */
+  dismissKioskGateNotice: () => void;
   /** 写入设备渲染档位（M1：SolarSystemApp 启动一次性检测） */
   setDeviceTier: (tier: DeviceTier) => void;
   /** 写入触屏为主标记（M1：useViewportKind 同步） */
@@ -916,6 +929,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   immersiveMode: false,
   immersiveRestoreBodyId: null,
   kiosk: KIOSK_INACTIVE,
+  kioskGateNotice: false,
+  kioskGateNoticeShown: false,
   deviceTier: 'high',
   isTouch: false,
   isCompact: false,
@@ -1272,6 +1287,10 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     });
     // 无转移即无写入（未到期 tick 高频路径零重渲染）
     if (result.state !== current.kiosk) set({ kiosk: result.state });
+    // G2：退出 kiosk 复位回落说明（一次性语义按 kiosk 会话计）
+    if (result.state.phase === 'inactive' && current.kiosk.phase !== 'inactive') {
+      set({ kioskGateNotice: false, kioskGateNoticeShown: false });
+    }
     for (const effect of result.effects) {
       if (effect === 'hideUi') {
         set({ uiVisible: false });
@@ -1285,7 +1304,31 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
         // （同 tick 连发会在低层级尺度错误解析高层级目标位置）见
         // utils/kiosk.ts 文件头。
         const s = get();
-        const plan = planKioskAdvance(s.launch.tour, s.cycleScope, s.viewLevel, s.followBodyId);
+        // G2（方案 a）：L3/L4 巡游门控不豁免（裁决 §0.4）——与
+        // cycleScopeBody 巡游 gate 同判据（无权益且 tour 限免窗口未
+        // 生效）时把 galaxy/universe 标记为锁定域，planKioskAdvance
+        // 跳过门控域继续轮转（修复免费用户 kiosk 静默停滞）
+        const gated =
+          s.entitlement === null &&
+          !remoteFreeWindowActive(s.remoteGateConfig.tour?.freeWindow, Date.now());
+        const lockedScopes: readonly CycleScope[] = gated ? ['galaxy', 'universe'] : [];
+        const plan = planKioskAdvance(
+          s.launch.tour,
+          s.cycleScope,
+          s.viewLevel,
+          s.followBodyId,
+          lockedScopes,
+        );
+        // 单域 tour=galaxy/universe 被门控 → 已回落太阳系域：KioskBadge
+        // 一次性说明（tour=all 跳过门控域为静默退化，不弹说明——口径
+        // 见 §3 M1 G2）
+        if (
+          gated &&
+          (s.launch.tour === 'galaxy' || s.launch.tour === 'universe') &&
+          !s.kioskGateNoticeShown
+        ) {
+          set({ kioskGateNotice: true, kioskGateNoticeShown: true });
+        }
         if (plan.kind === 'next') {
           s.cycleScopeBody(1);
         } else if (plan.kind === 'anchor') {
@@ -1296,6 +1339,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       }
     }
   },
+
+  dismissKioskGateNotice: () => set({ kioskGateNotice: false }),
 
   setLocale: (locale) => {
     set({ locale });

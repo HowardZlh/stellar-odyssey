@@ -181,31 +181,50 @@ function alignPlan(scope: CycleScope, viewLevel: ViewLevel): KioskAdvancePlan {
 }
 
 /**
+ * 全部 tour 域被门控锁定时的回落域（G2：tour=galaxy/universe 且无权益
+ * → 回落 L2 太阳系域轮转，KioskBadge 给一次性说明）
+ */
+export const KIOSK_GATE_FALLBACK_SCOPES: readonly CycleScope[] = Object.freeze(['solar']);
+
+/**
  * 计算下一步推进计划（纯函数；语义与踩坑登记见文件头）
+ *
+ * G2（REQUIREMENTS_GROWTH.md §3 M1，方案 a）：L3/L4 巡游门控不豁免
+ * （裁决 §0.4），改为**跳过门控域继续轮转**——lockedScopes 从 tour 域集
+ * 中剔除；tour=all 无权益退化为 system+solar 轮转，单域 tour 全锁时
+ * 回落 KIOSK_GATE_FALLBACK_SCOPES（solar）。修复免费用户 kiosk 巡游到
+ * L3 首站后"门控拒绝 + UI 隐藏"的静默永久停滞。
  *
  * @param tour 巡游域配置（launch.tour）
  * @param currentScope store 当前巡游域（用户暂停期间可能被改动）
  * @param viewLevel store 当前离散层级（域尺度对齐判定）
  * @param followBodyId store 当前跟随天体（null = 未跟随）
+ * @param lockedScopes 门控锁定域（无权益且限免未生效时 = galaxy+universe；
+ *   与 store cycleScopeBody 巡游 gate 同判据，由调用方计算）
  */
 export function planKioskAdvance(
   tour: LaunchTour,
   currentScope: CycleScope,
   viewLevel: ViewLevel,
   followBodyId: string | null,
+  lockedScopes: readonly CycleScope[] = [],
 ): KioskAdvancePlan {
-  const scopes: readonly CycleScope[] = tour === 'all' ? KIOSK_ALL_SCOPES : [tour];
-  // 当前域不属本次 tour（启动时/暂停期间用户切走）：先对齐巡游首域
+  const configured: readonly CycleScope[] = tour === 'all' ? KIOSK_ALL_SCOPES : [tour];
+  const allowed = configured.filter((scope) => !lockedScopes.includes(scope));
+  // G2：tour 域全部被锁定（单域 tour=galaxy/universe 且无权益）→ 回落太阳系域
+  const scopes = allowed.length > 0 ? allowed : KIOSK_GATE_FALLBACK_SCOPES;
+  // 当前域不属本次生效域集（启动时/暂停期间用户切走/门控剔除）：先对齐首域
   if (!scopes.includes(currentScope)) return anchorPlan(scopes[0]);
   // 未跟随 / 跟随体不在当前域序列内：按层级对齐程度回到域起点
   if (followBodyId === null) return alignPlan(currentScope, viewLevel);
   const seq = sequenceForScope(currentScope, followBodyId);
   const idx = seq.indexOf(followBodyId);
   if (idx === -1) return alignPlan(currentScope, viewLevel);
-  // tour=all 域末（当前为序列末站）：先切下一域全景锚点（universe 回绕 system）
-  if (tour === 'all' && idx === seq.length - 1) {
-    const at = KIOSK_ALL_SCOPES.indexOf(currentScope);
-    return anchorPlan(KIOSK_ALL_SCOPES[(at + 1) % KIOSK_ALL_SCOPES.length]);
+  // 多域轮转域末（当前为序列末站）：切生效域集的下一域全景锚点（末域回绕
+  // 首域；原 tour=all 四域轮转判定推广为"生效域数 >1"，门控剔除后同语义）
+  if (scopes.length > 1 && idx === seq.length - 1) {
+    const at = scopes.indexOf(currentScope);
+    return anchorPlan(scopes[(at + 1) % scopes.length]);
   }
   return { kind: 'next' };
 }

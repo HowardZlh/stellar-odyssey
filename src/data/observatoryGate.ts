@@ -18,7 +18,14 @@
  * - 持有效解锁凭证（store entitlement 非空）→ 全部天体不限次，均豁免。
  */
 
-/** 限时免费期窗口（UTC ISO 起止；发布时人工更新日期后随版本部署） */
+/**
+ * 限时免费期窗口（UTC ISO 起止）
+ *
+ * G1（REQUIREMENTS_GROWTH.md §3 M1，D2 裁决）：代码侧默认 `enabled: false`，
+ * 限免期一律由远程 `gate:config`（Worker D1 `kv_state`，管理台下发）续期——
+ * 历史上"发布时人工改代码日期"曾静默过期 11 天（2026-08-20 到期，
+ * v0.1.11/v0.1.12 两次发版均漏更新），故废弃该流程。
+ */
 export interface ObservatoryFreeWindow {
   /** 免费期总开关（false = 忽略起止日期，直接进入限次+解锁模式） */
   readonly enabled: boolean;
@@ -46,12 +53,13 @@ export interface ObservatoryGateConfig {
 /**
  * 门控配置默认值（需求确认口径：10 次/天、专属池 7 个、试玩 3 次/天）
  *
- * 免费期起止为**发布前人工填写项**：上线时把 startUtc 改为发布日 0 点、
- * endUtc 改为其 +7 天（当前值为 O1 实现期占位，发布流程负责更新）。
+ * 免费期代码侧**默认关闭**（G1/D2 裁决：防再次静默过期），起止日期仅为
+ * 远程覆盖缺席时的占位（enabled=false 下不生效）；续期唯一通道 = 管理台
+ * 经远程 `gate:config` 下发 `observatory.freeWindow` 覆盖。
  */
 export const OBSERVATORY_GATE_CONFIG: ObservatoryGateConfig = {
   freeWindow: {
-    enabled: true,
+    enabled: false,
     startUtc: '2026-08-13T00:00:00Z',
     endUtc: '2026-08-20T00:00:00Z',
   },
