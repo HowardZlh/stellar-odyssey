@@ -85,7 +85,9 @@ export const zh = {
     intro:
       "星的大小与亮度按累计捐赠金额的对数映射呈现，位置由昵称与平台确定性生成，与登记顺序无关。",
     sortNote: "按累计捐赠金额降序排列（人工登记，可能存在延迟）",
-    empty: "虚位以待——成为第一颗点亮航程的星。",
+    /** G9：空名单正向表述（首位贡献者位；仅陈述已实现的展示行为） */
+    firstStar:
+      "这里将点亮第一颗星——每一位登记的支持者都会成为这片星空中的一颗星。",
     goDonate: "前往捐赠页",
     backToApp: "返回星图",
     /** 桌面操作提示 */
@@ -147,7 +149,7 @@ export const zh = {
     tierDays: "{days} 天",
     benefitsTitle: "解锁内容（三档相同，仅时长不同）",
     benefitDetail:
-      "全部近观细节层：恒星表面、体积星云、黑洞引力透镜、星团/星系与河外天体近观（共 24 处）",
+      "全部近观细节层：恒星表面、体积星云、黑洞引力透镜、星团/星系与河外天体近观（共 22 处；人马座 A* 与猎户座星云近观对所有用户免费开放）",
     benefitTour: "L3/L4 巡游序列：银河系与宇宙视角下的天体巡游切换",
     benefitDemo: "事件演示不限次：耀斑 / CME / 超新星 / 星系合并预览",
     refundTitle: "退款与说明",
@@ -994,6 +996,14 @@ export const zh = {
     contact: "投喂",
     contactAria: "打开投喂与合作面板",
   },
+  /** G5 分享此刻（主场景 HUD + 观察站页共用；emoji 组件层持有） */
+  share: {
+    button: "分享此刻",
+    buttonAria: "分享此刻——复制当前画面的直达链接",
+    tabLabel: "分享",
+    copied: "链接已复制",
+    copyFail: "复制失败，请手动复制地址",
+  },
   /** 四视角锚点名（cameraViews.nameZh 迁移，ControlPanel 按钮 + HUD 标题共用） */
   viewLevel: {
     L1: "行星视角",
@@ -1025,6 +1035,11 @@ export const zh = {
     subtitle: "Stellar Odyssey",
     langAria: "界面语言切换",
     viewSection: "视角（快捷键 1-4）",
+    /** G10 增补：精选天体一键直达（复用 ?body= 深链等价的 requestFlyTo） */
+    featuredSection: "精选天体直达",
+    featuredGoAria: "飞往{name}",
+    featuredSgrA: "人马座 A*（黑洞光子环）",
+    featuredOrion: "猎户座星云（体积星云）",
     galacticFrameSection: "银河系视角参考系（G 切换）",
     galacticFrameTitle:
       "银心固定：银心居中不动，俯瞰太阳系沿波浪轨道绕银心公转",

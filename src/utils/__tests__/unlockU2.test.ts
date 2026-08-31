@@ -50,7 +50,7 @@ describe("premiumDetailGateUpdate（useDetailLayer 注入判定）", () => {
       lockedHit: false,
     });
     expect(
-      premiumDetailGateUpdate(false, VALID, "orion-nebula", NOW_SEC),
+      premiumDetailGateUpdate(false, VALID, "ring-nebula", NOW_SEC),
     ).toEqual({
       active: false,
       lockedHit: false,

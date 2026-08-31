@@ -24,7 +24,7 @@ Unlocking adds four kinds of access (identical across tiers; only duration diffe
 
 | Content | Free experience | Unlocked |
 |---|---|---|
-| **Close-view detail layers** (stellar surfaces / volumetric nebulae / black-hole gravitational lensing / close views of clusters, galaxies and extragalactic objects — 24 in total) | Visible from afar; detail layers lock when zooming in | All open |
+| **Close-view detail layers** (stellar surfaces / volumetric nebulae / black-hole gravitational lensing / close views of clusters, galaxies and extragalactic objects — 22 in total; two more close-ups, Sgr A\* (the black-hole photon ring) and the Orion Nebula, are **free for everyone**) | Visible from afar; detail layers lock when zooming in | All open |
 | **L3/L4 tour sequences** (`[` / `]` stop-by-stop touring in the galaxy/universe views, including kiosk mode) | Locked (L1/L2 tours unrestricted) | All open |
 | **Manual event demos** (flares / CMEs / supernovae / merger preview) | 5 per day shared (resets each calendar day; ambient auto-triggered events don't count) | Unlimited |
 | **Astronomy Lab · Body Observatory** ([/lab/observatory](https://stellar.guushu.com/lab/observatory), an interactive observing field of all 23 close-up detail rigs) | 10 observations per day shared (of which 7 popular targets — black-hole lensing, M87, Betelgeuse, etc. — share 3 daily trials that also count against the total; unlimited during limited-time free events) | Unlimited |

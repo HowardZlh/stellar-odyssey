@@ -4,6 +4,7 @@ import type { JSX } from 'react';
 import { useT } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
 import { useCycleCurrentBody } from '@/components/UI/BodyCycleSwitcher';
+import { MainShareMomentButton } from '@/components/UI/ShareMomentButton';
 
 /**
  * 移动布局底部标签栏（M3-3，仅 isCompact 渲染）：
@@ -92,6 +93,12 @@ export function BottomTabBar(): JSX.Element | null {
           <span className="text-base">♥</span>
           {tr('tabBar.contact')}
         </button>
+        {/* G5 分享此刻（移动入口）：即时动作而非面板——不占 mobilePanel
+            互斥值，单值互斥语义零改动（登记）；h-12 ≥44pt 触控目标 */}
+        <MainShareMomentButton className={tabClass(false)}>
+          <span className="text-base">🔗</span>
+          {tr('share.tabLabel')}
+        </MainShareMomentButton>
       </div>
     </div>
   );

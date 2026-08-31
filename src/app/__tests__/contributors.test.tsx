@@ -45,10 +45,13 @@ describe('ContributorsPage（空名单，WebGL 降级态）', () => {
     expect(screen.queryByTestId('contributor-canvas-stub')).not.toBeInTheDocument();
   });
 
-  it('文字名单区显示空名单占位与排序注记', () => {
+  it('G9：空名单态不渲染文字名单区，也不出现"虚位以待"式反向表述', () => {
     render(<ContributorsPage />);
-    expect(screen.getByText(/虚位以待/)).toBeInTheDocument();
-    expect(screen.getByText(/按累计捐赠金额降序排列/)).toBeInTheDocument();
+    expect(screen.queryByText(/虚位以待/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /文字名单/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/按累计捐赠金额降序排列/)).not.toBeInTheDocument();
   });
 
   it('返回主站与前往捐赠链接可达', () => {
@@ -60,14 +63,15 @@ describe('ContributorsPage（空名单，WebGL 降级态）', () => {
     expect(donate).toHaveAttribute('href', '/donate');
   });
 
-  it('EN 切换后标题与降级提示切英文', () => {
+  it('EN 切换后标题与降级提示切英文（空名单反向表述同样不出现）', () => {
     render(<ContributorsPage />);
     fireEvent.click(screen.getByRole('button', { name: 'EN' }));
     expect(
       screen.getByRole('heading', { name: /Contributor Universe/ }),
     ).toBeInTheDocument();
     expect(screen.getByText(/showing the text roster instead/)).toBeInTheDocument();
-    expect(screen.getByText(/This spot is waiting/)).toBeInTheDocument();
+    expect(screen.queryByText(/This spot is waiting/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Text roster/)).not.toBeInTheDocument();
   });
 });
 
@@ -76,11 +80,12 @@ describe('ContributorsPage（空名单，3D 态 stub）', () => {
     mockDetectWebglSupport.mockReturnValue(true);
   });
 
-  it('渲染 Canvas 区并叠加空名单占位与捐赠入口', () => {
+  it('渲染 Canvas 区并叠加首位贡献者位正向占位与捐赠入口（G9：无反向表述）', () => {
     render(<ContributorsPage />);
     expect(screen.getByTestId('contributor-canvas-stub')).toBeInTheDocument();
-    // 空名单占位：3D 区中央叠加 + 文字名单区各一处
-    expect(screen.getAllByText(/虚位以待/)).toHaveLength(2);
+    // G9 正向占位仅 3D 区中央一处；"虚位以待"式反向表述锁定不出现
+    expect(screen.getByText(/这里将点亮第一颗星/)).toBeInTheDocument();
+    expect(screen.queryByText(/虚位以待/)).not.toBeInTheDocument();
     const goDonate = screen.getAllByRole('link', { name: /前往捐赠页/ });
     expect(goDonate.length).toBeGreaterThanOrEqual(2);
     expect(goDonate[0]).toHaveAttribute('href', '/donate');

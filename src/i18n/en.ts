@@ -62,7 +62,8 @@ export const en: I18nDict = {
       "Star size and brightness follow a logarithmic mapping of cumulative donation amount; positions are derived deterministically from nickname and platform, independent of registration order.",
     sortNote:
       "Sorted by cumulative donation amount, descending (manually registered; may lag)",
-    empty: "This spot is waiting — be the first star to light the voyage.",
+    firstStar:
+      "The first star of this sky is yet to be lit — every registered supporter becomes a star here.",
     goDonate: "Go to the donation page",
     backToApp: "Back to the star map",
     hintDesktop:
@@ -120,7 +121,7 @@ export const en: I18nDict = {
     benefitsTitle:
       "What you unlock (identical across tiers; only duration differs)",
     benefitDetail:
-      "All close-view detail layers: stellar surfaces, volumetric nebulae, black-hole gravitational lensing, and close views of clusters, galaxies and extragalactic objects (24 in total)",
+      "All close-view detail layers: stellar surfaces, volumetric nebulae, black-hole gravitational lensing, and close views of clusters, galaxies and extragalactic objects (22 in total; the Sgr A* and Orion Nebula close-ups are free for everyone)",
     benefitTour:
       "L3/L4 tour sequences: body cycling in the galaxy and universe views",
     benefitDemo:
@@ -879,6 +880,13 @@ export const en: I18nDict = {
     contact: "Support",
     contactAria: "Open the support & partnership panel",
   },
+  share: {
+    button: "Share this moment",
+    buttonAria: "Share this moment — copy a direct link to the current view",
+    tabLabel: "Share",
+    copied: "Link copied",
+    copyFail: "Copy failed — please copy the address manually",
+  },
   viewLevel: {
     L1: "Planet View",
     L2: "Solar System View",
@@ -905,6 +913,10 @@ export const en: I18nDict = {
     subtitle: "星海奥德赛",
     langAria: "Switch interface language",
     viewSection: "View (keys 1-4)",
+    featuredSection: "Featured bodies",
+    featuredGoAria: "Fly to {name}",
+    featuredSgrA: "Sgr A* (black-hole photon ring)",
+    featuredOrion: "Orion Nebula (volumetric nebula)",
     galacticFrameSection: "Galaxy-view reference frame (G)",
     galacticFrameTitle:
       "Galactic-center fixed: the center stays put while you look down on the Solar System riding its wavy orbit around it",

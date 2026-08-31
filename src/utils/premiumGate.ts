@@ -6,22 +6,29 @@
  * L1/L2 内容**；dev preview 专用 id（`/dev/preview` 工位）不入名单。
  *
  * 盘点登记（2026-08，逐一核对 useDetailLayer 消费方；来源模块见行内注释）：
- * 唯一 bodyId 共 25 项，排除免费 heliopause 后入名单 24 项。
+ * 唯一 bodyId 共 25 项，排除免费 heliopause 后为 24 项；
+ * G10（REQUIREMENTS_GROWTH §3 M2，D1 裁决）再移出 `sgr-a-star` 与
+ * `orion-nebula` 两处 wow 天体（细节层对免费用户完全开放），入名单 22 项。
  * `cluster-lensing`（星系团透镜特殊天体）无 useDetailLayer 消费方，不入名单。
  */
 import type { UnlockTier } from "@/data/unlockPricing";
 
 /**
- * 付费近观细节层 bodyId 白名单（24 项）
+ * 付费近观细节层 bodyId 白名单（22 项）
+ *
+ * 免费开放豁免（G10/D1 裁决，2026-08-31）：`sgr-a-star`（人马座 A* 光子环）
+ * 与 `orion-nebula`（猎户座星云体积层）虽有 useDetailLayer 消费方，但**不入
+ * 名单**——细节层对免费用户完全开放；巡游门控（L3/L4）与每日演示配额不变。
  *
  * 来源摘录（文件行号随版本漂移，以符号名为准）：
  * - 特殊天体近观 particles（SpecialBodies.useNearViewGate，
  *   id 定义于 `src/data/specialBodies.ts`）：betelgeuse / rigel / sirius /
- *   delta-cephei / wr-124 / crab-pulsar / orion-nebula / ring-nebula /
- *   horsehead-nebula / m13-cluster（其中 wr-124/crab-pulsar/orion-nebula/
- *   ring-nebula/horsehead-nebula 兼含 nebulaVolumeScene 体积层）
+ *   delta-cephei / wr-124 / crab-pulsar / ring-nebula /
+ *   horsehead-nebula / m13-cluster（其中 wr-124/crab-pulsar/
+ *   ring-nebula/horsehead-nebula 兼含 nebulaVolumeScene 体积层；
+ *   orion-nebula 免费豁免见上）
  * - 黑洞引力透镜 lensing（`blackHoleScene.BLACK_HOLE_LENSED_CONFIGS`）：
- *   sgr-a-star / cygnus-x1
+ *   cygnus-x1（sgr-a-star 免费豁免见上）
  * - 星表近观 starCatalog（`pleiadesCatalog.pleiadesCatalogDetailLayerSpec`）：pleiades
  * - 河外近观（`quasarNearView.QUASAR_BODY_ID` / `antennaeNearView.ANTENNAE_BODY_ID`
  *   / `grbNearView.GRB_BODY_ID`）：quasar-3c273 / antennae-galaxies / grb-221009a
@@ -38,12 +45,10 @@ export const PREMIUM_DETAIL_BODY_IDS: ReadonlySet<string> = new Set([
   "delta-cephei",
   "wr-124",
   "crab-pulsar",
-  "orion-nebula",
   "ring-nebula",
   "horsehead-nebula",
   "m13-cluster",
-  // 黑洞引力透镜（src/utils/blackHoleScene.ts）
-  "sgr-a-star",
+  // 黑洞引力透镜（src/utils/blackHoleScene.ts；sgr-a-star 免费豁免 G10）
   "cygnus-x1",
   // 星表/河外近观（pleiadesCatalog / quasarNearView / antennaeNearView / grbNearView）
   "pleiades",
@@ -65,7 +70,7 @@ export const PREMIUM_DETAIL_BODY_IDS: ReadonlySet<string> = new Set([
  * bodyId 是否属于付费近观细节层（heliopause 等免费内容恒 false）
  *
  * @param premiumBodyIds 白名单（A1-2 远程配置注入点：整表替换语义，
- *   缺省 = 代码默认 24 项）
+ *   缺省 = 代码默认 22 项）
  */
 export function isPremiumDetailBody(
   bodyId: string,
@@ -89,7 +94,7 @@ export interface UnlockEntitlement {
  * 布尔 `freeWindowActive`——本模块不引入时钟/freeWindow 判定第二副本。
  */
 export interface PremiumGateOptions {
-  /** 白名单整表替换（缺省 = 代码默认 `PREMIUM_DETAIL_BODY_IDS` 24 项） */
+  /** 白名单整表替换（缺省 = 代码默认 `PREMIUM_DETAIL_BODY_IDS` 22 项） */
   readonly premiumBodyIds?: ReadonlySet<string>;
   /** 细节层限免旁路（true = 期内全免，无视白名单与权益） */
   readonly freeWindowActive?: boolean;

@@ -236,11 +236,12 @@ export default function ContributorsPage(): JSX.Element {
                 {tr(isTouch ? 'contributors.hintTouch' : 'contributors.hintDesktop')}
               </p>
 
-              {/* 空名单态：背景星场保留氛围 + 中央占位 + 捐赠入口 */}
+              {/* 空名单态（G9 正向化）：背景星场保留氛围 + 首位贡献者位
+                  正向表述 + 捐赠入口（不再渲染"虚位以待"式反向社会证明） */}
               {donors.length === 0 && (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
                   <div className="pointer-events-auto max-w-sm rounded-lg border border-dashed border-white/15 bg-space-panel p-6 text-center text-xs text-gray-300 backdrop-blur">
-                    <p>✨ {tr('contributors.empty')}</p>
+                    <p>✨ {tr('contributors.firstStar')}</p>
                     <Link
                       href="/donate"
                       className="mt-4 inline-flex min-h-11 items-center justify-center rounded bg-space-accent/90 px-4 text-xs text-black transition-colors hover:bg-space-accent"
@@ -328,7 +329,10 @@ export default function ContributorsPage(): JSX.Element {
           )}
         </section>
 
-        {/* 文字名单（常驻：屏幕阅读器/SEO/降级共用形态） */}
+        {/* 文字名单（屏幕阅读器/SEO/降级共用形态）——G9：名单为空时整个
+            名单区不渲染（不展示"空名单"反向社会证明；3D 区占位已承担
+            首位贡献者位表述与捐赠入口） */}
+        {donors.length > 0 && (
         <section className="mt-10">
           <h2 className="mb-1 text-sm font-semibold text-gray-300">
             {tr('contributors.listSection')}
@@ -336,12 +340,7 @@ export default function ContributorsPage(): JSX.Element {
           <p className="mb-3 text-[10px] text-gray-500">
             {tr('contributors.sortNote')}
           </p>
-          {donors.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-white/15 bg-space-panel p-6 text-center text-xs text-gray-400 backdrop-blur">
-              ✨ {tr('contributors.empty')}
-            </p>
-          ) : (
-            <ol className="space-y-2">
+          <ol className="space-y-2">
               {donors.map((donor, index) => (
                 <li
                   key={`${donor.id}`}
@@ -368,8 +367,8 @@ export default function ContributorsPage(): JSX.Element {
                 </li>
               ))}
             </ol>
-          )}
         </section>
+        )}
 
         <footer className="mt-12 flex items-center justify-center gap-6 pb-6 text-center text-xs text-gray-500">
           <Link
