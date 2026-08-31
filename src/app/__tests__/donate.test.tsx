@@ -1,11 +1,11 @@
 /**
  * 捐赠页 /donate 单测（空名单上线态；Z 迭代 M3 改版，需求 E2(a)）：
  * - 标题/说明（"支持即解锁"口径）渲染
- * - 渠道顺序断言：支付宝（推荐引导面板）→ 微信（独立 panel）→ 爱发电 →
- *   Ko-fi → 预留位（对齐 stock test_pages_recommend_alipay_and_channel_order）
+ * - 渠道顺序断言：支付宝（推荐引导面板）→ 微信（独立 panel）→ 面包多 →
+ *   爱发电 → Ko-fi → 预留位（对齐 stock test_pages_recommend_alipay_and_channel_order）
  * - 支付宝面板：引导口径 + 「前往解锁页扫码支付 →」跳 /unlock（modal 不进本页）
  * - 微信 panel：内嵌二维码图 + 可复制邮件模板 + 预填 mailto（与 /unlock 同源）
- * - 爱发电/Ko-fi 备选卡片链接（同源常量）+ 两个预留位
+ * - 面包多/爱发电/Ko-fi 备选卡片链接（同源常量）+ 两个预留位
  * - 空名单占位文案 + 贡献者宇宙入口
  * - zh/EN 语言切换
  */

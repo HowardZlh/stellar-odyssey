@@ -1,7 +1,7 @@
 /**
  * 捐赠名单排序与平台注册表单测（捐赠页 /donate）：
  * - sortDonorsByAmountDesc 金额降序、同额昵称字典序、纯函数不改入参
- * - DONATION_PLATFORMS：爱发电/Ko-fi 链接同源常量、预留位登记
+ * - DONATION_PLATFORMS：面包多/爱发电/Ko-fi 链接同源常量、预留位登记
  * - DONORS 登记数据完整性（当前空名单上线）
  */
 

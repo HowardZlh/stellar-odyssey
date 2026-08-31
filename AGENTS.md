@@ -73,7 +73,7 @@
 |---|---|
 | 商业合作邮箱 `stevenzearo@163.com` | README.md「商业合作」与「开源协议」节 · README.en.md 对应节 · `src/components/UI/ContactBadge.tsx` 的 `CONTACT_EMAIL` |
 | 爱发电赞助链接 `https://afdian.com/a/stellar-odyssey` | README.md「赞助支持」节 · README.en.md「Sponsor」节 · `.github/FUNDING.yml` · `ContactBadge.tsx` 的 `SPONSOR_AFDIAN_URL` |
-| 面包多主页链接 `https://mbd.pub/o/stellar` | README.md「赞助支持」与「支持者解锁」节 · README.en.md 对应节 · `src/data/donationPlatforms.ts` 的 `SPONSOR_MBD_URL` · `docs/unlock-guide.md` 与 `docs/en/unlock-guide.md` |
+| 面包多主页链接 `https://mbd.pub/o/stellar` | README.md「赞助支持」节 · README.en.md「Sponsor」节 · `src/data/donationPlatforms.ts` 的 `SPONSOR_MBD_URL` · `docs/unlock-guide.md` 与 `docs/en/unlock-guide.md` |
 | Ko-fi 链接 `https://ko-fi.com/howardzlh` | README.md「赞助支持」节 · README.en.md「Sponsor」节 · `.github/FUNDING.yml`（`ko_fi` 字段） · `src/data/donationPlatforms.ts` 的 `SPONSOR_KOFI_URL` |
 | GitHub Issues 链接 | README 两版 · `ContactBadge.tsx` 的 `CONTACT_GITHUB_ISSUES_URL` |
 | 解锁档位价格 周卡 ¥6 / 月卡 ¥15 / 年卡 ¥88（$1/$2.5/$13） | `src/data/unlockPricing.ts`（代码单一事实源：前端档位表/Worker 判定/CLI 共享，改代码只改这一处） · 爱发电商品页（站外，人工同步） · `docs/internal/UNLOCK_OPS.md` §2/§3/§5 · `docs/unlock-guide.md` 与 `docs/en/unlock-guide.md` · README.md 与 README.en.md「支持者解锁」节 |
