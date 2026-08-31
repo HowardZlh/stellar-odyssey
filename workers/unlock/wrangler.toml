@@ -46,6 +46,16 @@ crons = ["0 */3 * * *"]
 # 获取路径与部署步骤见 docs/internal/UNLOCK_OPS.md §2；本地联调在
 # workers/unlock/.dev.vars 填同名变量（已 .gitignore，勿提交）。
 #
+# plan_id 取值验证登记（2026-08-31，解除 REQUIREMENTS_UNLOCK.md §U6 登记的
+# 「query-order 响应字段名待真单核实」风险项）：本项目爱发电侧零历史订单，
+# 无法用自家真单冒烟，故改用另一爱发电账号（stock_analysis 项目，已真机验收）
+# 做三方交叉验证——真实已支付订单的 query-order 响应中，字段名确为 plan_id，
+# 且其值与该账号 creator API 返回值、与 stock_analysis 回填的已验收常量
+# 逐字符一致。故「creator API 取值 = 订单响应取值」成立，本处三值可采信。
+# 残余风险（低）：交叉验证样本为订阅形态（product_type=0），售卖商品形态
+# （周卡/年卡）无真单样本；爱发电对商品与订阅统一建模为 plan，解析侧同码路。
+# 因此**部署后第一笔爱发电真单必须复核归档档位**，确认无误再开折扣。
+#
 # A6 退款巡检 vars：
 # - REFUND_LOOKBACK_DAYS：回看窗口天数（订单号内嵌日期截断）；
 # - REFUND_AUTO_REVOKE：自动吊销开关——**默认空 = 模式 A 只检测登记**；
@@ -57,9 +67,13 @@ crons = ["0 */3 * * *"]
 # 判定——**回退态下面包多商品页禁止发优惠码**。urlkey 获取与部署顺序
 # 见 docs/internal/UNLOCK_OPS.md；本地联调在 .dev.vars 填同名变量。
 [vars]
-UNLOCK_PLAN_ID_WEEK = ""
-UNLOCK_PLAN_ID_MONTH = ""
-UNLOCK_PLAN_ID_YEAR = ""
+# 2026-08-31 经 creator API 取值（afdian.com/item/<plan_id> 同源）：
+# 周卡/年卡 = 售卖商品 product_type=1，月卡 = 订阅方案 product_type=0，
+# 与 UNLOCK_OPS.md §2.2 规格表逐项一致（¥6/¥15/¥88）。
+# 字段名与取值路径已交叉验证（详见上方「plan_id 取值验证登记」注释块）。
+UNLOCK_PLAN_ID_WEEK = "f313936a965811f1aa675254001e7c00"
+UNLOCK_PLAN_ID_MONTH = "eb51c1668fef11f180f752540025c377"
+UNLOCK_PLAN_ID_YEAR = "b534981c965a11f1ba3952540025c377"
 # 2026-08-31 经开发者 API 建品（drafts 1064056/1064057/1064058，¥6/¥15/¥88）：
 UNLOCK_MBD_URLKEY_WEEK = "YZaVk5ZtbQ=="
 UNLOCK_MBD_URLKEY_MONTH = "YZaVk5ZuZA=="
