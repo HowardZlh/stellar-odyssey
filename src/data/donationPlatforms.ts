@@ -15,7 +15,7 @@ import type { DonationPlatformId } from '@/utils/donors';
 export const SPONSOR_KOFI_URL = 'https://ko-fi.com/howardzlh';
 
 /** 面包多主页（README 赞助小节同源，对外入口同源纪律；商品页挂此主页下） */
-export const SPONSOR_MBD_URL = 'https://mbd.pub/o/stellar-odyssey';
+export const SPONSOR_MBD_URL = 'https://mbd.pub/o/stellar';
 
 export interface DonationPlatform {
   id: DonationPlatformId;

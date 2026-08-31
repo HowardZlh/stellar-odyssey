@@ -222,7 +222,7 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 如果这个宇宙曾让你停下滚轮多看了一会儿，欢迎支持项目——支持即可解锁高级内容（见上节「支持者解锁」），昵称与留言可记入贡献者名单：
 
 - 🔓 解锁页（推荐入口：支付宝扫码，支付后自动发码即时解锁）：[stellar.guushu.com/unlock](https://stellar.guushu.com/unlock)
-- 🍞 面包多（备选，扫码即付无需注册，订单号自动兑换）：[mbd.pub/o/stellar-odyssey](https://mbd.pub/o/stellar-odyssey)
+- 🍞 面包多（备选，扫码即付无需注册，订单号自动兑换）：[mbd.pub/o/stellar](https://mbd.pub/o/stellar)
 - ⚡ 爱发电（备选，订单号自动兑换）：[afdian.com/a/stellar-odyssey](https://afdian.com/a/stellar-odyssey)
 - ☕ Ko-fi（海外备选）：[ko-fi.com/howardzlh](https://ko-fi.com/howardzlh)
 - ☄️ 站内捐赠页（汇总全部支持通道与捐赠名单）：[stellar.guushu.com/donate](https://stellar.guushu.com/donate)

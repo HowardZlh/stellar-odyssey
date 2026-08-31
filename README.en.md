@@ -185,7 +185,7 @@ Support channels (in recommended order): **Alipay QR pay** (recommended — toke
 If this universe ever made you pause your scroll wheel for a moment longer, consider supporting the project — supporting unlocks the advanced content (see "Supporter Unlock" above), and your nickname and message can join the contributor roster:
 
 - 🔓 Unlock page (recommended entry: Alipay QR — token issued automatically and access unlocks instantly after payment): [stellar.guushu.com/unlock](https://stellar.guushu.com/unlock)
-- 🍞 Mianbaoduo (fallback — pay by QR with no account needed, automatic order-ID redemption): [mbd.pub/o/stellar-odyssey](https://mbd.pub/o/stellar-odyssey)
+- 🍞 Mianbaoduo (fallback — pay by QR with no account needed, automatic order-ID redemption): [mbd.pub/o/stellar](https://mbd.pub/o/stellar)
 - ⚡ Afdian (fallback, automatic order-number redemption): [afdian.com/a/stellar-odyssey](https://afdian.com/a/stellar-odyssey)
 - ☕ Ko-fi (overseas fallback): [ko-fi.com/howardzlh](https://ko-fi.com/howardzlh)
 - ☄️ On-site donation page (all support channels and the donor roster): [stellar.guushu.com/donate](https://stellar.guushu.com/donate)

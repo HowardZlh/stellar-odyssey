@@ -73,7 +73,7 @@ Unlocking adds four kinds of access (identical across tiers; only duration diffe
 ### Channel 3: Mianbaoduo (fallback · automatic order-ID redemption · QR pay, no account)
 
 1. On the unlock page, click "Buy on Mianbaoduo" — purchase the matching tier product at
-   [mbd.pub/o/stellar-odyssey](https://mbd.pub/o/stellar-odyssey) (all three tiers are one-time
+   [mbd.pub/o/stellar](https://mbd.pub/o/stellar) (all three tiers are one-time
    products), paying by WeChat/Alipay QR — **no account registration needed**.
 2. After paying, your **order ID** (32 letters/digits) appears automatically below the product
    page — copy it.
