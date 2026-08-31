@@ -1,7 +1,7 @@
 /**
  * 贡献者宇宙纯逻辑层（C1，/contributors 页面数据层）
  *
- * 需求：docs/internal/REQUIREMENTS_CONTRIBUTORS.md §C1。
+ * 需求：docs/internal/completed/REQUIREMENTS_CONTRIBUTORS.md §C1。
  * 每位捐赠者（src/data/donors.ts 人工登记）映射为一颗贡献者星：
  * - 大小/亮度随金额对数归一（跨度 ¥5~¥10000+，线性映射会使小额星不可见）；
  * - 位置由自身记录（name|platform 哈希种子）确定性派生，与名单顺序/长度无关，
