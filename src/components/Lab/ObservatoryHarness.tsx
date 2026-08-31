@@ -16,6 +16,7 @@ import {
   type CameraPreset,
 } from '@/components/dev/PreviewCanvas';
 import { OBSERVATORY_PAGE_PATH } from '@/utils/lab';
+import { ShareMomentButton } from '@/components/UI/ShareMomentButton';
 
 /**
  * 天体观察站观察工位（O1，REQUIREMENTS_OBSERVATORY.md §2）
@@ -86,14 +87,24 @@ export function ObservatoryHarness({ entry }: ObservatoryHarnessProps): JSX.Elem
         qualityLabelRef={qualityLabelRef}
       />
 
-      {/* 左上：返回导航 + 性能 HUD（safe-area 避让；移动端缩宽、来源长文案隐藏） */}
+      {/* 左上：返回导航 + 分享此刻 + 性能 HUD（safe-area 避让；移动端缩宽、来源长文案隐藏） */}
       <div className="absolute left-[max(1rem,env(safe-area-inset-left))] top-[max(1rem,env(safe-area-inset-top))] select-none space-y-2 max-sm:max-w-[70vw]">
-        <a
-          href={OBSERVATORY_PAGE_PATH}
-          className="inline-flex min-h-11 items-center rounded-lg bg-black/60 px-3 text-xs text-space-accent backdrop-blur hover:underline"
-        >
-          ← {tr('lab.observatoryBackToGallery')}
-        </a>
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href={OBSERVATORY_PAGE_PATH}
+            className="inline-flex min-h-11 items-center rounded-lg bg-black/60 px-3 text-xs text-space-accent backdrop-blur hover:underline"
+          >
+            ← {tr('lab.observatoryBackToGallery')}
+          </a>
+          {/* G5 分享此刻（观察站入口）：路径形态 /lab/observatory/<id> */}
+          <ShareMomentButton
+            context={{ kind: 'observatory', bodyId: entry.bodyId }}
+            feedbackPlacement="below"
+            className="inline-flex min-h-11 items-center rounded-lg bg-black/60 px-3 text-xs text-space-accent backdrop-blur hover:underline"
+          >
+            🔗 {tr('share.button')}
+          </ShareMomentButton>
+        </div>
         <div className="pointer-events-none rounded-lg bg-black/60 px-3 py-2 text-xs text-gray-100 backdrop-blur">
           <div className="mb-1 font-semibold text-sky-300">
             {entry.titleKey ? tr(entry.titleKey) : entry.title}

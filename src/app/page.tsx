@@ -1,30 +1,19 @@
-'use client';
-
-
-import type { JSX } from 'react';
-import dynamic from 'next/dynamic';
-import { useT, useLocaleInit } from '@/hooks/useI18n';
-
 /**
- * 场景加载占位（i18n）：store 为模块级全局，Canvas 挂载前即可
- * 初始化 locale（?lang= > localStorage > zh）并按语言显示加载文案。
+ * 主场景页 server 薄壳（G 迭代 M3 G7 拆壳：metadata 由 server 层导出，
+ * 客户端主体零改动——见 HomePageClient.tsx）
+ *
+ * title/description/OG 沿用 layout 全站定义（首页即站点门面），此处仅
+ * 补 canonical；主场景首屏 JS 不变（拆壳只动本文件，性能红线口径）。
  */
-function SceneLoading(): JSX.Element {
-  useLocaleInit();
-  const tr = useT();
-  return (
-    <div className="flex h-screen w-screen items-center justify-center bg-space-dark">
-      <p className="text-lg text-gray-400">{tr('loading.scene')}</p>
-    </div>
-  );
-}
 
-// 3D 场景仅客户端渲染（Three.js 依赖 WebGL）
-const SolarSystemApp = dynamic(() => import('@/components/Scene/SolarSystemApp'), {
-  ssr: false,
-  loading: () => <SceneLoading />,
-});
+import type { JSX } from "react";
+import type { Metadata } from "next";
+import HomePageClient from "./HomePageClient";
 
-export default function HomePage(): JSX.Element {
-  return <SolarSystemApp />;
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
+
+export default function HomeRoute(): JSX.Element {
+  return <HomePageClient />;
 }

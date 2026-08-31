@@ -19,9 +19,16 @@ import { useSimulationStore } from '@/store';
  *   paused 态挂载，卸载即清理）；
  * - 退出：派发 'exit'（恢复 uiVisible）+ exitFullscreen（用户手势内，
  *   与 ControlPanel 进入全屏对称；未全屏跳过，异常静默）。
+ *
+ * G2（REQUIREMENTS_GROWTH.md §3 M1）：同位置追加**巡游门控回落一次性
+ * 说明**——tour=galaxy/universe 且无权益时 kiosk 启动即回落 L2 太阳系
+ * 巡游（store kioskGateNotice），说明条置于 uiVisible 包裹外（touring
+ * 态 UI 隐藏时仍可见），✕ 关闭且同会话不再重弹（退出 kiosk 复位）。
+ * 暂停角标与说明条同容器纵向堆叠（同顶部中央占位，无新增碰撞面）。
  */
 export function KioskBadge(): JSX.Element | null {
   const paused = useSimulationStore((s) => s.kiosk.phase === 'paused');
+  const gateNotice = useSimulationStore((s) => s.kioskGateNotice);
   const trf = useTf();
   const tr = useT();
   // 倒计时驱动：paused 态每秒重渲染一次（nowSec 状态变化触发）
@@ -34,7 +41,7 @@ export function KioskBadge(): JSX.Element | null {
     return () => clearInterval(timer);
   }, [paused]);
 
-  if (!paused) return null;
+  if (!paused && !gateNotice) return null;
 
   const remaining = kioskRemainingSec(useSimulationStore.getState().kiosk, nowSec);
 
@@ -49,17 +56,34 @@ export function KioskBadge(): JSX.Element | null {
   return (
     // M3-5：紧凑视口下移避让顶部状态条（safe-area + 状态条高 2.75rem +
     // 间距；暂停态 uiVisible=true → 状态条可见）；桌面 md:top-4 原样
-    <div className="absolute left-1/2 top-[calc(env(safe-area-inset-top)+3.25rem)] -translate-x-1/2 select-none rounded-lg bg-space-panel px-4 py-2 text-xs text-gray-200 backdrop-blur md:top-4 max-md:text-sm">
-      <span>🎪 {trf('kiosk.pausedBadge', { sec: remaining })}</span>
-      <span className="mx-2 text-gray-500">·</span>
-      <button
-        type="button"
-        onClick={handleExit}
-        aria-label={tr('kiosk.exitAria')}
-        className="text-space-accent hover:underline"
-      >
-        {tr('kiosk.exit')}
-      </button>
+    <div className="absolute left-1/2 top-[calc(env(safe-area-inset-top)+3.25rem)] flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col items-center gap-2 md:top-4">
+      {paused && (
+        <div className="select-none rounded-lg bg-space-panel px-4 py-2 text-xs text-gray-200 backdrop-blur max-md:text-sm">
+          <span>🎪 {trf('kiosk.pausedBadge', { sec: remaining })}</span>
+          <span className="mx-2 text-gray-500">·</span>
+          <button
+            type="button"
+            onClick={handleExit}
+            aria-label={tr('kiosk.exitAria')}
+            className="text-space-accent hover:underline"
+          >
+            {tr('kiosk.exit')}
+          </button>
+        </div>
+      )}
+      {gateNotice && (
+        <div className="flex select-none items-center gap-2 rounded-lg bg-space-panel px-4 py-2 text-xs text-gray-200 backdrop-blur max-md:text-sm">
+          <span>🔒 {tr('kiosk.gateFallback')}</span>
+          <button
+            type="button"
+            onClick={() => useSimulationStore.getState().dismissKioskGateNotice()}
+            aria-label={tr('kiosk.gateFallbackCloseAria')}
+            className="shrink-0 text-gray-400 hover:text-white max-md:flex max-md:h-11 max-md:w-11 max-md:items-center max-md:justify-center"
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }

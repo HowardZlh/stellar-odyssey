@@ -424,16 +424,21 @@ describe("PREMIUM_DETAIL_BODY_IDS 白名单", () => {
     expect(PREMIUM_DETAIL_BODY_IDS.has("cluster-lensing")).toBe(false);
   });
 
-  it("名单共 24 项（盘点登记数）", () => {
-    expect(PREMIUM_DETAIL_BODY_IDS.size).toBe(24);
+  it("名单共 22 项（24 项盘点数移出 G10 免费豁免 2 项）", () => {
+    expect(PREMIUM_DETAIL_BODY_IDS.size).toBe(22);
   });
 
-  it("与摘录来源一致性抽查：河外近观常量 / 黑洞透镜配置键", () => {
+  it("G10/D1 免费豁免：sgr-a-star 与 orion-nebula 不在名单", () => {
+    expect(PREMIUM_DETAIL_BODY_IDS.has("sgr-a-star")).toBe(false);
+    expect(PREMIUM_DETAIL_BODY_IDS.has("orion-nebula")).toBe(false);
+  });
+
+  it("与摘录来源一致性抽查：河外近观常量 / 黑洞透镜配置键（sgr-a-star 豁免）", () => {
     expect(isPremiumDetailBody(QUASAR_BODY_ID)).toBe(true);
     expect(isPremiumDetailBody(ANTENNAE_BODY_ID)).toBe(true);
     expect(isPremiumDetailBody(GRB_BODY_ID)).toBe(true);
     for (const id of Object.keys(BLACK_HOLE_LENSED_CONFIGS)) {
-      expect(isPremiumDetailBody(id)).toBe(true);
+      expect(isPremiumDetailBody(id)).toBe(id !== "sgr-a-star");
     }
   });
 
@@ -448,7 +453,7 @@ describe("PREMIUM_DETAIL_BODY_IDS 白名单", () => {
     }
   });
 
-  it("与摘录来源一致性抽查：挂近观细节层的特殊天体 id 全在名单", () => {
+  it("与摘录来源一致性抽查：挂近观细节层的特殊天体 id 全在名单（G10 豁免 2 项除外）", () => {
     const nearViewSpecialIds = [
       "betelgeuse",
       "rigel",
@@ -456,11 +461,9 @@ describe("PREMIUM_DETAIL_BODY_IDS 白名单", () => {
       "delta-cephei",
       "wr-124",
       "crab-pulsar",
-      "orion-nebula",
       "ring-nebula",
       "horsehead-nebula",
       "m13-cluster",
-      "sgr-a-star",
       "cygnus-x1",
       "pleiades",
     ];
@@ -468,6 +471,11 @@ describe("PREMIUM_DETAIL_BODY_IDS 白名单", () => {
     for (const id of nearViewSpecialIds) {
       expect(allSpecialIds.has(id)).toBe(true); // 摘录 id 确实存在于数据源
       expect(isPremiumDetailBody(id)).toBe(true);
+    }
+    // G10 豁免项仍是真实特殊天体（有 useDetailLayer 消费方），但不门控
+    for (const id of ["sgr-a-star", "orion-nebula"]) {
+      expect(allSpecialIds.has(id)).toBe(true);
+      expect(isPremiumDetailBody(id)).toBe(false);
     }
   });
 });
@@ -478,7 +486,14 @@ describe("premiumGateAllows 三态判定", () => {
 
   it("有效权益：付费天体放行", () => {
     expect(premiumGateAllows(valid, "m31", NOW_SEC)).toBe(true);
-    expect(premiumGateAllows(valid, "sgr-a-star", NOW_SEC)).toBe(true);
+    expect(premiumGateAllows(valid, "cygnus-x1", NOW_SEC)).toBe(true);
+  });
+
+  it("G10 免费豁免天体：无权益/过期权益用户一律放行（不门控）", () => {
+    for (const id of ["sgr-a-star", "orion-nebula"]) {
+      expect(premiumGateAllows(null, id, NOW_SEC)).toBe(true);
+      expect(premiumGateAllows(expired, id, NOW_SEC)).toBe(true);
+    }
   });
 
   it("过期/无权益：付费天体拒绝（expSec === nowSec 视为过期）", () => {

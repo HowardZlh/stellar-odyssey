@@ -5,8 +5,8 @@ import { useEffect, useState } from 'react';
 import { useT } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
 
-/** 打开后自动关闭延时（毫秒，UI 布局优化：避免长期遮挡画面中央） */
-export const HELP_HINT_AUTO_CLOSE_MS = 3000;
+/** 打开后自动关闭延时（毫秒；G3：3s → 12s，首屏只留一行操作提示后放宽） */
+export const HELP_HINT_AUTO_CLOSE_MS = 12000;
 
 /**
  * 首次进入操作引导（需求 3.5.3）
@@ -15,8 +15,16 @@ export const HELP_HINT_AUTO_CLOSE_MS = 3000;
  * zh 字典条目为原 JSX 空白折叠结果的逐字符搬迁（中文态逐像素等价）；
  * 末行语言切换说明为 B3-D 新增（实现差异登记）。
  *
- * UI 布局优化：
- * - 页面打开 3 秒后自动关闭（鼠标悬停暂停倒计时，移出后重新计满 3 秒）；
+ * G3 拆分（REQUIREMENTS_GROWTH.md §3 M1）：
+ * - **首屏卡只留一行操作提示**（controls/controlsTouch 口径），12 秒后
+ *   自动关闭（原 3 秒 + 约 900 汉字免责长文的组合既遮挡又读不完）；
+ * - **完整帮助面板**（桌面经「?」重开 / 移动端经 [? 帮助] 标签）才展示
+ *   语言说明、kiosk 说明与**科学性说明独立分节**（disclaimerTitle +
+ *   disclaimer，内容零删改——只改呈现位置与时机，硬性约束）；
+ * - 完整面板加 max-h + 内滚（长文不再溢出视口）。
+ *
+ * UI 布局优化（沿革）：
+ * - 页面打开 12 秒后自动关闭（鼠标悬停暂停倒计时，移出后重新计满）；
  * - 关闭后原位置保留一个「?」小按钮可重新打开；手动重开后不再自动关闭
  *   （用户主动查看时不打断阅读）。
  *
@@ -47,23 +55,30 @@ export function HelpHint(): JSX.Element | null {
     return () => clearTimeout(id);
   }, [isCompact, visible, autoCloseArmed, hovered]);
 
-  // 共用正文（桌面悬浮卡 / 移动居中弹层）；M4-5：isTouch 下首段换触屏
-  // 口径（emoji 组件层持有），键鼠快捷键段落（kioskNote）隐藏
-  const body = (
-    <p>
-      {isTouch ? <>👆 {tr('helpHint.controlsTouch')}</> : tr('helpHint.controls')}
-      <br />
-      <span className="text-gray-500">✦ {tr('helpHint.disclaimer')}</span>
-      <br />
-      <span className="text-gray-500">🌐 {tr('helpHint.langNote')}</span>
+  // 首屏一行操作提示（M4-5：isTouch 换触屏口径，emoji 组件层持有）
+  const controlsLine = isTouch ? (
+    <>👆 {tr('helpHint.controlsTouch')}</>
+  ) : (
+    <>{tr('helpHint.controls')}</>
+  );
+
+  // 完整帮助正文（桌面「?」重开 / 移动弹层）：操作提示 + 语言/kiosk
+  // 说明 + 科学性说明独立分节（G3：免责长文只在此处展示）
+  const fullBody = (
+    <div className="space-y-2">
+      <p>{controlsLine}</p>
+      <p className="text-gray-500">🌐 {tr('helpHint.langNote')}</p>
       {!isTouch && (
         <>
-          <br />
           {/* B5：H 键与展馆模式说明（附录 A#4 快捷键表同步） */}
-          <span className="text-gray-500">🖥 {tr('helpHint.kioskNote')}</span>
+          <p className="text-gray-500">🖥 {tr('helpHint.kioskNote')}</p>
         </>
       )}
-    </p>
+      <div className="border-t border-white/10 pt-2">
+        <p className="mb-1 font-medium text-gray-400">✦ {tr('helpHint.disclaimerTitle')}</p>
+        <p className="text-gray-500">{tr('helpHint.disclaimer')}</p>
+      </div>
+    </div>
   );
 
   if (isCompact) {
@@ -78,7 +93,7 @@ export function HelpHint(): JSX.Element | null {
         />
         <div className="relative max-h-[70dvh] w-full max-w-96 overflow-y-auto overscroll-contain rounded-lg bg-space-panel p-4 pr-2 text-sm leading-6 text-gray-300 backdrop-blur hud-scroll">
           <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">{body}</div>
+            <div className="min-w-0 flex-1">{fullBody}</div>
             <button
               type="button"
               onClick={() => setMobilePanel(null)}
@@ -117,10 +132,12 @@ export function HelpHint(): JSX.Element | null {
       // M4-4：触摸提示卡任意处暂停倒计时（触屏无移出事件，一触即解除
       // 自动关闭武装；桌面 isTouch=false 不挂手势零变化）
       onPointerDown={isTouch ? () => setAutoCloseArmed(false) : undefined}
-      className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-space-panel px-5 py-3 text-xs text-gray-300 backdrop-blur"
+      className="absolute bottom-4 left-1/2 max-h-[60vh] w-max max-w-[min(56rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto rounded-lg bg-space-panel px-5 py-3 text-xs text-gray-300 backdrop-blur hud-scroll"
     >
       <div className="flex items-center gap-4">
-        {body}
+        {/* G3：首屏自动展示态只留一行操作提示；「?」重开后展示完整帮助
+            （autoCloseArmed 复用为两态判别——重开即解除武装） */}
+        {autoCloseArmed ? <p>{controlsLine}</p> : fullBody}
         <button
           type="button"
           onClick={() => setVisible(false)}

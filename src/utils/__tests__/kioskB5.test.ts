@@ -6,6 +6,7 @@
 import type { KioskState, KioskTiming } from '@/utils/kiosk';
 import {
   KIOSK_ALL_SCOPES,
+  KIOSK_GATE_FALLBACK_SCOPES,
   KIOSK_INACTIVE,
   KIOSK_RESUME_DEFAULT_SEC,
   kioskRemainingSec,
@@ -223,5 +224,67 @@ describe('planKioskAdvance 推进计划（B5 §5.1-B 巡游语义，域切换两
   it('四域轮转顺序常量（由内向外叙事顺序登记）', () => {
     expect(KIOSK_ALL_SCOPES).toEqual(['system', 'solar', 'galaxy', 'universe']);
     expect(Object.isFrozen(KIOSK_ALL_SCOPES)).toBe(true);
+  });
+});
+
+describe('planKioskAdvance 门控域跳过（G2，方案 a：跳过而非豁免）', () => {
+  const LOCKED = ['galaxy', 'universe'] as const;
+
+  it('回落域常量（单域 tour 全锁时回落 solar，冻结）', () => {
+    expect(KIOSK_GATE_FALLBACK_SCOPES).toEqual(['solar']);
+    expect(Object.isFrozen(KIOSK_GATE_FALLBACK_SCOPES)).toBe(true);
+  });
+
+  it('tour=all + 锁定 L3/L4：solar 域末不再切 galaxy，改切 system（L1+L2 轮转）', () => {
+    const solarLast = SOLAR_CYCLE_SEQUENCE[SOLAR_CYCLE_SEQUENCE.length - 1];
+    expect(planKioskAdvance('all', 'solar', 'L2', solarLast, LOCKED)).toEqual({
+      kind: 'anchor',
+      scope: 'system',
+      level: 'L1',
+    });
+    // system 域末仍切 solar（两域间回绕）
+    expect(planKioskAdvance('all', 'system', 'L1', 'moon', LOCKED)).toEqual({
+      kind: 'anchor',
+      scope: 'solar',
+      level: 'L2',
+    });
+  });
+
+  it('tour=all + 锁定：当前域已在门控域（暂停期间用户切走）→ 对齐生效首域 system', () => {
+    expect(planKioskAdvance('all', 'galaxy', 'L3', 'sgr-a-star', LOCKED)).toEqual({
+      kind: 'anchor',
+      scope: 'system',
+      level: 'L1',
+    });
+  });
+
+  it('tour=galaxy/universe + 锁定（域集全锁）→ 回落 solar 域轮转', () => {
+    // 启动态（默认 solar 域未跟随）：直接 enter 太阳系域起点（不再进 L3）
+    expect(planKioskAdvance('galaxy', 'solar', 'L2', null, LOCKED)).toEqual({
+      kind: 'enter',
+      scope: 'solar',
+      bodyId: 'earth',
+    });
+    // 当前在门控域 → 先 anchor 回 L2 全景
+    expect(planKioskAdvance('universe', 'universe', 'L4', 'm31', LOCKED)).toEqual({
+      kind: 'anchor',
+      scope: 'solar',
+      level: 'L2',
+    });
+    // 回落后为单域轮转：solar 末站域内回绕（next），不产生停滞
+    const solarLast = SOLAR_CYCLE_SEQUENCE[SOLAR_CYCLE_SEQUENCE.length - 1];
+    expect(planKioskAdvance('galaxy', 'solar', 'L2', solarLast, LOCKED)).toEqual({
+      kind: 'next',
+    });
+  });
+
+  it('无锁定（有权益/限免生效）：缺省参数与显式空数组语义一致（既有行为零变化）', () => {
+    const galaxyLast = GALAXY_CYCLE_SEQUENCE[GALAXY_CYCLE_SEQUENCE.length - 1];
+    expect(planKioskAdvance('all', 'galaxy', 'L3', galaxyLast, [])).toEqual(
+      planKioskAdvance('all', 'galaxy', 'L3', galaxyLast),
+    );
+    expect(planKioskAdvance('galaxy', 'galaxy', 'L3', 'sgr-a-star', [])).toEqual({
+      kind: 'next',
+    });
   });
 });

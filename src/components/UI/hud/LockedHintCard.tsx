@@ -4,6 +4,7 @@ import type { JSX } from "react";
 import { useEffect } from "react";
 import { useT, useTf } from "@/hooks/useI18n";
 import { useSimulationStore } from "@/store";
+import { trackFunnelEvent } from "@/utils/funnel";
 import { UNLOCK_PAGE_PATH } from "@/utils/unlockPage";
 
 /** 锁定提示自动收起时限（毫秒；口径沿用 G 键引导 toast 的 12 秒） */
@@ -28,6 +29,8 @@ export function LockedHintCard(): JSX.Element | null {
 
   useEffect(() => {
     if (lockedHint === null) return undefined;
+    // G8 漏斗：付费墙曝光计数（revoked = 吊销提示非付费墙，不计）
+    if (lockedHint.context !== "revoked") trackFunnelEvent("lock_shown");
     const timer = setTimeout(dismissLockedHint, LOCKED_HINT_AUTO_DISMISS_MS);
     return () => clearTimeout(timer);
   }, [lockedHint, dismissLockedHint]);
@@ -78,7 +81,10 @@ export function LockedHintCard(): JSX.Element | null {
           href={UNLOCK_PAGE_PATH}
           target="_blank"
           rel="noopener noreferrer"
-          onClick={dismissLockedHint}
+          onClick={() => {
+            trackFunnelEvent("lock_cta"); // G8 漏斗：付费墙 CTA 点击
+            dismissLockedHint();
+          }}
           aria-label={tr("unlock.lockedGoUnlockAria")}
           className="mt-2 inline-block rounded bg-violet-400/90 px-2 py-1 text-black hover:bg-violet-300 max-md:px-3 max-md:py-3"
         >

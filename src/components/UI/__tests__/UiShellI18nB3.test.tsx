@@ -32,11 +32,16 @@ afterEach(() => {
   document.documentElement.lang = 'zh-CN';
 });
 
-describe('HelpHint 双语（B3 打样件）', () => {
-  it('zh 默认态渲染原引导文案 + 新增语言切换说明行', () => {
+describe('HelpHint 双语（B3 打样件；G3 拆分后科学说明段在完整帮助面板）', () => {
+  it('zh 默认态首屏渲染操作提示行；「?」重开后含科学说明分节 + 语言切换说明', () => {
     render(<HelpHint />);
     expect(screen.getByText(/拖动旋转 · 滚轮缩放 · 右键平移/)).toBeInTheDocument();
+    // G3：首屏不再塞免责长文（移入完整帮助面板）
+    expect(screen.queryByText(/恒星闪烁仅行星视角呈现/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '关闭引导' }));
+    fireEvent.click(screen.getByRole('button', { name: '重新打开操作引导' }));
     expect(screen.getByText(/恒星闪烁仅行星视角呈现/)).toBeInTheDocument();
+    expect(screen.getByText('✦ 科学性与艺术化说明')).toBeInTheDocument();
     expect(screen.getByText(/语言 Language：左上角面板 zh\/EN/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '关闭引导' })).toBeInTheDocument();
   });
@@ -45,9 +50,11 @@ describe('HelpHint 双语（B3 打样件）', () => {
     useSimulationStore.setState({ locale: 'en' });
     render(<HelpHint />);
     expect(screen.getByText(/Drag to rotate · Scroll to zoom/)).toBeInTheDocument();
+    expect(screen.queryByText(/拖动旋转/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss the guide' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reopen the controls guide' }));
     expect(screen.getByText(/Star twinkling appears only in the planet view/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Dismiss the guide' })).toBeInTheDocument();
-    expect(screen.queryByText(/拖动旋转/)).not.toBeInTheDocument();
   });
 });
 

@@ -311,8 +311,12 @@ describe("remoteFreeWindowActive 边界", () => {
   it("口径回归：与 observatoryGate 默认配置窗口判定一致（委托无漂移）", () => {
     const w = OBSERVATORY_GATE_CONFIG.freeWindow;
     const mid = (Date.parse(w.startUtc) + Date.parse(w.endUtc)) / 2;
-    expect(remoteFreeWindowActive({ ...w }, mid)).toBe(true);
-    expect(remoteFreeWindowActive({ ...w }, Date.parse(w.endUtc))).toBe(false);
+    // G1（D2 裁决）：代码侧默认 enabled=false（防静默过期）→ 窗口中点也不生效
+    expect(w.enabled).toBe(false);
+    expect(remoteFreeWindowActive({ ...w }, mid)).toBe(false);
+    // 远程下发 enabled=true 覆盖后窗口判定照常（起止边界委托无漂移）
+    expect(remoteFreeWindowActive({ ...w, enabled: true }, mid)).toBe(true);
+    expect(remoteFreeWindowActive({ ...w, enabled: true }, Date.parse(w.endUtc))).toBe(false);
   });
 });
 

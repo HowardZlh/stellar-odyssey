@@ -9,6 +9,7 @@ import type { CycleScope } from '@/utils/cycleScopes';
 import { getBodyInfoById } from '@/data/catalog';
 import { isScopeCycleBody, scopeCyclePositionLabel } from '@/utils/cycleScopes';
 import { planetSystemIdForBody } from '@/utils/bodyCycle';
+import { MainShareMomentButton } from '@/components/UI/ShareMomentButton';
 
 /**
  * 当前巡游域展示天体（M3 提取共用 hook）：BodyCycleSwitcher（桌面
@@ -122,6 +123,11 @@ export function BodyCycleSwitcher(): JSX.Element | null {
           {tr('bodyCycle.next')} {cycleLocked ? '🔒' : '→'}
         </button>
       )}
+      {/* G5 分享此刻（桌面入口）：分隔线 + 追加钮；移动端入口在 BottomTabBar */}
+      <span aria-hidden="true" className="h-4 w-px bg-white/15" />
+      <MainShareMomentButton className="rounded bg-white/10 px-2 py-1 hover:bg-white/20">
+        🔗 {tr('share.button')}
+      </MainShareMomentButton>
     </div>
   );
 }

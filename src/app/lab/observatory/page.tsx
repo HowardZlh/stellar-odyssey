@@ -1,41 +1,22 @@
-'use client';
-
 /**
- * 天体观察站画廊页 `/lab/observatory`（O1，静态导出）
- *
- * 单天体观察走路径形态 `/lab/observatory/<id>`（`[body]/page.tsx`，
- * generateStaticParams 预生成）；本页默认渲染画廊。
- *
- * 旧查询串形态 `?body=<id>` 直达链接兼容：挂载时直读
- * `window.location.search`（勿用 useSearchParams——静态导出 + Suspense
- * 边界要求，dev/preview 页同口径登记），已注册 id 照常渲染观察场景并
- * `history.replaceState` 把地址栏改写为路径形态（不重载）；未注册 id
- * 渲染画廊 + 未知 id 提示。挂载后本页无同段软导航来源（画廊 → 观察为
- * 跨路由段跳转），mount-only 读取不再有 URL 变页面不动的缺陷。
+ * 天体观察站画廊页 server 薄壳（G 迭代 M3 G7 拆壳：差异化 metadata +
+ * canonical 由 server 层导出，客户端主体零改动——见
+ * ObservatoryGalleryPageClient.tsx，含旧 `?body=` 直达兼容逻辑）
  */
 
-import type { JSX } from 'react';
-import { useEffect, useState } from 'react';
-import { ObservatoryPageShell } from '@/components/Lab/ObservatoryPageShell';
-import { previewEntryForBody } from '@/utils/devPreview';
-import { observatoryBodyPath } from '@/utils/lab';
+import type { JSX } from "react";
+import type { Metadata } from "next";
+import { t } from "@/i18n";
+import { buildPageMetadata } from "@/utils/siteMeta";
+import { OBSERVATORY_PAGE_PATH } from "@/utils/lab";
+import ObservatoryPage from "./ObservatoryGalleryPageClient";
 
-export default function ObservatoryPage(): JSX.Element {
-  // ?body 解析完成前不挂载主组件（null 会被误判为画廊，闪烁一帧）
-  const [bodyId, setBodyId] = useState<string | null | undefined>(undefined);
+export const metadata: Metadata = buildPageMetadata({
+  titleZh: `${t("zh", "lab.observatoryTitle")} · ${t("zh", "lab.title")}`,
+  description: t("zh", "lab.observatoryDescription"),
+  path: OBSERVATORY_PAGE_PATH,
+});
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const legacyBodyId = params.get('body');
-    if (legacyBodyId !== null && previewEntryForBody(legacyBodyId) !== null) {
-      // 旧分享链接 URL 显示优化：地址栏规范化为路径形态（渲染不中断）
-      window.history.replaceState(null, '', observatoryBodyPath(legacyBodyId));
-    }
-    setBodyId(legacyBodyId);
-  }, []);
-
-  if (bodyId === undefined) {
-    return <div className="h-screen w-screen bg-black" />;
-  }
-  return <ObservatoryPageShell bodyId={bodyId} />;
+export default function ObservatoryGalleryRoute(): JSX.Element {
+  return <ObservatoryPage />;
 }

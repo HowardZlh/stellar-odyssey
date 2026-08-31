@@ -3,7 +3,7 @@
 
 import type { JSX, ReactNode } from 'react';
 import { VIEW_LEVELS } from '@/types';
-import { VIEW_LEVEL_NAME_KEYS, pickLocalized } from '@/i18n';
+import { VIEW_LEVEL_NAME_KEYS, pickLocalized, type MessageKey } from '@/i18n';
 import { useT, useTf } from '@/hooks/useI18n';
 import { kioskNowSec } from '@/hooks/useKiosk';
 import { useSimulationStore } from '@/store';
@@ -26,6 +26,17 @@ import { UNLOCK_PAGE_PATH } from '@/utils/unlockPage';
 import { LAB_PAGE_PATH } from '@/utils/lab';
 import { rollSupernovaParams } from '@/components/Scene/Supernova';
 import { rollCmeParams, rollFlareParams } from '@/components/CelestialBody/SunActivity';
+
+/**
+ * G10 增补：精选天体直达清单（REQUIREMENTS_GROWTH §3 M2 追加裁决）。
+ * 首批 = D1 免费开放的 2 个 wow 天体（sgr-a-star / orion-nebula）——
+ * 免费用户点击即达且细节层不锁定；G11 搜索落地后此入口保留为推荐位
+ * 或并入搜索面板（届时再议，登记）。
+ */
+const FEATURED_BODIES: readonly { id: string; labelKey: MessageKey; emoji: string }[] = [
+  { id: 'sgr-a-star', labelKey: 'controlPanel.featuredSgrA', emoji: '🕳️' },
+  { id: 'orion-nebula', labelKey: 'controlPanel.featuredOrion', emoji: '🌌' },
+];
 
 /**
  * 显示开关行（M3-1）：桌面 = 原生 checkbox（原样），紧凑视口（max-md）
@@ -172,6 +183,8 @@ function ControlPanelSections(): JSX.Element {
   const setLocale = useSimulationStore((s) => s.setLocale);
   const viewLevel = useSimulationStore((s) => s.viewLevel);
   const setViewLevel = useSimulationStore((s) => s.setViewLevel);
+  // G10 增补：精选天体一键直达（复用深链 ?body= 等价的 requestFlyTo 路径）
+  const requestFlyTo = useSimulationStore((s) => s.requestFlyTo);
   const paused = useSimulationStore((s) => s.paused);
   const togglePaused = useSimulationStore((s) => s.togglePaused);
   const speedMultiplier = useSimulationStore((s) => s.speedMultiplier);
@@ -283,6 +296,16 @@ function ControlPanelSections(): JSX.Element {
     startMergePreview();
   };
 
+  // G10 增补：精选天体直达——点击即飞往并跟随（requestFlyTo 自含
+  // viewLevel/巡游域切换与非法 id 校验，不新写运镜逻辑；直达 ≠ 巡游，
+  // 巡游门控与每日配额零改动）。移动端点击后关闭控制抽屉露出场景
+  // （mobilePanel 单值互斥语义不变，置 null 而已）。
+  const handleFeaturedGo = (id: string): void => {
+    requestFlyTo(id);
+    const s = useSimulationStore.getState();
+    if (s.isCompact && s.mobilePanel !== null) s.setMobilePanel(null);
+  };
+
   // B5 §5.1-D 入口 1：展馆模式按钮——用户手势内请求全屏（被拒/不支持
   // 静默降级为不全屏照常巡游，登记）+ 派发状态机 start 事件
   const handleKioskStart = (): void => {
@@ -346,6 +369,27 @@ function ControlPanelSections(): JSX.Element {
               }`}
             >
               {tr(VIEW_LEVEL_NAME_KEYS[level])}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* G10 增补：精选天体直达（一键飞往并跟随；免费开放的 wow 天体，
+          缓解 D1 发现性耦合——L3 巡游门控下免费用户无逐站到达路径） */}
+      <section className="mb-4">
+        <h2 className="mb-2 text-xs text-gray-400 max-md:text-sm">
+          {tr('controlPanel.featuredSection')}
+        </h2>
+        <div className="space-y-2">
+          {FEATURED_BODIES.map((body) => (
+            <button
+              key={body.id}
+              type="button"
+              onClick={() => handleFeaturedGo(body.id)}
+              aria-label={trf('controlPanel.featuredGoAria', { name: tr(body.labelKey) })}
+              className="block w-full rounded bg-white/10 px-2 py-1.5 text-left text-xs text-gray-200 transition-colors hover:bg-white/20 max-md:py-3 max-md:text-sm"
+            >
+              {body.emoji} {tr(body.labelKey)}
             </button>
           ))}
         </div>

@@ -66,7 +66,7 @@ let cachedPremiumBodyIdSet: ReadonlySet<string> | undefined;
  * detail.premiumBodyIds → ReadonlySet（useDetailLayer 帧循环消费）：
  * 按数组**身份** memo——配置未更换时逐帧返回同一 Set 实例，渲染循环
  * 零分配纪律保持；undefined（未配置）→ undefined（premiumGate 回退
- * 代码默认 24 项名单）。
+ * 代码默认 22 项名单）。
  */
 export function remotePremiumBodyIdSet(
   ids: readonly string[] | undefined,

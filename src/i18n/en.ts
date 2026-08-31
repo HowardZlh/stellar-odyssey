@@ -62,7 +62,8 @@ export const en: I18nDict = {
       "Star size and brightness follow a logarithmic mapping of cumulative donation amount; positions are derived deterministically from nickname and platform, independent of registration order.",
     sortNote:
       "Sorted by cumulative donation amount, descending (manually registered; may lag)",
-    empty: "This spot is waiting — be the first star to light the voyage.",
+    firstStar:
+      "The first star of this sky is yet to be lit — every registered supporter becomes a star here.",
     goDonate: "Go to the donation page",
     backToApp: "Back to the star map",
     hintDesktop:
@@ -120,7 +121,7 @@ export const en: I18nDict = {
     benefitsTitle:
       "What you unlock (identical across tiers; only duration differs)",
     benefitDetail:
-      "All close-view detail layers: stellar surfaces, volumetric nebulae, black-hole gravitational lensing, and close views of clusters, galaxies and extragalactic objects (24 in total)",
+      "All close-view detail layers: stellar surfaces, volumetric nebulae, black-hole gravitational lensing, and close views of clusters, galaxies and extragalactic objects (22 in total; the Sgr A* and Orion Nebula close-ups are free for everyone)",
     benefitTour:
       "L3/L4 tour sequences: body cycling in the galaxy and universe views",
     benefitDemo:
@@ -857,6 +858,8 @@ export const en: I18nDict = {
   helpHint: {
     controls:
       "🖱 Drag to rotate · Scroll to zoom · Right-drag to pan \u00a0|\u00a0 ⌨ 1-4 switch views · [ / ] tour previous/next body (per view domain: planet system / Solar System / galaxy / universe sequences) · G galactic-center view (in the galaxy view, look down on the Solar System riding its wavy orbit around the Galactic Center; press again to re-follow the Solar System) · V vertical expansion (galaxy view only; the whole galaxy morphs into an oblate spheroid: disk / supernovae / special objects spread out with gain, with height indicator lines) · Space pause · M audio · O orbit lines \u00a0|\u00a0 Click a planet for details",
+    /** G3 help-panel science notes section title */
+    disclaimerTitle: "Scientific accuracy & artistic license",
     disclaimer:
       "Star twinkling appears only in the planet view (stars do not twinkle in a vacuum; twinkling comes from atmospheric turbulence — an artistic touch); audio is an artistic design (space is silent), with planet ambient sound differentiated by each atmosphere (Mercury / dwarf planets are near-vacuum and almost silent); in default mode dwarf planets and artificial satellites are enlarged for recognizability — being invisible at real scale is a scientific fact honored by real-scale mode; in the galaxy view the wavy rise and fall of the Sun\u2019s vertical oscillation is visually amplified ×10 (true amplitude only ±300 ly; not amplified in real-scale mode); special-object heights are derived from true galactic latitude (SIMBAD) while horizontal distances are schematic, and vertical expansion (V) is a visual exaggeration to aid observation (indicator lines mark the unamplified derived height) — when enabled the whole disk morphs into an oblate spheroid (face-on / top-down outline stays circular and spiral arms remain readable from above; side-on arm patterns being vertically dispersed is an accepted trade-off), supernovae rise with the disk, the halo brightens, and the dust lane fades; Sun watching: fly to the Sun for a close view of granulation / sunspots / prominences, and select the Sun to open the interior cutaway — sunspot / prominence sizes and activity frequency are demo-amplified and flare duration is slowed for presentation (all registered), with chromosphere thickness exaggerated to +1.5%; universe view: satellite galaxies move along thin orbit lines (toggled with O), the Magellanic Stream / Sagittarius tidal stream are gas and stars stripped along historical paths (diffuse particle bands, not orbit lines), and the cosmic web staying static apart from Hubble-expansion scaling is expected; the large-scale background is the 2MASS Redshift Survey (2MRS) point cloud of ~43,000 real galaxies (ellipticals yellowish / spirals blue-white; the Virgo Cluster overdensity and the galactic-plane gap are real data — three registered distortions: redshift distances follow the Hubble-flow approximation with finger-of-god effects, nearby-distance errors, and the galactic obscuration band, the gap being a dust-obscuration observational limit rather than a true void), with the procedural cosmic web demoted to an ambience layer; the side-on galaxy view shows the outer-disk S-shaped HI warp (Levine et al. 2006; rim amplitude artistically amplified for side-on visibility) and the diffuse Fermi bubbles above and below the Galactic Center (Su et al. 2010; gamma-ray glow rendered in artistic violet/magenta, can be turned off in display options)",
     langNote:
@@ -877,6 +880,13 @@ export const en: I18nDict = {
     contact: "Support",
     contactAria: "Open the support & partnership panel",
   },
+  share: {
+    button: "Share this moment",
+    buttonAria: "Share this moment — copy a direct link to the current view",
+    tabLabel: "Share",
+    copied: "Link copied",
+    copyFail: "Copy failed — please copy the address manually",
+  },
   viewLevel: {
     L1: "Planet View",
     L2: "Solar System View",
@@ -893,12 +903,20 @@ export const en: I18nDict = {
     pausedBadge: "Kiosk mode (paused — resuming in {sec}s)",
     exit: "Exit",
     exitAria: "Exit kiosk mode",
+    /** G2 one-time notice when a gated tour falls back (tour=galaxy/universe, no unlock) */
+    gateFallback:
+      "The galaxy / universe tours are supporter-exclusive; without an unlock the tour switches to the Solar System route",
+    gateFallbackCloseAria: "Dismiss the tour route notice",
   },
   controlPanel: {
     title: "Stellar Odyssey",
     subtitle: "星海奥德赛",
     langAria: "Switch interface language",
     viewSection: "View (keys 1-4)",
+    featuredSection: "Featured bodies",
+    featuredGoAria: "Fly to {name}",
+    featuredSgrA: "Sgr A* (black-hole photon ring)",
+    featuredOrion: "Orion Nebula (volumetric nebula)",
     galacticFrameSection: "Galaxy-view reference frame (G)",
     galacticFrameTitle:
       "Galactic-center fixed: the center stays put while you look down on the Solar System riding its wavy orbit around it",
