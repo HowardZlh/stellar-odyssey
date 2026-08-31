@@ -215,13 +215,14 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 
 部分高级内容（近观细节层 / 银河系与宇宙视角巡游序列 / 事件演示不限次 / 天文实验室「天体观察站」不限次）为**支持者限时解锁**，免费体验保持完整（L1/L2 全部功能与全部远观科普不受影响，观察站每日有免费观察额度）。档位：**周卡 ¥6 / 月卡 ¥15 / 年卡 ¥88**（Ko-fi 参考价 $1 / $2.5 / $13）。
 
-支持渠道（按推荐顺序）：**支付宝扫码**（推荐，支付后自动发码、即时解锁）→ 微信赞赏码（人工核验，token 经 Email 发送）→ 爱发电（备选，订单号自动兑换）→ Ko-fi（海外备选）。购买与兑换见 [stellar.guushu.com/unlock](https://stellar.guushu.com/unlock)，详细说明见 [docs/unlock-guide.md](docs/unlock-guide.md)。支持者昵称与留言（均可选）将记入捐赠名单与[贡献者宇宙](https://stellar.guushu.com/contributors)。
+支持渠道（按推荐顺序）：**支付宝扫码**（推荐，支付后自动发码、即时解锁）→ 微信赞赏码（人工核验，token 经 Email 发送）→ 面包多（备选，扫码即付无需注册，订单号自动兑换）→ 爱发电（备选，订单号自动兑换）→ Ko-fi（海外备选）。购买与兑换见 [stellar.guushu.com/unlock](https://stellar.guushu.com/unlock)，详细说明见 [docs/unlock-guide.md](docs/unlock-guide.md)。支持者昵称与留言（均可选）将记入捐赠名单与[贡献者宇宙](https://stellar.guushu.com/contributors)。
 
 ## 💖 赞助支持
 
 如果这个宇宙曾让你停下滚轮多看了一会儿，欢迎支持项目——支持即可解锁高级内容（见上节「支持者解锁」），昵称与留言可记入贡献者名单：
 
 - 🔓 解锁页（推荐入口：支付宝扫码，支付后自动发码即时解锁）：[stellar.guushu.com/unlock](https://stellar.guushu.com/unlock)
+- 🍞 面包多（备选，扫码即付无需注册，订单号自动兑换）：[mbd.pub/o/stellar-odyssey](https://mbd.pub/o/stellar-odyssey)
 - ⚡ 爱发电（备选，订单号自动兑换）：[afdian.com/a/stellar-odyssey](https://afdian.com/a/stellar-odyssey)
 - ☕ Ko-fi（海外备选）：[ko-fi.com/howardzlh](https://ko-fi.com/howardzlh)
 - ☄️ 站内捐赠页（汇总全部支持通道与捐赠名单）：[stellar.guushu.com/donate](https://stellar.guushu.com/donate)

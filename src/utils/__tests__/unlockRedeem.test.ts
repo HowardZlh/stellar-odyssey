@@ -7,6 +7,7 @@ import {
   REDEEM_API_PATH,
   formatExpiryDate,
   isValidAfdianOrderId,
+  isValidMbdOrderId,
   parseRedeemResponse,
   redeemErrorMessageKey,
   resolveRedeemApiUrl,
@@ -74,6 +75,25 @@ describe("isValidAfdianOrderId（14-40 位数字）", () => {
     expect(isValidAfdianOrderId("")).toBe(false);
     expect(isValidAfdianOrderId(" 20260812123456789012 ")).toBe(false);
     expect(isValidAfdianOrderId("2026-0812-1234-5678")).toBe(false);
+  });
+});
+
+describe("isValidMbdOrderId（32 位 hex，面包多集成）", () => {
+  it("合法：小写/大写/混合大小写均接受", () => {
+    expect(isValidMbdOrderId("9d1e6ffc4e5f796ae9dcf44e1936eb8d")).toBe(true);
+    expect(isValidMbdOrderId("9D1E6FFC4E5F796AE9DCF44E1936EB8D")).toBe(true);
+    expect(isValidMbdOrderId("9d1E6fFc4E5f796aE9dCf44e1936Eb8D")).toBe(true);
+    expect(isValidMbdOrderId("0".repeat(32))).toBe(true);
+  });
+
+  it("非法：位数不符/非 hex 字符/空串/含空白/带连字符", () => {
+    expect(isValidMbdOrderId("9d1e6ffc4e5f796ae9dcf44e1936eb8")).toBe(false); // 31 位
+    expect(isValidMbdOrderId("9d1e6ffc4e5f796ae9dcf44e1936eb8dd")).toBe(false); // 33 位
+    expect(isValidMbdOrderId("9d1e6ffc4e5f796ae9dcf44e1936eb8g")).toBe(false); // 含 g
+    expect(isValidMbdOrderId("")).toBe(false);
+    expect(isValidMbdOrderId(" 9d1e6ffc4e5f796ae9dcf44e1936eb8d ")).toBe(false);
+    expect(isValidMbdOrderId("9d1e6ffc-4e5f-796a-e9dc-f44e1936eb8d")).toBe(false);
+    expect(isValidMbdOrderId("20260812123456789012")).toBe(false); // 爱发电形态
   });
 });
 

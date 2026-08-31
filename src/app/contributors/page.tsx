@@ -57,6 +57,7 @@ const PLATFORM_EMOJI: Record<DonationPlatformId, string> = {
   kofi: '☕',
   buymeacoffee: '🍪',
   alipay: '💙',
+  mbd: '🍞',
 };
 
 /** 贡献者名单 API（M2 动态名单，D-z4；base 覆写机制与 unlockRedeem 同源） */

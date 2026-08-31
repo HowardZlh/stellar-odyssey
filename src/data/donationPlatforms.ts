@@ -14,6 +14,9 @@ import type { DonationPlatformId } from '@/utils/donors';
 /** Ko-fi 主页（README 赞助小节与 .github/FUNDING.yml 同源，对外入口同源纪律） */
 export const SPONSOR_KOFI_URL = 'https://ko-fi.com/howardzlh';
 
+/** 面包多主页（README 赞助小节同源，对外入口同源纪律；商品页挂此主页下） */
+export const SPONSOR_MBD_URL = 'https://mbd.pub/o/stellar-odyssey';
+
 export interface DonationPlatform {
   id: DonationPlatformId;
   nameZh: string;
@@ -25,9 +28,11 @@ export interface DonationPlatform {
 }
 
 /**
- * 顺序即 /donate 页渲染顺序（Z 迭代 M3 渠道重排，需求 E2(a)）：
+ * 顺序即 /donate 页渲染顺序（Z 迭代 M3 渠道重排，需求 E2(a)；面包多
+ * 集成插位于微信之后、爱发电之前——扫码即付无需注册，体验优于爱发电）：
  * 支付宝（引导型：面板引导跳 /unlock 扫码，付款 modal 只在解锁页）→
- * 微信赞赏码（独立 panel）→ 爱发电（备选）→ Ko-fi（海外备选）→ 预留位。
+ * 微信赞赏码（独立 panel）→ 面包多（备选）→ 爱发电（备选）→
+ * Ko-fi（海外备选）→ 预留位。
  */
 export const DONATION_PLATFORMS: readonly DonationPlatform[] = [
   { id: 'alipay', nameZh: '支付宝扫码支付', nameEn: 'Alipay QR Pay', url: null },
@@ -38,6 +43,7 @@ export const DONATION_PLATFORMS: readonly DonationPlatform[] = [
     url: null,
     qrImage: '/donate/wechat-tip-code.jpg',
   },
+  { id: 'mbd', nameZh: '面包多', nameEn: 'Mianbaoduo', url: SPONSOR_MBD_URL },
   { id: 'afdian', nameZh: '爱发电', nameEn: 'Afdian', url: SPONSOR_AFDIAN_URL },
   { id: 'kofi', nameZh: 'Ko-fi', nameEn: 'Ko-fi', url: SPONSOR_KOFI_URL },
   {

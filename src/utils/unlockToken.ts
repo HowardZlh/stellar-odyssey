@@ -32,8 +32,15 @@ ed.hashes.sha512 = sha512;
 /** token 版本前缀（§0.5 冻结） */
 export const UNLOCK_TOKEN_PREFIX = "SO1";
 
-/** 支付渠道（payload `ch` 字段取值，§0.5 冻结；Z 迭代 M2 增 'alipay'，D-z3） */
-export const UNLOCK_CHANNELS = ["afdian", "wechat", "kofi", "alipay"] as const;
+/** 支付渠道（payload `ch` 字段取值，§0.5 冻结；Z 迭代 M2 增 'alipay'，D-z3；
+ * 面包多集成增 'mbd'——mbd.pub 商店订单号自动兑换渠道） */
+export const UNLOCK_CHANNELS = [
+  "afdian",
+  "wechat",
+  "kofi",
+  "alipay",
+  "mbd",
+] as const;
 export type UnlockChannel = (typeof UNLOCK_CHANNELS)[number];
 
 /** token payload（§0.5 冻结契约） */

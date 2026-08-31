@@ -47,6 +47,12 @@ export const REVOKE_CURSOR_STATE_KEY = "revoke:cursor";
  */
 export const ALIPAY_REFUND_CURSOR_STATE_KEY = "alipay:refund-cursor";
 
+/**
+ * kv_state 键：面包多退款巡检滚动游标（面包多集成，形态与支付宝游标
+ * 同构 `{"last": "<paid_at ISO 或空串>"}`；仅值变化才写）。
+ */
+export const MBD_REFUND_CURSOR_STATE_KEY = "mbd:refund-cursor";
+
 /** kv_state 读（无记录 → null；与 KV get 语义对齐） */
 export async function getStateRaw(
   db: UnlockDbLike,

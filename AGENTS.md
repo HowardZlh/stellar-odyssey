@@ -73,6 +73,7 @@
 |---|---|
 | 商业合作邮箱 `stevenzearo@163.com` | README.md「商业合作」与「开源协议」节 · README.en.md 对应节 · `src/components/UI/ContactBadge.tsx` 的 `CONTACT_EMAIL` |
 | 爱发电赞助链接 `https://afdian.com/a/stellar-odyssey` | README.md「赞助支持」节 · README.en.md「Sponsor」节 · `.github/FUNDING.yml` · `ContactBadge.tsx` 的 `SPONSOR_AFDIAN_URL` |
+| 面包多主页链接 `https://mbd.pub/o/stellar-odyssey` | README.md「赞助支持」与「支持者解锁」节 · README.en.md 对应节 · `src/data/donationPlatforms.ts` 的 `SPONSOR_MBD_URL` · `docs/unlock-guide.md` 与 `docs/en/unlock-guide.md` |
 | Ko-fi 链接 `https://ko-fi.com/howardzlh` | README.md「赞助支持」节 · README.en.md「Sponsor」节 · `.github/FUNDING.yml`（`ko_fi` 字段） · `src/data/donationPlatforms.ts` 的 `SPONSOR_KOFI_URL` |
 | GitHub Issues 链接 | README 两版 · `ContactBadge.tsx` 的 `CONTACT_GITHUB_ISSUES_URL` |
 | 解锁档位价格 周卡 ¥6 / 月卡 ¥15 / 年卡 ¥88（$1/$2.5/$13） | `src/data/unlockPricing.ts`（代码单一事实源：前端档位表/Worker 判定/CLI 共享，改代码只改这一处） · 爱发电商品页（站外，人工同步） · `docs/internal/UNLOCK_OPS.md` §2/§3/§5 · `docs/unlock-guide.md` 与 `docs/en/unlock-guide.md` · README.md 与 README.en.md「支持者解锁」节 |
@@ -80,7 +81,7 @@
 - **README 双语同步**：`README.md` 的对外内容（章节增删、入口链接、商标声明等）变更时必须同步 `README.en.md`，反之亦然
 - **对外文案口径**：商业相关表述一律使用中性口径（"欢迎联系合作"），不写价格、不写内部策略；商标声明（名称与标识不在开源许可范围内）保留在两版 README 的协议节
 - **支持文案边界（Z 迭代 M3 起，取代原"赞助文案红线"）**：对外支持类文案**不得承诺任何更新义务**（"支持将用于持续开发"为用途陈述，允许；"付费后将持续更新 XX"为义务承诺，禁止）；解锁承诺仅限既有对价事实（"付 ¥X 得 Y 天"、"支付后自动发码即时解锁"、"昵称与留言记入贡献者名单/贡献者宇宙"——均为已实现行为，允许承诺式表述），**不得虚构未实现的回报**；贡献者展示的文案与实际展示行为必须一致（空昵称显示「匿名用户」等细节如实写）
-- **统一"支持即解锁"口径（Z 迭代 M3，取代原 U 迭代双轨隔离）**：解锁与赞助入口互通——解锁入口允许出现在 /donate 页、ContactBadge、README 赞助节（`.github/FUNDING.yml` 除外：GitHub Sponsor 按钮仅支持赞助平台链接，保持现状，D-z10）；**渠道顺序全站同口径**：支付宝扫码（推荐 · 自动发码即时解锁）→ 微信赞赏码（人工核验 · token 经 Email 发送）→ 爱发电（备选 · 订单号自动兑换）→ Ko-fi（海外备选），/unlock 与 /donate 两页渲染顺序有断言测试锁定；付款 modal 只在 /unlock 页（/donate 支付宝面板为引导跳转）；人工渠道邮件模板 /unlock 与 /donate 同源（`utils/redeemMail.ts` + `unlock.mailTpl*` i18n 键组，禁止第二份副本）
+- **统一"支持即解锁"口径（Z 迭代 M3，取代原 U 迭代双轨隔离）**：解锁与赞助入口互通——解锁入口允许出现在 /donate 页、ContactBadge、README 赞助节（`.github/FUNDING.yml` 除外：GitHub Sponsor 按钮仅支持赞助平台链接，保持现状，D-z10）；**渠道顺序全站同口径**：支付宝扫码（推荐 · 自动发码即时解锁）→ 微信赞赏码（人工核验 · token 经 Email 发送）→ 面包多（备选 · 扫码即付无需注册 · 订单号自动兑换）→ 爱发电（备选 · 订单号自动兑换）→ Ko-fi（海外备选），/unlock 与 /donate 两页渲染顺序有断言测试锁定；付款 modal 只在 /unlock 页（/donate 支付宝面板为引导跳转）；人工渠道邮件模板 /unlock 与 /donate 同源（`utils/redeemMail.ts` + `unlock.mailTpl*` i18n 键组，禁止第二份副本）
 
 ## 内部文档（不入库）
 

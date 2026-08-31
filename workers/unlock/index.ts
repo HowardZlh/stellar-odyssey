@@ -35,6 +35,9 @@ export interface UnlockWorkerEnv {
   readonly UNLOCK_DB?: UnlockDbLike;
   readonly AFDIAN_USER_ID?: string;
   readonly AFDIAN_TOKEN?: string;
+  /** 面包多开发者 key（面包多集成，wrangler secret；缺失 = mbd 渠道
+   * not_configured 降级，爱发电/支付宝链路不受影响） */
+  readonly MBD_DEVELOPER_KEY?: string;
   readonly ED25519_PRIVATE_KEY?: string;
   readonly ALIPAY_APP_ID?: string;
   readonly ALIPAY_PRIVATE_KEY?: string;
@@ -43,6 +46,11 @@ export interface UnlockWorkerEnv {
   readonly UNLOCK_PLAN_ID_WEEK?: string;
   readonly UNLOCK_PLAN_ID_MONTH?: string;
   readonly UNLOCK_PLAN_ID_YEAR?: string;
+  /** 档位 ↔ 面包多作品 urlkey 映射（非机密 vars，对等 UNLOCK_PLAN_ID_*：
+   * 三者全配置启用强制归档，任一为空回退纯金额判定） */
+  readonly UNLOCK_MBD_URLKEY_WEEK?: string;
+  readonly UNLOCK_MBD_URLKEY_MONTH?: string;
+  readonly UNLOCK_MBD_URLKEY_YEAR?: string;
   readonly REFUND_LOOKBACK_DAYS?: string;
   readonly REFUND_AUTO_REVOKE?: string;
 }
@@ -224,30 +232,42 @@ const worker = {
     }
 
     let orderIdRaw: unknown = null;
+    let channelRaw: unknown = undefined;
     try {
       const body: unknown = await request.json();
       if (typeof body === "object" && body !== null) {
         orderIdRaw = (body as Record<string, unknown>).orderId;
+        channelRaw = (body as Record<string, unknown>).channel;
       }
     } catch {
       orderIdRaw = null; // 非法 JSON → orderId 缺失 → invalid_order
     }
 
-    const body = await handleRedeem(orderIdRaw, {
-      db: env.UNLOCK_DB ?? null,
-      fetchFn: (url, init) => fetch(url, init),
-      secrets: {
-        afdianUserId: env.AFDIAN_USER_ID,
-        afdianToken: env.AFDIAN_TOKEN,
-        ed25519PrivateKeyHex: env.ED25519_PRIVATE_KEY,
+    const body = await handleRedeem(
+      orderIdRaw,
+      {
+        db: env.UNLOCK_DB ?? null,
+        fetchFn: (url, init) => fetch(url, init),
+        secrets: {
+          afdianUserId: env.AFDIAN_USER_ID,
+          afdianToken: env.AFDIAN_TOKEN,
+          mbdDeveloperKey: env.MBD_DEVELOPER_KEY,
+          ed25519PrivateKeyHex: env.ED25519_PRIVATE_KEY,
+        },
+        nowSec: Math.floor(Date.now() / 1000),
+        planTiers: {
+          week: env.UNLOCK_PLAN_ID_WEEK,
+          month: env.UNLOCK_PLAN_ID_MONTH,
+          year: env.UNLOCK_PLAN_ID_YEAR,
+        },
+        mbdUrlkeys: {
+          week: env.UNLOCK_MBD_URLKEY_WEEK,
+          month: env.UNLOCK_MBD_URLKEY_MONTH,
+          year: env.UNLOCK_MBD_URLKEY_YEAR,
+        },
       },
-      nowSec: Math.floor(Date.now() / 1000),
-      planTiers: {
-        week: env.UNLOCK_PLAN_ID_WEEK,
-        month: env.UNLOCK_PLAN_ID_MONTH,
-        year: env.UNLOCK_PLAN_ID_YEAR,
-      },
-    });
+      channelRaw,
+    );
     return new Response(JSON.stringify(body), { status: 200, headers });
   },
 
@@ -290,6 +310,14 @@ const worker = {
           ed25519PrivateKeyHex: env.ED25519_PRIVATE_KEY,
           nowSec,
           lookbackDays,
+        },
+        {
+          db: env.UNLOCK_DB ?? null,
+          fetchFn: (url, init) => fetch(url, init),
+          secrets: { mbdDeveloperKey: env.MBD_DEVELOPER_KEY },
+          nowSec,
+          lookbackDays,
+          autoRevoke: env.REFUND_AUTO_REVOKE === "1",
         },
       ),
     );

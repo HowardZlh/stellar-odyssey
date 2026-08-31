@@ -16,13 +16,16 @@ import {
   parseAfdianQueryOrderPageResponse,
 } from "../afdian";
 import {
+  MBD_REFUND_CURSOR_STATE_KEY,
   REFUND_SUSPECTS_STATE_KEY,
   REVOKE_CURSOR_STATE_KEY,
 } from "../db";
 import {
   REFUND_SYNC_MAX_PAGES,
+  runMbdRefundSync,
   runRefundSync,
   sanitizeRefundSuspects,
+  type MbdRefundSyncDeps,
   type RefundSyncDeps,
 } from "../refundSync";
 import worker from "../../index";
@@ -86,7 +89,7 @@ function makePagedFetch(
 ): { fetchFn: RefundSyncDeps["fetchFn"]; calls: number[] } {
   const calls: number[] = [];
   const fetchFn: RefundSyncDeps["fetchFn"] = async (_url, init) => {
-    const body = JSON.parse(init.body) as { params: string };
+    const body = JSON.parse(init.body ?? "{}") as { params: string };
     const page = (JSON.parse(body.params) as { page: number }).page;
     calls.push(page);
     return {
@@ -467,7 +470,7 @@ describe("A6-2 runRefundSync", () => {
 // ---------------------------------------------------------------------------
 
 describe("A6-2 index.ts scheduled 壳", () => {
-  it("挂接 waitUntil 并注入 env 绑定（DB 未绑定 → 两段 not_configured 零副作用；M4 统一对账壳）", async () => {
+  it("挂接 waitUntil 并注入 env 绑定（DB 未绑定 → 三段 not_configured 零副作用；M4 统一对账壳）", async () => {
     const captured: Promise<unknown>[] = [];
     worker.scheduled(
       null,
@@ -478,6 +481,208 @@ describe("A6-2 index.ts scheduled 壳", () => {
     await expect(captured[0]).resolves.toEqual({
       afdian: expect.objectContaining({ ok: false, error: "not_configured" }),
       alipay: expect.objectContaining({ ok: false, error: "not_configured" }),
+      mbd: expect.objectContaining({ ok: false, error: "not_configured" }),
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 面包多退款巡检（面包多集成：对已兑换单逐一复查 order-detail）
+// ---------------------------------------------------------------------------
+
+/** 已兑换面包多订单行注入（paid_at 供窗口过滤与滚动游标） */
+function seedMbdOrder(
+  db: FakeD1,
+  orderId: string,
+  paidAtIso: string,
+  overrides: FakeRow = {},
+): void {
+  db.seed("orders", {
+    id: `seed-mbd-${orderId}`,
+    channel: "mbd",
+    ext_order_no: orderId,
+    token: `SO1.${orderId}.sig`,
+    expires_at: NOW_SEC + 86_400,
+    status: "paid",
+    paid_at: paidAtIso,
+    created_at: "seed",
+    ...overrides,
+  });
+}
+
+/** 按订单号出货的 order-detail fetch mock */
+function makeMbdDetailFetch(
+  states: Record<string, string | { code: number }>,
+): MbdRefundSyncDeps["fetchFn"] {
+  return async (url) => {
+    const orderId = new URL(url).searchParams.get("order_id") ?? "";
+    const arm = states[orderId];
+    return {
+      ok: true,
+      json: async () => {
+        if (arm === undefined) return { code: 400, error_info: "找不到该订单" };
+        if (typeof arm === "object") return arm;
+        return {
+          code: 200,
+          result: { state: arm, ordertime: NOW_SEC - 86_400, orderamount: 15 },
+        };
+      },
+    };
+  };
+}
+
+function makeMbdDeps(
+  overrides: Partial<MbdRefundSyncDeps>,
+): MbdRefundSyncDeps {
+  return {
+    db: makeDb().db,
+    fetchFn: makeMbdDetailFetch({}),
+    secrets: { mbdDeveloperKey: "k" },
+    nowSec: NOW_SEC,
+    lookbackDays: 15,
+    autoRevoke: false,
+    ...overrides,
+  };
+}
+
+const MBD_ISO_RECENT = new Date((NOW_SEC - 2 * 86_400) * 1000).toISOString();
+
+describe("runMbdRefundSync（模式 A：只登记疑似）", () => {
+  it.each([
+    ["DB 未绑定", { db: null }],
+    ["缺开发者 key", { secrets: {} }],
+  ])("未配置（%s）→ not_configured 零副作用", async (_l, overrides) => {
+    const result = await runMbdRefundSync(makeMbdDeps(overrides));
+    expect(result).toEqual({
+      ok: false,
+      error: "not_configured",
+      checked: 0,
+      newSuspects: 0,
+      dbWrites: 0,
+    });
+  });
+
+  it("无已兑换单 → 零复查零写入（游标空串不写）", async () => {
+    const { db, writes } = makeDb();
+    const result = await runMbdRefundSync(makeMbdDeps({ db }));
+    expect(result).toEqual({ ok: true, checked: 0, newSuspects: 0, dbWrites: 0 });
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  it("state 仍为 success → 不登记；state=cancel / 查无此单 → 登记疑似（note 区分）", async () => {
+    const okId = "a".repeat(32);
+    const cancelId = "b".repeat(32);
+    const goneId = "c".repeat(32);
+    const { db } = makeDb();
+    seedMbdOrder(db, okId, MBD_ISO_RECENT);
+    seedMbdOrder(db, cancelId, MBD_ISO_RECENT);
+    seedMbdOrder(db, goneId, MBD_ISO_RECENT);
+    const result = await runMbdRefundSync(
+      makeMbdDeps({
+        db,
+        fetchFn: makeMbdDetailFetch({ [okId]: "success", [cancelId]: "cancel" }),
+      }),
+    );
+    expect(result).toMatchObject({ ok: true, checked: 3, newSuspects: 2 });
+    const suspects = stateOf(db, REFUND_SUSPECTS_STATE_KEY) as {
+      orders: { orderId: string; note?: string }[];
+    };
+    expect(suspects.orders).toEqual([
+      expect.objectContaining({ orderId: cancelId, note: "mbd:cancel" }),
+      expect.objectContaining({ orderId: goneId, note: "mbd:not_found" }),
+    ]);
+    // suspects 1 写 + 游标 1 写（本轮 3 行未扫满上限 5 → 游标归零仍写？
+    // 初始游标缺失 = ""，nextLast 亦 ""——值未变化零游标写）
+    expect(result.dbWrites).toBe(1);
+  });
+
+  it("已登记疑似单幂等跳过（不重复登记不重复写）", async () => {
+    const cancelId = "d".repeat(32);
+    const { db } = makeDb();
+    seedMbdOrder(db, cancelId, MBD_ISO_RECENT);
+    seedState(db, REFUND_SUSPECTS_STATE_KEY, {
+      v: 1,
+      orders: [{ orderId: cancelId, detectedAt: "before", status: 0 }],
+    });
+    const result = await runMbdRefundSync(
+      makeMbdDeps({ db, fetchFn: makeMbdDetailFetch({ [cancelId]: "cancel" }) }),
+    );
+    expect(result).toMatchObject({ ok: true, newSuspects: 0, dbWrites: 0 });
+  });
+
+  it("回看窗口外的已兑换单不复查", async () => {
+    const oldId = "e".repeat(32);
+    const { db, writes } = makeDb();
+    seedMbdOrder(
+      db,
+      oldId,
+      new Date((NOW_SEC - 30 * 86_400) * 1000).toISOString(),
+    );
+    const result = await runMbdRefundSync(makeMbdDeps({ db }));
+    expect(result).toMatchObject({ ok: true, checked: 0 });
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  it("上游/网络异常单跳过留待下一轮（不登记不写）", async () => {
+    const errId = "f".repeat(32);
+    const throwId = "0".repeat(32);
+    const { db } = makeDb();
+    seedMbdOrder(db, errId, MBD_ISO_RECENT);
+    seedMbdOrder(db, throwId, new Date((NOW_SEC - 86_400) * 1000).toISOString());
+    const fetchFn: MbdRefundSyncDeps["fetchFn"] = async (url) => {
+      if (url.includes(throwId)) throw new Error("offline");
+      return { ok: true, json: async () => ({ code: 403 }) };
+    };
+    const result = await runMbdRefundSync(makeMbdDeps({ db, fetchFn }));
+    expect(result).toMatchObject({ ok: true, checked: 2, newSuspects: 0, dbWrites: 0 });
+  });
+
+  it("扫满单轮上限 → 游标推进（下一轮从末行 paid_at 续扫）；未扫满归零", async () => {
+    const { db } = makeDb();
+    const ids = ["1", "2", "3", "4", "5", "6"].map((c) => c.repeat(32));
+    for (const [i, id] of ids.entries()) {
+      seedMbdOrder(
+        db,
+        id,
+        new Date((NOW_SEC - (10 - i) * 86_400) * 1000).toISOString(),
+      );
+    }
+    const states = Object.fromEntries(ids.map((id) => [id, "success"]));
+    const deps = makeMbdDeps({ db, fetchFn: makeMbdDetailFetch(states) });
+
+    // 第一轮：扫满 MBD_REFUND_SCAN_LIMIT=5 → 游标推进到末行 paid_at
+    // （seed 为 10..5 天前，ASC 前 5 行的末行 = 6 天前；1 写）
+    const first = await runMbdRefundSync(deps);
+    expect(first).toMatchObject({ ok: true, checked: 5, dbWrites: 1 });
+    const cursor = stateOf(db, MBD_REFUND_CURSOR_STATE_KEY) as { last: string };
+    expect(cursor.last).toBe(
+      new Date((NOW_SEC - 6 * 86_400) * 1000).toISOString(),
+    );
+
+    // 第二轮：续扫剩余 1 行，未扫满 → 游标归零（值变化 1 写）
+    const second = await runMbdRefundSync(deps);
+    expect(second).toMatchObject({ ok: true, checked: 1, dbWrites: 1 });
+    expect((stateOf(db, MBD_REFUND_CURSOR_STATE_KEY) as { last: string }).last).toBe("");
+  });
+
+  it("自动吊销开启：疑似单 token 哈希写 revocations（幂等去重）", async () => {
+    const cancelId = "9".repeat(32);
+    const token = `SO1.${cancelId}.sig`;
+    const { db } = makeDb();
+    seedMbdOrder(db, cancelId, MBD_ISO_RECENT, { token });
+    const result = await runMbdRefundSync(
+      makeMbdDeps({
+        db,
+        autoRevoke: true,
+        fetchFn: makeMbdDetailFetch({ [cancelId]: "cancel" }),
+      }),
+    );
+    expect(result).toMatchObject({ ok: true, newSuspects: 1, dbWrites: 2 });
+    expect(db.rows("revocations")).toHaveLength(1);
+    expect(db.rows("revocations")[0]).toMatchObject({
+      token_hash: unlockTokenHash(token),
+      reason: "refund",
+      restored: 0,
     });
   });
 });

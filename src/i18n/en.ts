@@ -36,6 +36,8 @@ export const en: I18nDict = {
     alipayCta: "Pay with Alipay on the unlock page",
     wechatGuide:
       "Fallback channel: WeChat tips cannot be verified automatically — they are checked manually and the unlock token is sent by email only (not instant; usually within 48 hours). In a hurry? Use the Alipay QR above. Pay the tier amount, then email us using the template below with a payment screenshot and the transaction time.",
+    mbdNote:
+      "Fallback · pay by QR with no account needed, then redeem automatically on the unlock page with your order ID",
     afdianNote:
       "Fallback · redeem automatically on the unlock page with your order number (Afdian account required)",
     kofiNote:
@@ -132,6 +134,14 @@ export const en: I18nDict = {
     alipayChannelGuide:
       "Click a tier card above to pay by QR code: once paid, your unlock token is issued automatically and access activates instantly — no account needed; your nickname and message (both optional) join the contributor roster.",
     alipayChannelCta: "Pick a tier and pay by QR",
+    mbdTitle: "Mianbaoduo (fallback · automatic order redemption)",
+    mbdGuide:
+      "Pay by QR code — no account needed. Buy the matching tier product on Mianbaoduo (mbd.pub); after payment your order ID appears below the product page. Paste it below to redeem automatically.",
+    mbdLink: "Buy on Mianbaoduo",
+    mbdOrderInputLabel: "Mianbaoduo order ID",
+    mbdOrderInputPlaceholder: "Paste order ID (32 characters)",
+    mbdOrderInvalid:
+      "The order ID should be 32 letters/digits — copy it from below the product page on Mianbaoduo",
     afdianTitle: "Afdian (fallback · automatic order redemption)",
     afdianGuide:
       "Afdian account required. Purchase the tier amount on Afdian (Week/Year Pass as products, Month Pass as a subscription plan), then paste your order number below to redeem automatically.",

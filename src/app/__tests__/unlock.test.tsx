@@ -2,9 +2,10 @@
  * 解锁页 /unlock 单测（U3，REQUIREMENTS_UNLOCK.md §U3 验收）：
  * - 骨架渲染（对价口径 intro / 退款口径 / 免费态状态区 / 返回链接）
  * - 档位价格表消费 UNLOCK_TIERS（价格零硬编码断言）+ isCompact 布局分流
- * - 三通道：爱发电/Ko-fi 同源常量链接、微信二维码展开/收起、邮件 CTA
+ * - 多通道：面包多/爱发电/Ko-fi 同源常量链接、微信二维码展开/收起、邮件 CTA
  * - 爱发电兑换：订单号前端校验、mock fetch 成功 + §0.5 全部错误码 +
  *   非法响应体 + 网络失败可重试
+ * - 面包多兑换（面包多集成）：32 位 hex 前端校验 + channel:'mbd' 请求体
  * - token 粘贴：合法激活 / 篡改（签名）/ 过期 / 格式错三态分开提示
  * - `/unlock?token=` URL 注入自动激活与非法报错
  * - 已激活态：档位/到期日/剩余天数、复制 token（成功/降级）、清除二次确认
@@ -21,7 +22,7 @@ import * as ed from '@noble/ed25519';
 
 import UnlockPage from '@/app/unlock/page';
 import { CONTACT_EMAIL, SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
-import { SPONSOR_KOFI_URL } from '@/data/donationPlatforms';
+import { SPONSOR_KOFI_URL, SPONSOR_MBD_URL } from '@/data/donationPlatforms';
 import { UNLOCK_TIERS } from '@/data/unlockPricing';
 import { useSimulationStore } from '@/store';
 import { formatExpiryDate } from '@/utils/unlockRedeem';
@@ -90,7 +91,21 @@ function makeForgedToken(): string {
 
 const VALID_ORDER_ID = '20260812123456789012';
 
+/** 面包多订单号（32 位 hex，文档示例形态） */
+const VALID_MBD_ORDER_ID = '9d1e6ffc4e5f796ae9dcf44e1936eb8d';
+
 const REDEEM_API_URL = 'https://stellar.guushu.com/api/redeem';
+
+/**
+ * 通道区「兑换」按钮按 DOM 顺序取用（③面包多 → ④爱发电——两卡片
+ * 各有一枚同名按钮，getByRole 会歧义，按渠道顺序索引取）。
+ */
+function mbdRedeemBtn(): HTMLElement {
+  return screen.getAllByRole('button', { name: '兑换' })[0];
+}
+function afdianRedeemBtn(): HTMLElement {
+  return screen.getAllByRole('button', { name: '兑换' })[1];
+}
 
 /**
  * fetch mock（A6 后按 URL 分流）：/api/revocations（页面挂载即拉取）
@@ -208,8 +223,11 @@ describe('U3-1 页面骨架与档位表', () => {
 });
 
 describe('U3-2 三通道兑换', () => {
-  it('爱发电/Ko-fi 链接为同源常量（新标签页）', () => {
+  it('面包多/爱发电/Ko-fi 链接为同源常量（新标签页）', () => {
     render(<UnlockPage />);
+    const mbd = screen.getByRole('link', { name: '前往面包多购买' });
+    expect(mbd).toHaveAttribute('href', SPONSOR_MBD_URL);
+    expect(mbd).toHaveAttribute('target', '_blank');
     const afdian = screen.getByRole('link', { name: '前往爱发电购买' });
     expect(afdian).toHaveAttribute('href', SPONSOR_AFDIAN_URL);
     expect(afdian).toHaveAttribute('target', '_blank');
@@ -284,7 +302,7 @@ describe('U3-2 三通道兑换', () => {
     render(<UnlockPage />);
     const input = screen.getByLabelText('爱发电订单号');
     fireEvent.change(input, { target: { value: '123' } });
-    fireEvent.click(screen.getByRole('button', { name: '兑换' }));
+    fireEvent.click(afdianRedeemBtn());
     expect(screen.getByRole('alert')).toHaveTextContent(/订单号应为 14-40 位数字/);
     // 不发兑换请求（挂载期吊销名单拉取不属兑换链路，按 URL 排除）
     expect(global.fetch).not.toHaveBeenCalledWith(
@@ -305,14 +323,14 @@ describe('U3-2 三通道兑换', () => {
     fireEvent.change(screen.getByLabelText('爱发电订单号'), {
       target: { value: VALID_ORDER_ID },
     });
-    fireEvent.click(screen.getByRole('button', { name: '兑换' }));
+    fireEvent.click(afdianRedeemBtn());
 
     expect(await screen.findByText(/兑换成功，权益已激活/)).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       'https://stellar.guushu.com/api/redeem',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ orderId: VALID_ORDER_ID }),
+        body: JSON.stringify({ orderId: VALID_ORDER_ID, channel: 'afdian' }),
       }),
     );
     // 权益状态区切换为激活态 + store 验签成功后 persist（U2 链路收敛）
@@ -335,7 +353,7 @@ describe('U3-2 三通道兑换', () => {
     fireEvent.change(screen.getByLabelText('爱发电订单号'), {
       target: { value: VALID_ORDER_ID },
     });
-    fireEvent.click(screen.getByRole('button', { name: '兑换' }));
+    fireEvent.click(afdianRedeemBtn());
     expect(await screen.findByRole('alert')).toHaveTextContent(message);
     expect(window.localStorage.getItem(UNLOCK_TOKEN_STORAGE_KEY)).toBeNull();
   });
@@ -346,12 +364,12 @@ describe('U3-2 三通道兑换', () => {
     fireEvent.change(screen.getByLabelText('爱发电订单号'), {
       target: { value: VALID_ORDER_ID },
     });
-    fireEvent.click(screen.getByRole('button', { name: '兑换' }));
+    fireEvent.click(afdianRedeemBtn());
     expect(await screen.findByRole('alert')).toHaveTextContent(/未知错误/);
 
     // 非 JSON 响应体（json() 抛错）同样按未知错误提示
     redeemQueue.push({ kind: 'badJson' });
-    fireEvent.click(screen.getByRole('button', { name: '兑换' }));
+    fireEvent.click(afdianRedeemBtn());
     expect(await screen.findByRole('alert')).toHaveTextContent(/未知错误/);
   });
 
@@ -366,7 +384,7 @@ describe('U3-2 三通道兑换', () => {
     fireEvent.change(screen.getByLabelText('爱发电订单号'), {
       target: { value: VALID_ORDER_ID },
     });
-    fireEvent.click(screen.getByRole('button', { name: '兑换' }));
+    fireEvent.click(afdianRedeemBtn());
     expect(await screen.findByRole('alert')).toHaveTextContent(/签名校验失败/);
     expect(window.localStorage.getItem(UNLOCK_TOKEN_STORAGE_KEY)).toBeNull();
   });
@@ -378,7 +396,7 @@ describe('U3-2 三通道兑换', () => {
     fireEvent.change(screen.getByLabelText('爱发电订单号'), {
       target: { value: VALID_ORDER_ID },
     });
-    fireEvent.click(screen.getByRole('button', { name: '兑换' }));
+    fireEvent.click(afdianRedeemBtn());
     expect(await screen.findByRole('alert')).toHaveTextContent(/网络请求失败/);
 
     mockFetchJsonOnce({
@@ -387,9 +405,63 @@ describe('U3-2 三通道兑换', () => {
       tier: 'month',
       expiresAt: NOW_SEC + 31 * 86_400,
     });
-    fireEvent.click(screen.getByRole('button', { name: '兑换' }));
+    fireEvent.click(afdianRedeemBtn());
     expect(await screen.findByText(/兑换成功，权益已激活/)).toBeInTheDocument();
     expect(window.localStorage.getItem(UNLOCK_TOKEN_STORAGE_KEY)).toBe(token);
+  });
+});
+
+describe('面包多兑换链路（面包多集成：channel:"mbd" 请求体 + 32 位 hex 校验）', () => {
+  it('订单号前端校验：非 32 位 hex 直接报错且不发请求', () => {
+    render(<UnlockPage />);
+    fireEvent.change(screen.getByLabelText('面包多订单号'), {
+      target: { value: 'not-a-hex-order' },
+    });
+    fireEvent.click(mbdRedeemBtn());
+    expect(screen.getByRole('alert')).toHaveTextContent(/订单号应为 32 位字母数字/);
+    expect(global.fetch).not.toHaveBeenCalledWith(
+      REDEEM_API_URL,
+      expect.anything(),
+    );
+  });
+
+  it('兑换成功：POST 生产端点携 channel:"mbd" → 激活态展示 + persist', async () => {
+    const token = makeToken({ ch: 'mbd', tier: 'week', exp: NOW_SEC + 7 * 86_400 });
+    const fetchMock = mockFetchJsonOnce({
+      ok: true,
+      token,
+      tier: 'week',
+      expiresAt: NOW_SEC + 7 * 86_400,
+    });
+    render(<UnlockPage />);
+    fireEvent.change(screen.getByLabelText('面包多订单号'), {
+      target: { value: VALID_MBD_ORDER_ID },
+    });
+    fireEvent.click(mbdRedeemBtn());
+
+    expect(await screen.findByText(/兑换成功，权益已激活/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      REDEEM_API_URL,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ orderId: VALID_MBD_ORDER_ID, channel: 'mbd' }),
+      }),
+    );
+    expect(screen.getByText('✅ 权益已激活')).toBeInTheDocument();
+    expect(window.localStorage.getItem(UNLOCK_TOKEN_STORAGE_KEY)).toBe(token);
+  });
+
+  it('错误码 → 用户可读提示（面包多兑换框独立报错，不串扰爱发电框）', async () => {
+    mockFetchJsonOnce({ ok: false, error: 'plan_not_eligible' });
+    render(<UnlockPage />);
+    fireEvent.change(screen.getByLabelText('面包多订单号'), {
+      target: { value: VALID_MBD_ORDER_ID },
+    });
+    fireEvent.click(mbdRedeemBtn());
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /该订单对应的商品不支持解锁兑换/,
+    );
+    expect(window.localStorage.getItem(UNLOCK_TOKEN_STORAGE_KEY)).toBeNull();
   });
 });
 
@@ -404,11 +476,12 @@ describe('M3 渠道顺序断言（对齐 stock test_pages_recommend_alipay_and_c
     }
   }
 
-  it('通道顺序：①支付宝（推荐）②微信 ③爱发电（备选）④Ko-fi ⑤token 粘贴区', () => {
+  it('通道顺序：①支付宝（推荐）②微信 ③面包多（备选）④爱发电（备选）⑤Ko-fi ⑥token 粘贴区', () => {
     render(<UnlockPage />);
     expectDomOrder([
       screen.getByRole('heading', { name: /支付宝扫码支付（推荐 · 支付后自动发码即时解锁）/ }),
       screen.getByRole('heading', { name: /微信赞赏码（人工核验 · token 经 Email 发送）/ }),
+      screen.getByRole('heading', { name: /面包多（备选 · 订单号自动兑换）/ }),
       screen.getByRole('heading', { name: /爱发电（备选 · 订单号自动兑换）/ }),
       screen.getByRole('heading', { name: /Ko-fi（海外备选 · 人工核验）/ }),
       screen.getByRole('heading', { name: /已有 token？在此激活/ }),
@@ -428,6 +501,12 @@ describe('M3 渠道顺序断言（对齐 stock test_pages_recommend_alipay_and_c
     render(<UnlockPage />);
     expect(screen.getByText(/需注册爱发电账号/)).toBeInTheDocument();
     expect(screen.getByLabelText('爱发电订单号')).toBeInTheDocument();
+  });
+
+  it('面包多为备选口径：扫码即付无需注册说明 + 订单号兑换框', () => {
+    render(<UnlockPage />);
+    expect(screen.getByText(/扫码即付，无需注册账号/)).toBeInTheDocument();
+    expect(screen.getByLabelText('面包多订单号')).toBeInTheDocument();
   });
 });
 
@@ -576,6 +655,9 @@ describe('i18n zh/EN 切换', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Week Pass')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Buy on Afdian' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Buy on Mianbaoduo' }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/invalidated accordingly/)).toBeInTheDocument();
     // intro 与状态区均含 "free experience"（i18n 文案二义），收紧为状态区句首
     expect(screen.getByText(/^You are on the free experience/)).toBeInTheDocument();

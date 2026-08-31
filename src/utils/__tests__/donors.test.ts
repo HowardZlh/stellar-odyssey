@@ -6,7 +6,11 @@
  */
 
 import { SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
-import { DONATION_PLATFORMS, SPONSOR_KOFI_URL } from '@/data/donationPlatforms';
+import {
+  DONATION_PLATFORMS,
+  SPONSOR_KOFI_URL,
+  SPONSOR_MBD_URL,
+} from '@/data/donationPlatforms';
 import { DONORS } from '@/data/donors';
 import type { DonorRecord } from '@/utils/donors';
 import { sortDonorsByAmountDesc } from '@/utils/donors';
@@ -53,16 +57,22 @@ describe('DONATION_PLATFORMS 注册表', () => {
     expect(kofi?.url).toBe(SPONSOR_KOFI_URL);
   });
 
+  it('面包多链接复用同源常量且可用', () => {
+    const mbd = DONATION_PLATFORMS.find((p) => p.id === 'mbd');
+    expect(mbd?.url).toBe(SPONSOR_MBD_URL);
+  });
+
   it('微信赞赏码为二维码形态（无跳转链接、qrImage 指向站内资产）', () => {
     const wechat = DONATION_PLATFORMS.find((p) => p.id === 'wechat');
     expect(wechat?.url).toBeNull();
     expect(wechat?.qrImage).toBe('/donate/wechat-tip-code.jpg');
   });
 
-  it('M3 渠道顺序：支付宝→微信→爱发电→Ko-fi→预留位（顺序即渲染顺序）', () => {
+  it('M3 渠道顺序：支付宝→微信→面包多→爱发电→Ko-fi→预留位（顺序即渲染顺序）', () => {
     expect(DONATION_PLATFORMS.map((p) => p.id)).toEqual([
       'alipay',
       'wechat',
+      'mbd',
       'afdian',
       'kofi',
       'github-sponsors',
