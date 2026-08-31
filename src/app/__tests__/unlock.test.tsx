@@ -222,7 +222,7 @@ describe('U3-1 页面骨架与档位表', () => {
   });
 });
 
-describe('U3-2 三通道兑换', () => {
+describe('U3-2 多通道兑换', () => {
   it('面包多/爱发电/Ko-fi 链接为同源常量（新标签页）', () => {
     render(<UnlockPage />);
     const mbd = screen.getByRole('link', { name: '前往面包多购买' });

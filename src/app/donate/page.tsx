@@ -7,8 +7,9 @@
  * 支持通道按 donationPlatforms 注册表顺序渲染——① 支付宝扫码（推荐）
  * 引导面板 + 「前往解锁页扫码支付 →」跳 /unlock（付款 modal 只在解锁页，
  * 对齐 stock render_donate）② 微信赞赏码独立 panel（内嵌图 + 邮件模板 +
- * 预填 mailto，模板与 /unlock 页同源）③ 爱发电（备选）④ Ko-fi（海外备选）
- * ⑤ 预留位卡片 + 捐赠名单（data/donors.ts 人工登记，渲染前按金额降序）
+ * 预填 mailto，模板与 /unlock 页同源）③ 面包多（备选）④ 爱发电（备选）
+ * ⑤ Ko-fi（海外备选）⑥ 预留位卡片 + 捐赠名单（data/donors.ts 人工登记，
+ * 渲染前按金额降序）
  * + 贡献者宇宙入口 + 返回主站链接。
  *
  * 文案边界：解锁承诺仅限"付 ¥X 得 Y 天"的既有对价事实，不承诺更新义务；
@@ -252,7 +253,7 @@ export default function DonatePage(): JSX.Element {
               )}
             </div>
 
-            {/* ③④⑤ 备选与预留卡片（爱发电备选 / Ko-fi 海外备选 / 预留位） */}
+            {/* ③④⑤⑥ 备选与预留卡片（面包多/爱发电备选 / Ko-fi 海外备选 / 预留位） */}
             <ul className="grid items-start gap-3 sm:grid-cols-2">
               {DONATION_PLATFORMS.filter(
                 (p) => p.id !== 'alipay' && p.id !== 'wechat',
