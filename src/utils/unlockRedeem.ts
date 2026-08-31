@@ -37,6 +37,12 @@ export function isValidAfdianOrderId(orderId: string): boolean {
   return /^\d{14,40}$/.test(orderId);
 }
 
+/** 面包多订单号前端校验（mbd.pub 订单号为 32 位 hex，大小写均接受；
+ * Worker 侧同一正则 + 小写归一，前端预校验不合法零请求） */
+export function isValidMbdOrderId(orderId: string): boolean {
+  return /^[0-9a-fA-F]{32}$/.test(orderId);
+}
+
 /** §0.5 契约错误码（v1.1 含 U6 plan_not_eligible）→ i18n 键（未知码回退通用错误） */
 export function redeemErrorMessageKey(code: string): MessageKey {
   switch (code) {

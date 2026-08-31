@@ -287,9 +287,9 @@ describe("verifyToken 签名 + exp 双验", () => {
     });
   });
 
-  it("三档 tier 与四渠道 ch 全组合均可闭环（M2 增 alipay）", () => {
+  it("三档 tier 与五渠道 ch 全组合均可闭环（M2 增 alipay，面包多集成增 mbd）", () => {
     for (const tier of ["week", "month", "year"] as const) {
-      for (const ch of ["afdian", "wechat", "kofi", "alipay"] as const) {
+      for (const ch of ["afdian", "wechat", "kofi", "alipay", "mbd"] as const) {
         const token = signToken(makePayload({ tier, ch }), TEST_PRIVATE_KEY);
         expect(verifyToken(token, TEST_PUBLIC_KEY_HEX, NOW_SEC).ok).toBe(true);
       }

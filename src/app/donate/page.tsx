@@ -41,10 +41,12 @@ const PLATFORM_EMOJI: Record<DonationPlatformId, string> = {
   kofi: '☕',
   buymeacoffee: '🍪',
   alipay: '💙',
+  mbd: '🍞',
 };
 
-/** 备选通道卡片说明行（M3 口径：爱发电备选 / Ko-fi 海外备选） */
+/** 备选通道卡片说明行（M3 口径：面包多/爱发电备选 / Ko-fi 海外备选） */
 const PLATFORM_NOTE_KEYS: Partial<Record<DonationPlatformId, MessageKey>> = {
+  mbd: 'donate.mbdNote',
   afdian: 'donate.afdianNote',
   kofi: 'donate.kofiNote',
 };

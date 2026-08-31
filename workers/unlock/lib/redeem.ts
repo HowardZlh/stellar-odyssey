@@ -37,6 +37,14 @@ import {
   type AfdianQueryResult,
 } from "./afdian";
 import type { UnlockDbLike } from "./db";
+import {
+  buildMbdOrderDetailRequest,
+  MBD_ORDER_ID_RE,
+  normalizeMbdOrderId,
+  parseMbdOrderDetailResponse,
+  type MbdOrder,
+  type MbdQueryResult,
+} from "./mbd";
 import { parseOrderEpochSec } from "./orderTime";
 
 /** §0.5 失败机器码（v1.1：U6 追加 plan_not_eligible，前端未知码回退兼容） */
@@ -63,13 +71,14 @@ export type RedeemBody =
       readonly message: string;
     };
 
-/** fetch 结构化最小接口（生产 = 全局 fetch，测试 = fixture mock） */
+/** fetch 结构化最小接口（生产 = 全局 fetch，测试 = fixture mock；
+ * body 可缺省——面包多 order-detail 为 GET 无请求体） */
 export type FetchLike = (
   url: string,
   init: {
     method: string;
     headers: Record<string, string>;
-    body: string;
+    body?: string;
   },
 ) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
 
@@ -77,6 +86,8 @@ export type FetchLike = (
 export interface RedeemSecrets {
   readonly afdianUserId?: string;
   readonly afdianToken?: string;
+  /** 面包多开发者 key（mbd.pub「开发设置」，wrangler secret，严禁入库） */
+  readonly mbdDeveloperKey?: string;
   /** Ed25519 私钥（32 字节 hex，wrangler secret，严禁入库） */
   readonly ed25519PrivateKeyHex?: string;
 }
@@ -110,7 +121,15 @@ export interface RedeemDeps {
   readonly nowSec: number;
   /** 档位 plan_id 映射（U6，env vars 注入） */
   readonly planTiers: PlanTierMapping;
+  /**
+   * 档位 ↔ 面包多 urlkey 映射（对等 planTiers 的双态机制：三者全配置
+   * 才启用强制归档，任一为空回退纯金额判定）。缺省 = 全空（回退态）。
+   */
+  readonly mbdUrlkeys?: PlanTierMapping;
 }
+
+/** 兑换渠道（请求体 `channel` 字段取值；缺省 'afdian' 向后兼容） */
+export type RedeemChannel = "afdian" | "mbd";
 
 /** 订单号格式（爱发电订单号 14-40 位数字，§0.5） */
 export const ORDER_ID_RE = /^\d{14,40}$/;
@@ -188,17 +207,71 @@ function parseStoredRow(row: Record<string, unknown>): StoredRedemption | null {
   return { token, tier, exp };
 }
 
-/** 幂等读：ext_order_no 命中的爱发电订单行（无记录 → null） */
+/** 幂等读：ext_order_no 命中的渠道订单行（无记录 → null） */
 async function selectStoredRow(
   db: UnlockDbLike,
+  channel: RedeemChannel,
   orderId: string,
 ): Promise<Record<string, unknown> | null> {
   return db
     .prepare(
       "SELECT token, tier, expires_at FROM orders WHERE channel = ? AND ext_order_no = ?",
     )
-    .bind("afdian", orderId)
+    .bind(channel, orderId)
     .first();
+}
+
+/**
+ * 面包多档位归档（对等 classifyOrder 的双态机制，面包多集成）：
+ *
+ * **urlkey 映射全配置**：命中 → 强制归档**无视实付金额**（折扣/优惠码
+ * 安全——启用映射态后才允许在面包多发优惠码，UNLOCK_OPS 部署顺序）；
+ * 未命中（非解锁商品）→ null（主流程按映射态归 plan_not_eligible）。
+ *
+ * **任一未配置** → 回退纯金额判定（上线初期形态，**商品页禁折扣**）。
+ * 三档在面包多均为一次性商品（无订阅/份数概念），months 恒 1、无
+ * goodsCount 叠加——比爱发电判定简单。
+ */
+export function classifyMbdOrder(
+  order: MbdOrder,
+  urlkeys: PlanTierMapping,
+): { tier: UnlockTier; days: number } | null {
+  if (isPlanMappingComplete(urlkeys)) {
+    const urlkey = order.urlkey;
+    const tier: UnlockTier | null =
+      urlkey !== "" && urlkey === (urlkeys.week ?? "").trim()
+        ? "week"
+        : urlkey !== "" && urlkey === (urlkeys.month ?? "").trim()
+          ? "month"
+          : urlkey !== "" && urlkey === (urlkeys.year ?? "").trim()
+            ? "year"
+            : null;
+    if (tier === null) return null;
+    return { tier, days: UNLOCK_TIERS[tier].days };
+  }
+  const resolved = resolveTierFromAmount(order.amountCny, 1);
+  if (resolved === null) return null;
+  return { tier: resolved.tier, days: resolved.days };
+}
+
+/** 面包多验单（GET order-detail；网络/形状异常一律归 upstream_error） */
+async function queryMbdOrder(
+  deps: RedeemDeps,
+  developerKey: string,
+  orderId: string,
+): Promise<MbdQueryResult> {
+  try {
+    const req = buildMbdOrderDetailRequest(developerKey, orderId);
+    const resp = await deps.fetchFn(req.url, {
+      method: "GET",
+      headers: req.headers,
+    });
+    // 面包多 4xx 也可能带 JSON body（code 400/403 语义在 body 里），
+    // 故不看 resp.ok，一律进解析器按 code 分流
+    return parseMbdOrderDetailResponse(await resp.json());
+  } catch {
+    return { kind: "upstream_error" };
+  }
 }
 
 /** 爱发电验单（网络/形状异常一律归 upstream_error，不抛异常） */
@@ -227,11 +300,27 @@ async function queryAfdianOrder(
   }
 }
 
-/** `/api/redeem` 主流程（响应恒为 §0.5 契约体，HTTP 层恒 200） */
+/**
+ * `/api/redeem` 主流程（响应恒为 §0.5 契约体，HTTP 层恒 200）。
+ *
+ * channelRaw（面包多集成扩展）：请求体 `channel` 字段——缺省/'afdian'
+ * 走爱发电流程（对外契约向后兼容），'mbd' 走面包多流程，其余值按
+ * invalid_order 拒绝（零 DB 访问）。
+ */
 export async function handleRedeem(
   orderIdRaw: unknown,
   deps: RedeemDeps,
+  channelRaw?: unknown,
 ): Promise<RedeemBody> {
+  if (
+    channelRaw !== undefined &&
+    channelRaw !== "afdian" &&
+    channelRaw !== "mbd"
+  ) {
+    return fail("invalid_order", "不支持的兑换渠道，请核对后重试。");
+  }
+  if (channelRaw === "mbd") return handleMbdRedeem(orderIdRaw, deps);
+
   // 1. 订单号格式校验——不合法即拒，零 DB 访问（防写额度攻击）
   const orderId = typeof orderIdRaw === "string" ? orderIdRaw.trim() : "";
   if (!ORDER_ID_RE.test(orderId)) {
@@ -252,7 +341,7 @@ export async function handleRedeem(
 
   // 3. D1 幂等读——已兑换订单直接返回首发 token（ext_order_no UNIQUE）
   const db = deps.db;
-  const storedRow = await selectStoredRow(db, orderId);
+  const storedRow = await selectStoredRow(db, "afdian", orderId);
   if (storedRow !== null) {
     const stored = parseStoredRow(storedRow);
     if (stored === null) {
@@ -341,7 +430,148 @@ export async function handleRedeem(
   } catch {
     // UNIQUE 冲突 = 并发兑换首写已落定 → 回读首发 token 保持幂等
     // （同单永远返回同一 token；回读仍异常才归 conflict）
-    const raced = await selectStoredRow(db, orderId);
+    const raced = await selectStoredRow(db, "afdian", orderId);
+    const stored = raced === null ? null : parseStoredRow(raced);
+    if (stored === null) {
+      return fail(
+        "already_redeemed_conflict",
+        "该订单已兑换过，但存量记录异常，请邮件联系作者处理。",
+      );
+    }
+    return {
+      ok: true,
+      token: stored.token,
+      tier: stored.tier,
+      expiresAt: stored.exp,
+    };
+  }
+  return { ok: true, token, tier: resolved.tier, expiresAt: exp };
+}
+
+/**
+ * 面包多兑换流程（面包多集成，骨架与爱发电流程同构：正则 → 配置检查 →
+ * D1 幂等读 → 验单 → 档位判定 → 签发落账；差异点：
+ * - 订单号 32 位 hex（小写归一后作幂等键）；
+ * - 验单为 GET + x-token（无签名拼串）；
+ * - 权益起算自响应 `ordertime`（支付时刻），无需解析订单号；
+ * - 档位判定 urlkey 映射态 / 金额回退态（classifyMbdOrder）；
+ * - 一次性商品无 months/份数概念，months 落 null、plan_id 落 urlkey）。
+ */
+async function handleMbdRedeem(
+  orderIdRaw: unknown,
+  deps: RedeemDeps,
+): Promise<RedeemBody> {
+  // 1. 订单号格式校验——不合法即拒，零 DB 访问（防写额度攻击）
+  const trimmed = typeof orderIdRaw === "string" ? orderIdRaw.trim() : "";
+  if (!MBD_ORDER_ID_RE.test(trimmed)) {
+    return fail("invalid_order", "订单号格式不正确，请核对后重试。");
+  }
+  const orderId = normalizeMbdOrderId(trimmed);
+
+  // 2. 配置检查——Secrets/DB 未配置友好降级，不抛 500
+  const { mbdDeveloperKey, ed25519PrivateKeyHex } = deps.secrets;
+  const notConfigured = fail(
+    "not_configured",
+    "兑换服务尚未配置完成，请稍后重试或邮件联系作者。",
+  );
+  if (!mbdDeveloperKey || !ed25519PrivateKeyHex || !deps.db) {
+    return notConfigured;
+  }
+  const privateKey = hexToBytes(ed25519PrivateKeyHex);
+  if (privateKey === null || privateKey.length !== 32) return notConfigured;
+
+  // 3. D1 幂等读——已兑换订单直接返回首发 token（ext_order_no UNIQUE）
+  const db = deps.db;
+  const storedRow = await selectStoredRow(db, "mbd", orderId);
+  if (storedRow !== null) {
+    const stored = parseStoredRow(storedRow);
+    if (stored === null) {
+      return fail(
+        "already_redeemed_conflict",
+        "该订单已兑换过，但存量记录异常，请邮件联系作者处理。",
+      );
+    }
+    return {
+      ok: true,
+      token: stored.token,
+      tier: stored.tier,
+      expiresAt: stored.exp,
+    };
+  }
+
+  // 4. 面包多验单
+  const result = await queryMbdOrder(deps, mbdDeveloperKey, orderId);
+  if (result.kind === "upstream_error") {
+    return fail("upstream_error", "面包多订单查询暂时不可用，请稍后重试。");
+  }
+  if (result.kind === "not_found") {
+    return fail(
+      "invalid_order",
+      "未查询到该订单，请核对订单号（仅支持本创作者的面包多订单）。",
+    );
+  }
+  if (result.order.state !== "success") {
+    return fail("order_not_paid", "订单未完成支付。");
+  }
+
+  // 5. 档位判定（urlkey 映射态未命中 → plan_not_eligible，零 DB 写）
+  const urlkeys = deps.mbdUrlkeys ?? {};
+  const resolved = classifyMbdOrder(result.order, urlkeys);
+  if (resolved === null) {
+    if (isPlanMappingComplete(urlkeys)) {
+      return fail(
+        "plan_not_eligible",
+        "该订单对应的商品不支持解锁兑换，请购买解锁档位商品。",
+      );
+    }
+    return fail("amount_too_low", amountTooLowMessage());
+  }
+
+  // 6. exp = 支付时刻起算 + 档位天数（响应 ordertime；缺失 = 上游形状
+  //    异常，按 upstream_error 拒绝——不用兑换时刻兜底，防时长凭空延长）
+  const paidAtSec = result.order.paidAtSec;
+  if (paidAtSec === null) {
+    return fail("upstream_error", "订单支付时间缺失，请稍后重试或邮件联系作者。");
+  }
+  const exp = paidAtSec + resolved.days * SECONDS_PER_DAY;
+
+  // 7. Ed25519 签发 + D1 落账（爱发电同构；plan_id 落 urlkey 供审计，
+  //    D-z8：不落任何买家身份字段）。
+  const payload: UnlockTokenPayload = {
+    v: 1,
+    tier: resolved.tier,
+    exp,
+    iat: deps.nowSec,
+    ch: "mbd",
+  };
+  const token = signToken(payload, privateKey);
+  const nowIso = new Date(deps.nowSec * 1000).toISOString();
+  try {
+    await db
+      .prepare(
+        `INSERT INTO orders (id, channel, ext_order_no, amount_cny, tier, months,
+           status, token, token_hash, expires_at, plan_id, created_at, paid_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        "mbd",
+        orderId,
+        result.order.amountCny,
+        resolved.tier,
+        null,
+        "paid",
+        token,
+        unlockTokenHash(token),
+        exp,
+        result.order.urlkey,
+        nowIso,
+        new Date(paidAtSec * 1000).toISOString(),
+      )
+      .run();
+  } catch {
+    // UNIQUE 冲突 = 并发兑换首写已落定 → 回读首发 token 保持幂等
+    const raced = await selectStoredRow(db, "mbd", orderId);
     const stored = raced === null ? null : parseStoredRow(raced);
     if (stored === null) {
       return fail(

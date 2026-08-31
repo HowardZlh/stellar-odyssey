@@ -4,7 +4,7 @@
 # docs/internal/UNLOCK_OPS.md（内部文档，不入库）。
 #
 # Secrets（wrangler secret put，严禁写入本文件）：
-#   AFDIAN_USER_ID / AFDIAN_TOKEN / ED25519_PRIVATE_KEY
+#   AFDIAN_USER_ID / AFDIAN_TOKEN / MBD_DEVELOPER_KEY / ED25519_PRIVATE_KEY
 
 name = "stellar-unlock"
 main = "index.ts"
@@ -51,9 +51,18 @@ crons = ["0 */3 * * *"]
 # - REFUND_AUTO_REVOKE：自动吊销开关——**默认空 = 模式 A 只检测登记**；
 #   置 "1" 后疑似退款单命中即写 revoke:list。检测口径（status != 2）
 #   未经第一笔真实退款单校准前**禁止开启**（REQUIREMENTS_UNLOCK §A6 裁决 ⑧）。
+# 面包多集成：档位 ↔ 作品 urlkey 映射（非机密，order-detail 响应可见）。
+# 双态机制对等 UNLOCK_PLAN_ID_*：三者全部填写后启用「按商品强制归档」
+# （命中即归档、未命中拒绝，优惠码/折扣安全）；任一为空整体回退纯金额
+# 判定——**回退态下面包多商品页禁止发优惠码**。urlkey 获取与部署顺序
+# 见 docs/internal/UNLOCK_OPS.md；本地联调在 .dev.vars 填同名变量。
 [vars]
 UNLOCK_PLAN_ID_WEEK = ""
 UNLOCK_PLAN_ID_MONTH = ""
 UNLOCK_PLAN_ID_YEAR = ""
+# 2026-08-31 经开发者 API 建品（drafts 1064056/1064057/1064058，¥6/¥15/¥88）：
+UNLOCK_MBD_URLKEY_WEEK = "YZaVk5ZtbQ=="
+UNLOCK_MBD_URLKEY_MONTH = "YZaVk5ZuZA=="
+UNLOCK_MBD_URLKEY_YEAR = "YZaVk5ZuZQ=="
 REFUND_LOOKBACK_DAYS = "15"
 REFUND_AUTO_REVOKE = ""

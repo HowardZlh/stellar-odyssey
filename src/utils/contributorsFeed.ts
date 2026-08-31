@@ -38,6 +38,7 @@ const KNOWN_PLATFORMS: readonly DonationPlatformId[] = [
   "kofi",
   "buymeacoffee",
   "alipay",
+  "mbd",
 ];
 
 /**

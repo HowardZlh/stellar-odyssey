@@ -9,7 +9,8 @@
 > Contributor Universe. The project source code remains open source. Purchase and redemption
 > both happen at [stellar.guushu.com/unlock](https://stellar.guushu.com/unlock).
 > Support channels in recommended order: **Alipay QR pay (recommended — automatic, instant
-> unlock) → WeChat tip code (manual review) → Afdian (fallback, automatic order-number
+> unlock) → WeChat tip code (manual review) → Mianbaoduo (fallback — pay by QR with no account
+> needed, automatic order-ID redemption) → Afdian (fallback, automatic order-number
 > redemption) → Ko-fi (overseas fallback)**.
 
 ## What is unlocked (the free experience stays intact)
@@ -39,11 +40,11 @@ Unlocking adds four kinds of access (identical across tiers; only duration diffe
 | Year Pass | ¥88 | $13 | 366 days |
 
 - For Alipay QR payments, access starts **from the moment the payment succeeds**; for automatic
-  Afdian redemption, it starts **from the order time** (not the redeem time); manual channels
-  start from issuance.
+  Mianbaoduo redemption, it starts **from the payment time**; for automatic Afdian redemption,
+  it starts **from the order time** (not the redeem time); manual channels start from issuance.
 - Access does **not auto-renew** upon expiry — no hidden charges of any kind.
 
-## Purchase & redeem (four channels)
+## Purchase & redeem (five channels)
 
 ### Channel 1: Alipay QR pay (recommended · automatic, instant unlock after payment)
 
@@ -69,7 +70,20 @@ Unlocking adds four kinds of access (identical across tiers; only duration diffe
    unlock token and a direct activation link; activate as described under "Using your token"
    below (not instant; in a hurry, use channel 1 Alipay QR).
 
-### Channel 3: Afdian (fallback · automatic order-number redemption)
+### Channel 3: Mianbaoduo (fallback · automatic order-ID redemption · QR pay, no account)
+
+1. On the unlock page, click "Buy on Mianbaoduo" — purchase the matching tier product at
+   [mbd.pub/o/stellar](https://mbd.pub/o/stellar) (all three tiers are one-time
+   products), paying by WeChat/Alipay QR — **no account registration needed**.
+2. After paying, your **order ID** (32 letters/digits) appears automatically below the product
+   page — copy it.
+3. Back on the unlock page, paste the order ID into the "Mianbaoduo order ID" field and click
+   "Redeem" — access activates instantly, showing your tier, expiry date, and remaining days.
+
+> The same order ID can be **redeemed repeatedly**: it always returns the same token issued the
+> first time (durations do not stack) — if you lose your token, just redeem the order ID again.
+
+### Channel 4: Afdian (fallback · automatic order-number redemption)
 
 Afdian account required:
 
@@ -83,7 +97,7 @@ Afdian account required:
 > The same order number can be **redeemed repeatedly**: it always returns the same token issued the
 > first time (durations do not stack) — if you lose your token, just redeem the order number again.
 
-### Channel 4: Ko-fi (overseas fallback · manual review)
+### Channel 5: Ko-fi (overseas fallback · manual review)
 
 1. Go to [ko-fi.com/howardzlh](https://ko-fi.com/howardzlh) and pay the tier's **$ amount**
    (week $1 / month $2.5 / year $13).
@@ -102,8 +116,8 @@ Your unlock credential is a three-segment string starting with `SO1.` (a time-li
 - **Switching devices / browsers**: on the activated device, click "**Copy my token**" on the unlock
   page, then paste and activate on the new device's unlock page (the same token works on multiple
   devices); the `?token=` direct link works too.
-- **Keep your token safe**: save the token text yourself. Recovery: Afdian orders return the same
-  token when redeemed again with the order number; for the Alipay channel, email
+- **Keep your token safe**: save the token text yourself. Recovery: Mianbaoduo/Afdian orders
+  return the same token when redeemed again with the order ID/number; for the Alipay channel, email
   [stevenzearo@163.com](mailto:stevenzearo@163.com) with the payment time, amount, and the
   nickname you entered — the token is sent back after the order is verified; manual-channel
   tokens can be recovered by email using your redemption correspondence.
@@ -131,21 +145,24 @@ Your unlock credential is a three-segment string starting with `SO1.` (a time-li
 
 ## FAQ
 
-**Q: Where do I find my Afdian order number?**
-Log in to the Afdian app or website, go to "My → Orders", find the order, and copy its number
-(14–40 digits). The unlock page input accepts digits only — avoid pasting extra characters.
+**Q: Where do I find my order number?**
+Mianbaoduo: after payment, the order ID (32 letters/digits) appears automatically **below the
+product page** — just copy it. Afdian: log in to the app or website, go to "My → Orders", find
+the order, and copy its number (14–40 digits). Avoid pasting extra characters, and paste into
+the input field of the **matching channel**.
 
 **Q: Redeem error reference**
 
 | Message on the page | Meaning & what to do |
 |---|---|
-| The order number should be 14-40 digits | Wrong input format — re-copy it in full from Afdian "My Orders" |
-| Invalid order number | Afdian cannot find this order — make sure you copied the **order number** with no missing characters |
+| The order number should be 14-40 digits | Wrong Afdian order-number format — re-copy it in full from Afdian "My Orders" |
+| The order ID should be 32 letters/digits | Wrong Mianbaoduo order-ID format — re-copy it in full from below the product page |
+| Invalid order number | The platform cannot find this order — make sure you copied the **order number** with no missing characters, into the matching channel's field |
 | The order has not been paid | Payment hasn't completed — pay first, then redeem |
 | The order amount is below the lowest tier (¥6) | The paid amount is below the Week Pass price — pay the tier amount with a new order |
 | The item in this order is not eligible for unlock redemption | The order is not for an unlock tier item — only orders for the Stellar Odyssey Week/Month/Year Pass items/plans can be redeemed; please retry with an unlock tier order |
 | This order has already been redeemed | Idempotency guard: if switching devices, activate with your original token (redeeming again returns the same token — just paste the order number once more to retrieve it) |
-| The order-lookup service is temporarily unavailable | Upstream (Afdian) API hiccup — retry later |
+| The order-lookup service is temporarily unavailable | Upstream (Mianbaoduo/Afdian) API hiccup — retry later |
 | The redeem service is not yet live | Server side not fully configured — come back later or contact us by email |
 | Network request failed | Local network issue — check your connection and retry |
 

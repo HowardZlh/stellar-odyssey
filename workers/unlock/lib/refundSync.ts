@@ -33,9 +33,9 @@
  *
  * 免费额度防御（§0.16 纪律沿用；单 cron 合并后子请求预算重算）：
  * - 子请求 ≤ 50/invocation：爱发电分页 ≤20 + 支付宝 pending 复核
- *   ≤8×2（query+close）+ 退款兜底查询 ≤8 = **≤44**（偏离登记：stock
- *   双 cron 各 45 上限，本项目单 cron 合并故扫描上限 15→8，漏扫由
- *   下一轮 3h 后补齐）；
+ *   ≤8×2（query+close）+ 退款兜底查询 ≤8 + 面包多复查 ≤5 = **≤49**
+ *   （偏离登记：stock 双 cron 各 45 上限，本项目单 cron 合并故扫描
+ *   上限 15→8，漏扫由下一轮 3h 后补齐）；
  * - 爱发电段 DB 写：suspects（有新增才写）+ cursor（恒 1 写）≤2 行/次
  *   （模式 A），8 次/天 ≤16 行写——测试断言锁定；
  * - 支付宝段 DB 写：全部条件写（补发/关单/吊销/补登/游标值变化），
@@ -61,12 +61,17 @@ import {
   ALIPAY_REFUND_CURSOR_STATE_KEY,
   getStateJson,
   getStateRaw,
+  MBD_REFUND_CURSOR_STATE_KEY,
   putStateRaw,
   REFUND_SUSPECTS_STATE_KEY,
   REVOKE_CURSOR_STATE_KEY,
   type UnlockDbLike,
   type UnlockDbStatement,
 } from "./db";
+import {
+  buildMbdOrderDetailRequest,
+  parseMbdOrderDetailResponse,
+} from "./mbd";
 import { parseOrderEpochSec } from "./orderTime";
 import type { FetchLike } from "./redeem";
 
@@ -734,21 +739,210 @@ export async function runAlipayReconcile(
 }
 
 // ---------------------------------------------------------------------------
+// 面包多退款巡检（面包多集成；模式 A 同款：只登记疑似，人工核实吊销）
+// ---------------------------------------------------------------------------
+
+/**
+ * 面包多巡检每轮扫描上限（Workers Free 子请求 50/invocation 预算重算：
+ * 爱发电分页 ≤20 + 支付宝 ≤8×2 + 退款兜底 ≤8 + 面包多 ≤5 = **≤49**；
+ * 窗口内订单多于单轮上限时滚动游标跨轮全覆盖）。
+ */
+export const MBD_REFUND_SCAN_LIMIT = 5;
+
+/** 面包多巡检注入依赖（scheduled 壳组装） */
+export interface MbdRefundSyncDeps {
+  readonly db: UnlockDbLike | null;
+  readonly fetchFn: FetchLike;
+  readonly secrets: { readonly mbdDeveloperKey?: string };
+  readonly nowSec: number;
+  /** 回看窗口天数（与爱发电巡检共用 REFUND_LOOKBACK_DAYS） */
+  readonly lookbackDays: number;
+  /** 自动吊销开关（与爱发电共用 REFUND_AUTO_REVOKE；面包多退款态
+   * 未经首笔真实退款校准前禁开——文档未定义"已退款"state，盲区登记） */
+  readonly autoRevoke: boolean;
+}
+
+/** 面包多巡检结果（测试断言 + scheduled 日志） */
+export interface MbdRefundSyncResult {
+  readonly ok: boolean;
+  readonly error?: "not_configured";
+  /** 本轮复查的已兑换订单数 */
+  readonly checked: number;
+  /** 本次新登记的疑似单数 */
+  readonly newSuspects: number;
+  /** 本次 DB 写行数（零变化时仅游标条件写） */
+  readonly dbWrites: number;
+}
+
+/**
+ * 面包多退款巡检主流程（与爱发电巡检方向相反：爱发电分页拉全量单
+ * 比对本地，面包多无分页拉单接口——改为**对已兑换单逐一复查**
+ * order-detail，state !== 'success' 或查无此单 → 登记疑似退款
+ * （共用 refund:suspects 名单，note 前缀 'mbd:' 区分渠道）。
+ * 滚动游标按 paid_at 升序推进（支付宝兜底同构），扫完归零重扫。
+ */
+export async function runMbdRefundSync(
+  deps: MbdRefundSyncDeps,
+): Promise<MbdRefundSyncResult> {
+  const { db, secrets } = deps;
+  if (db === null || !secrets.mbdDeveloperKey) {
+    return { ok: false, error: "not_configured", checked: 0, newSuspects: 0, dbWrites: 0 };
+  }
+  const lookbackDays =
+    Number.isFinite(deps.lookbackDays) && deps.lookbackDays > 0
+      ? deps.lookbackDays
+      : REFUND_LOOKBACK_DAYS_DEFAULT;
+  const cutoffIso = new Date(
+    (deps.nowSec - lookbackDays * 86_400) * 1000,
+  ).toISOString();
+  const nowIso = new Date(deps.nowSec * 1000).toISOString();
+
+  // 滚动游标（形态与支付宝兜底游标同构；非法游标视同从头扫）
+  const prevRaw = await getStateRaw(db, MBD_REFUND_CURSOR_STATE_KEY);
+  let last = "";
+  if (prevRaw !== null) {
+    try {
+      const parsed = JSON.parse(prevRaw) as Record<string, unknown>;
+      if (typeof parsed.last === "string") last = parsed.last;
+    } catch {
+      /* 非法游标视同从头扫 */
+    }
+  }
+
+  const { results } = await db
+    .prepare(
+      `SELECT token, expires_at, ext_order_no, paid_at
+       FROM orders WHERE channel = ? AND status = ? AND paid_at >= ? AND paid_at > ?
+       ORDER BY paid_at ASC LIMIT ${MBD_REFUND_SCAN_LIMIT}`,
+    )
+    .bind("mbd", "paid", cutoffIso, last)
+    .all();
+
+  // 逐单复查（候选收集；上游/网络异常单跳过留待下一轮）
+  let checked = 0;
+  const candidates: { orderId: string; note: string; row: Record<string, unknown> }[] = [];
+  for (const row of results) {
+    const orderId =
+      typeof row.ext_order_no === "string" ? row.ext_order_no : "";
+    if (orderId === "") continue;
+    checked += 1;
+    const req = buildMbdOrderDetailRequest(secrets.mbdDeveloperKey, orderId);
+    let parsed: ReturnType<typeof parseMbdOrderDetailResponse>;
+    try {
+      const resp = await deps.fetchFn(req.url, {
+        method: "GET",
+        headers: req.headers,
+      });
+      parsed = parseMbdOrderDetailResponse(await resp.json());
+    } catch {
+      continue; // 网络异常：留待下一轮
+    }
+    if (parsed.kind === "upstream_error") continue;
+    if (parsed.kind === "not_found") {
+      // 已兑换单在面包多侧消失——异常态，登记疑似留人工核实
+      candidates.push({ orderId, note: "mbd:not_found", row });
+    } else if (parsed.order.state !== "success") {
+      candidates.push({ orderId, note: `mbd:${parsed.order.state}`, row });
+    }
+  }
+
+  // 登记疑似（共用 refund:suspects；orderId 幂等去重）
+  const existing = sanitizeRefundSuspects(
+    await getStateJson(db, REFUND_SUSPECTS_STATE_KEY),
+  );
+  const known = new Set(existing.orders.map((o) => o.orderId));
+  const newSuspects: RefundSuspect[] = [];
+  const redeemedRecords = new Map<string, { token: string; exp: number }>();
+  for (const cand of candidates) {
+    if (known.has(cand.orderId)) continue;
+    known.add(cand.orderId);
+    const record = parseOrderRow(cand.row);
+    if (record !== null) redeemedRecords.set(cand.orderId, record);
+    newSuspects.push({
+      orderId: cand.orderId,
+      detectedAt: nowIso,
+      status: 0, // 面包多 state 为字符串，数值位恒 0，语义在 note
+      note: cand.note,
+    });
+  }
+
+  let dbWrites = 0;
+  if (newSuspects.length > 0) {
+    const merged: RefundSuspectsV1 = {
+      v: 1,
+      orders: [...existing.orders, ...newSuspects],
+    };
+    await putStateRaw(db, REFUND_SUSPECTS_STATE_KEY, JSON.stringify(merged), nowIso);
+    dbWrites += 1;
+
+    // 自动吊销（爱发电巡检同构；校准前禁开——盲区登记见 deps 注释）
+    if (deps.autoRevoke) {
+      const inserts: UnlockDbStatement[] = [];
+      const seen = new Set<string>();
+      for (const suspect of newSuspects) {
+        const record = redeemedRecords.get(suspect.orderId);
+        if (!record) continue;
+        const h = unlockTokenHash(record.token);
+        if (seen.has(h)) continue;
+        seen.add(h);
+        const dup = await db
+          .prepare("SELECT token_hash FROM revocations WHERE token_hash = ?")
+          .bind(h)
+          .first();
+        if (dup !== null) continue;
+        inserts.push(
+          db
+            .prepare(
+              "INSERT INTO revocations (token_hash, exp, reason, revoked_at, restored) VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(h, record.exp, "refund", nowIso, 0),
+        );
+      }
+      if (inserts.length > 0) {
+        await db.batch(inserts);
+        dbWrites += inserts.length;
+      }
+    }
+  }
+
+  // 滚动游标：扫满一轮推进到末行 paid_at，未扫满归零；仅值变化才写
+  const nextLast =
+    results.length < MBD_REFUND_SCAN_LIMIT
+      ? ""
+      : String(results[results.length - 1]?.paid_at ?? "");
+  if (nextLast !== last) {
+    await putStateRaw(
+      db,
+      MBD_REFUND_CURSOR_STATE_KEY,
+      JSON.stringify({ last: nextLast }),
+      nowIso,
+    );
+    dbWrites += 1;
+  }
+
+  return { ok: true, checked, newSuspects: newSuspects.length, dbWrites };
+}
+
+// ---------------------------------------------------------------------------
 // 统一对账入口（D-z6：单 cron 每 3h，scheduled 壳唯一消费点）
 // ---------------------------------------------------------------------------
 
-/** 统一对账结果（两段独立降级：任一 not_configured 不影响另一段） */
+/** 统一对账结果（三段独立降级：任一 not_configured 不影响其余段） */
 export interface UnifiedSyncResult {
   readonly afdian: RefundSyncResult;
   readonly alipay: AlipayReconcileResult;
+  readonly mbd: MbdRefundSyncResult;
 }
 
-/** 爱发电巡检 → 支付宝对账顺序执行（子请求预算合并测算见文件头） */
+/** 爱发电巡检 → 支付宝对账 → 面包多巡检顺序执行（子请求预算合并
+ * 测算见文件头与 MBD_REFUND_SCAN_LIMIT 注释：≤49/invocation） */
 export async function runUnifiedSync(
   afdianDeps: RefundSyncDeps,
   alipayDeps: AlipayReconcileDeps,
+  mbdDeps: MbdRefundSyncDeps,
 ): Promise<UnifiedSyncResult> {
   const afdian = await runRefundSync(afdianDeps);
   const alipay = await runAlipayReconcile(alipayDeps);
-  return { afdian, alipay };
+  const mbd = await runMbdRefundSync(mbdDeps);
+  return { afdian, alipay, mbd };
 }

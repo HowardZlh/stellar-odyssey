@@ -178,13 +178,14 @@ Issues and PRs are welcome! Please read the [contributing guide](CONTRIBUTING.md
 
 Some advanced content (close-view detail layers / galaxy & universe tour sequences / unlimited event demos / unlimited access to the Astronomy Lab's Body Observatory) is available as a **time-limited supporter unlock**, while the free experience stays intact (all L1/L2 features and every far-view science note are unaffected, and the Observatory has a free daily quota). Tiers: **Week Pass ¥6 / Month Pass ¥15 / Year Pass ¥88** (Ko-fi reference: $1 / $2.5 / $13).
 
-Support channels (in recommended order): **Alipay QR pay** (recommended — token issued automatically and access unlocks instantly after payment) → WeChat tip code (manual review, token sent by email) → Afdian (fallback, automatic order-number redemption) → Ko-fi (overseas fallback). Purchase and redeem at [stellar.guushu.com/unlock](https://stellar.guushu.com/unlock); full guide in [docs/en/unlock-guide.md](docs/en/unlock-guide.md). Supporter nicknames and messages (both optional) are listed on the donor roster and in the [Contributor Universe](https://stellar.guushu.com/contributors).
+Support channels (in recommended order): **Alipay QR pay** (recommended — token issued automatically and access unlocks instantly after payment) → WeChat tip code (manual review, token sent by email) → Mianbaoduo (fallback — pay by QR with no account needed, automatic order-ID redemption) → Afdian (fallback, automatic order-number redemption) → Ko-fi (overseas fallback). Purchase and redeem at [stellar.guushu.com/unlock](https://stellar.guushu.com/unlock); full guide in [docs/en/unlock-guide.md](docs/en/unlock-guide.md). Supporter nicknames and messages (both optional) are listed on the donor roster and in the [Contributor Universe](https://stellar.guushu.com/contributors).
 
 ## 💖 Sponsor
 
 If this universe ever made you pause your scroll wheel for a moment longer, consider supporting the project — supporting unlocks the advanced content (see "Supporter Unlock" above), and your nickname and message can join the contributor roster:
 
 - 🔓 Unlock page (recommended entry: Alipay QR — token issued automatically and access unlocks instantly after payment): [stellar.guushu.com/unlock](https://stellar.guushu.com/unlock)
+- 🍞 Mianbaoduo (fallback — pay by QR with no account needed, automatic order-ID redemption): [mbd.pub/o/stellar](https://mbd.pub/o/stellar)
 - ⚡ Afdian (fallback, automatic order-number redemption): [afdian.com/a/stellar-odyssey](https://afdian.com/a/stellar-odyssey)
 - ☕ Ko-fi (overseas fallback): [ko-fi.com/howardzlh](https://ko-fi.com/howardzlh)
 - ☄️ On-site donation page (all support channels and the donor roster): [stellar.guushu.com/donate](https://stellar.guushu.com/donate)

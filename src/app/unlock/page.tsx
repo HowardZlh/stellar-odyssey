@@ -3,13 +3,14 @@
 /**
  * 支持者解锁页（/unlock，U3，静态导出为 unlock.html）
  *
- * 结构（§U3-1~3 + Z 迭代 M3 渠道重排，REQUIREMENTS_ALIPAY_UNLOCK §5.1）：
- * 权益状态区 → 档位价格表（消费 UNLOCK_TIERS 单一事实源，禁止硬编码价格；
- * 档位卡片 = 支付宝扫码主入口 CTA）→ 四通道购买与兑换区（① 支付宝扫码
- * 推荐 · 自动发码 ② 微信赞赏码独立小节：内嵌图 + 人工核验口径 + 可复制
- * 邮件模板 + 预填 mailto ③ 爱发电备选 · 订单号兑换框保留 ④ Ko-fi 海外
- * 备选）→ token 粘贴区 → 退款/说明区。骨架照 donate 页范式（useLocaleInit +
- * zh/EN 切换 + 返回主站 + 深空渐变背景 + 自身滚动容器）。
+ * 结构（§U3-1~3 + Z 迭代 M3 渠道重排 + 面包多集成，REQUIREMENTS_ALIPAY_UNLOCK
+ * §5.1）：权益状态区 → 档位价格表（消费 UNLOCK_TIERS 单一事实源，禁止硬编码
+ * 价格；档位卡片 = 支付宝扫码主入口 CTA）→ 五通道购买与兑换区（① 支付宝
+ * 扫码推荐 · 自动发码 ② 微信赞赏码独立小节：内嵌图 + 人工核验口径 + 可复制
+ * 邮件模板 + 预填 mailto ③ 面包多备选 · 订单号自动兑换（扫码即付无需注册）
+ * ④ 爱发电备选 · 订单号兑换框保留 ⑤ Ko-fi 海外备选）→ token 粘贴区 →
+ * 退款/说明区。骨架照 donate 页范式（useLocaleInit + zh/EN 切换 + 返回主站 +
+ * 深空渐变背景 + 自身滚动容器）。
  *
  * 文案口径（M3 起统一"支持即解锁"，D3 双轨隔离取消）：本页为明码标价
  * 对价口径（"支付 ¥X 解锁 Y 天"承诺允许）；邮件模板与 /donate 页同源
@@ -37,7 +38,11 @@ import { useViewportKind } from '@/hooks/useViewportKind';
 import { useSimulationStore } from '@/store';
 import type { UnlockTier } from '@/data/unlockPricing';
 import { UNLOCK_TIERS } from '@/data/unlockPricing';
-import { DONATION_PLATFORMS, SPONSOR_KOFI_URL } from '@/data/donationPlatforms';
+import {
+  DONATION_PLATFORMS,
+  SPONSOR_KOFI_URL,
+  SPONSOR_MBD_URL,
+} from '@/data/donationPlatforms';
 import { CONTACT_EMAIL, SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
 import { UnlockAlipayModal } from '@/components/UI/UnlockAlipayModal';
 import { tokenRemainingDays } from '@/utils/unlockToken';
@@ -46,6 +51,7 @@ import { parseLaunchParams } from '@/utils/launchParams';
 import {
   formatExpiryDate,
   isValidAfdianOrderId,
+  isValidMbdOrderId,
   parseRedeemResponse,
   redeemErrorMessageKey,
   resolveRedeemApiUrl,
@@ -107,6 +113,12 @@ export default function UnlockPage(): JSX.Element {
   const [orderPending, setOrderPending] = useState(false);
   const [orderDone, setOrderDone] = useState(false);
 
+  // 面包多兑换表单（面包多集成：与爱发电同构的独立状态组）
+  const [mbdInput, setMbdInput] = useState('');
+  const [mbdError, setMbdError] = useState<MessageKey | null>(null);
+  const [mbdPending, setMbdPending] = useState(false);
+  const [mbdDone, setMbdDone] = useState(false);
+
   // token 粘贴表单
   const [tokenInput, setTokenInput] = useState('');
   const [tokenError, setTokenError] = useState<MessageKey | null>(null);
@@ -164,20 +176,24 @@ export default function UnlockPage(): JSX.Element {
     // 依赖登记：仅 mount 一次（URL/存储均为启动时快照）
   }, []);
 
-  /** 爱发电订单号兑换（POST /api/redeem，§0.5 契约；网络失败可重试） */
-  async function handleRedeem(): Promise<void> {
-    const trimmed = orderInput.trim();
-    if (!isValidAfdianOrderId(trimmed)) {
-      setOrderError('unlock.orderInvalid');
-      return;
-    }
-    setOrderPending(true);
-    setOrderError(null);
+  /**
+   * 订单号兑换共用流程（POST /api/redeem，§0.5 契约 + channel 字段；
+   * 爱发电/面包多同构消费，网络失败可重试）。
+   */
+  async function redeemOrder(
+    channel: 'afdian' | 'mbd',
+    trimmed: string,
+    setError: (key: MessageKey | null) => void,
+    setPending: (pending: boolean) => void,
+    setDone: (done: boolean) => void,
+  ): Promise<void> {
+    setPending(true);
+    setError(null);
     try {
       const response = await fetch(REDEEM_API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: trimmed }),
+        body: JSON.stringify({ orderId: trimmed, channel }),
       });
       let parsed: ReturnType<typeof parseRedeemResponse> = null;
       try {
@@ -186,25 +202,51 @@ export default function UnlockPage(): JSX.Element {
         parsed = null; // 非 JSON 响应体：按未知错误提示
       }
       if (parsed === null) {
-        setOrderError('unlock.errUnknown');
+        setError('unlock.errUnknown');
         return;
       }
       if (!parsed.ok) {
-        setOrderError(redeemErrorMessageKey(parsed.error));
+        setError(redeemErrorMessageKey(parsed.error));
         return;
       }
       const applied = applyToken(parsed.token);
       if (!applied.ok) {
         // 服务端返回的 token 本地验签失败（公钥不符等异常场景）
-        setOrderError(tokenErrorMessageKey(applied.reason));
+        setError(tokenErrorMessageKey(applied.reason));
         return;
       }
-      setOrderDone(true);
+      setDone(true);
     } catch {
-      setOrderError('unlock.errNetwork'); // fetch 拒绝（断网/CORS）：可重试
+      setError('unlock.errNetwork'); // fetch 拒绝（断网/CORS）：可重试
     } finally {
-      setOrderPending(false);
+      setPending(false);
     }
+  }
+
+  /** 爱发电订单号兑换（前端格式预校验不合法零请求） */
+  async function handleRedeem(): Promise<void> {
+    const trimmed = orderInput.trim();
+    if (!isValidAfdianOrderId(trimmed)) {
+      setOrderError('unlock.orderInvalid');
+      return;
+    }
+    await redeemOrder(
+      'afdian',
+      trimmed,
+      setOrderError,
+      setOrderPending,
+      setOrderDone,
+    );
+  }
+
+  /** 面包多订单号兑换（32 位 hex 预校验，共用兑换流程） */
+  async function handleMbdRedeem(): Promise<void> {
+    const trimmed = mbdInput.trim();
+    if (!isValidMbdOrderId(trimmed)) {
+      setMbdError('unlock.mbdOrderInvalid');
+      return;
+    }
+    await redeemOrder('mbd', trimmed, setMbdError, setMbdPending, setMbdDone);
   }
 
   /** token 粘贴激活（本地验签，格式/签名/过期分开提示） */
@@ -567,8 +609,9 @@ export default function UnlockPage(): JSX.Element {
           </div>
         </section>
 
-        {/* 四通道购买与兑换区（M3 渠道重排 §5.1：支付宝→微信→爱发电→Ko-fi；
-            顺序断言测试对照 stock test_pages_recommend_alipay_and_channel_order） */}
+        {/* 五通道购买与兑换区（M3 渠道重排 §5.1 + 面包多集成：支付宝→微信→
+            面包多→爱发电→Ko-fi；顺序断言测试对照 stock
+            test_pages_recommend_alipay_and_channel_order） */}
         <section className="mt-10">
           <h2 className="mb-3 text-sm font-semibold text-gray-300">
             {tr('unlock.channelsSection')}
@@ -650,7 +693,58 @@ export default function UnlockPage(): JSX.Element {
               )}
             </div>
 
-            {/* ③ 爱发电（备选 · 订单号自动兑换，兑换框保留） */}
+            {/* ③ 面包多（备选 · 订单号自动兑换，扫码即付无需注册） */}
+            <div className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
+              <h3 className="text-sm text-gray-200">🍞 {tr('unlock.mbdTitle')}</h3>
+              <p className="mt-2 text-xs leading-5 text-gray-400">
+                {tr('unlock.mbdGuide')}
+              </p>
+              <a
+                href={SPONSOR_MBD_URL}
+                target="_blank"
+                rel="noreferrer"
+                className={`mt-3 inline-block rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent ${touchBtn}`}
+              >
+                {tr('unlock.mbdLink')}
+              </a>
+              <div className="mt-3">
+                <label
+                  htmlFor="mbd-order"
+                  className="block text-xs text-gray-400"
+                >
+                  {tr('unlock.mbdOrderInputLabel')}
+                </label>
+                <div className="mt-1 flex gap-2 max-md:flex-col">
+                  <input
+                    id="mbd-order"
+                    value={mbdInput}
+                    onChange={(e) => setMbdInput(e.target.value)}
+                    placeholder={tr('unlock.mbdOrderInputPlaceholder')}
+                    className="min-w-0 flex-1 rounded border border-white/15 bg-black/30 px-2 py-1.5 font-mono text-xs text-gray-200 placeholder:text-gray-600 max-md:min-h-11"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleMbdRedeem()}
+                    disabled={mbdPending}
+                    className={`shrink-0 rounded bg-space-accent/90 px-4 py-1.5 text-xs text-black transition-colors hover:bg-space-accent disabled:cursor-not-allowed disabled:opacity-50 ${touchBtn}`}
+                  >
+                    {tr(mbdPending ? 'unlock.redeemPending' : 'unlock.redeemButton')}
+                  </button>
+                </div>
+                {mbdError !== null && (
+                  <p role="alert" className="mt-2 text-xs text-amber-300">
+                    {tr(mbdError)}
+                  </p>
+                )}
+                {mbdDone && (
+                  <p className="mt-2 text-xs text-emerald-300">
+                    🎉 {tr('unlock.redeemSuccess')}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* ④ 爱发电（备选 · 订单号自动兑换，兑换框保留） */}
             <div className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
               <h3 className="text-sm text-gray-200">⚡ {tr('unlock.afdianTitle')}</h3>
               <p className="mt-2 text-xs leading-5 text-gray-400">
@@ -702,7 +796,7 @@ export default function UnlockPage(): JSX.Element {
               </div>
             </div>
 
-            {/* ④ Ko-fi（海外备选 · 人工核验） */}
+            {/* ⑤ Ko-fi（海外备选 · 人工核验） */}
             <div className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
               <h3 className="text-sm text-gray-200">☕ {tr('unlock.kofiTitle')}</h3>
               <p className="mt-2 text-xs leading-5 text-gray-400">

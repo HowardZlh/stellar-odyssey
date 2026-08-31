@@ -825,10 +825,10 @@ describe("M4 无变化零写入", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 统一入口 runUnifiedSync + scheduled 壳（爱发电巡检回归：两段独立降级）
+// 统一入口 runUnifiedSync + scheduled 壳（爱发电巡检回归：三段独立降级）
 // ---------------------------------------------------------------------------
 describe("M4 runUnifiedSync（单 cron 统一对账）", () => {
-  it("爱发电段照跑（空单页）+ 支付宝段照跑（超时关单）——两段结果并列返回", async () => {
+  it("爱发电段照跑（空单页）+ 支付宝段照跑（超时关单）+ 面包多段照跑（无兑换单）——三段结果并列返回", async () => {
     const { db } = makeDb();
     seedPendingOrder(db);
     const gw = stubMethods({
@@ -854,6 +854,17 @@ describe("M4 runUnifiedSync（单 cron 统一对账）", () => {
           by: "cron",
         },
         depsOf(db),
+        {
+          db,
+          fetchFn: async () => ({
+            ok: true,
+            json: async () => ({ code: 200, result: {} }),
+          }),
+          secrets: { mbdDeveloperKey: "k" },
+          nowSec: NOW_SEC,
+          lookbackDays: 15,
+          autoRevoke: false,
+        },
       );
       expect(result.afdian).toEqual(
         expect.objectContaining({ ok: true, scanned: 0, dbWrites: 1 }),
@@ -861,12 +872,16 @@ describe("M4 runUnifiedSync（单 cron 统一对账）", () => {
       expect(result.alipay).toEqual(
         expect.objectContaining({ ok: true, closed: 1 }),
       );
+      // 面包多段：无已兑换单 → 零复查零写入
+      expect(result.mbd).toEqual(
+        expect.objectContaining({ ok: true, checked: 0, dbWrites: 0 }),
+      );
     } finally {
       gw.restore();
     }
   });
 
-  it("独立降级：爱发电缺凭据 not_configured 不阻断支付宝段（反之亦然）", async () => {
+  it("独立降级：爱发电/面包多缺凭据 not_configured 不阻断支付宝段（反之亦然）", async () => {
     const { db } = makeDb();
     seedPendingOrder(db, { created_at: NOW_ISO });
     const gw = stubMethods({});
@@ -882,6 +897,14 @@ describe("M4 runUnifiedSync（单 cron 统一对账）", () => {
           by: "cron",
         },
         depsOf(db, { ed25519PrivateKeyHex: undefined }),
+        {
+          db,
+          fetchFn: async () => ({ ok: true, json: async () => ({}) }),
+          secrets: {},
+          nowSec: NOW_SEC,
+          lookbackDays: 15,
+          autoRevoke: false,
+        },
       );
       expect(result.afdian).toEqual(
         expect.objectContaining({ ok: false, error: "not_configured" }),
@@ -889,12 +912,15 @@ describe("M4 runUnifiedSync（单 cron 统一对账）", () => {
       expect(result.alipay).toEqual(
         expect.objectContaining({ ok: false, error: "not_configured" }),
       );
+      expect(result.mbd).toEqual(
+        expect.objectContaining({ ok: false, error: "not_configured" }),
+      );
     } finally {
       gw.restore();
     }
   });
 
-  it("scheduled 壳：挂接 waitUntil 并注入两段 env 绑定（未配置 → 双 not_configured）", async () => {
+  it("scheduled 壳：挂接 waitUntil 并注入三段 env 绑定（未配置 → 三 not_configured）", async () => {
     const captured: Promise<unknown>[] = [];
     worker.scheduled(
       null,
@@ -905,6 +931,7 @@ describe("M4 runUnifiedSync（单 cron 统一对账）", () => {
     await expect(captured[0]).resolves.toEqual({
       afdian: expect.objectContaining({ ok: false, error: "not_configured" }),
       alipay: expect.objectContaining({ ok: false, error: "not_configured" }),
+      mbd: expect.objectContaining({ ok: false, error: "not_configured" }),
     });
   });
 });

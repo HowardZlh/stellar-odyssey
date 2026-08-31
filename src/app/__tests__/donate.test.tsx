@@ -18,7 +18,7 @@ import {
   SPONSOR_AFDIAN_URL,
   UNLOCK_PAGE_PATH,
 } from '@/components/UI/ContactBadge';
-import { SPONSOR_KOFI_URL } from '@/data/donationPlatforms';
+import { SPONSOR_KOFI_URL, SPONSOR_MBD_URL } from '@/data/donationPlatforms';
 import { CONTRIBUTORS_PAGE_PATH } from '@/utils/contributorUniverse';
 import { useSimulationStore } from '@/store';
 
@@ -46,13 +46,14 @@ describe('DonatePage 渲染（空名单）', () => {
     expect(screen.getByText(/记入贡献者名单与贡献者宇宙/)).toBeInTheDocument();
   });
 
-  it('M3 渠道顺序：支付宝 → 微信 → 爱发电 → Ko-fi → 预留位', () => {
+  it('M3 渠道顺序：支付宝 → 微信 → 面包多 → 爱发电 → Ko-fi → 预留位', () => {
     render(<DonatePage />);
     const reserved = screen.getAllByText('预留位 · 即将开通');
     expect(reserved).toHaveLength(2);
     expectDomOrder([
       screen.getByRole('heading', { name: /支付宝扫码支付/ }),
       screen.getByRole('heading', { name: /微信赞赏码/ }),
+      screen.getByText('🍞 面包多'),
       screen.getByText('⚡ 爱发电'),
       screen.getByText('☕ Ko-fi'),
       reserved[0],
@@ -110,17 +111,22 @@ describe('DonatePage 渲染（空名单）', () => {
     expect(href).toContain('body=');
   });
 
-  it('爱发电/Ko-fi 备选卡片为可用链接（同源常量，新标签页）+ 备选口径说明', () => {
+  it('面包多/爱发电/Ko-fi 备选卡片为可用链接（同源常量，新标签页）+ 备选口径说明', () => {
     render(<DonatePage />);
     const links = screen.getAllByRole('link', { name: '前往支持' });
     expect(links.map((l) => l.getAttribute('href'))).toEqual([
+      SPONSOR_MBD_URL,
       SPONSOR_AFDIAN_URL,
       SPONSOR_KOFI_URL,
     ]);
     for (const link of links) {
       expect(link).toHaveAttribute('target', '_blank');
     }
-    expect(screen.getByText(/凭订单号在解锁页自动兑换/)).toBeInTheDocument();
+    // 面包多与爱发电各有一条"凭订单号在解锁页自动兑换"说明
+    expect(
+      screen.getAllByText(/凭订单号在解锁页自动兑换/).length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/扫码即付无需注册/)).toBeInTheDocument();
     expect(screen.getByText(/海外备选/)).toBeInTheDocument();
   });
 

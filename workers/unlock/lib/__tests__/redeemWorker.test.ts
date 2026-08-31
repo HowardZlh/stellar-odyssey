@@ -21,9 +21,18 @@ import {
   type AfdianOrder,
 } from "../afdian";
 import { buildCorsHeaders, PROD_ORIGIN, resolveCorsOrigin } from "../cors";
+import {
+  buildMbdOrderDetailRequest,
+  MBD_ORDER_DETAIL_URL,
+  MBD_ORDER_ID_RE,
+  normalizeMbdOrderId,
+  parseMbdOrderDetailResponse,
+  type MbdOrder,
+} from "../mbd";
 import { md5hex } from "../md5";
 import { parseOrderEpochSec } from "../orderTime";
 import {
+  classifyMbdOrder,
   classifyOrder,
   handleRedeem,
   isPlanMappingComplete,
@@ -931,5 +940,524 @@ describe("常量", () => {
     expect(ORDER_ID_RE.test("1".repeat(40))).toBe(true);
     expect(ORDER_ID_RE.test("1".repeat(13))).toBe(false);
     expect(ORDER_ID_RE.test("1".repeat(41))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 面包多兑换（面包多集成：channel:'mbd' 分流 + order-detail 验单 +
+// urlkey 映射/金额回退双态 + 幂等落账）
+// ---------------------------------------------------------------------------
+
+const MBD_ORDER_ID = "9d1e6ffc4e5f796ae9dcf44e1936eb8d";
+/** 面包多 fixture 支付时刻（ordertime，权益起算点；NOW 前 1 天——
+ * 保证周卡 exp 仍在未来，verifyToken 闭环不因 fixture 过期误判） */
+const MBD_PAID_SEC = NOW_SEC - 86_400;
+
+const MBD_SECRETS = {
+  mbdDeveloperKey: "test-mbd-key",
+  ed25519PrivateKeyHex: TEST_PRIVATE_KEY_HEX,
+};
+
+/** urlkey 映射全配置 fixture */
+const MBD_URLKEYS: PlanTierMapping = {
+  week: "urlkey-week==",
+  month: "urlkey-month==",
+  year: "urlkey-year==",
+};
+
+function mbdResultFixture(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    ordertime: MBD_PAID_SEC,
+    orderamount: 15,
+    payway: "alipay",
+    orderid: MBD_ORDER_ID,
+    creatorid: "a2w=",
+    state: "success",
+    urlkey: "Y5ublZk=",
+    ...overrides,
+  };
+}
+
+function mbdResponseFixture(result: unknown): unknown {
+  return { code: 200, result, error_info: "" };
+}
+
+function makeMbdDeps(overrides: Partial<RedeemDeps> = {}): RedeemDeps {
+  return {
+    db: makeDb().db,
+    fetchFn: makeFetch(mbdResponseFixture(mbdResultFixture())),
+    secrets: MBD_SECRETS,
+    nowSec: NOW_SEC,
+    planTiers: EMPTY_PLAN_TIERS,
+    mbdUrlkeys: { week: "", month: "", year: "" },
+    ...overrides,
+  };
+}
+
+describe("handleRedeem channel 分流", () => {
+  it("未知 channel 值 → invalid_order，零 DB/fetch 访问", async () => {
+    const { db, selects, writes } = makeDb();
+    const fetchFn = makeFetch({});
+    const body = await handleRedeem(
+      MBD_ORDER_ID,
+      makeMbdDeps({ db, fetchFn }),
+      "paypal",
+    );
+    expect(body).toEqual({
+      ok: false,
+      error: "invalid_order",
+      message: expect.stringContaining("不支持的兑换渠道"),
+    });
+    expect(selects).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("显式 channel:'afdian' 与缺省行为一致（向后兼容）", async () => {
+    const { db } = makeDb();
+    const deps = makeDeps({ db });
+    const body = await handleRedeem(ORDER_ID, deps, "afdian");
+    expect(body).toMatchObject({ ok: true, tier: "month" });
+    expect(db.rows("orders")[0]).toMatchObject({ channel: "afdian" });
+  });
+});
+
+describe("面包多兑换成功签发（金额回退态）", () => {
+  it.each([
+    ["周卡 ¥6 → week 7 天", 6, "week", 7],
+    ["月卡 ¥15 → month 31 天", 15, "month", 31],
+    ["年卡 ¥88 → year 366 天", 88, "year", 366],
+  ])("%s", async (_label, amount, tier, days) => {
+    const { db, selects, writes } = makeDb();
+    const fetchFn = makeFetch(
+      mbdResponseFixture(mbdResultFixture({ orderamount: amount })),
+    );
+    const body = await handleRedeem(
+      MBD_ORDER_ID,
+      makeMbdDeps({ db, fetchFn }),
+      "mbd",
+    );
+
+    const expectedExp = MBD_PAID_SEC + (days as number) * 86_400;
+    expect(body).toEqual({
+      ok: true,
+      token: expect.stringMatching(/^SO1\./),
+      tier,
+      expiresAt: expectedExp,
+    });
+    if (!body.ok) throw new Error("unreachable");
+
+    // token 与前端同模块验签互通，ch 为 'mbd'
+    const verified = verifyToken(body.token, TEST_PUBLIC_KEY_HEX, NOW_SEC);
+    expect(verified).toEqual({
+      ok: true,
+      payload: { v: 1, tier, exp: expectedExp, iat: NOW_SEC, ch: "mbd" },
+    });
+
+    // DB 读写次数：恰 1 读 + 1 行写（防写额度攻击口径与爱发电一致）
+    expect(selects).toHaveBeenCalledTimes(1);
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(db.rows("orders")).toHaveLength(1);
+    expect(db.rows("orders")[0]).toMatchObject({
+      channel: "mbd",
+      ext_order_no: MBD_ORDER_ID,
+      tier,
+      months: null,
+      expires_at: expectedExp,
+      token: body.token,
+      token_hash: unlockTokenHash(body.token),
+      status: "paid",
+      plan_id: "Y5ublZk=", // urlkey 落审计字段
+      paid_at: new Date(MBD_PAID_SEC * 1000).toISOString(),
+      created_at: new Date(NOW_SEC * 1000).toISOString(),
+    });
+
+    // 验单请求形态：GET order-detail + x-token header
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(fetchFn.mock.calls[0][0]).toBe(
+      `${MBD_ORDER_DETAIL_URL}?order_id=${MBD_ORDER_ID}`,
+    );
+    expect(fetchFn.mock.calls[0][1]).toMatchObject({
+      method: "GET",
+      headers: { "x-token": "test-mbd-key" },
+    });
+  });
+
+  it("大写订单号 → 小写归一后查询与落库（幂等键唯一形态）", async () => {
+    const { db } = makeDb();
+    const fetchFn = makeFetch(mbdResponseFixture(mbdResultFixture()));
+    const body = await handleRedeem(
+      MBD_ORDER_ID.toUpperCase(),
+      makeMbdDeps({ db, fetchFn }),
+      "mbd",
+    );
+    expect(body).toMatchObject({ ok: true });
+    expect(db.rows("orders")[0]).toMatchObject({ ext_order_no: MBD_ORDER_ID });
+    expect(fetchFn.mock.calls[0][0]).toContain(`order_id=${MBD_ORDER_ID}`);
+  });
+
+  it("重复兑换幂等：orders 命中直接返回首发 token，零验单零写", async () => {
+    const { db, writes } = makeDb();
+    db.seed("orders", {
+      id: "seed-mbd-1",
+      channel: "mbd",
+      ext_order_no: MBD_ORDER_ID,
+      tier: "week",
+      token: "SO1.stored-mbd.sig",
+      expires_at: 1_760_000_000,
+      status: "paid",
+      created_at: "seed",
+    });
+    const fetchFn = makeFetch(mbdResponseFixture(mbdResultFixture()));
+    const body = await handleRedeem(
+      MBD_ORDER_ID,
+      makeMbdDeps({ db, fetchFn }),
+      "mbd",
+    );
+    expect(body).toEqual({
+      ok: true,
+      token: "SO1.stored-mbd.sig",
+      tier: "week",
+      expiresAt: 1_760_000_000,
+    });
+    expect(writes).not.toHaveBeenCalled();
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("并发兑换 UNIQUE 冲突 → 回读首写行保持幂等", async () => {
+    const { db } = makeDb();
+    const realSelect = FakeD1.prototype._select.bind(db);
+    jest
+      .spyOn(db, "_select")
+      .mockImplementationOnce(() => {
+        db.seed("orders", {
+          id: "first-writer-mbd",
+          channel: "mbd",
+          ext_order_no: MBD_ORDER_ID,
+          tier: "month",
+          token: "SO1.first-mbd.sig",
+          expires_at: 1_759_500_000,
+          status: "paid",
+          created_at: "seed",
+        });
+        return [];
+      })
+      .mockImplementation(realSelect);
+    const body = await handleRedeem(MBD_ORDER_ID, makeMbdDeps({ db }), "mbd");
+    expect(body).toEqual({
+      ok: true,
+      token: "SO1.first-mbd.sig",
+      tier: "month",
+      expiresAt: 1_759_500_000,
+    });
+    expect(db.rows("orders")).toHaveLength(1);
+  });
+});
+
+describe("面包多兑换失败分支", () => {
+  it.each([
+    ["31 位", MBD_ORDER_ID.slice(0, 31)],
+    ["33 位", `${MBD_ORDER_ID}0`],
+    ["含非 hex 字符", `${MBD_ORDER_ID.slice(0, 31)}g`],
+    ["爱发电形态（20 位数字）", ORDER_ID],
+    ["空串", ""],
+    ["非字符串（null）", null],
+  ])("订单号不合法（%s）→ invalid_order，零 DB/fetch 访问", async (_l, raw) => {
+    const { db, selects, writes } = makeDb();
+    const fetchFn = makeFetch({});
+    const body = await handleRedeem(raw, makeMbdDeps({ db, fetchFn }), "mbd");
+    expect(body).toEqual({
+      ok: false,
+      error: "invalid_order",
+      message: expect.stringContaining("订单号格式不正确"),
+    });
+    expect(selects).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["缺 MBD_DEVELOPER_KEY", { ...MBD_SECRETS, mbdDeveloperKey: undefined }],
+    ["缺 ED25519_PRIVATE_KEY", { ...MBD_SECRETS, ed25519PrivateKeyHex: undefined }],
+    ["私钥非 hex", { ...MBD_SECRETS, ed25519PrivateKeyHex: "zz" }],
+  ])("未配置降级（%s）→ not_configured，零 DB 访问", async (_l, secrets) => {
+    const { db, selects, writes } = makeDb();
+    const body = await handleRedeem(
+      MBD_ORDER_ID,
+      makeMbdDeps({ db, secrets }),
+      "mbd",
+    );
+    expect(body).toEqual({
+      ok: false,
+      error: "not_configured",
+      message: expect.stringContaining("兑换服务尚未配置完成"),
+    });
+    expect(selects).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  it("DB 未绑定 → not_configured", async () => {
+    const body = await handleRedeem(MBD_ORDER_ID, makeMbdDeps({ db: null }), "mbd");
+    expect(body).toMatchObject({ ok: false, error: "not_configured" });
+  });
+
+  it.each([
+    ["取消支付", "cancel"],
+    ["订单过期", "invalid"],
+  ])("state=%s → order_not_paid，零写", async (_l, state) => {
+    const { db, writes } = makeDb();
+    const fetchFn = makeFetch(mbdResponseFixture(mbdResultFixture({ state })));
+    const body = await handleRedeem(
+      MBD_ORDER_ID,
+      makeMbdDeps({ db, fetchFn }),
+      "mbd",
+    );
+    expect(body).toMatchObject({ ok: false, error: "order_not_paid" });
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  it("code 400（查无此单）→ invalid_order", async () => {
+    const fetchFn = makeFetch({ code: 400, error_info: "找不到该订单" });
+    const body = await handleRedeem(MBD_ORDER_ID, makeMbdDeps({ fetchFn }), "mbd");
+    expect(body).toMatchObject({
+      ok: false,
+      error: "invalid_order",
+      message: expect.stringContaining("未查询到该订单"),
+    });
+  });
+
+  it.each([
+    ["code 403（key 无效）", { code: 403, error_info: "认证失败" }],
+    ["响应非对象", "oops"],
+    ["result 缺失", { code: 200 }],
+  ])("上游异常（%s）→ upstream_error", async (_l, raw) => {
+    const fetchFn = makeFetch(raw);
+    const body = await handleRedeem(MBD_ORDER_ID, makeMbdDeps({ fetchFn }), "mbd");
+    expect(body).toMatchObject({ ok: false, error: "upstream_error" });
+  });
+
+  it("fetch 抛异常（网络故障）→ upstream_error", async () => {
+    const fetchFn = jest.fn(async () => {
+      throw new Error("offline");
+    }) as unknown as jest.MockedFunction<FetchLike>;
+    const body = await handleRedeem(MBD_ORDER_ID, makeMbdDeps({ fetchFn }), "mbd");
+    expect(body).toMatchObject({ ok: false, error: "upstream_error" });
+  });
+
+  it("金额不足（¥3）→ amount_too_low（价格文案来自 unlockPricing）", async () => {
+    const fetchFn = makeFetch(
+      mbdResponseFixture(mbdResultFixture({ orderamount: 3 })),
+    );
+    const body = await handleRedeem(MBD_ORDER_ID, makeMbdDeps({ fetchFn }), "mbd");
+    expect(body).toMatchObject({
+      ok: false,
+      error: "amount_too_low",
+      message: expect.stringContaining("¥6"),
+    });
+  });
+
+  it("ordertime 缺失（state=success 但无支付时刻）→ upstream_error 零写", async () => {
+    const { db, writes } = makeDb();
+    const fetchFn = makeFetch(
+      mbdResponseFixture(mbdResultFixture({ ordertime: undefined })),
+    );
+    const body = await handleRedeem(
+      MBD_ORDER_ID,
+      makeMbdDeps({ db, fetchFn }),
+      "mbd",
+    );
+    expect(body).toMatchObject({
+      ok: false,
+      error: "upstream_error",
+      message: expect.stringContaining("支付时间缺失"),
+    });
+    expect(writes).not.toHaveBeenCalled();
+  });
+});
+
+describe("面包多 urlkey 映射态（强制归档）", () => {
+  it("命中 week urlkey → 无视实付金额强制归档（折扣安全：¥4.8 仍 week）", async () => {
+    const { db } = makeDb();
+    const fetchFn = makeFetch(
+      mbdResponseFixture(
+        mbdResultFixture({ orderamount: 4.8, urlkey: MBD_URLKEYS.week }),
+      ),
+    );
+    const body = await handleRedeem(
+      MBD_ORDER_ID,
+      makeMbdDeps({ db, fetchFn, mbdUrlkeys: MBD_URLKEYS }),
+      "mbd",
+    );
+    expect(body).toMatchObject({
+      ok: true,
+      tier: "week",
+      expiresAt: MBD_PAID_SEC + 7 * 86_400,
+    });
+  });
+
+  it("未命中映射（非解锁商品）→ plan_not_eligible 零写", async () => {
+    const { db, writes } = makeDb();
+    const fetchFn = makeFetch(
+      mbdResponseFixture(mbdResultFixture({ urlkey: "some-other-product" })),
+    );
+    const body = await handleRedeem(
+      MBD_ORDER_ID,
+      makeMbdDeps({ db, fetchFn, mbdUrlkeys: MBD_URLKEYS }),
+      "mbd",
+    );
+    expect(body).toMatchObject({ ok: false, error: "plan_not_eligible" });
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  it("映射任一未配置 → 回退金额判定（urlkey 未命中不拒绝）", async () => {
+    const fetchFn = makeFetch(
+      mbdResponseFixture(
+        mbdResultFixture({ orderamount: 88, urlkey: "whatever" }),
+      ),
+    );
+    const body = await handleRedeem(
+      MBD_ORDER_ID,
+      makeMbdDeps({
+        fetchFn,
+        mbdUrlkeys: { week: MBD_URLKEYS.week, month: "", year: "" },
+      }),
+      "mbd",
+    );
+    expect(body).toMatchObject({ ok: true, tier: "year" });
+  });
+
+  it("mbdUrlkeys 缺省（deps 未注入）→ 回退金额判定", async () => {
+    const fetchFn = makeFetch(mbdResponseFixture(mbdResultFixture()));
+    const body = await handleRedeem(
+      MBD_ORDER_ID,
+      makeMbdDeps({ fetchFn, mbdUrlkeys: undefined }),
+      "mbd",
+    );
+    expect(body).toMatchObject({ ok: true, tier: "month" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 面包多适配层纯函数（lib/mbd.ts）
+// ---------------------------------------------------------------------------
+
+describe("classifyMbdOrder（双态归档）", () => {
+  const order = (overrides: Partial<MbdOrder> = {}): MbdOrder => ({
+    state: "success",
+    amountCny: 15,
+    paidAtSec: MBD_PAID_SEC,
+    urlkey: "",
+    ...overrides,
+  });
+
+  it("回退态按金额归档（¥6/¥15/¥88 → 7/31/366 天）", () => {
+    const empty: PlanTierMapping = { week: "", month: "", year: "" };
+    expect(classifyMbdOrder(order({ amountCny: 6 }), empty)).toEqual({
+      tier: "week",
+      days: 7,
+    });
+    expect(classifyMbdOrder(order({ amountCny: 15 }), empty)).toEqual({
+      tier: "month",
+      days: 31,
+    });
+    expect(classifyMbdOrder(order({ amountCny: 88 }), empty)).toEqual({
+      tier: "year",
+      days: 366,
+    });
+    expect(classifyMbdOrder(order({ amountCny: 3 }), empty)).toBeNull();
+  });
+
+  it("映射态命中强制归档（金额无视），未命中/空 urlkey 归 null", () => {
+    expect(
+      classifyMbdOrder(
+        order({ amountCny: 0.1, urlkey: MBD_URLKEYS.year ?? "" }),
+        MBD_URLKEYS,
+      ),
+    ).toEqual({ tier: "year", days: 366 });
+    expect(
+      classifyMbdOrder(order({ amountCny: 88, urlkey: "unknown" }), MBD_URLKEYS),
+    ).toBeNull();
+    expect(
+      classifyMbdOrder(order({ amountCny: 88, urlkey: "" }), MBD_URLKEYS),
+    ).toBeNull();
+  });
+});
+
+describe("buildMbdOrderDetailRequest / normalizeMbdOrderId", () => {
+  it("GET URL 携小写订单号 + x-token header", () => {
+    const req = buildMbdOrderDetailRequest("k-123", MBD_ORDER_ID.toUpperCase());
+    expect(req.url).toBe(`${MBD_ORDER_DETAIL_URL}?order_id=${MBD_ORDER_ID}`);
+    expect(req.headers).toEqual({ "x-token": "k-123" });
+  });
+
+  it("normalizeMbdOrderId：trim + 小写", () => {
+    expect(normalizeMbdOrderId(`  ${MBD_ORDER_ID.toUpperCase()}  `)).toBe(
+      MBD_ORDER_ID,
+    );
+  });
+
+  it("订单号正则边界：32 位 hex 放行，31/33 位与非 hex 拒绝", () => {
+    expect(MBD_ORDER_ID_RE.test(MBD_ORDER_ID)).toBe(true);
+    expect(MBD_ORDER_ID_RE.test(MBD_ORDER_ID.toUpperCase())).toBe(true);
+    expect(MBD_ORDER_ID_RE.test(MBD_ORDER_ID.slice(0, 31))).toBe(false);
+    expect(MBD_ORDER_ID_RE.test(`${MBD_ORDER_ID}0`)).toBe(false);
+    expect(MBD_ORDER_ID_RE.test("z".repeat(32))).toBe(false);
+  });
+});
+
+describe("parseMbdOrderDetailResponse（防御式解析）", () => {
+  it("code 200 → found 并归一化字段", () => {
+    expect(parseMbdOrderDetailResponse(mbdResponseFixture(mbdResultFixture()))).toEqual({
+      kind: "found",
+      order: {
+        state: "success",
+        amountCny: 15,
+        paidAtSec: MBD_PAID_SEC,
+        urlkey: "Y5ublZk=",
+      },
+    });
+  });
+
+  it("code 为字符串 '200' 同样放行（Number 归一）", () => {
+    expect(
+      parseMbdOrderDetailResponse({
+        code: "200",
+        result: mbdResultFixture(),
+      }).kind,
+    ).toBe("found");
+  });
+
+  it("code 400 → not_found；code 403/非 200/形状异常 → upstream_error", () => {
+    expect(parseMbdOrderDetailResponse({ code: 400 })).toEqual({
+      kind: "not_found",
+    });
+    expect(parseMbdOrderDetailResponse({ code: 403 })).toEqual({
+      kind: "upstream_error",
+    });
+    expect(parseMbdOrderDetailResponse(null)).toEqual({
+      kind: "upstream_error",
+    });
+    expect(parseMbdOrderDetailResponse("x")).toEqual({
+      kind: "upstream_error",
+    });
+    expect(parseMbdOrderDetailResponse({ code: 200, result: null })).toEqual({
+      kind: "upstream_error",
+    });
+  });
+
+  it.each([
+    ["state 非字符串归空串", { state: 7 }, { state: "" }],
+    ["orderamount 非法归 0", { orderamount: "abc" }, { amountCny: 0 }],
+    ["ordertime 非法归 null", { ordertime: "abc" }, { paidAtSec: null }],
+    ["ordertime 为 0 归 null", { ordertime: 0 }, { paidAtSec: null }],
+    ["urlkey 非字符串归空串", { urlkey: 42 }, { urlkey: "" }],
+  ])("字段防御（%s）", (_l, overrides, expected) => {
+    const parsed = parseMbdOrderDetailResponse(
+      mbdResponseFixture(mbdResultFixture(overrides)),
+    );
+    if (parsed.kind !== "found") throw new Error("unreachable");
+    expect(parsed.order).toMatchObject(expected);
   });
 });
