@@ -20,6 +20,7 @@ import { buildCorsHeaders, resolveCorsOrigin } from "./lib/cors";
 import type { UnlockDbLike } from "./lib/db";
 import { handleFunnelEvent } from "./lib/funnel";
 import { handleGateConfig } from "./lib/gateConfig";
+import { buildOpsMailRaw } from "./lib/opsMime";
 import { runOpsNotify, type OpsMailerLike } from "./lib/opsNotify";
 import { handleRedeem } from "./lib/redeem";
 import { handleRevocations } from "./lib/revocations";
@@ -55,12 +56,40 @@ export interface UnlockWorkerEnv {
   readonly UNLOCK_MBD_URLKEY_YEAR?: string;
   readonly REFUND_LOOKBACK_DAYS?: string;
   readonly REFUND_AUTO_REVOKE?: string;
-  /** 运营通知邮件绑定（自动运营第1步，wrangler.toml `[[send_email]]`；
-   * 与 OPS_MAIL_FROM / OPS_MAIL_TO 任一缺失 = 通知层 not_configured
+  /** 运营通知邮件绑定（自动运营第1步，wrangler.toml `[[send_email]]`——
+   * Email Routing 免费通道：旧版 send(EmailMessage) 形态、只能发到已
+   * 验证目标地址，通道裁决与实证登记见 lib/opsMime.ts 文件头；与
+   * OPS_MAIL_FROM / OPS_MAIL_TO 任一缺失 = 通知层 not_configured
    * 降级，对账主流程不受影响） */
-  readonly OPS_MAIL?: OpsMailerLike;
+  readonly OPS_MAIL?: SendEmailBindingLike;
   readonly OPS_MAIL_FROM?: string;
   readonly OPS_MAIL_TO?: string;
+}
+
+/** 旧版 send_email 绑定最小面（生产 = CF SendEmail，入参 EmailMessage） */
+export interface SendEmailBindingLike {
+  send(message: unknown): Promise<unknown>;
+}
+
+/**
+ * 绑定 → OpsMailerLike 适配（壳层 IO：EmailMessage 经 cloudflare:email
+ * 动态 import 构造——静态 import 会使 jest 解析 index.ts 时报模块不存在，
+ * 动态形态仅在生产 send 调用时执行；MIME 组装在 lib/opsMime.ts 纯函数）。
+ */
+function opsMailerOf(binding: SendEmailBindingLike | undefined): OpsMailerLike | null {
+  if (binding === undefined) return null;
+  return {
+    async send(message) {
+      const { EmailMessage } = await import("cloudflare:email");
+      await binding.send(
+        new EmailMessage(
+          message.from.email,
+          message.to,
+          buildOpsMailRaw(message, Date.now()),
+        ),
+      );
+    },
+  };
 }
 
 /** 支付宝三接口共享依赖组装（M2；纯映射，无业务分支） */
@@ -365,7 +394,7 @@ const worker = {
         sync,
         ops: await runOpsNotify({
           db: env.UNLOCK_DB ?? null,
-          mailer: env.OPS_MAIL ?? null,
+          mailer: opsMailerOf(env.OPS_MAIL),
           fromEmail: env.OPS_MAIL_FROM,
           toEmail: env.OPS_MAIL_TO,
           nowMs: nowSec * 1000,
