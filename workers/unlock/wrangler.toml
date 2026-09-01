@@ -93,6 +93,11 @@ UNLOCK_MBD_URLKEY_YEAR = "YZaVk5ZuZQ=="
 REFUND_LOOKBACK_DAYS = "15"
 REFUND_AUTO_REVOKE = ""
 # 运营通知邮件收发地址（启用步骤见上方 [[send_email]] 注释；任一为空 =
-# 通知层 not_configured 降级。FROM 域名必须已接入 Email Sending）：
-OPS_MAIL_FROM = ""
-OPS_MAIL_TO = ""
+# 通知层 not_configured 降级）。FROM 必须是已接入 Email Sending 的自有
+# 域名地址（163 等第三方域无法作为发件人——DKIM/SPF 归属验证不通过）；
+# 该地址无需真实存在邮箱账户。TO 为运营者收件箱，任意地址均可。
+# 2026-09-01 登记：wrangler OAuth scope 不含 Email 权限，域名接入须在
+# Dashboard 完成（Email → Email Sending → 接入 guushu.com，DNS 同账户
+# 托管可自动添加 DKIM/SPF 记录）。
+OPS_MAIL_FROM = "ops@guushu.com"
+OPS_MAIL_TO = "stevenzearo@163.com"
