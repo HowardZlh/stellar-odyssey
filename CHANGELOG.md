@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### 发布流程
+
+- 修复 Worker 部署 CI 认证失败：`wrangler.toml` 显式写入 `account_id`（非机密），自定义权限 API token 不再依赖无权调用的账户列表接口（Authentication error 10000）
+
 ## [0.1.14] - 2026-09-01
 
 ### 新增

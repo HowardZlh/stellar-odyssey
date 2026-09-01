@@ -9,6 +9,11 @@
 name = "stellar-unlock"
 main = "index.ts"
 compatibility_date = "2026-08-01"
+# 显式账户 ID（非机密）：CI 用自定义权限 API token 部署时无权调
+# /memberships 列账户（Authentication error 10000，2026-09-01 首次
+# CI 部署实录），写死后 wrangler 跳过账户查询直接部署；本地 OAuth
+# 部署行为不变。
+account_id = "64eb79138b09b3431a9ff67f509dde9c"
 
 # 静态站留 GitHub Pages，Worker 只挂 API 路由（需求文档裁决 ④）。
 # ⚠ routes 必须位于任何 [[表]] 头之前（TOML 语义：置于 [[d1_databases]]
