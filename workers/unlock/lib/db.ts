@@ -53,6 +53,20 @@ export const ALIPAY_REFUND_CURSOR_STATE_KEY = "alipay:refund-cursor";
  */
 export const MBD_REFUND_CURSOR_STATE_KEY = "mbd:refund-cursor";
 
+/**
+ * kv_state 键：运营日报发送状态（自动运营第1步，无 KV 前身）。
+ * 值形态 `{"lastDate": "YYYY-MM-DD"}`（UTC 日期）——每 UTC 日首轮
+ * cron 发送日报后写入，同日后续轮次按此去重；发送失败不写（下一轮重试）。
+ */
+export const OPS_REPORT_STATE_KEY = "ops:report";
+
+/**
+ * kv_state 键：运营告警去重状态（自动运营第1步，无 KV 前身）。
+ * 值形态 `{"sig": "<告警行拼接>", "date": "YYYY-MM-DD"}`——同日同内容
+ * 告警只发一封（上游持续异常时 3 小时轮次不刷屏，次日重提醒）。
+ */
+export const OPS_ALERT_STATE_KEY = "ops:alert";
+
 /** kv_state 读（无记录 → null；与 KV get 语义对齐） */
 export async function getStateRaw(
   db: UnlockDbLike,

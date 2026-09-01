@@ -16,9 +16,11 @@ import {
   remotePremiumBodyIdSet,
   resolveGateConfigApiUrl,
   resolveRemoteObservatoryGateConfig,
+  resolveScheduledObservatoryGateConfig,
 } from '@/utils/remoteGateConfigClient';
 import { REDEEM_API_DEFAULT_BASE } from '@/utils/unlockRedeem';
 import { OBSERVATORY_GATE_CONFIG } from '@/data/observatoryGate';
+import { observatoryFreeWindowActive } from '@/utils/observatoryGate';
 import { premiumDetailGateUpdate } from '@/utils/premiumGate';
 import { remoteFreeWindowActive } from '@/utils/remoteGateConfig';
 import {
@@ -134,6 +136,59 @@ describe('resolveRemoteObservatoryGateConfig（validate 兜底）', () => {
     );
     expect(warnSpy).toHaveBeenCalledTimes(1);
     warnSpy.mockRestore();
+  });
+});
+
+describe('resolveScheduledObservatoryGateConfig（排期折算，自动运营第2步）', () => {
+  const SCHEDULED_WINDOW = {
+    enabled: true,
+    startUtc: '2026-09-10T00:00:00Z',
+    endUtc: '2026-09-12T00:00:00Z',
+  };
+  const IN_WINDOW_MS = Date.parse('2026-09-11T00:00:00Z');
+  const OUT_WINDOW_MS = Date.parse('2026-09-20T00:00:00Z');
+
+  it('无覆盖 / 无命中 → 与既有解析全等（原引用返回，memo 友好）', () => {
+    expect(resolveScheduledObservatoryGateConfig(undefined, IN_WINDOW_MS)).toEqual(
+      OBSERVATORY_GATE_CONFIG,
+    );
+    const override = { freeWindows: [SCHEDULED_WINDOW], dailyLimit: 20 };
+    const out = resolveScheduledObservatoryGateConfig(override, OUT_WINDOW_MS);
+    expect(out.dailyLimit).toBe(20);
+    expect(out.freeWindow).toEqual(OBSERVATORY_GATE_CONFIG.freeWindow);
+  });
+
+  it('排期命中 → freeWindow 被命中窗口替换（enabled=true，下游判定零改动）', () => {
+    const out = resolveScheduledObservatoryGateConfig(
+      { freeWindows: [SCHEDULED_WINDOW] },
+      IN_WINDOW_MS,
+    );
+    expect(out.freeWindow).toEqual(SCHEDULED_WINDOW);
+    expect(observatoryFreeWindowActive(out, IN_WINDOW_MS)).toBe(true);
+    expect(out.dailyLimit).toBe(OBSERVATORY_GATE_CONFIG.dailyLimit);
+  });
+
+  it('单窗口已生效时优先于排期（管理台显式窗口不被覆盖）', () => {
+    const explicitWindow = {
+      enabled: true,
+      startUtc: '2026-09-01T00:00:00Z',
+      endUtc: '2026-09-30T00:00:00Z',
+    };
+    const out = resolveScheduledObservatoryGateConfig(
+      { freeWindow: explicitWindow, freeWindows: [SCHEDULED_WINDOW] },
+      IN_WINDOW_MS,
+    );
+    expect(out.freeWindow).toEqual(explicitWindow);
+  });
+
+  it('freeWindows 不参与 Partial 合并校验（排期存在 + 字段覆盖照常生效）', () => {
+    const out = resolveScheduledObservatoryGateConfig(
+      { dailyLimit: 15, freeWindows: [SCHEDULED_WINDOW] },
+      OUT_WINDOW_MS,
+    );
+    expect(out.dailyLimit).toBe(15);
+    // 折算结果不携带 freeWindows 额外键（保持 ObservatoryGateConfig 形状诚实）
+    expect('freeWindows' in out).toBe(false);
   });
 });
 

@@ -479,9 +479,12 @@ describe("A6-2 index.ts scheduled 壳", () => {
     );
     expect(captured).toHaveLength(1);
     await expect(captured[0]).resolves.toEqual({
-      afdian: expect.objectContaining({ ok: false, error: "not_configured" }),
-      alipay: expect.objectContaining({ ok: false, error: "not_configured" }),
-      mbd: expect.objectContaining({ ok: false, error: "not_configured" }),
+      sync: {
+        afdian: expect.objectContaining({ ok: false, error: "not_configured" }),
+        alipay: expect.objectContaining({ ok: false, error: "not_configured" }),
+        mbd: expect.objectContaining({ ok: false, error: "not_configured" }),
+      },
+      ops: expect.objectContaining({ mailed: "none", error: "not_configured" }),
     });
   });
 });

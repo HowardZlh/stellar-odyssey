@@ -29,7 +29,7 @@ import {
 } from '@/utils/detailLayer';
 import { advanceFrameTransition } from '@/utils/galacticFrame';
 import { premiumDetailGateUpdate } from '@/utils/premiumGate';
-import { remoteFreeWindowActive } from '@/utils/remoteGateConfig';
+import { remoteFreeScheduleActive } from '@/utils/remoteGateConfig';
 import { remotePremiumBodyIdSet } from '@/utils/remoteGateConfigClient';
 import { useSimulationStore } from '@/store';
 
@@ -114,7 +114,7 @@ export function useDetailLayer(
         ? undefined
         : {
             premiumBodyIds: remotePremiumBodyIdSet(remoteDetail.premiumBodyIds),
-            freeWindowActive: remoteFreeWindowActive(remoteDetail.freeWindow, nowMs),
+            freeWindowActive: remoteFreeScheduleActive(remoteDetail, nowMs),
           },
     );
     if (premiumGate.lockedHit) {

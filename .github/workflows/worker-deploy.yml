@@ -1,0 +1,94 @@
+# 部署解锁 Worker（stellar-unlock → stellar.guushu.com/api/*）
+# 自动运营第3步：main 合入 Worker 相关改动后自动构建校验，经 GitHub
+# Environment `unlock-worker` 人工审批（半自动：拍板点保留给用户）后
+# wrangler deploy 到 Cloudflare。
+#
+# 触发路径 = Worker 本体 + 其 import 的共享 src 模块（workers/unlock/lib
+# 经相对路径引用的三个文件，新增共享依赖时须同步登记到 paths）。
+#
+# 首次启用（用户手工，一次性）：
+#   1. 仓库 Settings → Environments → 新建 `unlock-worker`，勾选
+#      Required reviewers 并把自己加为审批人（= 部署前人工拍板闸门）；
+#   2. 仓库 Settings → Secrets → Actions 添加 `CLOUDFLARE_API_TOKEN`
+#      （Cloudflare Dashboard 创建，权限：Account.Workers Scripts:Edit +
+#      Zone.Workers Routes:Edit（zone guushu.com）+ Account.D1:Edit）；
+#   3. D1 migrations 不在本流程内自动执行——新增 migration 时仍由用户
+#      手工 `npx wrangler d1 migrations apply stellar-unlock --remote`
+#      （先于合并部署，保持既有纪律）。
+#
+# 安全说明：deploy job 绑定 environment 审批，未经批准不会执行；
+# secrets 仅在 deploy job 暴露。测试失败不进入审批队列。
+name: Deploy Unlock Worker
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'workers/unlock/**'
+      - 'src/data/unlockPricing.ts'
+      - 'src/utils/unlockToken.ts'
+      - 'src/utils/revocationList.ts'
+      - '.github/workflows/worker-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同一时间只允许一个 Worker 部署，后触发的排队（不打断进行中的）
+concurrency:
+  group: worker-deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      # Worker 测试子集（无覆盖率 gate——全局 ≥90% gate 在 PR gate 与
+      # Pages 部署流程各跑一次，此处只做部署前回归确认）
+      - name: Worker unit tests
+        run: npx jest workers/unlock
+
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    needs: test
+    # 人工审批闸门：environment 配置 Required reviewers 后，此 job
+    # 会挂起等待批准（Actions 页面 Review deployments）
+    environment:
+      name: unlock-worker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Worker 打包需要 node_modules（lib 经共享 src 模块引用 @noble/*）
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy Worker (wrangler)
+        working-directory: workers/unlock
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler@4 deploy

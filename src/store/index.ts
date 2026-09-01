@@ -70,7 +70,7 @@ import { FREE_DEMO_DAILY_LIMIT, demoQuotaRemaining, demoQuotaUpdate } from '@/ut
 import type { DemoQuotaState } from '@/utils/demoQuota';
 import type { UnlockEntitlement } from '@/utils/premiumGate';
 import {
-  remoteFreeWindowActive,
+  remoteFreeScheduleActive,
   sanitizeRemoteGateConfig,
 } from '@/utils/remoteGateConfig';
 import type { RemoteGateConfigV1 } from '@/utils/remoteGateConfig';
@@ -1139,13 +1139,13 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       state.remoteGateConfig.demo?.dailyLimit,
     );
     if (remaining !== state.demoRemainingToday) updates.demoRemainingToday = remaining;
-    const tourFree = remoteFreeWindowActive(
-      state.remoteGateConfig.tour?.freeWindow,
+    const tourFree = remoteFreeScheduleActive(
+      state.remoteGateConfig.tour,
       nowSec * 1000,
     );
     if (tourFree !== state.remoteTourFreeActive) updates.remoteTourFreeActive = tourFree;
-    const demoFree = remoteFreeWindowActive(
-      state.remoteGateConfig.demo?.freeWindow,
+    const demoFree = remoteFreeScheduleActive(
+      state.remoteGateConfig.demo,
       nowSec * 1000,
     );
     if (demoFree !== state.remoteDemoFreeActive) updates.remoteDemoFreeActive = demoFree;
@@ -1182,8 +1182,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     set({
       remoteGateConfig: clean,
       demoRemainingToday: demoQuotaRemaining(get().demoQuota, nowMs, clean.demo?.dailyLimit),
-      remoteTourFreeActive: remoteFreeWindowActive(clean.tour?.freeWindow, nowMs),
-      remoteDemoFreeActive: remoteFreeWindowActive(clean.demo?.freeWindow, nowMs),
+      remoteTourFreeActive: remoteFreeScheduleActive(clean.tour, nowMs),
+      remoteDemoFreeActive: remoteFreeScheduleActive(clean.demo, nowMs),
     });
   },
 
@@ -1196,7 +1196,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       return true;
     }
     // A3：demo 限免窗口期内放行不计次（观察站免费期同口径，配额零触碰）
-    if (remoteFreeWindowActive(state.remoteGateConfig.demo?.freeWindow, nowMs)) {
+    if (remoteFreeScheduleActive(state.remoteGateConfig.demo, nowMs)) {
       recLog('gate.demoQuota', { freeWindow: true, allowed: true });
       return true;
     }
@@ -1310,7 +1310,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
         // 跳过门控域继续轮转（修复免费用户 kiosk 静默停滞）
         const gated =
           s.entitlement === null &&
-          !remoteFreeWindowActive(s.remoteGateConfig.tour?.freeWindow, Date.now());
+          !remoteFreeScheduleActive(s.remoteGateConfig.tour, Date.now());
         const lockedScopes: readonly CycleScope[] = gated ? ['galaxy', 'universe'] : [];
         const plan = planKioskAdvance(
           s.launch.tour,
@@ -1573,7 +1573,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       if (
         (scope === 'galaxy' || scope === 'universe') &&
         state.entitlement === null &&
-        !remoteFreeWindowActive(state.remoteGateConfig.tour?.freeWindow, Date.now())
+        !remoteFreeScheduleActive(state.remoteGateConfig.tour, Date.now())
       ) {
         return { lockedHint: { context: 'cycle' as const, bodyId: null } };
       }

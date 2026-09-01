@@ -40,6 +40,22 @@ migrations_dir = "migrations"
 [triggers]
 crons = ["0 */3 * * *"]
 
+# 运营通知邮件绑定（自动运营第1步：实时告警 + 每 UTC 日一封转化日报，
+# 编排纯逻辑见 lib/opsNotify.ts / lib/opsReport.ts；每轮 cron 至多 1 封）。
+#
+# 通道 = Email Routing 免费发信（旧版 send_email 绑定，原始 MIME 形态；
+# 新版 Email Sending 仅 Workers Paid 可用——裁决与实证登记见
+# lib/opsMime.ts 文件头）。destination_address 与 OPS_MAIL_TO 同值双保险：
+# 绑定层硬限制收件人，改收件地址需两处同步。
+# 启用前置（2026-09-01 已完成，换收件地址时重做）：
+#   1. Dashboard → 邮件路由（Email Routing）：guushu.com 已启用；
+#   2. 邮件路由 → 目标地址：添加收件地址并点邮件验证链接；
+#   3. ⚠ 实测坑：目标地址在部署之后才验证的，须重新部署一次绑定才生效
+#      （部署时快照验证状态，E_RECIPIENT_NOT_ALLOWED 即此症状）。
+[[send_email]]
+name = "OPS_MAIL"
+destination_address = "stevenzearo@163.com"
+
 # U6 档位 ↔ 爱发电 plan_id 映射（非机密，商品/方案页 URL 可见）。
 # 三者**全部填写**后启用「按商品强制归档」（命中即归档、未命中拒绝，
 # 折扣/特价/会员优惠安全）；任一为空整体回退纯金额判定（老行为）。
@@ -80,3 +96,10 @@ UNLOCK_MBD_URLKEY_MONTH = "YZaVk5ZuZA=="
 UNLOCK_MBD_URLKEY_YEAR = "YZaVk5ZuZQ=="
 REFUND_LOOKBACK_DAYS = "15"
 REFUND_AUTO_REVOKE = ""
+# 运营通知邮件收发地址（启用前置见上方 [[send_email]] 注释；任一为空 =
+# 通知层 not_configured 降级）。FROM 必须是已启用 Email Routing 的自有
+# 域名地址（163 等第三方域无法作为发件人），该地址无需真实存在邮箱账户；
+# TO 必须是已验证目标地址且与绑定 destination_address 同值（改地址两处
+# 同步 + 先验证后部署）。
+OPS_MAIL_FROM = "ops@guushu.com"
+OPS_MAIL_TO = "stevenzearo@163.com"

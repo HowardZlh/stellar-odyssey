@@ -13,6 +13,9 @@
 
 import { OBSERVATORY_GATE_CONFIG } from "@/data/observatoryGate";
 import {
+  activeRemoteFreeWindow,
+  MAX_FREE_WINDOWS,
+  remoteFreeScheduleActive,
   remoteFreeWindowActive,
   sanitizeRemoteGateConfig,
   type RemoteFreeWindow,
@@ -431,5 +434,115 @@ describe("premiumGate 参数化", () => {
     expect(premiumDetailGateUpdate(true, valid, "m31", NOW_SEC, {})).toEqual(
       premiumDetailGateUpdate(true, valid, "m31", NOW_SEC),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// freeWindows 排期数组（自动运营第2步）：消毒 + 生效判定
+// ---------------------------------------------------------------------------
+
+describe("sanitizeRemoteGateConfig freeWindows 排期消毒", () => {
+  const LATER_WINDOW: RemoteFreeWindow = {
+    enabled: true,
+    startUtc: "2026-10-01T00:00:00Z",
+    endUtc: "2026-10-08T00:00:00Z",
+  };
+
+  it("四域 freeWindows 合法数组原样保留（与 freeWindow 并存）", () => {
+    const raw: RemoteGateConfigV1 = {
+      v: 1,
+      observatory: { freeWindows: [VALID_WINDOW, LATER_WINDOW] },
+      detail: { freeWindow: VALID_WINDOW, freeWindows: [LATER_WINDOW] },
+      tour: { freeWindows: [LATER_WINDOW] },
+      demo: { freeWindows: [LATER_WINDOW], dailyLimit: 3 },
+    };
+    expect(sanitizeRemoteGateConfig(raw)).toEqual(raw);
+  });
+
+  it("逐条消毒：坏条目丢弃、好条目保留（premiumBodyIds 整丢语义不同，登记）", () => {
+    const result = sanitizeRemoteGateConfig({
+      v: 1,
+      tour: {
+        freeWindows: [
+          VALID_WINDOW,
+          { enabled: true, startUtc: "咕", endUtc: "2026-10-08T00:00:00Z" },
+          { enabled: true, startUtc: LATER_WINDOW.endUtc, endUtc: LATER_WINDOW.startUtc },
+          "not-a-window",
+          LATER_WINDOW,
+        ],
+      },
+    });
+    expect(result.tour?.freeWindows).toEqual([VALID_WINDOW, LATER_WINDOW]);
+  });
+
+  it("非数组 / 全灭数组 → 丢弃字段（域内无幸存字段则省略整域）", () => {
+    expect(
+      sanitizeRemoteGateConfig({ v: 1, tour: { freeWindows: "x" } }),
+    ).toEqual({ v: 1 });
+    expect(
+      sanitizeRemoteGateConfig({ v: 1, demo: { freeWindows: [null, 42] } }),
+    ).toEqual({ v: 1 });
+    // 域内其余字段幸存时仅丢 freeWindows
+    expect(
+      sanitizeRemoteGateConfig({ v: 1, demo: { freeWindows: [], dailyLimit: 3 } }),
+    ).toEqual({ v: 1, demo: { dailyLimit: 3 } });
+  });
+
+  it("超出 MAX_FREE_WINDOWS 截断", () => {
+    const windows = Array.from({ length: MAX_FREE_WINDOWS + 5 }, () => ({
+      ...VALID_WINDOW,
+    }));
+    const result = sanitizeRemoteGateConfig({ v: 1, tour: { freeWindows: windows } });
+    expect(result.tour?.freeWindows).toHaveLength(MAX_FREE_WINDOWS);
+  });
+
+  it("observatory：freeWindows 独立于 Partial 字段校验（字段全非法仍保留排期）", () => {
+    const result = sanitizeRemoteGateConfig({
+      v: 1,
+      observatory: { dailyLimit: -1, freeWindows: [VALID_WINDOW] },
+    });
+    expect(result.observatory).toEqual({ freeWindows: [VALID_WINDOW] });
+  });
+});
+
+describe("activeRemoteFreeWindow / remoteFreeScheduleActive（排期生效判定）", () => {
+  const NEXT_WINDOW: RemoteFreeWindow = {
+    enabled: true,
+    startUtc: "2026-09-10T00:00:00Z",
+    endUtc: "2026-09-12T00:00:00Z",
+  };
+
+  it("undefined 域 / 空配置 → 不生效", () => {
+    expect(activeRemoteFreeWindow(undefined, WINDOW_START_MS)).toBeUndefined();
+    expect(remoteFreeScheduleActive(undefined, WINDOW_START_MS)).toBe(false);
+    expect(remoteFreeScheduleActive({}, WINDOW_START_MS)).toBe(false);
+  });
+
+  it("单窗口优先命中（返回单窗口引用）", () => {
+    const domain = { freeWindow: VALID_WINDOW, freeWindows: [NEXT_WINDOW] };
+    expect(activeRemoteFreeWindow(domain, WINDOW_START_MS)).toBe(VALID_WINDOW);
+    expect(remoteFreeScheduleActive(domain, WINDOW_START_MS)).toBe(true);
+  });
+
+  it("单窗口未命中时按排期数组顺序取首个命中窗口", () => {
+    const domain = { freeWindow: VALID_WINDOW, freeWindows: [NEXT_WINDOW] };
+    const inNext = Date.parse(NEXT_WINDOW.startUtc);
+    expect(activeRemoteFreeWindow(domain, inNext)).toBe(NEXT_WINDOW);
+    expect(remoteFreeScheduleActive(domain, inNext)).toBe(true);
+  });
+
+  it("全部窗口外 → 不生效（含窗口间隙）", () => {
+    const domain = { freeWindow: VALID_WINDOW, freeWindows: [NEXT_WINDOW] };
+    const gapMs = Date.parse("2026-09-09T00:00:00Z");
+    expect(activeRemoteFreeWindow(domain, gapMs)).toBeUndefined();
+    expect(remoteFreeScheduleActive(domain, gapMs)).toBe(false);
+    // end 不含边界
+    expect(remoteFreeScheduleActive(domain, Date.parse(NEXT_WINDOW.endUtc))).toBe(false);
+  });
+
+  it("仅排期数组（无单窗口）也可生效", () => {
+    const domain = { freeWindows: [NEXT_WINDOW] };
+    expect(remoteFreeScheduleActive(domain, Date.parse(NEXT_WINDOW.startUtc))).toBe(true);
+    expect(remoteFreeScheduleActive(domain, WINDOW_START_MS)).toBe(false);
   });
 });
