@@ -20,6 +20,7 @@ import { buildCorsHeaders, resolveCorsOrigin } from "./lib/cors";
 import type { UnlockDbLike } from "./lib/db";
 import { handleFunnelEvent } from "./lib/funnel";
 import { handleGateConfig } from "./lib/gateConfig";
+import { runOpsNotify, type OpsMailerLike } from "./lib/opsNotify";
 import { handleRedeem } from "./lib/redeem";
 import { handleRevocations } from "./lib/revocations";
 import { runUnifiedSync } from "./lib/refundSync";
@@ -54,6 +55,12 @@ export interface UnlockWorkerEnv {
   readonly UNLOCK_MBD_URLKEY_YEAR?: string;
   readonly REFUND_LOOKBACK_DAYS?: string;
   readonly REFUND_AUTO_REVOKE?: string;
+  /** 运营通知邮件绑定（自动运营第1步，wrangler.toml `[[send_email]]`；
+   * 与 OPS_MAIL_FROM / OPS_MAIL_TO 任一缺失 = 通知层 not_configured
+   * 降级，对账主流程不受影响） */
+  readonly OPS_MAIL?: OpsMailerLike;
+  readonly OPS_MAIL_FROM?: string;
+  readonly OPS_MAIL_TO?: string;
 }
 
 /** 支付宝三接口共享依赖组装（M2；纯映射，无业务分支） */
@@ -308,6 +315,10 @@ const worker = {
    * 纯逻辑（jest 直测）；本壳只做 env 绑定注入 + waitUntil 挂接。
    * 爱发电模式 A（裁决 ⑧）：REFUND_AUTO_REVOKE 为空时只检测登记疑似单；
    * 支付宝段（超时关单/已付补发/退款吊销）Secrets 未配齐时独立降级。
+   *
+   * 自动运营第1步：对账完成后接运营通知编排（lib/opsNotify.ts——实时
+   * 告警 + 每 UTC 日一封转化日报，每轮至多 1 封邮件；runOpsNotify 永不抛，
+   * 通知层异常不连带对账结果）。
    */
   scheduled(
     _controller: unknown,
@@ -350,7 +361,17 @@ const worker = {
           lookbackDays,
           autoRevoke: env.REFUND_AUTO_REVOKE === "1",
         },
-      ),
+      ).then(async (sync) => ({
+        sync,
+        ops: await runOpsNotify({
+          db: env.UNLOCK_DB ?? null,
+          mailer: env.OPS_MAIL ?? null,
+          fromEmail: env.OPS_MAIL_FROM,
+          toEmail: env.OPS_MAIL_TO,
+          nowMs: nowSec * 1000,
+          sync,
+        }),
+      })),
     );
   },
 };

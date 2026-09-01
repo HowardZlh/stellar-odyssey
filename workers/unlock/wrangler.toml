@@ -40,6 +40,18 @@ migrations_dir = "migrations"
 [triggers]
 crons = ["0 */3 * * *"]
 
+# 运营通知邮件绑定（自动运营第1步：实时告警 + 每 UTC 日一封转化日报，
+# 编排纯逻辑见 lib/opsNotify.ts / lib/opsReport.ts；每轮 cron 至多 1 封）。
+# 启用步骤（用户手工执行，未完成前通知层 not_configured 降级，
+# 对账主流程零影响）：
+#   1. npx wrangler email sending enable guushu.com   # 域名接入 Email Sending
+#      （或 Dashboard → Email → Email Sending 完成域名 DKIM/SPF 接入）
+#   2. 在下方 [vars] 填 OPS_MAIL_FROM（如 ops@guushu.com，须为已接入域名）
+#      与 OPS_MAIL_TO（运营者收件邮箱）
+#   3. 重新部署 Worker
+[[send_email]]
+name = "OPS_MAIL"
+
 # U6 档位 ↔ 爱发电 plan_id 映射（非机密，商品/方案页 URL 可见）。
 # 三者**全部填写**后启用「按商品强制归档」（命中即归档、未命中拒绝，
 # 折扣/特价/会员优惠安全）；任一为空整体回退纯金额判定（老行为）。
@@ -80,3 +92,7 @@ UNLOCK_MBD_URLKEY_MONTH = "YZaVk5ZuZA=="
 UNLOCK_MBD_URLKEY_YEAR = "YZaVk5ZuZQ=="
 REFUND_LOOKBACK_DAYS = "15"
 REFUND_AUTO_REVOKE = ""
+# 运营通知邮件收发地址（启用步骤见上方 [[send_email]] 注释；任一为空 =
+# 通知层 not_configured 降级。FROM 域名必须已接入 Email Sending）：
+OPS_MAIL_FROM = ""
+OPS_MAIL_TO = ""

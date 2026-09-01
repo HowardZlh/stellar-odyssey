@@ -16,12 +16,17 @@
  */
 
 import {
+  activeRemoteFreeWindow,
   sanitizeRemoteGateConfig,
   type RemoteGateConfigV1,
+  type RemoteObservatoryGateConfig,
 } from '@/utils/remoteGateConfig';
 import { REDEEM_API_DEFAULT_BASE } from '@/utils/unlockRedeem';
 import type { ObservatoryGateConfig } from '@/data/observatoryGate';
-import { resolveObservatoryGateConfig } from '@/utils/observatoryGate';
+import {
+  observatoryFreeWindowActive,
+  resolveObservatoryGateConfig,
+} from '@/utils/observatoryGate';
 
 /** Worker 门控配置端点路径（§0.11 冻结契约） */
 export const GATE_CONFIG_API_PATH = '/api/gate-config';
@@ -94,4 +99,43 @@ export function resolveRemoteObservatoryGateConfig(
     console.warn('[unlock] 远程观察站门控配置非法，回落代码默认值');
     return resolveObservatoryGateConfig();
   }
+}
+
+/**
+ * 观察站排期折算解析（自动运营第2步）：在判定时刻把 `freeWindows`
+ * 排期数组折算为生效 freeWindow——
+ * 1. 先剥离 freeWindows（它不是 ObservatoryGateConfig 字段，不参与
+ *    Partial 合并校验）走既有 resolveRemoteObservatoryGateConfig；
+ * 2. 合并结果的单窗口已生效 → 原样返回（单窗口优先，管理台显式下发
+ *    的窗口不被排期覆盖）；
+ * 3. 否则排期数组有命中 → 以命中窗口替换 freeWindow（enabled 置 true，
+ *    下游 observatoryFreeWindowActive / observatoryAccessUpdate 零改动
+ *    即正确豁免计次）；无命中 → 原引用返回（memo 友好）。
+ *
+ * 调用点须在 effect / 事件时刻传入 nowMs（渲染纯度纪律：不在渲染期读钟）。
+ */
+export function resolveScheduledObservatoryGateConfig(
+  override: RemoteObservatoryGateConfig | undefined,
+  nowMs: number,
+): ObservatoryGateConfig {
+  let fields: Partial<ObservatoryGateConfig> | undefined;
+  if (override !== undefined) {
+    const { freeWindows: _freeWindows, ...rest } = override;
+    fields = rest;
+  }
+  const base = resolveRemoteObservatoryGateConfig(fields);
+  if (observatoryFreeWindowActive(base, nowMs)) return base;
+  const active = activeRemoteFreeWindow(
+    { freeWindows: override?.freeWindows },
+    nowMs,
+  );
+  if (active === undefined) return base;
+  return {
+    ...base,
+    freeWindow: {
+      enabled: true,
+      startUtc: active.startUtc,
+      endUtc: active.endUtc,
+    },
+  };
 }

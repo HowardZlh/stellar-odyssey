@@ -920,7 +920,7 @@ describe("M4 runUnifiedSync（单 cron 统一对账）", () => {
     }
   });
 
-  it("scheduled 壳：挂接 waitUntil 并注入三段 env 绑定（未配置 → 三 not_configured）", async () => {
+  it("scheduled 壳：挂接 waitUntil 并注入三段 env 绑定（未配置 → 三 not_configured；运营通知层同降级）", async () => {
     const captured: Promise<unknown>[] = [];
     worker.scheduled(
       null,
@@ -929,9 +929,12 @@ describe("M4 runUnifiedSync（单 cron 统一对账）", () => {
     );
     expect(captured).toHaveLength(1);
     await expect(captured[0]).resolves.toEqual({
-      afdian: expect.objectContaining({ ok: false, error: "not_configured" }),
-      alipay: expect.objectContaining({ ok: false, error: "not_configured" }),
-      mbd: expect.objectContaining({ ok: false, error: "not_configured" }),
+      sync: {
+        afdian: expect.objectContaining({ ok: false, error: "not_configured" }),
+        alipay: expect.objectContaining({ ok: false, error: "not_configured" }),
+        mbd: expect.objectContaining({ ok: false, error: "not_configured" }),
+      },
+      ops: expect.objectContaining({ mailed: "none", error: "not_configured" }),
     });
   });
 });

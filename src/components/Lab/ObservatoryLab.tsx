@@ -20,7 +20,10 @@ import {
   observatoryRemaining,
   type ObservatoryAccessResult,
 } from '@/utils/observatoryGate';
-import { resolveRemoteObservatoryGateConfig } from '@/utils/remoteGateConfigClient';
+import {
+  resolveRemoteObservatoryGateConfig,
+  resolveScheduledObservatoryGateConfig,
+} from '@/utils/remoteGateConfigClient';
 import {
   persistObservatoryQuota,
   readStoredObservatoryQuota,
@@ -94,22 +97,28 @@ function ObservatoryGallery({ unknownBodyId }: { unknownBodyId: string | null })
   );
 
   // 额度横幅：entitlement 恢复/远程配置注入后重算（读时钟与 localStorage，
-  // effect 内完成；限免文案/剩余额度随注入配置自动正确）
+  // effect 内完成；限免文案/剩余额度随注入配置自动正确）。排期折算
+  // （freeWindows → 生效 freeWindow）在 effect 时刻完成——渲染期 memo 的
+  // config 不读钟，仅供专属标记等时钟无关消费。
   useEffect(() => {
     const now = Date.now();
+    const effConfig = resolveScheduledObservatoryGateConfig(
+      remoteObservatory,
+      now,
+    );
     const { remaining, premiumRemaining } = observatoryRemaining(
-      config,
+      effConfig,
       readStoredObservatoryQuota(),
       now,
     );
     setBanner({
-      freeWindowActive: observatoryFreeWindowActive(config, now),
-      freeWindowEndMs: Date.parse(config.freeWindow.endUtc),
+      freeWindowActive: observatoryFreeWindowActive(effConfig, now),
+      freeWindowEndMs: Date.parse(effConfig.freeWindow.endUtc),
       entitled: entitlement !== null,
       remaining,
       premiumRemaining,
     });
-  }, [entitlement, config]);
+  }, [entitlement, remoteObservatory]);
 
   return (
     <main className="hud-scroll fixed inset-0 overflow-y-auto bg-space-dark pb-[calc(2.5rem+env(safe-area-inset-bottom))] pl-[max(1.5rem,env(safe-area-inset-left))] pr-[max(1.5rem,env(safe-area-inset-right))] pt-[max(2.5rem,env(safe-area-inset-top))] text-gray-200">
@@ -292,9 +301,12 @@ function ObservatoryScene({ entry }: { entry: PreviewEntry }): JSX.Element {
     consumedForRef.current = entry.bodyId;
     // A3：远程 observatory 域覆盖注入（进入时刻快照，effect 内 getState；
     // 缓存配置在 useUnlockInit 挂载 effect 已同步应用——先于本 effect 执行，
-    // ObservatoryLab 的 restored 时序登记同样保证）
-    const config = resolveRemoteObservatoryGateConfig(
+    // ObservatoryLab 的 restored 时序登记同样保证）。排期折算：freeWindows
+    // 命中窗口在进入时刻替换 freeWindow，观察免费豁免计次自动正确。
+    const now = Date.now();
+    const config = resolveScheduledObservatoryGateConfig(
       useSimulationStore.getState().remoteGateConfig.observatory,
+      now,
     );
     const entitled = useSimulationStore.getState().entitlement !== null;
     const decision = observatoryAccessUpdate(
@@ -302,7 +314,7 @@ function ObservatoryScene({ entry }: { entry: PreviewEntry }): JSX.Element {
       readStoredObservatoryQuota(),
       entry.bodyId,
       entitled,
-      Date.now(),
+      now,
     );
     persistObservatoryQuota(decision.state);
     setResult(decision);
