@@ -94,6 +94,12 @@ beforeEach(() => {
     if (u.includes('/api/revocations')) {
       return { ok: true, json: async (): Promise<unknown> => ({ ok: true, list: {} }) };
     }
+    // 燃料补给名单小节（共享组件）mount 拉取：默认空名单
+    if (u.includes('/api/contributors')) {
+      return {
+        json: async (): Promise<unknown> => ({ ok: true, contributors: [] }),
+      };
+    }
     if (u.startsWith(STATUS_URL)) {
       statusCalls.push(u);
       return { json: async (): Promise<unknown> => statusResponder(u) };
@@ -301,6 +307,10 @@ describe('轮询状态机（D-z5，fake timers）', () => {
     expect(useSimulationStore.getState().entitlement?.tier).toBe('week');
     // 页面权益状态区同步激活态
     expect(screen.getByText('✅ 权益已激活')).toBeInTheDocument();
+    // 付款成功强引导：支付宝即时上榜，一键看自己的贡献者星（→ /contributors）
+    expect(
+      screen.getByRole('link', { name: /看看我的贡献者星/ }),
+    ).toHaveAttribute('href', '/contributors');
   });
 
   it('≥60s 仍 pending：轮询带 deep=1（服务端 trade.query 兜底）', async () => {

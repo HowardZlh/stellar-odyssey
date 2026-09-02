@@ -44,7 +44,9 @@ import {
   SPONSOR_MBD_URL,
 } from '@/data/donationPlatforms';
 import { CONTACT_EMAIL, SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
+import { ContributorsRosterSection } from '@/components/UI/ContributorsRosterSection';
 import { UnlockAlipayModal } from '@/components/UI/UnlockAlipayModal';
+import { CONTRIBUTORS_PAGE_PATH } from '@/utils/contributorUniverse';
 import { trackFunnelEvent } from '@/utils/funnel';
 import { tokenRemainingDays } from '@/utils/unlockToken';
 import { readStoredUnlockToken } from '@/utils/unlockStorage';
@@ -501,6 +503,20 @@ export default function UnlockPage(): JSX.Element {
                   </div>
                 </div>
               )}
+              {/* 已激活态强引导（付款成功闭环）：兑现「昵称与留言记入贡献者
+                  宇宙」承诺，付款高峰即时正反馈 → 一键看自己的星；人工渠道
+                  上榜有时序，附预期说明避免立即找不到而困惑 */}
+              <div className="mt-4 border-t border-white/10 pt-4">
+                <Link
+                  href={CONTRIBUTORS_PAGE_PATH}
+                  className={`inline-flex items-center gap-2 rounded-lg border border-space-accent/40 bg-space-accent/10 px-4 text-xs font-medium text-space-accent transition-colors hover:border-space-accent/70 hover:text-white ${touchBtn}`}
+                >
+                  ✨ {tr('unlock.contributorsActiveCta')}
+                </Link>
+                <p className="mt-2 text-[10px] leading-4 text-gray-500 max-md:text-xs">
+                  {tr('unlock.contributorsPendingNote')}
+                </p>
+              </div>
             </div>
           )}
         </section>
@@ -879,6 +895,12 @@ export default function UnlockPage(): JSX.Element {
             {tr('unlock.refundPolicy')}
           </p>
         </section>
+
+        {/* 燃料补给名单（共享小节，与 /donate 统一：名单 + 贡献者宇宙入口。
+            付款前社会证明——Top 5 截断控制页长，>5 位时尾部幽灵行体现
+            "还有 N 位支持者"（真实计数），引流贡献者宇宙；≤5 位时无截断
+            信号，不产生反向社会证明 */}
+        <ContributorsRosterSection maxItems={5} />
 
         <footer className="mt-12 pb-6 text-center text-xs text-gray-500">
           <Link

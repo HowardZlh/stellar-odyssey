@@ -135,6 +135,13 @@ beforeEach(() => {
     if (String(url).includes('/api/revocations')) {
       return { ok: true, json: revocationsResponse };
     }
+    // 燃料补给名单小节（共享组件）mount 时拉取动态名单：默认空名单，
+    // 防止其消费下方 redeemQueue 排队的兑换响应
+    if (String(url).includes('/api/contributors')) {
+      return {
+        json: async (): Promise<unknown> => ({ ok: true, contributors: [] }),
+      };
+    }
     const arm = redeemQueue.shift();
     if (arm === undefined) throw new Error('unexpected fetch (queue empty)');
     if (arm.kind === 'reject') throw new Error('offline');
@@ -191,6 +198,15 @@ describe('U3-1 页面骨架与档位表', () => {
     const back = screen.getAllByRole('link', { name: /返回星图/ });
     expect(back.length).toBeGreaterThan(0);
     expect(back[0]).toHaveAttribute('href', '/');
+  });
+
+  it('免费态渲染燃料补给名单小节（与 /donate 统一）：标题 + 空态正向文案 + 贡献者宇宙入口', async () => {
+    render(<UnlockPage />);
+    // 共享小节（ContributorsRosterSection）：标题与空态正向口径
+    expect(screen.getByText('燃料补给名单')).toBeInTheDocument();
+    expect(await screen.findByText(/这里将点亮第一颗星/)).toBeInTheDocument();
+    const entry = screen.getByRole('link', { name: /进入贡献者宇宙/ });
+    expect(entry).toHaveAttribute('href', '/contributors');
   });
 
   it('桌面档位表消费 UNLOCK_TIERS 单一事实源（表格形态）', () => {
@@ -580,6 +596,18 @@ describe('U3-3 URL 注入与已激活态', () => {
     expect(screen.getByText(formatExpiryDate(exp, 'zh'))).toBeInTheDocument();
     // "31 天" 同时出现在档位表（月卡时长）与状态区（剩余天数）
     expect(screen.getAllByText('31 天')).toHaveLength(2);
+  });
+
+  it('已激活态强引导「查看我的贡献者星」指向 /contributors + 人工渠道时序说明', async () => {
+    window.localStorage.setItem(UNLOCK_TOKEN_STORAGE_KEY, makeToken());
+    render(<UnlockPage />);
+    await screen.findByText('✅ 权益已激活');
+    const cta = screen.getByRole('link', { name: /查看我的贡献者星/ });
+    expect(cta).toHaveAttribute('href', '/contributors');
+    // 人工渠道上榜有时序，附预期说明避免立即找不到而困惑
+    expect(
+      screen.getByText(/微信\/爱发电\/面包多\/Ko-fi 等人工核验渠道稍后上榜/),
+    ).toBeInTheDocument();
   });
 
   it('localStorage 存过期 token → 保持免费态（到期降级）', () => {

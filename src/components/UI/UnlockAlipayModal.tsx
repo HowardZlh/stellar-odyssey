@@ -23,9 +23,11 @@
  */
 import type { JSX } from 'react';
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import type { MessageKey } from '@/i18n';
 import { useT, useTf } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
+import { CONTRIBUTORS_PAGE_PATH } from '@/utils/contributorUniverse';
 import type { UnlockTier } from '@/data/unlockPricing';
 import { UNLOCK_TIERS } from '@/data/unlockPricing';
 import {
@@ -366,10 +368,18 @@ export function UnlockAlipayModal({
               onFocus={(e) => e.currentTarget.select()}
               className="mt-2 w-full rounded border border-white/15 bg-black/30 px-2 py-1.5 font-mono text-[10px] text-gray-300"
             />
+            {/* 付款成功强引导：支付宝为即时上榜，此刻昵称/留言已写入
+                贡献者宇宙——情感回报峰值处一键看自己的星 */}
+            <Link
+              href={CONTRIBUTORS_PAGE_PATH}
+              className={`mt-4 flex w-full items-center justify-center rounded border border-space-accent/40 bg-space-accent/10 px-4 text-xs font-medium text-space-accent transition-colors hover:border-space-accent/70 hover:text-white ${touchBtn}`}
+            >
+              {tr('unlock.alipay.contributorsCta')}
+            </Link>
             <button
               type="button"
               onClick={onClose}
-              className={`mt-4 w-full rounded bg-space-accent/90 px-4 py-2 text-xs text-black transition-colors hover:bg-space-accent ${touchBtn}`}
+              className={`mt-2 w-full rounded bg-space-accent/90 px-4 py-2 text-xs text-black transition-colors hover:bg-space-accent ${touchBtn}`}
             >
               {tr('unlock.alipay.closeAria')}
             </button>

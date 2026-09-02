@@ -71,13 +71,22 @@ export const zh = {
     kofiNote: "海外备选 · 人工核验，解锁 token 经 Email 发送",
     wechatQrAlt: "微信赞赏码",
     wechatQrHint: "微信内长按识别，或用手机微信扫码；金额请按档位价格支付",
-    donorsSection: "燃料补给名单",
-    donorsNote: "按累计捐赠金额降序排列（人工登记，可能存在延迟）",
-    donorsEmpty: "虚位以待——成为第一颗点亮航程的星。",
-    donorAmount: "¥{amount}",
-    /** 名单区贡献者宇宙入口（C4-1；emoji ✨ 由组件层持有；陈述口径，无回报承诺） */
-    contributorsEntry: "进入贡献者宇宙",
     backToApp: "返回星图",
+  },
+  /**
+   * 燃料补给名单小节（ContributorsRosterSection，/donate 与 /unlock 共享）。
+   * 文案红线：titleCount/moreLink 计数为真实合并名单的事实陈述（禁止虚构）；
+   * empty 为 G9 正向口径；陈述口径，无回报承诺。emoji ✨ 由组件层持有。
+   */
+  roster: {
+    title: "燃料补给名单",
+    titleCount: "共 {count} 位",
+    note: "按累计捐赠金额降序排列（人工登记，可能存在延迟）",
+    empty:
+      "这里将点亮第一颗星——每一位登记的支持者都会成为航程中的一颗星。",
+    entry: "进入贡献者宇宙",
+    moreLink: "还有 {count} 位支持者——进入贡献者宇宙查看全部",
+    amount: "¥{amount}",
   },
   /**
    * 贡献者宇宙页（/contributors，C2）。文案红线（REQUIREMENTS_CONTRIBUTORS §0.5）：
@@ -123,6 +132,10 @@ export const zh = {
     intro:
       "以下为明码标价的限时访问：按档位金额支付后自动或凭凭证兑换解锁，到期自动恢复免费体验；支持者昵称与留言（均可选）将记入贡献者名单与贡献者宇宙。项目源代码保持开源。",
     backToApp: "返回星图",
+    /** 贡献者宇宙强引导（已激活态）+ 人工渠道上榜时序预期说明 */
+    contributorsActiveCta: "查看我的贡献者星",
+    contributorsPendingNote:
+      "支付宝为即时上榜；微信/爱发电/面包多/Ko-fi 等人工核验渠道稍后上榜。",
     /** 权益状态区 */
     statusSection: "我的权益",
     statusFree: "当前为免费体验——近观细节层、L3/L4 巡游与不限次演示未解锁。",
@@ -286,6 +299,7 @@ export const zh = {
       paidTitle: "支付成功，权益已激活！",
       paidTokenHint:
         "以下为你的解锁 token，请妥善保存——换设备时在解锁页粘贴激活即可找回权益：",
+      contributorsCta: "✨ 看看我的贡献者星",
       expiredNotice: "二维码已过期（超过 30 分钟未支付），请重新生成。",
       regenerate: "重新生成付款码",
       backToEdit: "返回修改",

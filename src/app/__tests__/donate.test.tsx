@@ -137,9 +137,11 @@ describe('DonatePage 渲染（空名单）', () => {
     expect(screen.getByText(/Buy Me a Coffee/)).toBeInTheDocument();
   });
 
-  it('空名单显示占位文案与降序排列说明', () => {
+  it('空名单显示正向占位文案与降序排列说明（G9 口径，与贡献者宇宙一致）', () => {
     render(<DonatePage />);
-    expect(screen.getByText(/虚位以待/)).toBeInTheDocument();
+    // 空态改为正向表述（"将点亮第一颗星"），不再用"虚位以待"反向社会证明
+    expect(screen.getByText(/这里将点亮第一颗星/)).toBeInTheDocument();
+    expect(screen.queryByText(/虚位以待/)).not.toBeInTheDocument();
     expect(screen.getByText(/按累计捐赠金额降序排列/)).toBeInTheDocument();
   });
 
