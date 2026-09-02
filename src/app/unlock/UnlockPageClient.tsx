@@ -45,6 +45,7 @@ import {
 } from '@/data/donationPlatforms';
 import { CONTACT_EMAIL, SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
 import { UnlockAlipayModal } from '@/components/UI/UnlockAlipayModal';
+import { CONTRIBUTORS_PAGE_PATH } from '@/utils/contributorUniverse';
 import { trackFunnelEvent } from '@/utils/funnel';
 import { tokenRemainingDays } from '@/utils/unlockToken';
 import { readStoredUnlockToken } from '@/utils/unlockStorage';
@@ -501,6 +502,20 @@ export default function UnlockPage(): JSX.Element {
                   </div>
                 </div>
               )}
+              {/* 已激活态强引导（付款成功闭环）：兑现「昵称与留言记入贡献者
+                  宇宙」承诺，付款高峰即时正反馈 → 一键看自己的星；人工渠道
+                  上榜有时序，附预期说明避免立即找不到而困惑 */}
+              <div className="mt-4 border-t border-white/10 pt-4">
+                <Link
+                  href={CONTRIBUTORS_PAGE_PATH}
+                  className={`inline-flex items-center gap-2 rounded-lg border border-space-accent/40 bg-space-accent/10 px-4 text-xs font-medium text-space-accent transition-colors hover:border-space-accent/70 hover:text-white ${touchBtn}`}
+                >
+                  ✨ {tr('unlock.contributorsActiveCta')}
+                </Link>
+                <p className="mt-2 text-[10px] leading-4 text-gray-500 max-md:text-xs">
+                  {tr('unlock.contributorsPendingNote')}
+                </p>
+              </div>
             </div>
           )}
         </section>
@@ -878,6 +893,18 @@ export default function UnlockPage(): JSX.Element {
           <p className="rounded-lg border border-white/10 bg-space-panel p-4 text-xs leading-5 text-gray-400 backdrop-blur">
             {tr('unlock.refundPolicy')}
           </p>
+        </section>
+
+        {/* 贡献者宇宙常显次级入口（付款前信任建立 / 社会证明；与 /donate
+            同款范式，命中区 ≥44pt）。两态常驻——免费态引导先看真实名单，
+            激活态与上方强引导互补 */}
+        <section className="mt-10">
+          <Link
+            href={CONTRIBUTORS_PAGE_PATH}
+            className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-space-accent/30 bg-space-panel px-4 text-xs text-space-accent backdrop-blur transition-colors hover:border-space-accent/60 hover:text-white"
+          >
+            ✨ {tr('unlock.contributorsEntry')}
+          </Link>
         </section>
 
         <footer className="mt-12 pb-6 text-center text-xs text-gray-500">

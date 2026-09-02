@@ -193,6 +193,12 @@ describe('U3-1 页面骨架与档位表', () => {
     expect(back[0]).toHaveAttribute('href', '/');
   });
 
+  it('免费态常显「进入贡献者宇宙」次级入口指向 /contributors', () => {
+    render(<UnlockPage />);
+    const entry = screen.getByRole('link', { name: /进入贡献者宇宙/ });
+    expect(entry).toHaveAttribute('href', '/contributors');
+  });
+
   it('桌面档位表消费 UNLOCK_TIERS 单一事实源（表格形态）', () => {
     render(<UnlockPage />);
     expect(screen.getByRole('table')).toBeInTheDocument();
@@ -580,6 +586,18 @@ describe('U3-3 URL 注入与已激活态', () => {
     expect(screen.getByText(formatExpiryDate(exp, 'zh'))).toBeInTheDocument();
     // "31 天" 同时出现在档位表（月卡时长）与状态区（剩余天数）
     expect(screen.getAllByText('31 天')).toHaveLength(2);
+  });
+
+  it('已激活态强引导「查看我的贡献者星」指向 /contributors + 人工渠道时序说明', async () => {
+    window.localStorage.setItem(UNLOCK_TOKEN_STORAGE_KEY, makeToken());
+    render(<UnlockPage />);
+    await screen.findByText('✅ 权益已激活');
+    const cta = screen.getByRole('link', { name: /查看我的贡献者星/ });
+    expect(cta).toHaveAttribute('href', '/contributors');
+    // 人工渠道上榜有时序，附预期说明避免立即找不到而困惑
+    expect(
+      screen.getByText(/微信\/爱发电\/面包多\/Ko-fi 等人工核验渠道稍后上榜/),
+    ).toBeInTheDocument();
   });
 
   it('localStorage 存过期 token → 保持免费态（到期降级）', () => {

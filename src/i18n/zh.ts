@@ -123,6 +123,11 @@ export const zh = {
     intro:
       "以下为明码标价的限时访问：按档位金额支付后自动或凭凭证兑换解锁，到期自动恢复免费体验；支持者昵称与留言（均可选）将记入贡献者名单与贡献者宇宙。项目源代码保持开源。",
     backToApp: "返回星图",
+    /** 贡献者宇宙入口（常显次级链接 + 已激活态强引导 + 人工渠道时序预期） */
+    contributorsEntry: "进入贡献者宇宙",
+    contributorsActiveCta: "查看我的贡献者星",
+    contributorsPendingNote:
+      "支付宝为即时上榜；微信/爱发电/面包多/Ko-fi 等人工核验渠道稍后上榜。",
     /** 权益状态区 */
     statusSection: "我的权益",
     statusFree: "当前为免费体验——近观细节层、L3/L4 巡游与不限次演示未解锁。",
@@ -286,6 +291,7 @@ export const zh = {
       paidTitle: "支付成功，权益已激活！",
       paidTokenHint:
         "以下为你的解锁 token，请妥善保存——换设备时在解锁页粘贴激活即可找回权益：",
+      contributorsCta: "✨ 看看我的贡献者星",
       expiredNotice: "二维码已过期（超过 30 分钟未支付），请重新生成。",
       regenerate: "重新生成付款码",
       backToEdit: "返回修改",

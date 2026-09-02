@@ -89,6 +89,10 @@ export const en: I18nDict = {
     intro:
       "This page offers clearly priced, time-limited access: pay the tier amount and unlock automatically (or redeem with your proof of payment); access reverts to the free experience upon expiry. Supporter nicknames and messages (both optional) are listed on the contributor roster and in the Contributor Universe. The project source code remains open source.",
     backToApp: "Back to the star map",
+    contributorsEntry: "Enter the Contributor Universe",
+    contributorsActiveCta: "See my contributor star",
+    contributorsPendingNote:
+      "Alipay appears instantly; manual-review channels (WeChat / Afdian / Mianbaoduo / Ko-fi) appear a little later.",
     statusSection: "My access",
     statusFree:
       "You are on the free experience — close-view detail layers, L3/L4 tours, and unlimited demos are locked.",
@@ -255,6 +259,7 @@ export const en: I18nDict = {
       paidTitle: "Payment received — access activated!",
       paidTokenHint:
         "Here is your unlock token — keep it safe. Paste it on the unlock page to restore access on another device:",
+      contributorsCta: "✨ See my contributor star",
       expiredNotice:
         "The QR code has expired (unpaid for over 30 minutes) — please generate a new one.",
       regenerate: "Generate a new payment code",
