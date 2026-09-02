@@ -73,7 +73,8 @@ export const zh = {
     wechatQrHint: "微信内长按识别，或用手机微信扫码；金额请按档位价格支付",
     donorsSection: "燃料补给名单",
     donorsNote: "按累计捐赠金额降序排列（人工登记，可能存在延迟）",
-    donorsEmpty: "虚位以待——成为第一颗点亮航程的星。",
+    donorsEmpty:
+      "这里将点亮第一颗星——每一位登记的支持者都会成为航程中的一颗星。",
     donorAmount: "¥{amount}",
     /** 名单区贡献者宇宙入口（C4-1；emoji ✨ 由组件层持有；陈述口径，无回报承诺） */
     contributorsEntry: "进入贡献者宇宙",

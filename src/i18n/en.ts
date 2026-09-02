@@ -49,7 +49,7 @@ export const en: I18nDict = {
     donorsNote:
       "Sorted by cumulative donation amount, descending (manually registered; may lag)",
     donorsEmpty:
-      "This spot is waiting — be the first star to light the voyage.",
+      "The first star of this voyage is yet to be lit — every registered supporter becomes a star here.",
     donorAmount: "¥{amount}",
     contributorsEntry: "Enter the Contributor Universe",
     backToApp: "Back to the star map",
