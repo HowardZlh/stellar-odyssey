@@ -94,11 +94,12 @@
 
 ## 内部文档（不入库）
 
-- `docs/internal/` **整目录**已在 .gitignore 中（另有 `*_PROMPT.md`、`BUSINESS_*.md` 通配规则兜底），**不随仓库公开、不需要分支流程**：
-  - `docs/internal/REQUIREMENTS*.md` / `IMPROVEMENT_REQUIREMENTS*.md`：需求文档系列（仅本地保留，实现后照常回写状态）
-  - `docs/internal/*_PROMPT.md`：各迭代 Agent 实现提示词
-  - `docs/internal/BUSINESS_ROADMAP_B2B.md`：商业化路线（个人开发者版），完成商业相关任务后更新其勾选状态与实现差异登记
-  - `docs/internal/BUSINESS_LEADS.md`：询单/赞助/约稿登记表
+- `docs/internal/` **整目录**已在 .gitignore 中（另有 `*_PROMPT.md`、`BUSINESS_*.md` 通配规则兜底），**不随仓库公开、不需要分支流程**。目录地图见其 `INDEX.md`，目录级约束见其 `AGENTS.md`（在该目录工作前必读）：
+  - `docs/internal/planning/`：进行中需求（`REQUIREMENTS_GROWTH*.md`）与候选池；已交付需求及 `_PROMPT` / `_NOTES` 配套在 `docs/internal/completed/`（实现后照常回写状态）
+  - `docs/internal/content/`：内容生产流水线（文风指南 · 文章/视频提示词 · **成品归档 `articles/posts/` `video/episodes/`**，成品禁写桌面）；配套 skills 在 `docs/internal/skills/`（`opencode.jsonc` 注册）
+  - `docs/internal/business/BUSINESS_ROADMAP_B2B.md`：商业化路线（个人开发者版），完成商业相关任务后更新其勾选状态与实现差异登记
+  - `docs/internal/business/BUSINESS_LEADS.md`：询单/赞助/约稿登记表
+  - `docs/internal/UNLOCK_OPS.md` 与 `docs/internal/unlock-admin/` 为**路径锚定文件**（被 workers/ scripts/ 代码注释引用），不得移动
 - 内部策略、报价、线索信息**严禁**写入任何会入库的文件（代码注释、CHANGELOG、docs/ 公开文档）
 - 公开文档（README、docs/）**不得链接** `docs/internal/` 下的文件（仓库中不存在，会成死链）
 
