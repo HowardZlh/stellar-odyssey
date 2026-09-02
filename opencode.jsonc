@@ -1,0 +1,9 @@
+{
+  // opencode 项目配置：注册本地技能目录。
+  // docs/internal/ 整目录不入库（.gitignore），公开克隆中该目录不存在时
+  // 此路径静默扫描为空，不影响 opencode 启动。
+  "$schema": "https://opencode.ai/config.json",
+  "skills": {
+    "paths": ["docs/internal/skills"]
+  }
+}
