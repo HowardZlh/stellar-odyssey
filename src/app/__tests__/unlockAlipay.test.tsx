@@ -94,6 +94,12 @@ beforeEach(() => {
     if (u.includes('/api/revocations')) {
       return { ok: true, json: async (): Promise<unknown> => ({ ok: true, list: {} }) };
     }
+    // 燃料补给名单小节（共享组件）mount 拉取：默认空名单
+    if (u.includes('/api/contributors')) {
+      return {
+        json: async (): Promise<unknown> => ({ ok: true, contributors: [] }),
+      };
+    }
     if (u.startsWith(STATUS_URL)) {
       statusCalls.push(u);
       return { json: async (): Promise<unknown> => statusResponder(u) };

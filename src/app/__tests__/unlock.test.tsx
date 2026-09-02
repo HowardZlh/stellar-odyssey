@@ -135,6 +135,13 @@ beforeEach(() => {
     if (String(url).includes('/api/revocations')) {
       return { ok: true, json: revocationsResponse };
     }
+    // 燃料补给名单小节（共享组件）mount 时拉取动态名单：默认空名单，
+    // 防止其消费下方 redeemQueue 排队的兑换响应
+    if (String(url).includes('/api/contributors')) {
+      return {
+        json: async (): Promise<unknown> => ({ ok: true, contributors: [] }),
+      };
+    }
     const arm = redeemQueue.shift();
     if (arm === undefined) throw new Error('unexpected fetch (queue empty)');
     if (arm.kind === 'reject') throw new Error('offline');
@@ -193,8 +200,11 @@ describe('U3-1 页面骨架与档位表', () => {
     expect(back[0]).toHaveAttribute('href', '/');
   });
 
-  it('免费态常显「进入贡献者宇宙」次级入口指向 /contributors', () => {
+  it('免费态渲染燃料补给名单小节（与 /donate 统一）：标题 + 空态正向文案 + 贡献者宇宙入口', async () => {
     render(<UnlockPage />);
+    // 共享小节（ContributorsRosterSection）：标题与空态正向口径
+    expect(screen.getByText('燃料补给名单')).toBeInTheDocument();
+    expect(await screen.findByText(/这里将点亮第一颗星/)).toBeInTheDocument();
     const entry = screen.getByRole('link', { name: /进入贡献者宇宙/ });
     expect(entry).toHaveAttribute('href', '/contributors');
   });

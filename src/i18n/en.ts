@@ -45,14 +45,18 @@ export const en: I18nDict = {
     wechatQrAlt: "WeChat tip code",
     wechatQrHint:
       "Long-press in WeChat to scan, or scan with your phone; please pay the tier price",
-    donorsSection: "Fuel supply roster",
-    donorsNote:
-      "Sorted by cumulative donation amount, descending (manually registered; may lag)",
-    donorsEmpty:
-      "The first star of this voyage is yet to be lit — every registered supporter becomes a star here.",
-    donorAmount: "¥{amount}",
-    contributorsEntry: "Enter the Contributor Universe",
     backToApp: "Back to the star map",
+  },
+  roster: {
+    title: "Fuel supply roster",
+    titleCount: "{count} supporters",
+    note: "Sorted by cumulative donation amount, descending (manually registered; may lag)",
+    empty:
+      "The first star of this voyage is yet to be lit — every registered supporter becomes a star here.",
+    entry: "Enter the Contributor Universe",
+    moreLink:
+      "{count} more supporters — enter the Contributor Universe to see them all",
+    amount: "¥{amount}",
   },
   contributors: {
     title: "Contributor Universe",
@@ -89,7 +93,6 @@ export const en: I18nDict = {
     intro:
       "This page offers clearly priced, time-limited access: pay the tier amount and unlock automatically (or redeem with your proof of payment); access reverts to the free experience upon expiry. Supporter nicknames and messages (both optional) are listed on the contributor roster and in the Contributor Universe. The project source code remains open source.",
     backToApp: "Back to the star map",
-    contributorsEntry: "Enter the Contributor Universe",
     contributorsActiveCta: "See my contributor star",
     contributorsPendingNote:
       "Alipay appears instantly; manual-review channels (WeChat / Afdian / Mianbaoduo / Ko-fi) appear a little later.",

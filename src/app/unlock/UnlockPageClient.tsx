@@ -44,6 +44,7 @@ import {
   SPONSOR_MBD_URL,
 } from '@/data/donationPlatforms';
 import { CONTACT_EMAIL, SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
+import { ContributorsRosterSection } from '@/components/UI/ContributorsRosterSection';
 import { UnlockAlipayModal } from '@/components/UI/UnlockAlipayModal';
 import { CONTRIBUTORS_PAGE_PATH } from '@/utils/contributorUniverse';
 import { trackFunnelEvent } from '@/utils/funnel';
@@ -895,17 +896,11 @@ export default function UnlockPage(): JSX.Element {
           </p>
         </section>
 
-        {/* 贡献者宇宙常显次级入口（付款前信任建立 / 社会证明；与 /donate
-            同款范式，命中区 ≥44pt）。两态常驻——免费态引导先看真实名单，
-            激活态与上方强引导互补 */}
-        <section className="mt-10">
-          <Link
-            href={CONTRIBUTORS_PAGE_PATH}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-space-accent/30 bg-space-panel px-4 text-xs text-space-accent backdrop-blur transition-colors hover:border-space-accent/60 hover:text-white"
-          >
-            ✨ {tr('unlock.contributorsEntry')}
-          </Link>
-        </section>
+        {/* 燃料补给名单（共享小节，与 /donate 统一：名单 + 贡献者宇宙入口。
+            付款前社会证明——Top 5 截断控制页长，>5 位时尾部幽灵行体现
+            "还有 N 位支持者"（真实计数），引流贡献者宇宙；≤5 位时无截断
+            信号，不产生反向社会证明 */}
+        <ContributorsRosterSection maxItems={5} />
 
         <footer className="mt-12 pb-6 text-center text-xs text-gray-500">
           <Link

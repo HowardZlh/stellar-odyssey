@@ -8,34 +8,25 @@
  * 引导面板 + 「前往解锁页扫码支付 →」跳 /unlock（付款 modal 只在解锁页，
  * 对齐 stock render_donate）② 微信赞赏码独立 panel（内嵌图 + 邮件模板 +
  * 预填 mailto，模板与 /unlock 页同源）③ 面包多（备选）④ 爱发电（备选）
- * ⑤ Ko-fi（海外备选）⑥ 预留位卡片 + 捐赠名单（静态 data/donors.ts +
- * 远程 /api/contributors 合并，与 /contributors 页同源，避免数据源分裂；
- * 渲染前按金额降序）
- * + 贡献者宇宙入口 + 返回主站链接。
+ * ⑤ Ko-fi（海外备选）⑥ 预留位卡片 + 燃料补给名单小节
+ * （ContributorsRosterSection 共享组件，与 /unlock 页统一：静态+远程合并
+ * 名单 + 贡献者宇宙入口，本页全量展示）+ 返回主站链接。
  *
  * 文案边界：解锁承诺仅限"付 ¥X 得 Y 天"的既有对价事实，不承诺更新义务；
  * i18n 经 donate.* 键组双语化，页面右上角提供 zh/EN 切换。
  */
 
 import type { JSX } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import type { MessageKey } from '@/i18n';
-import { pickLocalized, t } from '@/i18n';
+import { pickLocalized } from '@/i18n';
 import { useLocaleInit, useT, useTf } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
 import { DONATION_PLATFORMS } from '@/data/donationPlatforms';
-import { DONORS } from '@/data/donors';
 import { CONTACT_EMAIL, UNLOCK_PAGE_PATH } from '@/components/UI/ContactBadge';
-import { CONTRIBUTORS_PAGE_PATH } from '@/utils/contributorUniverse';
+import { ContributorsRosterSection } from '@/components/UI/ContributorsRosterSection';
 import type { DonationPlatformId } from '@/utils/donors';
-import {
-  mergeDonorLists,
-  parseContributorsResponse,
-  remoteContributorsToDonors,
-  resolveContributorsApiUrl,
-  type RemoteContributor,
-} from '@/utils/contributorsFeed';
 import {
   buildRedeemMailtoHref,
   formatRedeemMailTemplate,
@@ -63,15 +54,6 @@ const PLATFORM_NOTE_KEYS: Partial<Record<DonationPlatformId, MessageKey>> = {
 const ALIPAY_PLATFORM = DONATION_PLATFORMS.find((p) => p.id === 'alipay');
 const WECHAT_PLATFORM = DONATION_PLATFORMS.find((p) => p.id === 'wechat');
 
-/**
- * 贡献者名单 API（与 /contributors 页同源合并：支付宝自动上榜等远程贡献者
- * 经此拉取，避免本页名单永远停留空态而 /contributors 已有星的数据源分裂；
- * base 覆写机制与 unlockRedeem 同源）。
- */
-const CONTRIBUTORS_API_URL = resolveContributorsApiUrl(
-  process.env.NEXT_PUBLIC_UNLOCK_API_BASE,
-);
-
 export default function DonatePage(): JSX.Element {
   // i18n：独立页面同样按 ?lang= > localStorage > zh 初始化
   useLocaleInit();
@@ -79,43 +61,6 @@ export default function DonatePage(): JSX.Element {
   const trf = useTf();
   const locale = useSimulationStore((s) => s.locale);
   const setLocale = useSimulationStore((s) => s.setLocale);
-
-  // 动态名单（与 /contributors 页同源）：启动拉取 /api/contributors 与静态
-  // DONORS 合并——支付宝自动上榜等远程贡献者在本页同样可见，杜绝"远程已有
-  // 贡献者、本页仍显示空态"的数据源分裂；拉取失败/形状异常静默降级为仅静态
-  // 名单（fetch 缺失环境同样静默）。
-  const [remoteEntries, setRemoteEntries] = useState<RemoteContributor[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    void (async (): Promise<void> => {
-      try {
-        const response = await fetch(CONTRIBUTORS_API_URL);
-        const parsed = parseContributorsResponse(
-          (await response.json()) as unknown,
-        );
-        if (!cancelled && parsed !== null) setRemoteEntries(parsed);
-      } catch {
-        // 静默降级：仅静态名单
-      }
-    })();
-    return (): void => {
-      cancelled = true;
-    };
-  }, []);
-
-  // 合并静态+远程（mergeDonorLists 内部按金额降序，与 /contributors 同源）。
-  // 匿名展示名随 locale 切换。
-  const donors = useMemo(
-    () =>
-      mergeDonorLists(
-        DONORS,
-        remoteContributorsToDonors(
-          remoteEntries,
-          t(locale, 'contributors.anonymous'),
-        ),
-      ),
-    [remoteEntries, locale],
-  );
 
   // M3：邮件模板复制态（微信 panel；clipboard 失败时模板文本可手动选中）
   const [mailCopied, setMailCopied] = useState(false);
@@ -346,55 +291,9 @@ export default function DonatePage(): JSX.Element {
           </div>
         </section>
 
-        {/* 捐赠名单（按金额降序） */}
-        <section className="mt-10">
-          <h2 className="mb-1 text-sm font-semibold text-gray-300">
-            {tr('donate.donorsSection')}
-          </h2>
-          <p className="mb-3 text-[10px] text-gray-500">
-            {tr('donate.donorsNote')}
-          </p>
-          {/* 贡献者宇宙入口（C4-1）：空/非空名单两态常驻，命中区 ≥44pt（min-h-11） */}
-          <Link
-            href={CONTRIBUTORS_PAGE_PATH}
-            className="mb-3 flex min-h-11 items-center justify-center gap-2 rounded-lg border border-space-accent/30 bg-space-panel px-4 text-xs text-space-accent backdrop-blur transition-colors hover:border-space-accent/60 hover:text-white"
-          >
-            ✨ {tr('donate.contributorsEntry')}
-          </Link>
-          {donors.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-white/15 bg-space-panel p-6 text-center text-xs text-gray-400 backdrop-blur">
-              ✨ {tr('donate.donorsEmpty')}
-            </p>
-          ) : (
-            <ol className="space-y-2">
-              {donors.map((donor, index) => (
-                <li
-                  key={`${donor.id}`}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-space-panel px-4 py-3 backdrop-blur"
-                >
-                  <span className="flex min-w-0 items-center gap-3">
-                    <span className="shrink-0 font-mono text-xs text-gray-500">
-                      #{index + 1}
-                    </span>
-                    <span className="truncate text-sm text-gray-200">
-                      {donor.name}
-                    </span>
-                    {donor.message && (
-                      <span className="truncate text-xs text-gray-500">
-                        「{donor.message}」
-                      </span>
-                    )}
-                  </span>
-                  <span className="shrink-0 text-sm font-medium text-amber-200/90">
-                    {trf('donate.donorAmount', {
-                      amount: donor.amountCny.toLocaleString('en-US'),
-                    })}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
+        {/* 燃料补给名单（共享小节：名单 + 贡献者宇宙入口，与 /unlock 统一；
+            本页全量展示，数据经 useContributorsRoster 与 /contributors 同源） */}
+        <ContributorsRosterSection />
 
         <footer className="mt-12 pb-6 text-center text-xs text-gray-500">
           <Link
