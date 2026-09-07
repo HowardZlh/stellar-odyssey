@@ -57,6 +57,7 @@ import {
 } from "@/utils/galaxyMerger";
 import { setObjectTreeRaycastEnabled } from "@/utils/raycastGate";
 import { UNIVERSE_RENDER_ORDER } from "@/utils/universeRenderOrder";
+import { galaxyTextLabelVisible } from "@/utils/galaxyLabelVisibility";
 import {
   ORBIT_GRADATION_COUNT,
   gradationPercentText,
@@ -139,7 +140,8 @@ const PREDICTION_OPACITY = 0.72;
  * - 太阳系绕银心运动：整个银河系组反向平移，使太阳系（场景原点）始终位于
  *   其银心系轨道对应位置 —— 跨层级缩放时太阳系位置不跳变（需求 3.1.4）
  * - 黄道面与银道面夹角 60.2°：银河系组整体倾斜
- * - "You are here" 标记（可开关）+ 运动方向箭头
+ * - "You are here" 标记（可开关）+ 运动方向箭头；其 DOM 文字标签与银河年
+ *   刻度标注另受 L 键标签开关联动（utils/galaxyLabelVisibility）
  * - 波浪形轨迹：历史尾迹（环形缓冲实线，尾端渐隐）+ 未来预测线（虚线）
  */
 export function Galaxy(): JSX.Element {
@@ -148,8 +150,11 @@ export function Galaxy(): JSX.Element {
   const arrowRef = useRef<THREE.ArrowHelper>(null);
   const showYouAreHere = useSimulationStore((s) => s.showYouAreHere);
   const selectBody = useSimulationStore((s) => s.selectBody);
-  // Html 标签不随父级 visible 隐藏，需单独按层级门控（银河系内容 L2/L3 边界起可见）
-  const inGalaxyRange = useSimulationStore((s) => s.continuousLevel > 2.5);
+  // DOM 文字标签（You are here / 银河年刻度）显隐：drei Html 不随父级 visible
+  // 隐藏，必须条件渲染；判定 = 层级在范围内 && L 键标签开 && You are here 开
+  // （utils/galaxyLabelVisibility 单一判据，修订 R3-4 确认项 2）。选择器返回
+  // 布尔值，三字段变化只在结果翻转时触发重渲染。
+  const textLabelVisible = useSimulationStore((s) => galaxyTextLabelVisible(s));
 
   const tiltRad = ECLIPTIC_GALACTIC_TILT_DEG * DEG_TO_RAD;
 
@@ -1066,10 +1071,9 @@ export function Galaxy(): JSX.Element {
           （跟随模式下整体滑过原点体现"参照物滑动"），主刻度带进度标注 */}
       <primitive object={gradationAssets.minor.pts} />
       <primitive object={gradationAssets.major.pts} />
-      {inGalaxyRange &&
-        showYouAreHere &&
+      {textLabelVisible &&
         majorLabelPositions.map((item) => (
-          // R3-4：近距反向缩放钳制（开关归属维持现状，用户确认项 2）
+          // R3-4 近距反向缩放钳制；显隐受 L 键 + You are here 双开关（修订确认项 2）
           <ClampedHtmlLabel
             key={item.key}
             position={item.pos}
@@ -1143,8 +1147,9 @@ export function Galaxy(): JSX.Element {
             20,
           ]}
         />
-        {inGalaxyRange && (
-          // R3-4：近距反向缩放钳制（开关归属维持现状，用户确认项 2）
+        {textLabelVisible && (
+          // R3-4 近距反向缩放钳制；父 group 的 visible 对 Html DOM 无效，
+          // 显隐必须在此条件渲染（L 键 + You are here 双开关，修订确认项 2）
           <ClampedHtmlLabel
             position={[0, 60, 0]}
             distanceFactor={2600}
