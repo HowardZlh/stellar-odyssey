@@ -12,7 +12,7 @@ import { OBSERVATORY_PAGE_PATH } from "@/utils/lab";
 import ObservatoryPage from "./ObservatoryGalleryPageClient";
 
 export const metadata: Metadata = buildPageMetadata({
-  titleZh: `${t("zh", "lab.observatoryTitle")} · ${t("zh", "lab.title")}`,
+  title: `${t("zh", "lab.observatoryTitle")} · ${t("zh", "lab.title")}`,
   description: t("zh", "lab.observatoryDescription"),
   path: OBSERVATORY_PAGE_PATH,
 });

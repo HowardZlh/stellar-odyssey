@@ -1,7 +1,7 @@
 # 素材许可与数据来源（Attribution）
 
 > 本文完整登记星海奥德赛使用的全部第三方素材与天文数据的来源、许可与处理说明。
-> 摘要见 [README 素材许可一节](../README.md#素材许可attribution)。
+> 摘要见 [README 素材许可一节](../README.zh-CN.md#素材许可attribution)。
 
 ## 天文星表与巡天数据
 

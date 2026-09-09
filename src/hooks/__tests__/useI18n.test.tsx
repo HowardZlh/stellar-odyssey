@@ -9,9 +9,9 @@ import { LOCALE_STORAGE_KEY } from '@/i18n';
 import { useLocaleInit, useT } from '@/hooks/useI18n';
 import { useSimulationStore } from '@/store';
 
-/** jsdom 下改写当前 URL（useLocaleInit 读 window.location.search） */
-function setUrl(search: string): void {
-  window.history.replaceState({}, '', `/${search}`);
+/** jsdom 下改写当前 URL（useLocaleInit 读 window.location.search 与 pathname） */
+function setUrl(search: string, pathname = '/'): void {
+  window.history.replaceState({}, '', `${pathname}${search}`);
 }
 
 afterEach(() => {
@@ -59,6 +59,27 @@ describe('useLocaleInit 启动初始化', () => {
     expect(useSimulationStore.getState().locale).toBe('zh');
     expect(window.localStorage.getItem(LOCALE_STORAGE_KEY)).toBeNull();
     expect(document.documentElement.lang).toBe('zh-CN');
+  });
+
+  it('/en 路由默认（H2）：无参数无存值 → en 并持久化（与 ?lang=en 先例一致）', () => {
+    setUrl('', '/en');
+    renderHook(() => useLocaleInit());
+    expect(useSimulationStore.getState().locale).toBe('en');
+    expect(window.localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('en');
+    expect(document.documentElement.lang).toBe('en');
+  });
+
+  it('/en 路由默认让位于用户存值 zh（页内切回 zh 后再访 /en 保持 zh）', () => {
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, 'zh');
+    setUrl('', '/en');
+    renderHook(() => useLocaleInit());
+    expect(useSimulationStore.getState().locale).toBe('zh');
+  });
+
+  it('/en?lang=zh：显式参数优先于路由默认', () => {
+    setUrl('?lang=zh', '/en');
+    renderHook(() => useLocaleInit());
+    expect(useSimulationStore.getState().locale).toBe('zh');
   });
 
   it('非法参数与非法存值回默认 zh', () => {

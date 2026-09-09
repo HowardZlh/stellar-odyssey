@@ -3,7 +3,10 @@
  *
  * 架构红线（登记）：Next.js 内置 i18n 路由与 `output: 'export'` 静态导出
  * 不兼容（next.config.mjs）——只做客户端 locale 切换（Zustand 状态 +
- * 字典查找），不做 `/en/` 路由与英文 SEO（档位 3 边界）。
+ * 字典查找）；UI 语言不由 URL 路径决定。
+ * H 迭代 H2 增补（2026-09-09）：唯一的例外是英文落地页 `/en`（路由组
+ * 双根布局，见 `src/app/(en)/`）——它只改变**路由默认语言**（优先级链
+ * 最末位），`?lang=` 与 localStorage 存值仍然优先；其余页面无 en 镜像。
  *
  * 核心降本设计（不得变更）：zh 为默认 locale——既有约 4,800 行中文测试
  * 断言零改动，测试永远跑 zh 默认态。
@@ -12,8 +15,8 @@
  * - 查找函数签名：`t(locale, key)`（key 为编译期点分路径联合类型
  *   `MessageKey`，由 zh 字典推导；运行时防御性回退 zh → 键名本身）；
  * - localStorage 键名：`stellar-odyssey:locale`；
- * - 启动优先级：`?lang=` > localStorage > 默认 zh（`resolveInitialLocale`
- *   纯函数）；`lang` 参数解析已统一迁移至 `utils/launchParams.ts`
+ * - 启动优先级：`?lang=` > localStorage > 路由默认（`/en` → en，其余 →
+ *   zh；`routeDefaultLocale` 纯函数）（`resolveInitialLocale` 纯函数）；`lang` 参数解析已统一迁移至 `utils/launchParams.ts`
  *   单一入口（B4 收口登记：原 B2 独立轻量解析 `parseLangParam` 删除，
  *   语义零变更——大小写不敏感、非法值不短路优先级链）；
  * - `<html lang>`：locale 变更时客户端写 `document.documentElement.lang`
@@ -157,19 +160,45 @@ export const SCOPE_NAME_KEYS: Readonly<Record<CycleScope, MessageKey>> = {
   universe: 'scopeName.universe',
 };
 
+/** 英文落地页路径（与 utils/siteMeta EN_HOME_PATH 同值；此处独立常量避免 i18n 反向依赖站点元信息模块） */
+const EN_ROUTE_PATH = '/en';
+
 /**
- * 启动 locale 解析（纯函数）：优先级 `?lang=` > localStorage 存值 > 默认 zh
+ * 路由默认语言（纯函数，H2）：`/en`、`/en/`、`/en.html`（大小写不敏感；
+ * 静态导出产物为 en.html，GitHub Pages 以 `/en` 提供，本地静态预览为
+ * `/en.html`）→ en，其余任意路径 → 站点默认 zh。只作为启动优先级链的
+ * **最末位**。
+ *
+ * @param pathname `window.location.pathname`（不含查询串）
+ */
+export function routeDefaultLocale(pathname: string): Locale {
+  const normalized = pathname
+    .trim()
+    .toLowerCase()
+    .replace(/\/+$/, '')
+    .replace(/\.html$/, '');
+  return normalized === EN_ROUTE_PATH ? 'en' : DEFAULT_LOCALE;
+}
+
+/**
+ * 启动 locale 解析（纯函数）：优先级 `?lang=` > localStorage 存值 > 路由默认
+ * （`fallback`，省略时为站点默认 zh——既有调用方与测试语义零变更）
  *
  * `lang` 参数经 B4 统一解析入口 `parseLaunchParams` 取值（B2 独立
  * `parseLangParam` 已迁移删除，语义零变更登记）。
  *
  * @param search `window.location.search`（含 `?` 或空串均可）
  * @param stored localStorage 读出的原始值（可能为 null/非法值）
+ * @param fallback 路由默认语言（`routeDefaultLocale(pathname)`）
  */
-export function resolveInitialLocale(search: string, stored: string | null): Locale {
+export function resolveInitialLocale(
+  search: string,
+  stored: string | null,
+  fallback: Locale = DEFAULT_LOCALE,
+): Locale {
   const fromParam = parseLaunchParams(search).lang;
   if (fromParam !== null) return fromParam;
-  return stored === 'en' || stored === 'zh' ? stored : DEFAULT_LOCALE;
+  return stored === 'en' || stored === 'zh' ? stored : fallback;
 }
 
 /** locale → `<html lang>` 值（zh 取 'zh-CN' 与 SSR 初始值/SEO metadata 一致） */

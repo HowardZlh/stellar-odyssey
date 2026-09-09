@@ -17,7 +17,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import * as ed from '@noble/ed25519';
 
-import UnlockPage from '@/app/unlock/page';
+import UnlockPage from '@/app/(zh)/unlock/page';
 import { useSimulationStore } from '@/store';
 import { emptyRevocationList } from '@/utils/revocationList';
 import {

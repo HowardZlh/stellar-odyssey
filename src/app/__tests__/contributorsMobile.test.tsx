@@ -11,7 +11,7 @@
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
-import ContributorsPage from '@/app/contributors/page';
+import ContributorsPage from '@/app/(zh)/contributors/page';
 import { useSimulationStore } from '@/store';
 import type { ContributorCanvasQuality } from '@/utils/contributorUniverse';
 

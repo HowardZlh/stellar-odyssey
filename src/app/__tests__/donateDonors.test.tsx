@@ -5,7 +5,7 @@
 
 import { render, screen, waitFor } from '@testing-library/react';
 
-import DonatePage from '@/app/donate/page';
+import DonatePage from '@/app/(zh)/donate/page';
 import { useSimulationStore } from '@/store';
 
 jest.mock('@/data/donors', () => ({

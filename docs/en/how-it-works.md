@@ -1,4 +1,4 @@
-# Under the Hood: How Starsea Odyssey Was Built
+# Under the Hood: How Stellar Odyssey Was Built
 
 > 中文原版 / Chinese original: [../how-it-works.md](../how-it-works.md)
 

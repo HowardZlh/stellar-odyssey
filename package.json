@@ -2,6 +2,15 @@
   "name": "stellar-odyssey",
   "version": "0.1.15",
   "private": true,
+  "description": "A scroll-wheel journey from a planet's surface to the edge of the observable universe — open-source, data-driven 3D cosmos built with React + Three.js",
+  "homepage": "https://stellar.guushu.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HowardZlh/stellar-odyssey.git"
+  },
+  "bugs": {
+    "url": "https://github.com/HowardZlh/stellar-odyssey/issues"
+  },
   "scripts": {
     "dev": "next dev",
     "dev:3100": "NEXT_DIST_DIR=.next-3100 next dev -p 3100",

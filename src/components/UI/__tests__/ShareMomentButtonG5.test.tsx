@@ -92,7 +92,7 @@ describe('ShareMomentButton 桌面复制（isTouch=false）', () => {
     );
   });
 
-  it('en locale：URL 追加 lang=en；恒不含 token（权益在身也一样）', async () => {
+  it('en locale：主场景走英文落地页 /en（H6）；恒不含 token（权益在身也一样）', async () => {
     const writeText = mockClipboard();
     useSimulationStore.setState({
       isTouch: false,
@@ -104,7 +104,7 @@ describe('ShareMomentButton 桌面复制（isTouch=false）', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Share this moment/ }));
     await waitFor(() =>
-      expect(writeText).toHaveBeenCalledWith('http://localhost/?body=m31&lang=en'),
+      expect(writeText).toHaveBeenCalledWith('http://localhost/en?body=m31'),
     );
     expect(String(writeText.mock.calls[0][0])).not.toMatch(/token/i);
   });

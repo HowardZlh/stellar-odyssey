@@ -11,7 +11,7 @@ import { buildPageMetadata } from "@/utils/siteMeta";
 import ContributorsPage from "./ContributorsPageClient";
 
 export const metadata: Metadata = buildPageMetadata({
-  titleZh: t("zh", "contributors.title"),
+  title: t("zh", "contributors.title"),
   description: `${t("zh", "contributors.subtitle")}。${t("zh", "contributors.intro")}`,
   path: "/contributors",
 });

@@ -10,6 +10,10 @@ const baseConfig = {
   transpilePackages: ['three', '@noble/ed25519', '@noble/hashes'],
   // 关闭开发模式左下角的 Next.js "N" 指示器：与站内左下角「商业合作」角标位置冲突
   devIndicators: false,
+  // H 迭代 H1：路由组双根布局（(zh)/(en)）下 /_not-found 无唯一根布局可组合，
+  // 静态导出的 404.html 会退化为 Next 默认页；启用 global-not-found 由
+  // src/app/global-not-found.tsx 自持完整文档（实测 2026-09-09，Next 16.2）
+  experimental: { globalNotFound: true },
 };
 
 /**

@@ -15,7 +15,7 @@ https://stellar.guushu.com/?mode=kiosk&tour=all&dwell=30&logo=https://example.co
 | `tour` | `solar` / `galaxy` / `universe` / `all` | `solar` | 展馆模式巡游域 |
 | `dwell` | 整数 `5`–`600` | `30` | 展馆模式每站停留秒数（含约 2.5 秒运镜；越界不钳制、直接回退 30） |
 | `logo` | https URL（≤2048 字符） | 无 | 页面右侧角落显示合作方 logo（最大 160×40，加载失败自动隐藏） |
-| `lang` | `zh` / `en` | — | 界面语言（优先级：`?lang=` > 本地存储 > 默认 zh） |
+| `lang` | `zh` / `en` | — | 界面语言（优先级：`?lang=` > 本地存储 > 路由默认：`/en` 页为 en，其余为 zh） |
 
 `mode` / `tour` / `lang` 大小写不敏感；同名参数重复时取第一个值。
 
@@ -87,7 +87,7 @@ https://stellar.guushu.com/?mode=kiosk&tour=all&dwell=30&logo=https://example.co
 ?lang=zh    # 中文界面
 ```
 
-优先级：`?lang=` > localStorage 记忆值（键 `stellar-odyssey:locale`）> 默认中文。运行中也可随时用控制面板顶部的 **zh / EN** 按钮切换（切换即持久化）。
+优先级：`?lang=` > localStorage 记忆值（键 `stellar-odyssey:locale`）> 路由默认。路由默认在英文落地页 `https://stellar.guushu.com/en` 为英文、其余页面为中文——面向英文受众分享时直接给 `/en` 即可（该页原始 HTML 即英文 `lang` 与英文分享卡，无需再拼 `?lang=en`）。运行中也可随时用控制面板顶部的 **zh / EN** 按钮切换（切换即持久化）。
 
 ## 相关快捷键
 

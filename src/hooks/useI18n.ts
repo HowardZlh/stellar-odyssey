@@ -9,7 +9,7 @@
 import { useCallback, useEffect } from 'react';
 import type { Locale } from '@/types';
 import type { MessageKey } from '@/i18n';
-import { readStoredLocale, resolveInitialLocale, t, tf } from '@/i18n';
+import { readStoredLocale, resolveInitialLocale, routeDefaultLocale, t, tf } from '@/i18n';
 import { useSimulationStore } from '@/store';
 
 /** 组件字典查找 hook：返回绑定当前 locale 的查找函数（locale 变更即重渲染） */
@@ -34,8 +34,13 @@ export function useLocale(): Locale {
 
 /**
  * 启动 locale 初始化（应用根组件挂载时一次）：
- * 优先级 `?lang=` > localStorage > 默认 zh（`resolveInitialLocale` 纯函数）。
+ * 优先级 `?lang=` > localStorage > 路由默认（`/en` → en，其余 → zh；
+ * `routeDefaultLocale` + `resolveInitialLocale` 纯函数）。
  *
+ * - H2 登记：`/en` 首次访问（无参数无存值）经 setLocale('en') 持久化 en，
+ *   与既有 `?lang=en` 持久化先例一致；用户在 `/en` 页内切回 zh 后再访
+ *   `/en` 保持 zh（存值优先于路由默认）。`SolarSystemApp` 自身的本 hook
+ *   调用同样读路由默认，无需 prop 穿透；
  * - `lang` 经 B4 统一解析入口 `utils/launchParams.ts` 取值（迁移收口登记）；
  * - 解析结果与当前 locale 相同（默认 zh 启动）时不调用 setLocale——
  *   默认启动零副作用（不写 localStorage、`<html lang>` 保持 SSR 初始 zh-CN，
@@ -45,7 +50,11 @@ export function useLocale(): Locale {
 export function useLocaleInit(): void {
   const setLocale = useSimulationStore((s) => s.setLocale);
   useEffect(() => {
-    const initial = resolveInitialLocale(window.location.search, readStoredLocale());
+    const initial = resolveInitialLocale(
+      window.location.search,
+      readStoredLocale(),
+      routeDefaultLocale(window.location.pathname),
+    );
     if (initial !== useSimulationStore.getState().locale) {
       setLocale(initial);
     }

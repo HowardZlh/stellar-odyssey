@@ -33,6 +33,7 @@
 
 - **四层受众，优先级 P1 > P2 > P3 > P4**：P1 泛好奇路人（中文互联网、手机端首触、无天文背景、一次性猎奇访问）· P2 天文/科普进阶爱好者（在意数据真实性，小额一次性付费的唯一假设人群）· P3 前端/图形开发者（经 README / how-it-works / 代码服务，带来传播与口碑）· P4 教育机构/科技馆/展陈集成商（被动响应：只维护 kiosk、URL 参数、许可等既有基础设施，不主动提议机构向新功能）。
 - **默认锚点 P1**：未指明人群时以 P1 为基准，并在输出中点明所用层级；层间冲突按优先级裁决，硬约束始终在框架之上。
+- **2026-09-09 定位修订（钩子模式）**：项目由"面向 P1 的产品"改为"面向 P3 国际技术社区的钩子"——**新增/改动的对外入口以 P3 为锚点**（英文 `/en` 落地页、GitHub 默认 README 为英文、hreflang 首页对）；P1 降为**兼容不优化**（既有中文站、移动端适配、解锁链路全部保留、不回退，但不再为 P1 新增功能）；P2 付费假设冻结（不再投入）；P4 不变。上面 P1 自检仍适用于任何触碰既有中文面的改动。国际投放完成后项目进入维护模式（只修 bug、回 issue、安全更新），退出条件见内部文档。
 - **P1 自检（面向用户的文案/功能改动必过）**：术语首现有白话或比喻 · 数字配参照物 · 首屏 30 秒有 wow、不假设用户读教程 · 手机 375px 单手可完成核心路径 · 免费面与锁定面同框呈现。
 - **P2 边界**：按小额、一次性、不自动续费设计；不引入留存/订阅/等级/签到体系；定价与时间制调整须等漏斗数据回读。
 - **非目标用户**（不为其优化）：专业天文研究/观测人员、K12 课堂系统（教师控制端/学生账号/课程包）、离线 App 期待者、非科学的电影化特效追求者、订阅制/会员制期待者。
@@ -91,14 +92,14 @@
 
 | 信息 | 同源点 |
 |---|---|
-| 商业合作邮箱 `stevenzearo@163.com` | README.md「商业合作」与「开源协议」节 · README.en.md 对应节 · `src/components/UI/ContactBadge.tsx` 的 `CONTACT_EMAIL` |
-| 爱发电赞助链接 `https://afdian.com/a/stellar-odyssey` | README.md「赞助支持」节 · README.en.md「Sponsor」节 · `.github/FUNDING.yml` · `ContactBadge.tsx` 的 `SPONSOR_AFDIAN_URL` |
-| 面包多主页链接 `https://mbd.pub/o/stellar` | README.md「赞助支持」节 · README.en.md「Sponsor」节 · `src/data/donationPlatforms.ts` 的 `SPONSOR_MBD_URL` · `docs/unlock-guide.md` 与 `docs/en/unlock-guide.md` |
-| Ko-fi 链接 `https://ko-fi.com/howardzlh` | README.md「赞助支持」节 · README.en.md「Sponsor」节 · `.github/FUNDING.yml`（`ko_fi` 字段） · `src/data/donationPlatforms.ts` 的 `SPONSOR_KOFI_URL` |
+| 商业合作邮箱 `stevenzearo@163.com` | README.zh-CN.md「商业合作」与「开源协议」节 · README.md（英文）对应节 · `src/components/UI/ContactBadge.tsx` 的 `CONTACT_EMAIL` |
+| 爱发电赞助链接 `https://afdian.com/a/stellar-odyssey` | README.zh-CN.md「赞助支持」节 · README.md「Sponsor」节 · `.github/FUNDING.yml` · `ContactBadge.tsx` 的 `SPONSOR_AFDIAN_URL` |
+| 面包多主页链接 `https://mbd.pub/o/stellar` | README.zh-CN.md「赞助支持」节 · README.md「Sponsor」节 · `src/data/donationPlatforms.ts` 的 `SPONSOR_MBD_URL` · `docs/unlock-guide.md` 与 `docs/en/unlock-guide.md` |
+| Ko-fi 链接 `https://ko-fi.com/howardzlh` | README.zh-CN.md「赞助支持」节 · README.md「Sponsor」节 · `.github/FUNDING.yml`（`ko_fi` 字段） · `src/data/donationPlatforms.ts` 的 `SPONSOR_KOFI_URL` |
 | GitHub Issues 链接 | README 两版 · `ContactBadge.tsx` 的 `CONTACT_GITHUB_ISSUES_URL` |
-| 解锁档位价格 周卡 ¥6 / 月卡 ¥15 / 年卡 ¥88（$1/$2.5/$13） | `src/data/unlockPricing.ts`（代码单一事实源：前端档位表/Worker 判定/CLI 共享，改代码只改这一处） · 爱发电商品页（站外，人工同步） · `docs/internal/UNLOCK_OPS.md` §2/§3/§5 · `docs/unlock-guide.md` 与 `docs/en/unlock-guide.md` · README.md 与 README.en.md「支持者解锁」节 |
+| 解锁档位价格 周卡 ¥6 / 月卡 ¥15 / 年卡 ¥88（$1/$2.5/$13） | `src/data/unlockPricing.ts`（代码单一事实源：前端档位表/Worker 判定/CLI 共享，改代码只改这一处） · 爱发电商品页（站外，人工同步） · `docs/internal/UNLOCK_OPS.md` §2/§3/§5 · `docs/unlock-guide.md` 与 `docs/en/unlock-guide.md` · README.zh-CN.md 与 README.md「支持者解锁」节 |
 
-- **README 双语同步**：`README.md` 的对外内容（章节增删、入口链接、商标声明等）变更时必须同步 `README.en.md`，反之亦然
+- **README 双语同步**：`README.md`（英文，GitHub 默认展示——2026-09-09 起）的对外内容（章节增删、入口链接、商标声明等）变更时必须同步 `README.zh-CN.md`（中文），反之亦然
 - **对外文案口径**：商业相关表述一律使用中性口径（"欢迎联系合作"），不写价格、不写内部策略；商标声明（名称与标识不在开源许可范围内）保留在两版 README 的协议节
 - **支持文案边界（Z 迭代 M3 起，取代原"赞助文案红线"）**：对外支持类文案**不得承诺任何更新义务**（"支持将用于持续开发"为用途陈述，允许；"付费后将持续更新 XX"为义务承诺，禁止）；解锁承诺仅限既有对价事实（"付 ¥X 得 Y 天"、"支付后自动发码即时解锁"、"昵称与留言记入贡献者名单/贡献者宇宙"——均为已实现行为，允许承诺式表述），**不得虚构未实现的回报**；贡献者展示的文案与实际展示行为必须一致（空昵称显示「匿名用户」等细节如实写）
 - **统一"支持即解锁"口径（Z 迭代 M3，取代原 U 迭代双轨隔离）**：解锁与赞助入口互通——解锁入口允许出现在 /donate 页、ContactBadge、README 赞助节（`.github/FUNDING.yml` 除外：GitHub Sponsor 按钮仅支持赞助平台链接，保持现状，D-z10）；**渠道顺序全站同口径**：支付宝扫码（推荐 · 自动发码即时解锁）→ 微信赞赏码（人工核验 · token 经 Email 发送）→ 面包多（备选 · 扫码即付无需注册 · 订单号自动兑换）→ 爱发电（备选 · 订单号自动兑换）→ Ko-fi（海外备选），/unlock 与 /donate 两页渲染顺序有断言测试锁定；付款 modal 只在 /unlock 页（/donate 支付宝面板为引导跳转）；人工渠道邮件模板 /unlock 与 /donate 同源（`utils/redeemMail.ts` + `unlock.mailTpl*` i18n 键组，禁止第二份副本）

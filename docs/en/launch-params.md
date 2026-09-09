@@ -17,7 +17,7 @@ https://stellar.guushu.com/?mode=kiosk&tour=all&dwell=30&logo=https://example.co
 | `tour` | `solar` / `galaxy` / `universe` / `all` | `solar` | Tour domain for kiosk mode |
 | `dwell` | Integer `5`–`600` | `30` | Dwell time per stop in kiosk mode, in seconds (includes the ~2.5s camera move; out-of-range values are not clamped, they fall back to 30) |
 | `logo` | https URL (≤2048 chars) | None | Shows a partner logo in the right-side corner of the page (max 160×40; hidden automatically if it fails to load) |
-| `lang` | `zh` / `en` | — | UI language (priority: `?lang=` > local storage > default zh) |
+| `lang` | `zh` / `en` | — | UI language (priority: `?lang=` > local storage > route default: en on `/en`, zh elsewhere) |
 
 `mode` / `tour` / `lang` are case-insensitive; if a parameter appears multiple times, the first value wins.
 
@@ -89,7 +89,7 @@ An unattended mode for science museum / exhibition hall displays:
 ?lang=zh    # Chinese UI
 ```
 
-Priority: `?lang=` > the localStorage value (key `stellar-odyssey:locale`) > default Chinese. You can also switch at any time with the **zh / EN** buttons at the top of the control panel (switching persists immediately).
+Priority: `?lang=` > the localStorage value (key `stellar-odyssey:locale`) > the route default. The route default is English on the English landing page `https://stellar.guushu.com/en` and Chinese everywhere else — when sharing with an English-speaking audience, just link to `/en` (its raw HTML already carries an English `lang` attribute and English social card; no `?lang=en` needed). You can also switch at any time with the **zh / EN** buttons at the top of the control panel (switching persists immediately).
 
 ## Related Shortcuts
 

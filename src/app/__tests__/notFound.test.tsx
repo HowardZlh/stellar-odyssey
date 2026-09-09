@@ -10,7 +10,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import { redirectHome } from '@/utils/notFound';
 
-import NotFound from '../not-found';
+import NotFound from '@/components/UI/NotFoundView';
 
 // 跳转经 utils/notFound.redirectHome 注入点 mock（jsdom 的
 // window.location 不可重定义，直接 mock 模块导出）

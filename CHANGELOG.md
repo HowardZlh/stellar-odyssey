@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+### 新增
+
+- 新增英文落地页 `https://stellar.guushu.com/en`：原始 HTML 即 `<html lang="en">`、英文标题/描述、英文 Open Graph / Twitter 分享卡（新 1200×630 英文分享图 `og-image-en.png`，矢量源 `scripts/og-image/og-image-en.svg`）与 JSON-LD，分享到 Hacker News / Reddit / X 时预览为英文；页面在 JavaScript 不可用时呈现约 600 词的英文静态正文（项目是什么 · 四层缩放 · 真实数据来源 · 天文实验室 · 技术要点 · 开源与素材署名 · GitHub/how-it-works/科学性说明链接），正常访问仍是完整 3D 主场景且界面**默认英文**（路由默认语言：`/en` → en，`?lang=` 与用户已选语言仍优先，页内 zh/EN 开关照常）。实现为 Next 路由组双根布局（`(zh)` 承载全部既有页面 / `(en)` 仅 `/en`），既有全部页面路径、行为与中文 SEO 不变
+- 首页 `/` 与 `/en` 互挂 hreflang（`zh-CN` / `en` / `x-default`）；sitemap 收录 `/en`（32 → 33 URL）；「分享此刻」按钮在英文界面下分享主场景时输出 `/en?body=…`（原 `/?body=…&lang=en`），观察站分享链接不变
+- 首页 `/` 与流星雨 / 日全食 / 月食三个实验室场景页新增服务端预渲染正文（禁用 JavaScript 时可见，≥300 汉字；首页为中文项目说明，实验室页为该实验的观测点说明、阶段科普卡、可切换事件与可调参数、数据来源登记——全部取自页内既有文案，不新写科学结论）；正常访问时正文位于 3D 场景层之下不可见、体验与此前一致，场景首屏 JS 体积不变。此前这四页在搜索引擎与链接预览中只有一句"正在加载…"
+
+### 改进
+
+- GitHub 仓库默认展示的 `README.md` 改为英文版（原 `README.en.md`），中文版改名 `README.zh-CN.md`，两版顶部互链同步；英文 README 的在线体验入口统一指向 `/en`；`package.json` 补齐 `description` / `homepage` / `repository` / `bugs` 字段；`docs/en/how-it-works.md` 标题中的站名误写 "Starsea Odyssey" 更正为 "Stellar Odyssey"；`docs/launch-params.md` 与英文版同步登记 `lang` 优先级新增的"路由默认"一级
+- 自定义 404 页改由 `app/global-not-found.tsx` 承载（Next `experimental.globalNotFound`）：路由组双根布局下根级 `not-found` 失去唯一根布局，静态导出的 `404.html` 会退化为 Next 默认页——本次改造后 404 页外观与行为（星野、10 秒倒计时、「立即返回星图」）保持不变，并补 `noindex`
+
 ### 修复
 
 - 银河系视角的「You are here（太阳系）」与「银河年 N%」文字标签现在会随「关标签」一起消失：按 L 键关闭天体标签、或取消勾选「You are here 标记」后，两处标签均即时隐藏，隐 UI 截图、录屏与 kiosk 纯画面态不再残留文字。此前这两处 DOM 标签不受父级可见性控制，取消勾选后仍显示，且是全场景唯一不受 L 键控制的标签；太阳系光点、方向箭头与高度指示线等非文字标记仍只随「You are here 标记」开关

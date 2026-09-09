@@ -20,7 +20,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as ed from '@noble/ed25519';
 
-import UnlockPage from '@/app/unlock/page';
+import UnlockPage from '@/app/(zh)/unlock/page';
 import { CONTACT_EMAIL, SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
 import { SPONSOR_KOFI_URL, SPONSOR_MBD_URL } from '@/data/donationPlatforms';
 import { UNLOCK_TIERS } from '@/data/unlockPricing';

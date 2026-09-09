@@ -10,7 +10,7 @@ import { buildPageMetadata } from "@/utils/siteMeta";
 import UnlockPage from "./UnlockPageClient";
 
 export const metadata: Metadata = buildPageMetadata({
-  titleZh: t("zh", "unlock.title"),
+  title: t("zh", "unlock.title"),
   description: `${t("zh", "unlock.subtitle")}。${t("zh", "unlock.intro")}`,
   path: "/unlock",
 });

@@ -51,7 +51,7 @@ export async function generateMetadata({
   const landing = observatoryLandingForBody(body);
   if (!landing) return {};
   return buildPageMetadata({
-    titleZh: `${landing.headingZh} · 天体观察站`,
+    title: `${landing.headingZh} · 天体观察站`,
     description: landing.description,
     path: observatoryBodyPath(body),
   });
