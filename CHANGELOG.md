@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-09-09
+
 ### 新增
 
 - 新增英文落地页 `https://stellar.guushu.com/en`：原始 HTML 即 `<html lang="en">`、英文标题/描述、英文 Open Graph / Twitter 分享卡（新 1200×630 英文分享图 `og-image-en.png`，矢量源 `scripts/og-image/og-image-en.svg`）与 JSON-LD，分享到 Hacker News / Reddit / X 时预览为英文；页面在 JavaScript 不可用时呈现约 600 词的英文静态正文（项目是什么 · 四层缩放 · 真实数据来源 · 天文实验室 · 技术要点 · 开源与素材署名 · GitHub/how-it-works/科学性说明链接），正常访问仍是完整 3D 主场景且界面**默认英文**（路由默认语言：`/en` → en，`?lang=` 与用户已选语言仍优先，页内 zh/EN 开关照常）。实现为 Next 路由组双根布局（`(zh)` 承载全部既有页面 / `(en)` 仅 `/en`），既有全部页面路径、行为与中文 SEO 不变

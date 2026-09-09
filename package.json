@@ -1,6 +1,6 @@
 {
   "name": "stellar-odyssey",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "private": true,
   "description": "A scroll-wheel journey from a planet's surface to the edge of the observable universe — open-source, data-driven 3D cosmos built with React + Three.js",
   "homepage": "https://stellar.guushu.com",
