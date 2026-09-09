@@ -8,7 +8,7 @@
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import ContributorsPage from '@/app/contributors/page';
+import ContributorsPage from '@/app/(zh)/contributors/page';
 import { useSimulationStore } from '@/store';
 
 jest.mock('@/data/donors', () => ({

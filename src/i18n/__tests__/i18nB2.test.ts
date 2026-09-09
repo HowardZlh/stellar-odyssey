@@ -17,6 +17,7 @@ import {
   persistLocale,
   readStoredLocale,
   resolveInitialLocale,
+  routeDefaultLocale,
   syncHtmlLang,
   t,
   zh,
@@ -93,6 +94,26 @@ describe('resolveInitialLocale 启动优先级（?lang > localStorage > zh）', 
     expect(resolveInitialLocale('', null)).toBe(DEFAULT_LOCALE);
     expect(resolveInitialLocale('', 'de')).toBe('zh');
     expect(resolveInitialLocale('?foo=1', null)).toBe('zh');
+  });
+});
+
+describe('routeDefaultLocale + resolveInitialLocale 路由默认（H2）', () => {
+  it('/en 与 /en/（大小写不敏感）→ en；其余路径 → 默认 zh', () => {
+    expect(routeDefaultLocale('/en')).toBe('en');
+    expect(routeDefaultLocale('/en/')).toBe('en');
+    expect(routeDefaultLocale('/EN')).toBe('en');
+    expect(routeDefaultLocale('/en.html')).toBe('en');
+    expect(routeDefaultLocale('/')).toBe(DEFAULT_LOCALE);
+    expect(routeDefaultLocale('/lab/observatory/m31')).toBe('zh');
+    expect(routeDefaultLocale('/english')).toBe('zh');
+    expect(routeDefaultLocale('')).toBe('zh');
+  });
+
+  it('路由默认位于优先级链末位：?lang > 存值 > 路由默认', () => {
+    expect(resolveInitialLocale('', null, 'en')).toBe('en');
+    expect(resolveInitialLocale('', 'zh', 'en')).toBe('zh');
+    expect(resolveInitialLocale('?lang=zh', null, 'en')).toBe('zh');
+    expect(resolveInitialLocale('?lang=de', 'fr', 'en')).toBe('en');
   });
 });
 

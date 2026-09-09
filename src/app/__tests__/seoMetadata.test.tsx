@@ -14,16 +14,16 @@ import sitemap, { sitemapPaths } from "@/app/sitemap";
 import {
   generateMetadata as generateBodyMetadata,
   default as ObservatoryBodyPage,
-} from "@/app/lab/observatory/[body]/page";
-import { metadata as unlockMetadata } from "@/app/unlock/page";
-import { metadata as donateMetadata } from "@/app/donate/page";
-import { metadata as labMetadata } from "@/app/lab/page";
-import { metadata as contributorsMetadata } from "@/app/contributors/page";
-import { metadata as galleryMetadata } from "@/app/lab/observatory/page";
-import { metadata as meteorMetadata } from "@/app/lab/meteor-shower/page";
-import { metadata as solarMetadata } from "@/app/lab/solar-eclipse/page";
-import { metadata as lunarMetadata } from "@/app/lab/lunar-eclipse/page";
-import { metadata as homeMetadata } from "@/app/page";
+} from "@/app/(zh)/lab/observatory/[body]/page";
+import { metadata as unlockMetadata } from "@/app/(zh)/unlock/page";
+import { metadata as donateMetadata } from "@/app/(zh)/donate/page";
+import { metadata as labMetadata } from "@/app/(zh)/lab/page";
+import { metadata as contributorsMetadata } from "@/app/(zh)/contributors/page";
+import { metadata as galleryMetadata } from "@/app/(zh)/lab/observatory/page";
+import { metadata as meteorMetadata } from "@/app/(zh)/lab/meteor-shower/page";
+import { metadata as solarMetadata } from "@/app/(zh)/lab/solar-eclipse/page";
+import { metadata as lunarMetadata } from "@/app/(zh)/lab/lunar-eclipse/page";
+import { metadata as homeMetadata } from "@/app/(zh)/page";
 import { ObservatoryLandingArticle } from "@/components/Lab/ObservatoryLandingArticle";
 import {
   countChineseChars,
@@ -44,6 +44,7 @@ describe("sitemap（G7）", () => {
   it("覆盖首页/实验室/23 天体页/unlock/donate/contributors", () => {
     const paths = sitemapPaths();
     expect(paths).toContain("/");
+    expect(paths).toContain("/en");
     expect(paths).toContain("/lab");
     expect(paths).toContain("/lab/meteor-shower");
     expect(paths).toContain("/lab/observatory");
@@ -192,7 +193,7 @@ describe("拆壳页 metadata 差异化（G7）", () => {
     }
   });
 
-  it("canonical 指向各自路径；首页薄壳补 canonical /", () => {
+  it("canonical 指向各自路径；首页薄壳补 canonical /（hreflang 见 enLanding.test）", () => {
     expect(unlockMetadata.alternates).toEqual({ canonical: "/unlock" });
     expect(donateMetadata.alternates).toEqual({ canonical: "/donate" });
     expect(labMetadata.alternates).toEqual({ canonical: "/lab" });
@@ -211,7 +212,7 @@ describe("拆壳页 metadata 差异化（G7）", () => {
     expect(lunarMetadata.alternates).toEqual({
       canonical: "/lab/lunar-eclipse",
     });
-    expect(homeMetadata.alternates).toEqual({ canonical: "/" });
+    expect(homeMetadata.alternates).toMatchObject({ canonical: "/" });
   });
 
   it("description 差异化（unlock ≠ donate ≠ lab）", () => {

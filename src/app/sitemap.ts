@@ -6,10 +6,11 @@
  * 下构建期直接产出 sitemap.xml（`npm run build` 后 out/sitemap.xml 存在，
  * M3 验收实测），无需自建脚本与构建钩子。
  *
- * 收录范围（REQUIREMENTS_GROWTH §3 G7）：首页 + /lab + 4 个实验室场景页
- * （流星雨/观察站画廊/日全食/月食，注册表驱动）+ 23 个天体观察页
- * （PREVIEW_REGISTRY 驱动，新增条目自动收录）+ /unlock /donate
- * /contributors，共 32 URL。/dev/preview（生产空页）与 not-found 不收录。
+ * 收录范围（REQUIREMENTS_GROWTH §3 G7）：首页 + /en 英文落地页（H 迭代
+ * H4）+ /lab + 4 个实验室场景页（流星雨/观察站画廊/日全食/月食，注册表
+ * 驱动）+ 23 个天体观察页（PREVIEW_REGISTRY 驱动，新增条目自动收录）+
+ * /unlock /donate /contributors，共 33 URL。/dev/preview（生产空页）与
+ * 404 不收录。
  */
 
 import type { MetadataRoute } from "next";
@@ -20,7 +21,7 @@ import {
   registeredLabEntries,
   LAB_PAGE_PATH,
 } from "@/utils/lab";
-import { absoluteUrl } from "@/utils/siteMeta";
+import { absoluteUrl, EN_HOME_PATH } from "@/utils/siteMeta";
 
 /** 静态导出下强制构建期产出（元数据路由无运行时） */
 export const dynamic = "force-static";
@@ -29,6 +30,7 @@ export const dynamic = "force-static";
 export function sitemapPaths(): readonly string[] {
   return [
     "/",
+    EN_HOME_PATH,
     LAB_PAGE_PATH,
     ...registeredLabEntries().map((entry) => labScenePath(entry)),
     ...registeredPreviewIds().map((id) => observatoryBodyPath(id)),
@@ -42,6 +44,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return sitemapPaths().map((path) => ({
     url: absoluteUrl(path),
     changeFrequency: "weekly",
-    priority: path === "/" ? 1 : 0.7,
+    priority: path === "/" ? 1 : path === EN_HOME_PATH ? 0.9 : 0.7,
   }));
 }

@@ -13,7 +13,7 @@ import { registeredLabEntries, LAB_PAGE_PATH } from "@/utils/lab";
 import LabPage from "./LabPageClient";
 
 export const metadata: Metadata = buildPageMetadata({
-  titleZh: t("zh", "lab.title"),
+  title: t("zh", "lab.title"),
   description: `${t("zh", "lab.subtitle")}：${registeredLabEntries()
     .map((entry) => t("zh", entry.titleKey))
     .join("、")}。`,

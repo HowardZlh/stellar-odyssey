@@ -1,7 +1,12 @@
 'use client';
 
 /**
- * 自定义 404 页（静态导出为 404.html，替代 GitHub Pages 默认 404 页）
+ * 自定义 404 页主体（客户端组件；由 `app/global-not-found.tsx` 包进完整
+ * 文档后静态导出为 404.html，替代 GitHub Pages 默认 404 页）
+ *
+ * H 迭代 H1 迁移登记：原 `src/app/not-found.tsx` 整体 git mv 至此，逻辑
+ * 零改动——路由组双根布局下根级 not-found 失去根布局，改由 global-not-found
+ * 承接文档壳（详见该文件头）。
  *
  * 项目风格：深空星野背景（确定性星场，utils/random）+ 科幻文案。
  * 10 秒倒计时自动返回首页（location.replace 不留浏览历史），
@@ -44,7 +49,7 @@ const STARS: readonly Star[] = ((): readonly Star[] => {
   return stars;
 })();
 
-export default function NotFound(): JSX.Element {
+export default function NotFoundView(): JSX.Element {
   // i18n：404 页独立于主场景，同样按 ?lang= > localStorage > zh 初始化
   useLocaleInit();
   const tr = useT();

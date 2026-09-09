@@ -35,7 +35,7 @@ import {
   gradationProgressLabel,
 } from '@/utils/galacticMotionCues';
 import { BodyNameText, LabelText } from '@/components/Scene/LocalizedLabelText';
-import NotFound from '@/app/not-found';
+import NotFound from '@/components/UI/NotFoundView';
 
 const CJK_RE = /[\u4e00-\u9fff]/;
 

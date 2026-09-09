@@ -7,7 +7,8 @@ import { useT, useLocaleInit } from '@/hooks/useI18n';
 
 /**
  * 场景加载占位（i18n）：store 为模块级全局，Canvas 挂载前即可
- * 初始化 locale（?lang= > localStorage > zh）并按语言显示加载文案。
+ * 初始化 locale（?lang= > localStorage > 路由默认：`/en` → en，其余 zh）
+ * 并按语言显示加载文案。`/` 与 `/en` 两页共用本组件（H 迭代 H2）。
  */
 function SceneLoading(): JSX.Element {
   useLocaleInit();

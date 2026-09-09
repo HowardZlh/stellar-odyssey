@@ -27,12 +27,12 @@ describe('buildShareUrl 主场景形态', () => {
     );
   });
 
-  it('locale 非默认（en）：追加 ?lang=en；无天体时仅 lang', () => {
+  it('locale 非默认（en）：主场景走英文落地页 /en（H6），不再拼 ?lang=en；无天体时仅 /en', () => {
     expect(buildShareUrl(ORIGIN, { kind: 'main', bodyId: 'orion-nebula' }, 'en')).toBe(
-      'https://stellar.guushu.com/?body=orion-nebula&lang=en',
+      'https://stellar.guushu.com/en?body=orion-nebula',
     );
     expect(buildShareUrl(ORIGIN, { kind: 'main', bodyId: null }, 'en')).toBe(
-      'https://stellar.guushu.com/?lang=en',
+      'https://stellar.guushu.com/en',
     );
   });
 

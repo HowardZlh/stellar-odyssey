@@ -10,7 +10,7 @@ import { buildPageMetadata } from "@/utils/siteMeta";
 import DonatePage from "./DonatePageClient";
 
 export const metadata: Metadata = buildPageMetadata({
-  titleZh: t("zh", "donate.title"),
+  title: t("zh", "donate.title"),
   description: `${t("zh", "donate.subtitle")}。${t("zh", "donate.intro")}`,
   path: "/donate",
 });

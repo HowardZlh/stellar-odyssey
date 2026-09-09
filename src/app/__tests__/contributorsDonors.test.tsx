@@ -8,7 +8,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react';
 
-import ContributorsPage from '@/app/contributors/page';
+import ContributorsPage from '@/app/(zh)/contributors/page';
 import { useSimulationStore } from '@/store';
 
 // 跨数量级 mock 名单（含同额、有/无留言、多平台）

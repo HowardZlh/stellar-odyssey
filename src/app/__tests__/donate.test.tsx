@@ -12,7 +12,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react';
 
-import DonatePage from '@/app/donate/page';
+import DonatePage from '@/app/(zh)/donate/page';
 import {
   CONTACT_EMAIL,
   SPONSOR_AFDIAN_URL,

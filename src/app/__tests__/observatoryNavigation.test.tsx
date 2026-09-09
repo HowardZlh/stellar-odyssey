@@ -16,8 +16,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import ObservatoryBodyPage, {
   dynamicParams,
   generateStaticParams,
-} from "@/app/lab/observatory/[body]/page";
-import ObservatoryGalleryPage from "@/app/lab/observatory/page";
+} from "@/app/(zh)/lab/observatory/[body]/page";
+import ObservatoryGalleryPage from "@/app/(zh)/lab/observatory/page";
 import { ObservatoryLab } from "@/components/Lab/ObservatoryLab";
 import { registeredPreviewIds } from "@/utils/devPreview";
 import { observatoryBodyPath } from "@/utils/lab";

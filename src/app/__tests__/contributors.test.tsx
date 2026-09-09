@@ -10,7 +10,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react';
 
-import ContributorsPage from '@/app/contributors/page';
+import ContributorsPage from '@/app/(zh)/contributors/page';
 import { useSimulationStore } from '@/store';
 
 const mockDetectWebglSupport = jest.fn<boolean, []>();

@@ -17,6 +17,11 @@
  *   拼装 + `[body]/page.tsx` metadata）为构建期 zh 静态输出：静态导出无
  *   独立语言路由，不入字典、不订阅 locale（页内 zh/EN 切换仅作用于客户端
  *   场景层；豁免理由登记于 REQUIREMENTS_GROWTH §6 M3）。
+ * - H 迭代同范式扩展：首页落地正文（`utils/homeLanding.ts`，zh/en 各一份
+ *   静态文案，分别供 `/` 与 `/en` 服务端渲染）与三个实验室场景页正文
+ *   （`utils/labLanding.ts`，按 zh 字典键配方重组）同为构建期静态输出、
+ *   不订阅 locale；`/en` 页场景层的英文 UI 由路由默认语言驱动
+ *   （`i18n/index.ts` routeDefaultLocale）。
  *
  * en/zh 键集合一致性由 `I18nDict` 类型强制（en.ts 以该类型标注：
  * 缺键报 TS2741 缺属性、多键报 TS2353 对象字面量多余属性，均编译期报错）。
