@@ -16,6 +16,7 @@
 ### 改进
 
 - GitHub 仓库默认展示的 `README.md` 改为英文版（原 `README.en.md`），中文版改名 `README.zh-CN.md`，两版顶部互链同步；英文 README 的在线体验入口统一指向 `/en`；`package.json` 补齐 `description` / `homepage` / `repository` / `bugs` 字段；`docs/en/how-it-works.md` 标题中的站名误写 "Starsea Odyssey" 更正为 "Stellar Odyssey"；`docs/launch-params.md` 与英文版同步登记 `lang` 优先级新增的"路由默认"一级
+- 依赖安全升级：Next.js 16.2.12 → 16.3.4（修复 GHSA-p293-qw3h-jr36 / GHSA-2xp9-vwfh-vxw4 两条 critical 通告——均针对自托管服务端/图片优化 API，本站为静态导出不受影响，但 CI 生产依赖审计 gate 要求清零）、`eslint-config-next` 同步 16.3.4、`sharp` override 0.35.4（libheif 通告）、dev 侧 `js-yaml` 经 `npm audit fix`；`npm audit` 全量清零，四件套与 37 页构建产物无变化
 - 自定义 404 页改由 `app/global-not-found.tsx` 承载（Next `experimental.globalNotFound`）：路由组双根布局下根级 `not-found` 失去唯一根布局，静态导出的 `404.html` 会退化为 Next 默认页——本次改造后 404 页外观与行为（星野、10 秒倒计时、「立即返回星图」）保持不变，并补 `noindex`
 
 ### 修复
