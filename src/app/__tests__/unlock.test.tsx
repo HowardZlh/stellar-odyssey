@@ -2,7 +2,7 @@
  * 解锁页 /unlock 单测（U3，REQUIREMENTS_UNLOCK.md §U3 验收）：
  * - 骨架渲染（对价口径 intro / 退款口径 / 免费态状态区 / 返回链接）
  * - 档位价格表消费 UNLOCK_TIERS（价格零硬编码断言）+ isCompact 布局分流
- * - 多通道：面包多/爱发电/Ko-fi 同源常量链接、微信二维码展开/收起、邮件 CTA
+ * - 多通道：爱发电/面包多/Ko-fi 同源常量链接、Ko-fi 邮件 CTA（微信赞赏码已下线）
  * - 爱发电兑换：订单号前端校验、mock fetch 成功 + §0.5 全部错误码 +
  *   非法响应体 + 网络失败可重试
  * - 面包多兑换（面包多集成）：32 位 hex 前端校验 + channel:'mbd' 请求体
@@ -97,13 +97,13 @@ const VALID_MBD_ORDER_ID = '9d1e6ffc4e5f796ae9dcf44e1936eb8d';
 const REDEEM_API_URL = 'https://stellar.guushu.com/api/redeem';
 
 /**
- * 通道区「兑换」按钮按 DOM 顺序取用（③面包多 → ④爱发电——两卡片
+ * 通道区「兑换」按钮按 DOM 顺序取用（①爱发电 → ③面包多——两卡片
  * 各有一枚同名按钮，getByRole 会歧义，按渠道顺序索引取）。
  */
-function mbdRedeemBtn(): HTMLElement {
+function afdianRedeemBtn(): HTMLElement {
   return screen.getAllByRole('button', { name: '兑换' })[0];
 }
-function afdianRedeemBtn(): HTMLElement {
+function mbdRedeemBtn(): HTMLElement {
   return screen.getAllByRole('button', { name: '兑换' })[1];
 }
 
@@ -252,65 +252,22 @@ describe('U3-2 多通道兑换', () => {
     expect(kofi).toHaveAttribute('target', '_blank');
   });
 
-  it('微信/Ko-fi 邮件 CTA 指向同源邮箱且预填主题与正文（M3 mailto 模板；微信区先展开）', () => {
+  it('Ko-fi 邮件 CTA 指向同源邮箱且预填主题与正文（mailto 模板）', () => {
     render(<UnlockPage />);
-    fireEvent.click(screen.getByRole('button', { name: /展开微信支付步骤/ }));
-    // 微信小节「打开邮件客户端」+ Ko-fi「发送兑换邮件」共用同一预填 mailto
-    const mails = [
-      screen.getByRole('link', { name: /打开邮件客户端/ }),
-      screen.getByRole('link', { name: /发送兑换邮件/ }),
-    ];
-    for (const mail of mails) {
-      const href = mail.getAttribute('href') ?? '';
-      expect(href).toContain(`mailto:${CONTACT_EMAIL}`);
-      expect(href).toContain('subject=');
-      expect(href).toContain('body=');
-    }
+    const mail = screen.getByRole('link', { name: /发送兑换邮件/ });
+    const href = mail.getAttribute('href') ?? '';
+    expect(href).toContain(`mailto:${CONTACT_EMAIL}`);
+    expect(href).toContain('subject=');
+    expect(href).toContain('body=');
     // 指引文案中的邮箱经 {email} 插值为同源常量
-    const guides = screen.getAllByText(new RegExp(CONTACT_EMAIL));
-    expect(guides.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(new RegExp(CONTACT_EMAIL)).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('微信小节邮件模板：默认收起，展开后模板含同源收件人，复制按钮写剪贴板', async () => {
-    const writeText = jest.fn().mockResolvedValue(undefined);
-    Object.defineProperty(window.navigator, 'clipboard', {
-      value: { writeText },
-      configurable: true,
-    });
+  it('微信赞赏码渠道已下线：页面不渲染微信小节、二维码与邮件模板展开区', () => {
     render(<UnlockPage />);
-    // M4 后续微调「轻量化」：模板默认不可见（人工渠道不喧宾夺主）
-    expect(
-      screen.queryByText(new RegExp(`收件人: ${CONTACT_EMAIL}`)),
-    ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /展开微信支付步骤/ }));
-    expect(
-      screen.getByText(new RegExp(`收件人: ${CONTACT_EMAIL}`)),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /复制邮件模板/ }));
-    expect(await screen.findByText(/已复制/)).toBeInTheDocument();
-    expect(writeText).toHaveBeenCalledWith(
-      expect.stringContaining(`收件人: ${CONTACT_EMAIL}`),
-    );
-  });
-
-  it('微信小节轻量化：默认只留引导短句（推荐支付宝），展开出二维码+模板，可再收起', () => {
-    render(<UnlockPage />);
-    // 默认态：引导短句常显，二维码/邮件模板均不可见
-    expect(screen.getByText(/推荐优先使用上方支付宝扫码/)).toBeInTheDocument();
+    expect(screen.queryByText(/微信赞赏码/)).not.toBeInTheDocument();
     expect(screen.queryByRole('img', { name: '微信赞赏码' })).not.toBeInTheDocument();
-    expect(screen.queryByText(/邮件模板（可一键复制/)).not.toBeInTheDocument();
-    const toggle = screen.getByRole('button', { name: /展开微信支付步骤/ });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-
-    fireEvent.click(toggle);
-    const qr = screen.getByRole('img', { name: '微信赞赏码' });
-    expect(qr).toHaveAttribute('src', '/donate/wechat-tip-code.jpg');
-    expect(screen.getByText(/金额请按档位价格支付/)).toBeInTheDocument();
-    expect(screen.getByText(/邮件模板（可一键复制/)).toBeInTheDocument();
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-
-    fireEvent.click(screen.getByRole('button', { name: /收起微信支付步骤/ }));
-    expect(screen.queryByRole('img', { name: '微信赞赏码' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /展开微信支付步骤/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/邮件模板（可一键复制/)).not.toBeInTheDocument();
   });
 
@@ -481,7 +438,7 @@ describe('面包多兑换链路（面包多集成：channel:"mbd" 请求体 + 32
   });
 });
 
-describe('M3 渠道顺序断言（对齐 stock test_pages_recommend_alipay_and_channel_order）', () => {
+describe('渠道顺序断言（爱发电推荐置顶，微信赞赏码下线）', () => {
   /** 断言一组节点在 DOM 中按给定先后顺序出现 */
   function expectDomOrder(nodes: readonly Element[]): void {
     for (let i = 0; i < nodes.length - 1; i += 1) {
@@ -492,16 +449,17 @@ describe('M3 渠道顺序断言（对齐 stock test_pages_recommend_alipay_and_c
     }
   }
 
-  it('通道顺序：①支付宝（推荐）②微信 ③面包多（备选）④爱发电（备选）⑤Ko-fi ⑥token 粘贴区', () => {
+  it('通道顺序：①爱发电（推荐）②支付宝 ③面包多（备选）④Ko-fi ⑤token 粘贴区', () => {
     render(<UnlockPage />);
     expectDomOrder([
-      screen.getByRole('heading', { name: /支付宝扫码支付（推荐 · 支付后自动发码即时解锁）/ }),
-      screen.getByRole('heading', { name: /微信赞赏码（人工核验 · token 经 Email 发送）/ }),
+      screen.getByRole('heading', { name: /爱发电（推荐 · 订单号自动兑换）/ }),
+      screen.getByRole('heading', { name: /支付宝扫码支付（支付后自动发码即时解锁）/ }),
       screen.getByRole('heading', { name: /面包多（备选 · 订单号自动兑换）/ }),
-      screen.getByRole('heading', { name: /爱发电（备选 · 订单号自动兑换）/ }),
       screen.getByRole('heading', { name: /Ko-fi（海外备选 · 人工核验）/ }),
       screen.getByRole('heading', { name: /已有 token？在此激活/ }),
     ]);
+    // "推荐"仅出现在爱发电标题
+    expect(screen.getAllByRole('heading', { name: /推荐/ })).toHaveLength(1);
   });
 
   it('支付宝面板为引导口径：档位卡片即 CTA，面板锚点回跳档位表', () => {
@@ -513,9 +471,10 @@ describe('M3 渠道顺序断言（对齐 stock test_pages_recommend_alipay_and_c
     expect(document.getElementById('unlock-tiers')).not.toBeNull();
   });
 
-  it('爱发电降为备选口径：需注册账号说明 + 订单号兑换框保留', () => {
+  it('爱发电为推荐口径：需注册账号事实说明保留 + 订单号兑换框', () => {
     render(<UnlockPage />);
     expect(screen.getByText(/需注册爱发电账号/)).toBeInTheDocument();
+    expect(screen.getByText(/粘贴订单号即可自动兑换、即时解锁/)).toBeInTheDocument();
     expect(screen.getByLabelText('爱发电订单号')).toBeInTheDocument();
   });
 
@@ -606,7 +565,7 @@ describe('U3-3 URL 注入与已激活态', () => {
     expect(cta).toHaveAttribute('href', '/contributors');
     // 人工渠道上榜有时序，附预期说明避免立即找不到而困惑
     expect(
-      screen.getByText(/微信\/爱发电\/面包多\/Ko-fi 等人工核验渠道稍后上榜/),
+      screen.getByText(/爱发电\/面包多\/Ko-fi 等渠道稍后上榜/),
     ).toBeInTheDocument();
   });
 

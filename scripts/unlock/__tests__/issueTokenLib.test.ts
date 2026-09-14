@@ -42,13 +42,13 @@ describe("parseArgs", () => {
     });
   });
 
-  it("签发默认值：months 1、ch wechat、key 缺省", () => {
+  it("签发默认值：months 1、ch kofi、key 缺省", () => {
     expect(parseArgs(["--tier", "week"])).toEqual({
       mode: "issue",
       tier: "week",
       months: 1,
       startSec: null,
-      ch: "wechat",
+      ch: "kofi",
       keyPath: null,
       force: false,
     });
@@ -121,7 +121,7 @@ describe("issueToken 三档签发 × U1 verifyToken 互通", () => {
       tier,
       exp: startSec + days * 86_400,
       iat: NOW_SEC,
-      ch: "wechat",
+      ch: "kofi",
     });
     expect(url).toBe(`${UNLOCK_URL_BASE}?token=${token}`);
     expect(verifyToken(token, TEST_PUBLIC_KEY_HEX, NOW_SEC)).toEqual({

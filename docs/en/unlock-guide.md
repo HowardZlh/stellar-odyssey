@@ -8,10 +8,10 @@
 > nicknames and messages (both optional) are listed on the contributor roster and in the
 > Contributor Universe. The project source code remains open source. Purchase and redemption
 > both happen at [stellar.guushu.com/unlock](https://stellar.guushu.com/unlock).
-> Support channels in recommended order: **Alipay QR pay (recommended — automatic, instant
-> unlock) → WeChat tip code (manual review) → Mianbaoduo (fallback — pay by QR with no account
-> needed, automatic order-ID redemption) → Afdian (fallback, automatic order-number
-> redemption) → Ko-fi (overseas fallback)**.
+> Support channels in recommended order: **Afdian (recommended — automatic order-number
+> redemption, instant unlock) → Alipay QR pay (automatic, instant unlock) → Mianbaoduo
+> (fallback — pay by QR with no account needed, automatic order-ID redemption) → Ko-fi
+> (overseas fallback, manual review)**.
 
 ## What is unlocked (the free experience stays intact)
 
@@ -39,14 +39,29 @@ Unlocking adds four kinds of access (identical across tiers; only duration diffe
 | Month Pass | ¥15 | $2.5 | 31 days (multi-month subscriptions stack by month count) |
 | Year Pass | ¥88 | $13 | 366 days |
 
-- For Alipay QR payments, access starts **from the moment the payment succeeds**; for automatic
-  Mianbaoduo redemption, it starts **from the payment time**; for automatic Afdian redemption,
-  it starts **from the order time** (not the redeem time); manual channels start from issuance.
+- For automatic Afdian redemption, access starts **from the order time** (not the redeem time);
+  for Alipay QR payments, it starts **from the moment the payment succeeds**; for automatic
+  Mianbaoduo redemption, it starts **from the payment time**; the manual channel (Ko-fi) starts
+  from issuance.
 - Access does **not auto-renew** upon expiry — no hidden charges of any kind.
 
-## Purchase & redeem (five channels)
+## Purchase & redeem (four channels)
 
-### Channel 1: Alipay QR pay (recommended · automatic, instant unlock after payment)
+### Channel 1: Afdian (recommended · automatic order-number redemption)
+
+Afdian account required:
+
+1. On the unlock page, click "Buy on Afdian" — purchase at the tier amount (Week/Year Pass are
+   **products**; Month Pass is a **subscription plan**).
+2. After paying, copy your **order number**: in the Afdian app or website, go to
+   "My → Orders", find the order, and copy its number (14–40 digits).
+3. Back on the unlock page, paste the order number into the "Afdian order number" field and click
+   "Redeem" — access activates instantly, showing your tier, expiry date, and remaining days.
+
+> The same order number can be **redeemed repeatedly**: it always returns the same token issued the
+> first time (durations do not stack) — if you lose your token, just redeem the order number again.
+
+### Channel 2: Alipay QR pay (automatic, instant unlock after payment)
 
 1. Open the [unlock page](https://stellar.guushu.com/unlock) and click the "Pay with Alipay QR"
    button on your chosen tier in the tier table.
@@ -59,16 +74,6 @@ Unlocking adds four kinds of access (identical across tiers; only duration diffe
    **keep the token safe** (paste it on another device's unlock page to restore access).
 
 > No account registration needed; the amount follows the tier table on the page.
-
-### Channel 2: WeChat tip code (manual review · token sent by email)
-
-1. Expand the WeChat tip code on the unlock page and pay the selected **tier amount**.
-2. Send a redeem email to [stevenzearo@163.com](mailto:stevenzearo@163.com) using the **email
-   template** on the unlock page (copy with one click, or open your mail client pre-filled),
-   with a **payment screenshot** and the **transaction time**.
-3. After manual review — usually within 48 hours — you will receive a reply containing your
-   unlock token and a direct activation link; activate as described under "Using your token"
-   below (not instant; in a hurry, use channel 1 Alipay QR).
 
 ### Channel 3: Mianbaoduo (fallback · automatic order-ID redemption · QR pay, no account)
 
@@ -83,25 +88,16 @@ Unlocking adds four kinds of access (identical across tiers; only duration diffe
 > The same order ID can be **redeemed repeatedly**: it always returns the same token issued the
 > first time (durations do not stack) — if you lose your token, just redeem the order ID again.
 
-### Channel 4: Afdian (fallback · automatic order-number redemption)
-
-Afdian account required:
-
-1. On the unlock page, click "Buy on Afdian" — purchase at the tier amount (Week/Year Pass are
-   **products**; Month Pass is a **subscription plan**).
-2. After paying, copy your **order number**: in the Afdian app or website, go to
-   "My → Orders", find the order, and copy its number (14–40 digits).
-3. Back on the unlock page, paste the order number into the "Afdian order number" field and click
-   "Redeem" — access activates instantly, showing your tier, expiry date, and remaining days.
-
-> The same order number can be **redeemed repeatedly**: it always returns the same token issued the
-> first time (durations do not stack) — if you lose your token, just redeem the order number again.
-
-### Channel 5: Ko-fi (overseas fallback · manual review)
+### Channel 4: Ko-fi (overseas fallback · manual review · token sent by email)
 
 1. Go to [ko-fi.com/howardzlh](https://ko-fi.com/howardzlh) and pay the tier's **$ amount**
    (week $1 / month $2.5 / year $13).
-2. Same as channel 2: email your payment receipt and transaction time; the token comes by reply.
+2. Click "Send redeem email" in the Ko-fi section of the unlock page (recipient, subject, and body
+   are pre-filled) to email [stevenzearo@163.com](mailto:stevenzearo@163.com), attaching your
+   **payment receipt** and the **transaction time**.
+3. After manual review — usually within 48 hours — you will receive a reply containing your
+   unlock token and a direct activation link; activate as described under "Using your token"
+   below (not instant; in a hurry, use channel 1 or channel 2).
 
 ## Using your token & switching devices
 
@@ -193,4 +189,5 @@ They are unified as "support = unlock": paying any tier unlocks the correspondin
 your nickname and message (both optional) join the
 [donor roster](https://stellar.guushu.com/donate) and the
 [Contributor Universe](https://stellar.guushu.com/contributors). The donation page (/donate)
-lists all support channels; its Alipay entry guides you back to this unlock page to pay.
+lists all support channels; its Afdian panel guides you back to this unlock page to redeem your
+order number, and its Alipay entry guides you back here to pay.

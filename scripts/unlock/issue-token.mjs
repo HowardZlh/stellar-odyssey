@@ -10,7 +10,7 @@
  * 用法：
  *   node scripts/unlock/issue-token.mjs --gen-key [--force]
  *   node scripts/unlock/issue-token.mjs --tier week|month|year \
- *     [--months N] [--start 2026-08-12] [--ch wechat|kofi|afdian] [--key <路径>]
+ *     [--months N] [--start 2026-08-12] [--ch kofi|afdian] [--key <路径>]
  *
  * 密钥安全（最高优先级）：私钥默认读写 secrets/unlock-ed25519-private.hex
  * （目录已 gitignore，与 src/data/unlockPublicKey.ts 登记的生产密钥对
@@ -33,7 +33,7 @@ const DEFAULT_KEY_PATH = join(SCRIPT_DIR, DEFAULT_KEY_RELATIVE_PATH);
 const USAGE = `用法：
   生成密钥对   node scripts/unlock/issue-token.mjs --gen-key [--force]
   签发 token   node scripts/unlock/issue-token.mjs --tier week|month|year \\
-                 [--months N] [--start 2026-08-12] [--ch wechat|kofi|afdian] [--key <路径>]`;
+                 [--months N] [--start 2026-08-12] [--ch kofi|afdian] [--key <路径>]`;
 
 function runGenKey(args) {
   const keyPath = args.keyPath ?? DEFAULT_KEY_PATH;

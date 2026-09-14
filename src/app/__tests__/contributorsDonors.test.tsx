@@ -11,7 +11,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import ContributorsPage from '@/app/(zh)/contributors/page';
 import { useSimulationStore } from '@/store';
 
-// 跨数量级 mock 名单（含同额、有/无留言、多平台）
+// 跨数量级 mock 名单（含同额、有/无留言、多平台；'wechat' 为已下线渠道的
+// 历史记录，展示名走 contributors.platformWechat i18n 兜底而非注册表）
 jest.mock('@/data/donors', () => ({
   DONORS: [
     { name: '小行星', amountCny: 5, platform: 'afdian', date: '2026-07-01' },
@@ -69,7 +70,7 @@ describe('ContributorsPage mock 名单（3D 态 stub）', () => {
     expect(screen.queryByText(/虚位以待/)).not.toBeInTheDocument();
   });
 
-  it('点击星打开详情卡：昵称/金额/日期/平台/留言齐全，可关闭', () => {
+  it('点击星打开详情卡：昵称/金额/日期/平台（已下线渠道走 i18n 兜底名）/留言齐全，可关闭', () => {
     render(<ContributorsPage />);
     fireEvent.click(screen.getByText('stub-select-top-star'));
 
