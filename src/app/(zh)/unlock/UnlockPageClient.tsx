@@ -3,18 +3,18 @@
 /**
  * 支持者解锁页（/unlock，U3，静态导出为 unlock.html）
  *
- * 结构（§U3-1~3 + Z 迭代 M3 渠道重排 + 面包多集成，REQUIREMENTS_ALIPAY_UNLOCK
- * §5.1）：权益状态区 → 档位价格表（消费 UNLOCK_TIERS 单一事实源，禁止硬编码
- * 价格；档位卡片 = 支付宝扫码主入口 CTA）→ 五通道购买与兑换区（① 支付宝
- * 扫码推荐 · 自动发码 ② 微信赞赏码独立小节：内嵌图 + 人工核验口径 + 可复制
- * 邮件模板 + 预填 mailto ③ 面包多备选 · 订单号自动兑换（扫码即付无需注册）
- * ④ 爱发电备选 · 订单号兑换框保留 ⑤ Ko-fi 海外备选）→ token 粘贴区 →
- * 退款/说明区。骨架照 donate 页范式（useLocaleInit + zh/EN 切换 + 返回主站 +
- * 深空渐变背景 + 自身滚动容器）。
+ * 结构（§U3-1~3 + Z 迭代 M3 渠道重排 + 面包多集成 + 渠道重排二期，
+ * REQUIREMENTS_ALIPAY_UNLOCK §5.1）：权益状态区 → 档位价格表（消费
+ * UNLOCK_TIERS 单一事实源，禁止硬编码价格；档位卡片 = 支付宝扫码 CTA）→
+ * 四通道购买与兑换区（① 爱发电推荐 · 订单号自动兑换 ② 支付宝扫码 · 自动
+ * 发码即时解锁 ③ 面包多备选 · 订单号自动兑换（扫码即付无需注册）④ Ko-fi
+ * 海外备选 · 人工核验 mailto）→ token 粘贴区 → 退款/说明区。骨架照
+ * donate 页范式（useLocaleInit + zh/EN 切换 + 返回主站 + 深空渐变背景 +
+ * 自身滚动容器）。微信赞赏码渠道已下线。
  *
  * 文案口径（M3 起统一"支持即解锁"，D3 双轨隔离取消）：本页为明码标价
- * 对价口径（"支付 ¥X 解锁 Y 天"承诺允许）；邮件模板与 /donate 页同源
- * （utils/redeemMail 拼装 + 同一 i18n 键组，禁止第二份副本）。
+ * 对价口径（"支付 ¥X 解锁 Y 天"承诺允许）；Ko-fi 人工渠道兑换邮件经
+ * utils/redeemMail 拼装（mailto 预填主题与正文）。
  *
  * 权益链路收敛登记（U2 已交付）：激活/清除/恢复一律走 store actions
  * （applyUnlockToken / clearEntitlement / restoreUnlockState，验签 +
@@ -25,7 +25,7 @@
  *
  * 移动适配（§U3-3）：isCompact 经 useViewportKind 既有判据消费（禁止自建
  * 检测）——档位表桌面为对比表格、紧凑视口降级为堆叠卡片；触控目标经
- * max-md:min-h-11 等类保证 ≥44×44pt；二维码展开形态沿用 donate 页先例。
+ * max-md:min-h-11 等类保证 ≥44×44pt。
  */
 
 import type { JSX } from 'react';
@@ -38,11 +38,7 @@ import { useViewportKind } from '@/hooks/useViewportKind';
 import { useSimulationStore } from '@/store';
 import type { UnlockTier } from '@/data/unlockPricing';
 import { UNLOCK_TIERS } from '@/data/unlockPricing';
-import {
-  DONATION_PLATFORMS,
-  SPONSOR_KOFI_URL,
-  SPONSOR_MBD_URL,
-} from '@/data/donationPlatforms';
+import { SPONSOR_KOFI_URL, SPONSOR_MBD_URL } from '@/data/donationPlatforms';
 import { CONTACT_EMAIL, SPONSOR_AFDIAN_URL } from '@/components/UI/ContactBadge';
 import { ContributorsRosterSection } from '@/components/UI/ContributorsRosterSection';
 import { UnlockAlipayModal } from '@/components/UI/UnlockAlipayModal';
@@ -60,10 +56,7 @@ import {
   resolveRedeemApiUrl,
   tokenErrorMessageKey,
 } from '@/utils/unlockRedeem';
-import {
-  buildRedeemMailtoHref,
-  formatRedeemMailTemplate,
-} from '@/utils/redeemMail';
+import { buildRedeemMailtoHref } from '@/utils/redeemMail';
 
 /** 档位展示顺序（渲染消费 UNLOCK_TIERS，价格零硬编码） */
 const TIER_ORDER: readonly UnlockTier[] = ['week', 'month', 'year'];
@@ -82,11 +75,6 @@ const TIER_NAME_KEYS: Readonly<Record<UnlockTier, MessageKey>> = {
 const REDEEM_API_URL = resolveRedeemApiUrl(
   process.env.NEXT_PUBLIC_UNLOCK_API_BASE,
 );
-
-/** 微信赞赏码图片路径（donationPlatforms 注册表同源，只读不改） */
-const WECHAT_QR_IMAGE =
-  DONATION_PLATFORMS.find((p) => p.id === 'wechat')?.qrImage ??
-  '/donate/wechat-tip-code.jpg';
 
 /** 当前 epoch 秒 */
 function nowSec(): number {
@@ -130,12 +118,6 @@ export default function UnlockPage(): JSX.Element {
   // 复制/清除交互态
   const [copyState, setCopyState] = useState<'idle' | 'done' | 'fail'>('idle');
   const [clearConfirming, setClearConfirming] = useState(false);
-
-  // 微信二维码展开（donate 页先例）
-  const [qrOpen, setQrOpen] = useState(false);
-
-  // M3：邮件模板复制态（微信小节；clipboard 失败时模板文本本身可选中复制）
-  const [mailCopied, setMailCopied] = useState(false);
 
   // M2：支付宝付款 modal（档位卡片 CTA 打开；null = 关闭）
   const [alipayTier, setAlipayTier] = useState<UnlockTier | null>(null);
@@ -298,27 +280,10 @@ export default function UnlockPage(): JSX.Element {
     setTokenDone(false);
   }
 
-  // 人工渠道兑换邮件（M3：主题 + 正文预填，模板与 /donate 页同源拼装）
+  // Ko-fi 人工渠道兑换邮件（主题 + 正文预填 mailto，utils/redeemMail 拼装）
   const mailSubject = tr('unlock.emailSubject');
   const mailBody = trf('unlock.mailTplBody', { email: CONTACT_EMAIL });
   const mailtoHref = buildRedeemMailtoHref(CONTACT_EMAIL, mailSubject, mailBody);
-  const mailTemplate = formatRedeemMailTemplate({
-    toLabel: tr('unlock.mailTplToLabel'),
-    subjectLabel: tr('unlock.mailTplSubjectLabel'),
-    email: CONTACT_EMAIL,
-    subject: mailSubject,
-    body: mailBody,
-  });
-
-  /** 复制邮件模板（失败静默：模板 pre 文本本身可手动选中复制） */
-  async function handleCopyMailTemplate(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(mailTemplate);
-      setMailCopied(true);
-    } catch {
-      setMailCopied(false);
-    }
-  }
 
   // 触控命中区（≥44×44pt）：移动端按钮统一 max-md 放大（donate 页口径）
   const touchBtn = 'max-md:min-h-11 max-md:px-4 max-md:py-3';
@@ -634,17 +599,68 @@ export default function UnlockPage(): JSX.Element {
           </div>
         </section>
 
-        {/* 五通道购买与兑换区（M3 渠道重排 §5.1 + 面包多集成：支付宝→微信→
-            面包多→爱发电→Ko-fi；顺序断言测试对照 stock
-            test_pages_recommend_alipay_and_channel_order） */}
+        {/* 四通道购买与兑换区（渠道重排：爱发电（推荐）→支付宝→面包多→
+            Ko-fi；微信赞赏码已下线；顺序有断言测试锁定） */}
         <section className="mt-10">
           <h2 className="mb-3 text-sm font-semibold text-gray-300">
             {tr('unlock.channelsSection')}
           </h2>
           <div className="space-y-3">
-            {/* ① 支付宝扫码（推荐 · 自动发码）：档位卡片即 CTA，本面板为
-                引导口径 + 锚点回跳档位表 */}
+            {/* ① 爱发电（推荐 · 订单号自动兑换）：站外购买 + 订单号兑换框 */}
             <div className="rounded-lg border border-space-accent/40 bg-space-panel p-4 backdrop-blur">
+              <h3 className="text-sm text-gray-200">⚡ {tr('unlock.afdianTitle')}</h3>
+              <p className="mt-2 text-xs leading-5 text-gray-400">
+                {tr('unlock.afdianGuide')}
+              </p>
+              <a
+                href={SPONSOR_AFDIAN_URL}
+                target="_blank"
+                rel="noreferrer"
+                className={`mt-3 inline-block rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent ${touchBtn}`}
+              >
+                {tr('unlock.afdianLink')}
+              </a>
+              <div className="mt-3">
+                <label
+                  htmlFor="afdian-order"
+                  className="block text-xs text-gray-400"
+                >
+                  {tr('unlock.orderInputLabel')}
+                </label>
+                <div className="mt-1 flex gap-2 max-md:flex-col">
+                  <input
+                    id="afdian-order"
+                    value={orderInput}
+                    onChange={(e) => setOrderInput(e.target.value)}
+                    placeholder={tr('unlock.orderInputPlaceholder')}
+                    inputMode="numeric"
+                    className="min-w-0 flex-1 rounded border border-white/15 bg-black/30 px-2 py-1.5 font-mono text-xs text-gray-200 placeholder:text-gray-600 max-md:min-h-11"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleRedeem()}
+                    disabled={orderPending}
+                    className={`shrink-0 rounded bg-space-accent/90 px-4 py-1.5 text-xs text-black transition-colors hover:bg-space-accent disabled:cursor-not-allowed disabled:opacity-50 ${touchBtn}`}
+                  >
+                    {tr(orderPending ? 'unlock.redeemPending' : 'unlock.redeemButton')}
+                  </button>
+                </div>
+                {orderError !== null && (
+                  <p role="alert" className="mt-2 text-xs text-amber-300">
+                    {tr(orderError)}
+                  </p>
+                )}
+                {orderDone && (
+                  <p className="mt-2 text-xs text-emerald-300">
+                    🎉 {tr('unlock.redeemSuccess')}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* ② 支付宝扫码（自动发码即时解锁）：档位卡片即 CTA，本面板为
+                引导口径 + 锚点回跳档位表 */}
+            <div className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
               <h3 className="text-sm text-gray-200">
                 💙 {tr('unlock.alipayChannelTitle')}
               </h3>
@@ -657,65 +673,6 @@ export default function UnlockPage(): JSX.Element {
               >
                 {tr('unlock.alipayChannelCta')} ↑
               </a>
-            </div>
-
-            {/* ② 微信赞赏码独立小节（人工核验 · token 经 Email 发送）：
-                M4 后续微调「轻量化」——默认只留引导短句 + 展开按钮（防止
-                人工渠道显眼分流支付宝），赞赏码/支付步骤/邮件模板全部收进
-                展开区（模板与 donate 页同源） */}
-            <div className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
-              <h3 className="text-sm text-gray-200">💚 {tr('unlock.wechatTitle')}</h3>
-              <p className="mt-2 text-xs leading-5 text-gray-400">
-                {tr('unlock.wechatGuide')}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  aria-expanded={qrOpen}
-                  onClick={() => setQrOpen((v) => !v)}
-                  className={`rounded border border-white/15 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:text-white ${touchBtn}`}
-                >
-                  {tr(qrOpen ? 'unlock.wechatCollapse' : 'unlock.wechatExpand')}{' '}
-                  {qrOpen ? '▴' : '▾'}
-                </button>
-              </div>
-              {qrOpen && (
-                <>
-                  <p className="mt-3 text-xs leading-5 text-gray-400">
-                    {trf('unlock.wechatSteps', { email: CONTACT_EMAIL })}
-                  </p>
-                  <div className="mt-3 text-center">
-                    {/* 原生 <img>：静态导出无 next/image 优化（donate 页先例） */}
-                    <img
-                      src={WECHAT_QR_IMAGE}
-                      alt={tr('unlock.wechatQrAlt')}
-                      className="mx-auto w-full max-w-64 rounded-lg"
-                    />
-                    <p className="mt-2 text-[10px] leading-4 text-gray-500 max-md:text-xs">
-                      {tr('unlock.wechatQrHint')}
-                    </p>
-                  </div>
-                  <p className="mt-3 text-xs text-gray-400">{tr('unlock.mailTplHint')}</p>
-                  <pre className="mt-1 whitespace-pre-wrap break-words rounded border border-white/10 bg-black/30 p-3 text-[10px] leading-4 text-gray-300 max-md:text-xs">
-                    {mailTemplate}
-                  </pre>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void handleCopyMailTemplate()}
-                      className={`rounded border border-white/15 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:text-white ${touchBtn}`}
-                    >
-                      📋 {tr(mailCopied ? 'unlock.mailTplCopied' : 'unlock.mailTplCopy')}
-                    </button>
-                    <a
-                      href={mailtoHref}
-                      className={`rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent ${touchBtn} inline-flex items-center`}
-                    >
-                      📮 {tr('unlock.mailTplOpen')} →
-                    </a>
-                  </div>
-                </>
-              )}
             </div>
 
             {/* ③ 面包多（备选 · 订单号自动兑换，扫码即付无需注册） */}
@@ -769,59 +726,7 @@ export default function UnlockPage(): JSX.Element {
               </div>
             </div>
 
-            {/* ④ 爱发电（备选 · 订单号自动兑换，兑换框保留） */}
-            <div className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
-              <h3 className="text-sm text-gray-200">⚡ {tr('unlock.afdianTitle')}</h3>
-              <p className="mt-2 text-xs leading-5 text-gray-400">
-                {tr('unlock.afdianGuide')}
-              </p>
-              <a
-                href={SPONSOR_AFDIAN_URL}
-                target="_blank"
-                rel="noreferrer"
-                className={`mt-3 inline-block rounded bg-space-accent/90 px-3 py-1.5 text-xs text-black transition-colors hover:bg-space-accent ${touchBtn}`}
-              >
-                {tr('unlock.afdianLink')}
-              </a>
-              <div className="mt-3">
-                <label
-                  htmlFor="afdian-order"
-                  className="block text-xs text-gray-400"
-                >
-                  {tr('unlock.orderInputLabel')}
-                </label>
-                <div className="mt-1 flex gap-2 max-md:flex-col">
-                  <input
-                    id="afdian-order"
-                    value={orderInput}
-                    onChange={(e) => setOrderInput(e.target.value)}
-                    placeholder={tr('unlock.orderInputPlaceholder')}
-                    inputMode="numeric"
-                    className="min-w-0 flex-1 rounded border border-white/15 bg-black/30 px-2 py-1.5 font-mono text-xs text-gray-200 placeholder:text-gray-600 max-md:min-h-11"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void handleRedeem()}
-                    disabled={orderPending}
-                    className={`shrink-0 rounded bg-space-accent/90 px-4 py-1.5 text-xs text-black transition-colors hover:bg-space-accent disabled:cursor-not-allowed disabled:opacity-50 ${touchBtn}`}
-                  >
-                    {tr(orderPending ? 'unlock.redeemPending' : 'unlock.redeemButton')}
-                  </button>
-                </div>
-                {orderError !== null && (
-                  <p role="alert" className="mt-2 text-xs text-amber-300">
-                    {tr(orderError)}
-                  </p>
-                )}
-                {orderDone && (
-                  <p className="mt-2 text-xs text-emerald-300">
-                    🎉 {tr('unlock.redeemSuccess')}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* ⑤ Ko-fi（海外备选 · 人工核验） */}
+            {/* ④ Ko-fi（海外备选 · 人工核验） */}
             <div className="rounded-lg border border-white/10 bg-space-panel p-4 backdrop-blur">
               <h3 className="text-sm text-gray-200">☕ {tr('unlock.kofiTitle')}</h3>
               <p className="mt-2 text-xs leading-5 text-gray-400">

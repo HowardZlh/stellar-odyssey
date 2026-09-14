@@ -35,7 +35,7 @@ const TIERS = Object.keys(UNLOCK_TIERS);
 /**
  * argv → 结构化参数（非法输入抛 Error，消息为中文可读提示）。
  * 支持：--gen-key [--force] | --tier week|month|year [--months N]
- * [--start ISO] [--ch wechat|kofi|afdian] [--key <path>]
+ * [--start ISO] [--ch kofi|afdian] [--key <path>]
  */
 export function parseArgs(argv) {
   const args = {
@@ -43,7 +43,7 @@ export function parseArgs(argv) {
     tier: null,
     months: 1,
     startSec: null,
-    ch: "wechat",
+    ch: "kofi",
     keyPath: null,
     force: false,
   };
@@ -133,7 +133,7 @@ export function issueToken({
   startSec,
   nowSec,
   privateKeyHex,
-  ch = "wechat",
+  ch = "kofi",
 }) {
   const privateKey = hexToBytes(privateKeyHex.trim());
   if (privateKey === null || privateKey.length !== 32) {

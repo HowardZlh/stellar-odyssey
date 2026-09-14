@@ -33,7 +33,8 @@ ed.hashes.sha512 = sha512;
 export const UNLOCK_TOKEN_PREFIX = "SO1";
 
 /** 支付渠道（payload `ch` 字段取值，§0.5 冻结；Z 迭代 M2 增 'alipay'，D-z3；
- * 面包多集成增 'mbd'——mbd.pub 商店订单号自动兑换渠道） */
+ * 面包多集成增 'mbd'——mbd.pub 商店订单号自动兑换渠道。'wechat' 渠道已
+ * 下线不再签发，但保留取值以兼容既往已签发 token 的验签） */
 export const UNLOCK_CHANNELS = [
   "afdian",
   "wechat",

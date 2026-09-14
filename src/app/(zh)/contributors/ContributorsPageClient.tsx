@@ -55,14 +55,15 @@ const PLATFORM_EMOJI: Record<DonationPlatformId, string> = {
 
 /**
  * 平台注册表查找（详情卡双语名；未注册 id 兜底显示原始 id）。
- * M2 登记：alipay 为解锁支付渠道、不进 donationPlatforms 捐赠注册表
- * （渠道重排 M3 处理），展示名走 i18n 键。
+ * alipay 展示名走 i18n 键（注册表条目名为"支付宝扫码支付"，名单里只需
+ * 短名）；wechat 渠道已下线、不再在注册表中，历史贡献者记录经 i18n 键兜底。
  */
 function platformDisplayName(
   locale: Locale,
   platformId: DonationPlatformId,
 ): string {
   if (platformId === 'alipay') return t(locale, 'contributors.platformAlipay');
+  if (platformId === 'wechat') return t(locale, 'contributors.platformWechat');
   const platform = DONATION_PLATFORMS.find((p) => p.id === platformId);
   if (!platform) return platformId;
   return pickLocalized(locale, platform.nameZh, platform.nameEn);

@@ -62,26 +62,23 @@ describe('DONATION_PLATFORMS 注册表', () => {
     expect(mbd?.url).toBe(SPONSOR_MBD_URL);
   });
 
-  it('微信赞赏码为二维码形态（无跳转链接、qrImage 指向站内资产）', () => {
-    const wechat = DONATION_PLATFORMS.find((p) => p.id === 'wechat');
-    expect(wechat?.url).toBeNull();
-    expect(wechat?.qrImage).toBe('/donate/wechat-tip-code.jpg');
+  it('微信赞赏码渠道已下线：注册表不再含 wechat 条目', () => {
+    expect(DONATION_PLATFORMS.some((p) => p.id === 'wechat')).toBe(false);
   });
 
-  it('M3 渠道顺序：支付宝→微信→面包多→爱发电→Ko-fi→预留位（顺序即渲染顺序）', () => {
+  it('渠道顺序：爱发电→支付宝→面包多→Ko-fi→预留位（顺序即渲染顺序）', () => {
     expect(DONATION_PLATFORMS.map((p) => p.id)).toEqual([
-      'alipay',
-      'wechat',
-      'mbd',
       'afdian',
+      'alipay',
+      'mbd',
       'kofi',
       'github-sponsors',
       'buymeacoffee',
     ]);
-    // alipay 为引导型面板（无外链无二维码，页面按 id 分流跳 /unlock）；
-    // 预留位 = 除 alipay 外无链接且无二维码的条目
+    // alipay 为引导型面板（无外链，页面按 id 分流跳 /unlock）；
+    // 预留位 = 除 alipay 外无链接的条目
     const reserved = DONATION_PLATFORMS.filter(
-      (p) => p.url === null && !p.qrImage && p.id !== 'alipay',
+      (p) => p.url === null && p.id !== 'alipay',
     );
     expect(reserved.map((p) => p.id)).toEqual([
       'github-sponsors',

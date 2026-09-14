@@ -8,7 +8,8 @@
 
 /** 捐赠平台 id（与 data/donationPlatforms.ts 注册表对应；Z 迭代 M2 增
  * 'alipay'——支付宝扫码解锁渠道，动态贡献者名单条目消费，注册表面板 M3 补；
- * 面包多集成增 'mbd'——mbd.pub 商店订单号自动兑换渠道） */
+ * 面包多集成增 'mbd'——mbd.pub 商店订单号自动兑换渠道；'wechat' 渠道已
+ * 下线、不在注册表渲染，保留 id 仅为历史贡献者记录与 token `ch` 兼容） */
 export type DonationPlatformId =
   | 'afdian'
   | 'wechat'

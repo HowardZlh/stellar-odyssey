@@ -1,11 +1,11 @@
 /**
  * 捐赠页 /donate 单测（空名单上线态；Z 迭代 M3 改版，需求 E2(a)）：
  * - 标题/说明（"支持即解锁"口径）渲染
- * - 渠道顺序断言：支付宝（推荐引导面板）→ 微信（独立 panel）→ 面包多 →
- *   爱发电 → Ko-fi → 预留位（对齐 stock test_pages_recommend_alipay_and_channel_order）
+ * - 渠道顺序断言：爱发电（推荐独立面板）→ 支付宝（引导面板）→ 面包多 →
+ *   Ko-fi → 预留位；微信赞赏码已下线不再渲染
+ * - 爱发电面板：推荐口径 + 站外购买链接（同源常量）+ 回解锁页兑换链接
  * - 支付宝面板：引导口径 + 「前往解锁页扫码支付 →」跳 /unlock（modal 不进本页）
- * - 微信 panel：内嵌二维码图 + 可复制邮件模板 + 预填 mailto（与 /unlock 同源）
- * - 面包多/爱发电/Ko-fi 备选卡片链接（同源常量）+ 两个预留位
+ * - 面包多/Ko-fi 备选卡片链接（同源常量）+ 两个预留位
  * - 空名单占位文案 + 贡献者宇宙入口
  * - zh/EN 语言切换
  */
@@ -14,7 +14,6 @@ import { fireEvent, render, screen } from '@testing-library/react';
 
 import DonatePage from '@/app/(zh)/donate/page';
 import {
-  CONTACT_EMAIL,
   SPONSOR_AFDIAN_URL,
   UNLOCK_PAGE_PATH,
 } from '@/components/UI/ContactBadge';
@@ -46,87 +45,51 @@ describe('DonatePage 渲染（空名单）', () => {
     expect(screen.getByText(/记入贡献者名单与贡献者宇宙/)).toBeInTheDocument();
   });
 
-  it('M3 渠道顺序：支付宝 → 微信 → 面包多 → 爱发电 → Ko-fi → 预留位', () => {
+  it('渠道顺序：爱发电 → 支付宝 → 面包多 → Ko-fi → 预留位（微信赞赏码已下线）', () => {
     render(<DonatePage />);
     const reserved = screen.getAllByText('预留位 · 即将开通');
     expect(reserved).toHaveLength(2);
     expectDomOrder([
+      screen.getByRole('heading', { name: /爱发电/ }),
       screen.getByRole('heading', { name: /支付宝扫码支付/ }),
-      screen.getByRole('heading', { name: /微信赞赏码/ }),
       screen.getByText('🍞 面包多'),
-      screen.getByText('⚡ 爱发电'),
       screen.getByText('☕ Ko-fi'),
       reserved[0],
       reserved[1],
     ]);
+    expect(screen.queryByText(/微信赞赏码/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: '微信赞赏码' })).not.toBeInTheDocument();
   });
 
-  it('支付宝引导面板：推荐口径 + 跳解锁页链接（付款 modal 不进本页）', () => {
+  it('爱发电推荐面板：推荐口径 + 站外购买链接（同源常量、新标签页）+ 回解锁页兑换链接', () => {
     render(<DonatePage />);
-    expect(screen.getByText(/支付成功后自动发放解锁 token 并即时解锁/)).toBeInTheDocument();
+    expect(screen.getByText(/推荐渠道：前往爱发电按档位金额购买/)).toBeInTheDocument();
+    const buy = screen.getByRole('link', { name: /前往爱发电支持/ });
+    expect(buy).toHaveAttribute('href', SPONSOR_AFDIAN_URL);
+    expect(buy).toHaveAttribute('target', '_blank');
+    const redeem = screen.getByRole('link', { name: /去解锁页兑换订单号/ });
+    expect(redeem).toHaveAttribute('href', UNLOCK_PAGE_PATH);
+  });
+
+  it('支付宝引导面板：不再标"推荐"，保留自动发码口径 + 跳解锁页链接（付款 modal 不进本页）', () => {
+    render(<DonatePage />);
+    const guide = screen.getByText(/支付成功后自动发放解锁 token 并即时解锁/);
+    expect(guide.textContent).not.toMatch(/推荐/);
     const cta = screen.getByRole('link', { name: /前往解锁页扫码支付/ });
     expect(cta).toHaveAttribute('href', UNLOCK_PAGE_PATH);
   });
 
-  it('微信 panel 轻量化（M4 后续微调）：默认收起，展开后出二维码 + 人工核验口径', () => {
-    render(<DonatePage />);
-    // 默认态：二维码/邮件模板不可见，人工核验口径常显
-    expect(screen.queryByRole('img', { name: '微信赞赏码' })).not.toBeInTheDocument();
-    expect(screen.getByText(/需人工处理，解锁 token 只经 Email 发送/)).toBeInTheDocument();
-    const toggle = screen.getByRole('button', { name: /展开微信支付步骤/ });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-
-    fireEvent.click(toggle);
-    const qr = screen.getByRole('img', { name: '微信赞赏码' });
-    expect(qr).toHaveAttribute('src', '/donate/wechat-tip-code.jpg');
-    expect(screen.getByText(/微信内长按识别/)).toBeInTheDocument();
-  });
-
-  it('微信 panel：展开后邮件模板可复制 + mailto 预填主题与正文（同源邮箱）', async () => {
-    const writeText = jest.fn().mockResolvedValue(undefined);
-    Object.defineProperty(window.navigator, 'clipboard', {
-      value: { writeText },
-      configurable: true,
-    });
-    render(<DonatePage />);
-    // 默认收起：模板不可见（轻量化断言）
-    expect(
-      screen.queryByText(new RegExp(`收件人: ${CONTACT_EMAIL}`)),
-    ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /展开微信支付步骤/ }));
-    // 模板文本含收件人（同源邮箱）与主题行
-    expect(
-      screen.getByText(new RegExp(`收件人: ${CONTACT_EMAIL}`)),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /复制邮件模板/ }));
-    expect(await screen.findByText(/已复制/)).toBeInTheDocument();
-    expect(writeText).toHaveBeenCalledWith(
-      expect.stringContaining(`收件人: ${CONTACT_EMAIL}`),
-    );
-    // mailto 预填：subject + body 双参数
-    const mailto = screen.getByRole('link', { name: /打开邮件客户端/ });
-    const href = mailto.getAttribute('href') ?? '';
-    expect(href).toContain(`mailto:${CONTACT_EMAIL}`);
-    expect(href).toContain('subject=');
-    expect(href).toContain('body=');
-  });
-
-  it('面包多/爱发电/Ko-fi 备选卡片为可用链接（同源常量，新标签页）+ 备选口径说明', () => {
+  it('面包多/Ko-fi 备选卡片为可用链接（同源常量，新标签页）+ 备选口径说明', () => {
     render(<DonatePage />);
     const links = screen.getAllByRole('link', { name: '前往支持' });
     expect(links.map((l) => l.getAttribute('href'))).toEqual([
       SPONSOR_MBD_URL,
-      SPONSOR_AFDIAN_URL,
       SPONSOR_KOFI_URL,
     ]);
     for (const link of links) {
       expect(link).toHaveAttribute('target', '_blank');
     }
-    // 面包多与爱发电各有一条"凭订单号在解锁页自动兑换"说明
-    expect(
-      screen.getAllByText(/凭订单号在解锁页自动兑换/).length,
-    ).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText(/扫码即付无需注册/)).toBeInTheDocument();
+    expect(screen.getByText(/备选 · 扫码即付无需注册，支付后凭订单号在解锁页自动兑换/)).toBeInTheDocument();
     expect(screen.getByText(/海外备选/)).toBeInTheDocument();
   });
 
@@ -167,6 +130,10 @@ describe('DonatePage 渲染（空名单）', () => {
       screen.getByRole('link', { name: /Pay with Alipay on the unlock page/ }),
     ).toHaveAttribute('href', UNLOCK_PAGE_PATH);
     expect(screen.getByRole('heading', { name: /Alipay QR Pay/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Support on Afdian/ })).toHaveAttribute(
+      'href',
+      SPONSOR_AFDIAN_URL,
+    );
     expect(
       screen.getByRole('link', { name: /Enter the Contributor Universe/ }),
     ).toHaveAttribute('href', CONTRIBUTORS_PAGE_PATH);
