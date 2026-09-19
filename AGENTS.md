@@ -62,6 +62,12 @@
   → 用户确认后再创建 PR
 ```
 
+### GitHub 账号（本仓库钉定 `HowardZlh`）
+
+- 本机 gh 可能同时登录多个账号；本仓库通过 `.git/config` 钉定到 `HowardZlh`（`gh.configDir` + 仓库级 `credential.helper`，见 `.envrc` 注释），**`gh` / `git push` 直接用，不加任何前缀**
+- 首次 push / `gh pr create` 前先核对：`gh api user -q .login` 应输出 `HowardZlh`；若不是（新机器 clone 后 `.git/config` 不随仓库走），按 `.envrc` 中的三步重做钉定，**不要**用 `gh auth switch` 改全局账号
+- push 报 `Permission to HowardZlh/stellar-odyssey.git denied to <其他账号>` 即为未钉定，随后的 `gh pr create` 会报 `Head sha can't be blank`——先钉定再重推，不是 PR 的问题
+
 ## CHANGELOG 更新规则（强制）
 
 1. **每次实现完需求后，必须更新 `CHANGELOG.md` 的 `[Unreleased]` 区段。** 只要产生了用户可见的变更（新功能、修复、改进、发布流程等），在提交前就要把对应条目补入 `[Unreleased]`。

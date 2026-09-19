@@ -52,6 +52,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# .envrc 只含 gh 账号钉定说明与 GH_CONFIG_DIR 导出，无密钥，允许入库
+!.envrc
 
 # vercel
 .vercel
