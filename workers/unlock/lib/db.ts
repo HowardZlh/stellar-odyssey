@@ -56,7 +56,8 @@ export const MBD_REFUND_CURSOR_STATE_KEY = "mbd:refund-cursor";
 /**
  * kv_state 键：运营日报发送状态（自动运营第1步，无 KV 前身）。
  * 值形态 `{"lastDate": "YYYY-MM-DD"}`（UTC 日期）——每 UTC 日首轮
- * cron 发送日报后写入，同日后续轮次按此去重；发送失败不写（下一轮重试）。
+ * cron 经 `claimState` 抢占推进后发送日报，同日后续轮次（含平台重复
+ * 投递的同槽调用）抢不到即跳过；发送失败 `releaseState` 回滚（下一轮重试）。
  */
 export const OPS_REPORT_STATE_KEY = "ops:report";
 
@@ -90,6 +91,74 @@ export async function putStateRaw(
   await db
     .prepare("INSERT OR REPLACE INTO kv_state (k, v, updated_at) VALUES (?, ?, ?)")
     .bind(key, value, nowIso)
+    .run();
+}
+
+/** 单条件写命中判定（D1 meta.changes；FakeD1 同形） */
+function hitOnce(result: UnlockDbRunResult): boolean {
+  return result.success && (result.meta?.changes ?? 0) === 1;
+}
+
+/**
+ * kv_state 抢占式写（at-least-once 幂等原语）：仅当当前值 **不等于**
+ * `value` 时把该键写成 `value`，返回是否由本次调用完成写入。
+ *
+ * 语义 = "谁先把状态推进到目标值，谁负责做副作用"——同一 cron 被平台
+ * 重复投递（2026-09-17 起 Cloudflare 账户级双触发实证：同槽两条
+ * scheduledDatetime 相差 3s）时，两次调用只有一次拿到 `true`，另一次
+ * 读到"已是目标值"直接跳过。之前的 "读 → 发 → 写" 三步在两次调用
+ * 间隔 < 对账耗时时会各发一封（2026-09-19 日报双发事故根因）。
+ *
+ * 原子性依赖单条 SQL：已有行走条件 UPDATE（`v <> ?`），无行走裸 INSERT
+ * （主键冲突 = 他人已抢到 → false）；两条语句均由 D1 串行化执行。
+ * 调用方副作用失败时用 `releaseState` 回滚，保留"失败顺延重试"语义。
+ */
+export async function claimState(
+  db: UnlockDbLike,
+  key: string,
+  value: string,
+  nowIso: string,
+): Promise<boolean> {
+  const updated = await db
+    .prepare("UPDATE kv_state SET v = ?, updated_at = ? WHERE k = ? AND v <> ?")
+    .bind(value, nowIso, key, value)
+    .run();
+  if (hitOnce(updated)) return true;
+  try {
+    const inserted = await db
+      .prepare("INSERT INTO kv_state (k, v, updated_at) VALUES (?, ?, ?)")
+      .bind(key, value, nowIso)
+      .run();
+    return hitOnce(inserted);
+  } catch (e) {
+    // 主键冲突 = 行已存在且值等于 value（UPDATE 未命中的唯一另一种情形）
+    if (/UNIQUE|constraint/i.test(String(e))) return false;
+    throw e;
+  }
+}
+
+/**
+ * kv_state 抢占回滚：仅当该键仍为 `claimed`（本次抢到的值）时恢复为
+ * `previous`（抢占前原值；null = 原本无行 → 删除）。条件写保证不会覆盖
+ * 期间由他人推进的新值。
+ */
+export async function releaseState(
+  db: UnlockDbLike,
+  key: string,
+  claimed: string,
+  previous: string | null,
+  nowIso: string,
+): Promise<void> {
+  if (previous === null) {
+    await db
+      .prepare("DELETE FROM kv_state WHERE k = ? AND v = ?")
+      .bind(key, claimed)
+      .run();
+    return;
+  }
+  await db
+    .prepare("UPDATE kv_state SET v = ?, updated_at = ? WHERE k = ? AND v = ?")
+    .bind(previous, nowIso, key, claimed)
     .run();
 }
 

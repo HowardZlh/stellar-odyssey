@@ -112,6 +112,12 @@ export interface ExecutionCtxLike {
   waitUntil(promise: Promise<unknown>): void;
 }
 
+/** scheduled 控制器最小接口（生产 = CF ScheduledController） */
+export interface ScheduledCtrlLike {
+  readonly scheduledTime?: number;
+  readonly cron?: string;
+}
+
 const worker = {
   async fetch(request: Request, env: UnlockWorkerEnv): Promise<Response> {
     const headers = buildCorsHeaders(
@@ -348,13 +354,22 @@ const worker = {
    * 自动运营第1步：对账完成后接运营通知编排（lib/opsNotify.ts——实时
    * 告警 + 每 UTC 日一封转化日报，每轮至多 1 封邮件；runOpsNotify 永不抛，
    * 通知层异常不连带对账结果）。
+   *
+   * Cron 为 at-least-once（平台会对同一槽重复投递，2026-09-17 起实证），
+   * 通知层状态用 claimState 抢占保证副作用恰一次；本壳把
+   * controller.scheduledTime 与结果一并打日志，便于 `wrangler tail` /
+   * Workers Logs 区分同槽的多次调用。
    */
   scheduled(
-    _controller: unknown,
+    controller: ScheduledCtrlLike | null,
     env: UnlockWorkerEnv,
     ctx: ExecutionCtxLike,
   ): void {
     const nowSec = Math.floor(Date.now() / 1000);
+    const scheduledAt =
+      typeof controller?.scheduledTime === "number"
+        ? new Date(controller.scheduledTime).toISOString()
+        : "unknown";
     const lookbackDays = Number(env.REFUND_LOOKBACK_DAYS ?? "");
     ctx.waitUntil(
       runUnifiedSync(
@@ -390,17 +405,20 @@ const worker = {
           lookbackDays,
           autoRevoke: env.REFUND_AUTO_REVOKE === "1",
         },
-      ).then(async (sync) => ({
-        sync,
-        ops: await runOpsNotify({
+      ).then(async (sync) => {
+        const ops = await runOpsNotify({
           db: env.UNLOCK_DB ?? null,
           mailer: opsMailerOf(env.OPS_MAIL),
           fromEmail: env.OPS_MAIL_FROM,
           toEmail: env.OPS_MAIL_TO,
           nowMs: nowSec * 1000,
           sync,
-        }),
-      })),
+        });
+        console.log(
+          `scheduled: cron=${controller?.cron ?? "?"} scheduledAt=${scheduledAt} mailed=${ops.mailed} error=${ops.error ?? "-"} dbWrites=${ops.dbWrites}`,
+        );
+        return { sync, ops };
+      }),
     );
   },
 };

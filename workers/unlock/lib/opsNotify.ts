@@ -16,14 +16,19 @@
  *   失败自动顺延到下一轮——自愈语义）；
  * - 告警同日同内容去重（kv_state `ops:alert` 签名比对，上游持续异常
  *   3 小时轮次不重复发，次日重新提醒）；
- * - 状态**发送成功后才写**（失败零写入 → 下一轮重试）；
+ * - 状态**先抢占再发送**（db.ts `claimState` 单条条件写；抢不到 = 已有
+ *   同值 → 跳过；组装/发送失败则 `releaseState` 回滚 → 下一轮重试）。
+ *   Cloudflare Cron 是 at-least-once：2026-09-17 起账户级双触发（同槽两条
+ *   scheduledDatetime 相差 3s），旧 "读→发→写" 在 2026-09-19 00:00 UTC
+ *   槽两次都读到旧 lastDate 各发一封日报——本纪律即该事故修法；
  * - `runOpsNotify` 永不抛（对账主流程已完成，通知层异常不得连带）。
  */
 import {
-  getStateJson,
+  claimState,
+  getStateRaw,
   OPS_ALERT_STATE_KEY,
   OPS_REPORT_STATE_KEY,
-  putStateRaw,
+  releaseState,
   type UnlockDbLike,
 } from "./db";
 import { buildDailyReport } from "./opsReport";
@@ -64,7 +69,7 @@ export interface OpsNotifyResult {
   /** 实际发出的邮件形态 */
   readonly mailed: "report" | "alert" | "none";
   readonly error?: "not_configured" | "send_failed";
-  /** 本次 DB 写行数（发送成功后的状态写；失败/无发送 = 0） */
+  /** 本次净推进的状态行数（抢占成功且邮件发出；失败已回滚/无发送 = 0） */
   readonly dbWrites: number;
 }
 
@@ -120,21 +125,39 @@ function utcDateOf(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-/** 普通对象判定 */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+/** 本轮已抢到的状态推进（发送失败时按此回滚） */
+interface StateClaim {
+  readonly key: string;
+  readonly value: string;
+  readonly previous: string | null;
 }
 
-/** kv_state 状态行字符串字段读取（形状不符 → ""） */
-async function readStateField(
+/**
+ * 抢占状态推进并登记（抢到 → true 且入 `claims`；抢不到 → false）。
+ * `previous` 只服务回滚，不参与判定——判定全在 claimState 的单条条件写内。
+ */
+async function claim(
   db: UnlockDbLike,
+  claims: StateClaim[],
   key: string,
-  field: string,
-): Promise<string> {
-  const raw = await getStateJson(db, key);
-  if (!isPlainObject(raw)) return "";
-  const value = raw[field];
-  return typeof value === "string" ? value : "";
+  value: string,
+  nowIso: string,
+): Promise<boolean> {
+  const previous = await getStateRaw(db, key);
+  const won = await claimState(db, key, value, nowIso);
+  if (won) claims.push({ key, value, previous });
+  return won;
+}
+
+/** 副作用失败 → 逆序释放全部抢占（条件写，不覆盖他人期间的推进） */
+async function releaseAll(
+  db: UnlockDbLike,
+  claims: readonly StateClaim[],
+  nowIso: string,
+): Promise<void> {
+  for (const c of [...claims].reverse()) {
+    await releaseState(db, c.key, c.value, c.previous, nowIso);
+  }
 }
 
 /**
@@ -147,52 +170,57 @@ export async function runOpsNotify(deps: OpsNotifyDeps): Promise<OpsNotifyResult
   if (db === null || mailer === null || !fromEmail || !toEmail) {
     return { alerts, mailed: "none", error: "not_configured", dbWrites: 0 };
   }
+  const claims: StateClaim[] = [];
   try {
     const today = utcDateOf(deps.nowMs);
+    const nowIso = new Date(deps.nowMs).toISOString();
 
-    // 日报到期判定（每 UTC 日 1 封；失败顺延语义 = 只比对 lastDate）
-    const lastReportDate = await readStateField(
+    // 日报到期 = 抢到 ops:report 推进到今日（每 UTC 日恰 1 次；平台重复
+    // 投递同一 cron 时另一次抢不到 → 不发）
+    const reportDue = await claim(
       db,
+      claims,
       OPS_REPORT_STATE_KEY,
-      "lastDate",
+      JSON.stringify({ lastDate: today }),
+      nowIso,
     );
-    const reportDue = lastReportDate !== today;
 
-    // 告警去重（同日同内容签名跳过）
-    let alertsToSend: readonly string[] = alerts;
+    // 告警去重 = 抢到 ops:alert 推进到 {今日, 本轮签名}（同日同内容抢不到）
     const sig = alerts.join("\n");
-    if (alerts.length > 0) {
-      const prevRaw = await getStateJson(db, OPS_ALERT_STATE_KEY);
-      if (
-        isPlainObject(prevRaw) &&
-        prevRaw.sig === sig &&
-        prevRaw.date === today
-      ) {
-        alertsToSend = [];
-      }
-    }
+    const alertsToSend: readonly string[] =
+      alerts.length > 0 &&
+      (await claim(
+        db,
+        claims,
+        OPS_ALERT_STATE_KEY,
+        JSON.stringify({ sig, date: today }),
+        nowIso,
+      ))
+        ? alerts
+        : [];
 
     if (!reportDue && alertsToSend.length === 0) {
       return { alerts, mailed: "none", dbWrites: 0 };
     }
 
-    // 组装邮件（每轮至多 1 封：日报到期时告警并入正文）
-    const alertBlock =
-      alertsToSend.length > 0
-        ? ["== 本轮告警 ==", ...alertsToSend.map((line) => `- ${line}`)].join("\n")
-        : "";
-    let subject: string;
-    let text: string;
-    if (reportDue) {
-      const report = await buildDailyReport(db, deps.nowMs);
-      subject = report.subject;
-      text = alertBlock === "" ? report.text : `${report.text}\n\n${alertBlock}`;
-    } else {
-      subject = `[Stellar Ops] 告警 ${today}`;
-      text = alertBlock;
-    }
-
     try {
+      // 组装邮件（每轮至多 1 封：日报到期时告警并入正文）
+      const alertBlock =
+        alertsToSend.length > 0
+          ? ["== 本轮告警 ==", ...alertsToSend.map((line) => `- ${line}`)].join(
+              "\n",
+            )
+          : "";
+      let subject: string;
+      let text: string;
+      if (reportDue) {
+        const report = await buildDailyReport(db, deps.nowMs);
+        subject = report.subject;
+        text = alertBlock === "" ? report.text : `${report.text}\n\n${alertBlock}`;
+      } else {
+        subject = `[Stellar Ops] 告警 ${today}`;
+        text = alertBlock;
+      }
       await mailer.send({
         to: toEmail,
         from: { email: fromEmail, name: OPS_MAIL_SENDER_NAME },
@@ -200,32 +228,16 @@ export async function runOpsNotify(deps: OpsNotifyDeps): Promise<OpsNotifyResult
         text,
       });
     } catch {
-      // 发送失败零状态写 → 下一轮（3h 后）自动重试
+      // 组装/发送失败 → 释放抢占（状态回到抢占前）→ 下一轮（3h 后）自动重试
+      await releaseAll(db, claims, nowIso);
       return { alerts, mailed: "none", error: "send_failed", dbWrites: 0 };
     }
 
-    // 状态写（发送成功后）
-    const nowIso = new Date(deps.nowMs).toISOString();
-    let dbWrites = 0;
-    if (reportDue) {
-      await putStateRaw(
-        db,
-        OPS_REPORT_STATE_KEY,
-        JSON.stringify({ lastDate: today }),
-        nowIso,
-      );
-      dbWrites += 1;
-    }
-    if (alertsToSend.length > 0) {
-      await putStateRaw(
-        db,
-        OPS_ALERT_STATE_KEY,
-        JSON.stringify({ sig, date: today }),
-        nowIso,
-      );
-      dbWrites += 1;
-    }
-    return { alerts, mailed: reportDue ? "report" : "alert", dbWrites };
+    return {
+      alerts,
+      mailed: reportDue ? "report" : "alert",
+      dbWrites: claims.length,
+    };
   } catch (e) {
     // 通知层兜底（D1 异常等）：不连带对账主流程，下一轮重试
     console.warn("opsNotify: 通知编排异常", e);
