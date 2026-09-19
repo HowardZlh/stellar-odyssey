@@ -4,13 +4,18 @@
  * 运营通知编排测试（自动运营第1步）：
  * 1) buildSyncAlerts 告警口径矩阵（upstream/not_configured/疑似退款/
  *    自愈动作；closed 不告警）；
- * 2) runOpsNotify 编排：not_configured 降级、日报到期发送 + 状态写、
- *    同日去重、告警签名去重、告警并入日报单封、发送失败零状态写重试、
+ * 2) claimState / releaseState 抢占原语（首抢/同值/并发/回滚/不吞错）；
+ * 3) runOpsNotify 编排：not_configured 降级、日报到期发送 + 状态写、
+ *    同日去重、告警签名去重、告警并入日报单封、发送失败回滚重试、
+ *    组装失败回滚、同槽重复投递恰一封（2026-09-19 双发事故复现）、
  *    永不抛兜底。
  */
 import {
+  claimState,
+  getStateRaw,
   OPS_ALERT_STATE_KEY,
   OPS_REPORT_STATE_KEY,
+  releaseState,
 } from "../db";
 import {
   buildSyncAlerts,
@@ -139,6 +144,62 @@ describe("buildSyncAlerts（告警口径）", () => {
 });
 
 // ---------------------------------------------------------------------------
+// claimState / releaseState（at-least-once 幂等原语）
+// ---------------------------------------------------------------------------
+
+describe("claimState / releaseState（抢占式状态推进）", () => {
+  const KEY = "ops:test";
+  const NOW = "2026-09-19T00:00:34.000Z";
+
+  it("无行 → 首次抢到（INSERT）；同值再抢 → false；不同值 → 抢到（UPDATE）", async () => {
+    const db = new FakeD1();
+    expect(await claimState(db, KEY, "a", NOW)).toBe(true);
+    expect(await claimState(db, KEY, "a", NOW)).toBe(false);
+    expect(await claimState(db, KEY, "b", NOW)).toBe(true);
+    expect(await getStateRaw(db, KEY)).toBe("b");
+    expect(db.rows("kv_state").filter((r) => r.k === KEY)).toHaveLength(1);
+  });
+
+  it("并发抢占同一目标值 → 恰一个 true", async () => {
+    const db = new FakeD1();
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => claimState(db, KEY, "x", NOW)),
+    );
+    expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("INSERT 非唯一约束异常照常上抛（不吞错）", async () => {
+    const db = new FakeD1();
+    jest.spyOn(db, "prepare").mockImplementation((sql: string) => {
+      if (/^INSERT/i.test(sql)) throw new Error("D1_ERROR: storage unavailable");
+      return {
+        bind: () => ({
+          run: async () => ({ success: true, meta: { changes: 0 } }),
+        }),
+      } as unknown as ReturnType<FakeD1["prepare"]>;
+    });
+    await expect(claimState(db, KEY, "x", NOW)).rejects.toThrow("storage unavailable");
+  });
+
+  it("releaseState：原本无行 → 删除；原本有行 → 恢复原值；值已被他人推进 → 不动", async () => {
+    const db = new FakeD1();
+    await claimState(db, KEY, "a", NOW);
+    await releaseState(db, KEY, "a", null, NOW);
+    expect(await getStateRaw(db, KEY)).toBeNull();
+
+    await claimState(db, KEY, "old", NOW);
+    await claimState(db, KEY, "new", NOW);
+    await releaseState(db, KEY, "new", "old", NOW);
+    expect(await getStateRaw(db, KEY)).toBe("old");
+
+    await claimState(db, KEY, "mine", NOW);
+    await claimState(db, KEY, "theirs", NOW); // 他人已推进
+    await releaseState(db, KEY, "mine", "old", NOW);
+    expect(await getStateRaw(db, KEY)).toBe("theirs");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // runOpsNotify
 // ---------------------------------------------------------------------------
 
@@ -257,6 +318,74 @@ describe("runOpsNotify（编排）", () => {
     );
     expect(retried.mailed).toBe("report");
     expect(stateOf(db, OPS_REPORT_STATE_KEY)).toEqual({ lastDate: TODAY });
+  });
+
+  it("组装日报失败（D1 中途异常）→ 释放抢占，ops:report 不残留今日值", async () => {
+    // 抢占成功后 buildDailyReport 的 SELECT 抛错：若不回滚，当日日报将永久丢失
+    const db = new FakeD1();
+    const mailer = new FakeMailer();
+    const realPrepare = db.prepare.bind(db);
+    let armed = false;
+    jest.spyOn(db, "prepare").mockImplementation((sql: string) => {
+      if (armed && /FROM orders/i.test(sql)) throw new Error("d1 hiccup");
+      return realPrepare(sql);
+    });
+    armed = true;
+    const out = await runOpsNotify(depsOf({ db, mailer }));
+    expect(out.error).toBe("send_failed");
+    expect(mailer.sent).toHaveLength(0);
+    expect(stateOf(db, OPS_REPORT_STATE_KEY)).toBeNull();
+    armed = false;
+    const retried = await runOpsNotify(
+      depsOf({ db, mailer, nowMs: NOW_MS + 3 * 3_600_000 }),
+    );
+    expect(retried.mailed).toBe("report");
+  });
+
+  it("同一 cron 槽被平台重复投递（并发两次）→ 日报恰发 1 封", async () => {
+    // 2026-09-19 事故复现：两次 scheduled 相差 3s，均在对方写状态前进入编排。
+    // mailer 发送挂起直到两次调用都完成了抢占判定，模拟旧实现的竞态窗口。
+    const db = new FakeD1();
+    const gate = { release: (): void => undefined };
+    const opened = new Promise<void>((resolve) => {
+      gate.release = resolve;
+    });
+    const sent: OpsMailMessage[] = [];
+    const slowMailer = {
+      async send(message: OpsMailMessage): Promise<unknown> {
+        await opened;
+        sent.push(message);
+        return { ok: true };
+      },
+    };
+    const a = runOpsNotify(depsOf({ db, mailer: slowMailer }));
+    const b = runOpsNotify(depsOf({ db, mailer: slowMailer, nowMs: NOW_MS + 3_000 }));
+    // 让两条编排都跑到抢占判定之后，再放行发送
+    await new Promise((r) => setTimeout(r, 0));
+    gate.release();
+    const [ra, rb] = await Promise.all([a, b]);
+    expect([ra.mailed, rb.mailed].sort()).toEqual(["none", "report"]);
+    expect(ra.dbWrites + rb.dbWrites).toBe(1);
+    expect(sent).toHaveLength(1);
+    expect(stateOf(db, OPS_REPORT_STATE_KEY)).toEqual({ lastDate: TODAY });
+  });
+
+  it("重复投递且携带告警 → 日报 + 告警仍合计恰一次", async () => {
+    const db = new FakeD1();
+    const mailer = new FakeMailer();
+    const sync = healthySync();
+    const alerting: UnifiedSyncResult = {
+      ...sync,
+      afdian: { ...sync.afdian, newSuspects: 1 },
+    };
+    const [ra, rb] = await Promise.all([
+      runOpsNotify(depsOf({ db, mailer, sync: alerting })),
+      runOpsNotify(depsOf({ db, mailer, sync: alerting, nowMs: NOW_MS + 3_000 })),
+    ]);
+    expect(ra.dbWrites + rb.dbWrites).toBe(2); // ops:report + ops:alert 各恰一次
+    const all = mailer.sent.map((m) => m.text).join("\n");
+    expect(all.match(/== 本轮告警 ==/g)).toHaveLength(1);
+    expect(mailer.sent.filter((m) => m.subject.includes("日报"))).toHaveLength(1);
   });
 
   it("D1 异常兜底：编排层捕获不抛（send_failed 折算）", async () => {
