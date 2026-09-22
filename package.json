@@ -16,6 +16,10 @@
     "dev:3100": "NEXT_DIST_DIR=.next-3100 next dev -p 3100",
     "dev:3200": "NEXT_DIST_DIR=.next-3200 next dev -p 3200",
     "build": "next build",
+    "build:worker": "node scripts/build-worker.mjs",
+    "build:pages": "npm run build && npm run build:worker",
+    "deploy:pages": "wrangler pages deploy out --project-name stellar-odyssey --branch main --commit-dirty=true",
+    "deploy:cron": "wrangler deploy -c workers/unlock/wrangler.toml",
     "start": "next start",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
@@ -54,7 +58,9 @@
     "postcss": "^8.5.23",
     "prettier": "^3.3.3",
     "tailwindcss": "^3.4.13",
-    "typescript": "^5.6.2"
+    "typescript": "^5.6.2",
+    "wrangler": "^4.131.2",
+    "esbuild": "^0.28.1"
   },
   "overrides": {
     "postcss": "^8.5.23",

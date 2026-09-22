@@ -1,110 +1,56 @@
-# Cloudflare Worker：解锁兑换 API（REQUIREMENTS_UNLOCK.md §U4-1）
+# Cloudflare Worker：stellar-unlock-cron —— 统一对账 + 运营通知的定时壳
+# （REQUIREMENTS_UNLOCK.md §U4-1；入口 cron.ts 复用 index.ts 的 scheduled）。
 #
-# 部署由用户执行（Agent 只交付配置），逐命令 checklist 见
-# docs/internal/UNLOCK_OPS.md（内部文档，不入库）。
+# 2026-09-22 起部署形态（账号 D，见 docs/internal/UNLOCK_OPS.md「账号 D 部署」）：
+#   - HTTP 面 `/api/*` 不在本 Worker：index.ts 经 `wrangler.pages.toml` dry-run
+#     打包为 `out/_worker.js`，随静态导出一起 `wrangler pages deploy` 到 Pages 项目
+#     `stellar-odyssey`；`stellar.guushu.com` 由 zone A（guushu.com 所在账号）
+#     的橙云 CNAME 指向 `stellar-odyssey.pages.dev`。
+#   - 本 Worker 只有 Cron（Pages 不支持 Cron Trigger），与 Pages 绑同一 D1。
+#   - 旧形态（账号 A 上 zone route `stellar.guushu.com/api/*` + GitHub Pages
+#     静态站 + Email Routing send_email 绑定）已下线。
 #
-# Secrets（wrangler secret put，严禁写入本文件）：
+# 部署由用户执行（Agent 只交付配置）。账号 D 无 zone，wrangler 用环境变量
+# CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID 指定目标账号；下方 account_id
+# 写死为账号 D（CI 自定义权限 token 无权列账户，写死后跳过账户查询）。
+#
+# Secrets（wrangler secret put，严禁写入本文件；Pages 项目侧需再放一份）：
 #   AFDIAN_USER_ID / AFDIAN_TOKEN / MBD_DEVELOPER_KEY / ED25519_PRIVATE_KEY
-
-name = "stellar-unlock"
-main = "index.ts"
+#   ALIPAY_APP_ID / ALIPAY_PRIVATE_KEY / ALIPAY_PUBLIC_KEY / ALIPAY_SELLER_ID
+#   RESEND_API_KEY（运营通知发信；缺失 → 通知层 not_configured 降级）
+name = "stellar-unlock-cron"
+main = "cron.ts"
 compatibility_date = "2026-08-01"
-# 显式账户 ID（非机密）：CI 用自定义权限 API token 部署时无权调
-# /memberships 列账户（Authentication error 10000，2026-09-01 首次
-# CI 部署实录），写死后 wrangler 跳过账户查询直接部署；本地 OAuth
-# 部署行为不变。
-account_id = "64eb79138b09b3431a9ff67f509dde9c"
+account_id = "d7bde027eff55880d8e5137421cc1ef6"
 
-# 静态站留 GitHub Pages，Worker 只挂 API 路由（需求文档裁决 ④）。
-# ⚠ routes 必须位于任何 [[表]] 头之前（TOML 语义：置于 [[d1_databases]]
-# 之后会被解析成该表字段、顶层 routes 静默丢失——2026-08-17 部署时
-# wrangler 警告发现并订正）。
-routes = [
-  { pattern = "stellar.guushu.com/api/*", zone_name = "guushu.com" }
-]
-
-# Z 迭代 M3：UNLOCK_KV 绑定已移除（M1 起代码链路全量走 UNLOCK_DB，
-# 绑定保留至 M3 作回滚余地）。上线提醒：确认 D1 全链路正常后，在 CF
-# Dashboard 删除 namespace 894f0a089472498f95cfccb5eec78251
-# （上线清单 REQUIREMENTS_ALIPAY_UNLOCK §9-7，用户手工执行）。
-
-# D1 数据库（Z 迭代 M1，REQUIREMENTS_ALIPAY_UNLOCK.md §4 / §9）。
-# 上线步骤（部署 Worker 前必须完成）：
-#   1. npx wrangler d1 create stellar-unlock   # 输出的 database_id 替换下方占位
-#   2. npx wrangler d1 migrations apply stellar-unlock --remote
-[[d1_databases]]
-binding = "UNLOCK_DB"
-database_name = "stellar-unlock"
-database_id = "871e5376-2f48-4604-81c4-531114093fed" # 2026-08-17 创建（--location apac，国内用户就近）
-migrations_dir = "migrations"
-
-# 统一对账 cron（每 3 小时，D-z6 单 cron；Workers Free 每账户 5 排程限额
-# 本项目用 1）：爱发电退款巡检（A6 模式 A）+ 支付宝对账（M4：超时 pending
-# 关单 / 已付补发 / 退款吊销兜底——需 ALIPAY_* 与 ED25519 Secrets 齐备，
-# 否则该段独立降级不影响爱发电巡检）。子请求预算 ≤44/次（refundSync.ts 头注）。
+# 统一对账 cron（每 3 小时，D-z6 单 cron；Workers Free 每账户 5 排程限额，
+# 账号 D 只有本项目，用 1）：爱发电退款巡检（A6 模式 A）+ 支付宝对账（M4：
+# 超时 pending 关单 / 已付补发 / 退款吊销兜底——需 ALIPAY_* 与 ED25519
+# Secrets 齐备，否则该段独立降级不影响爱发电巡检）+ 运营通知（每轮至多
+# 1 封邮件，Resend HTTP）。子请求预算 ≤49 + 邮件 1（refundSync.ts 头注）。
 [triggers]
 crons = ["0 */3 * * *"]
 
-# 运营通知邮件绑定（自动运营第1步：实时告警 + 每 UTC 日一封转化日报，
-# 编排纯逻辑见 lib/opsNotify.ts / lib/opsReport.ts；每轮 cron 至多 1 封）。
-#
-# 通道 = Email Routing 免费发信（旧版 send_email 绑定，原始 MIME 形态；
-# 新版 Email Sending 仅 Workers Paid 可用——裁决与实证登记见
-# lib/opsMime.ts 文件头）。destination_address 与 OPS_MAIL_TO 同值双保险：
-# 绑定层硬限制收件人，改收件地址需两处同步。
-# 启用前置（2026-09-01 已完成，换收件地址时重做）：
-#   1. Dashboard → 邮件路由（Email Routing）：guushu.com 已启用；
-#   2. 邮件路由 → 目标地址：添加收件地址并点邮件验证链接；
-#   3. ⚠ 实测坑：目标地址在部署之后才验证的，须重新部署一次绑定才生效
-#      （部署时快照验证状态，E_RECIPIENT_NOT_ALLOWED 即此症状）。
-[[send_email]]
-name = "OPS_MAIL"
-destination_address = "stevenzearo@163.com"
+# D1（Z 迭代 M1，REQUIREMENTS_ALIPAY_UNLOCK.md §4 / §9）。2026-09-22 于账号 D
+# 重建（--location apac，国内用户就近），数据自账号 A 旧库 `d1 export` 导入。
+[[d1_databases]]
+binding = "UNLOCK_DB"
+database_name = "stellar-unlock"
+database_id = "0c13e71c-74d5-4b3b-841e-c600bd99bc52"
+migrations_dir = "migrations"
 
-# U6 档位 ↔ 爱发电 plan_id 映射（非机密，商品/方案页 URL 可见）。
-# 三者**全部填写**后启用「按商品强制归档」（命中即归档、未命中拒绝，
-# 折扣/特价/会员优惠安全）；任一为空整体回退纯金额判定（老行为）。
-# 获取路径与部署步骤见 docs/internal/UNLOCK_OPS.md §2；本地联调在
-# workers/unlock/.dev.vars 填同名变量（已 .gitignore，勿提交）。
-#
-# plan_id 取值验证登记（2026-08-31，解除 REQUIREMENTS_UNLOCK.md §U6 登记的
-# 「query-order 响应字段名待真单核实」风险项）：本项目爱发电侧零历史订单，
-# 无法用自家真单冒烟，故改用另一爱发电账号（stock_analysis 项目，已真机验收）
-# 做三方交叉验证——真实已支付订单的 query-order 响应中，字段名确为 plan_id，
-# 且其值与该账号 creator API 返回值、与 stock_analysis 回填的已验收常量
-# 逐字符一致。故「creator API 取值 = 订单响应取值」成立，本处三值可采信。
-# 残余风险（低）：交叉验证样本为订阅形态（product_type=0），售卖商品形态
-# （周卡/年卡）无真单样本；爱发电对商品与订阅统一建模为 plan，解析侧同码路。
-# 因此**部署后第一笔爱发电真单必须复核归档档位**，确认无误再开折扣。
-#
-# A6 退款巡检 vars：
-# - REFUND_LOOKBACK_DAYS：回看窗口天数（订单号内嵌日期截断）；
-# - REFUND_AUTO_REVOKE：自动吊销开关——**默认空 = 模式 A 只检测登记**；
-#   置 "1" 后疑似退款单命中即写 revoke:list。检测口径（status != 2）
-#   未经第一笔真实退款单校准前**禁止开启**（REQUIREMENTS_UNLOCK §A6 裁决 ⑧）。
-# 面包多集成：档位 ↔ 作品 urlkey 映射（非机密，order-detail 响应可见）。
-# 双态机制对等 UNLOCK_PLAN_ID_*：三者全部填写后启用「按商品强制归档」
-# （命中即归档、未命中拒绝，优惠码/折扣安全）；任一为空整体回退纯金额
-# 判定——**回退态下面包多商品页禁止发优惠码**。urlkey 获取与部署顺序
-# 见 docs/internal/UNLOCK_OPS.md；本地联调在 .dev.vars 填同名变量。
 [vars]
-# 2026-08-31 经 creator API 取值（afdian.com/item/<plan_id> 同源）：
-# 周卡/年卡 = 售卖商品 product_type=1，月卡 = 订阅方案 product_type=0，
-# 与 UNLOCK_OPS.md §2.2 规格表逐项一致（¥6/¥15/¥88）。
-# 字段名与取值路径已交叉验证（详见上方「plan_id 取值验证登记」注释块）。
+# 档位 ↔ 爱发电 plan_id（非机密；U6 三者全配置启用强制归档）
 UNLOCK_PLAN_ID_WEEK = "f313936a965811f1aa675254001e7c00"
 UNLOCK_PLAN_ID_MONTH = "eb51c1668fef11f180f752540025c377"
 UNLOCK_PLAN_ID_YEAR = "b534981c965a11f1ba3952540025c377"
-# 2026-08-31 经开发者 API 建品（drafts 1064056/1064057/1064058，¥6/¥15/¥88）：
+# 档位 ↔ 面包多作品 urlkey（非机密；对等 UNLOCK_PLAN_ID_*）
 UNLOCK_MBD_URLKEY_WEEK = "YZaVk5ZtbQ=="
 UNLOCK_MBD_URLKEY_MONTH = "YZaVk5ZuZA=="
 UNLOCK_MBD_URLKEY_YEAR = "YZaVk5ZuZQ=="
+# A6 退款巡检：回看天数；AUTO_REVOKE 空 = 模式 A 只检测登记（裁决 ⑧）
 REFUND_LOOKBACK_DAYS = "15"
 REFUND_AUTO_REVOKE = ""
-# 运营通知邮件收发地址（启用前置见上方 [[send_email]] 注释；任一为空 =
-# 通知层 not_configured 降级）。FROM 必须是已启用 Email Routing 的自有
-# 域名地址（163 等第三方域无法作为发件人），该地址无需真实存在邮箱账户；
-# TO 必须是已验证目标地址且与绑定 destination_address 同值（改地址两处
-# 同步 + 先验证后部署）。
-OPS_MAIL_FROM = "ops@guushu.com"
+# 运营通知：发件域 mail.guushu.com 已在 Resend 验证；收件 = 运营者本人
+OPS_MAIL_FROM = "ops@mail.guushu.com"
 OPS_MAIL_TO = "stevenzearo@163.com"

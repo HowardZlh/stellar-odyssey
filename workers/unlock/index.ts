@@ -3,10 +3,16 @@
  * 只做 fetch 路由 + env 绑定 + Response 构造；业务全在 `lib/redeem.ts` /
  * `lib/gateConfig.ts` 纯逻辑（jest 直测），本文件不含可测分支之外的逻辑。
  *
- * 路由：`stellar.guushu.com/api/*`（静态站留 GitHub Pages，裁决 ④）。
- * 绑定：D1 `UNLOCK_DB`（Z 迭代 M1 起，KV 已退出代码链路——wrangler.toml
- * 的 KV 绑定保留至 M3 回滚窗口关闭后移除）；secrets `AFDIAN_USER_ID` /
- * `AFDIAN_TOKEN` / `ED25519_PRIVATE_KEY`（部署 checklist 见
+ * 部署形态（2026-09-22 起，账号 D `stellar-odyssey` Pages 项目，见
+ * docs/internal/UNLOCK_OPS.md「账号 D 部署」）：
+ * - 同一份 `fetch` 打包为 Pages 高级模式 `out/_worker.js`：`/api/*` 走本文件，
+ *   其余路径 `env.ASSETS.fetch` 回静态导出（Next `output: 'export'`）；
+ * - `scheduled` 由独立 Worker `stellar-unlock-cron`（`cron.ts` 壳）承载——
+ *   Pages 无 Cron；两者绑同一 D1 `UNLOCK_DB`。
+ * 旧形态（账号 A 上 `stellar.guushu.com/api/*` zone route + GitHub Pages
+ * 静态站）已下线；`stellar.guushu.com` 现为 zone A 的橙云 CNAME → Pages。
+ * secrets `AFDIAN_USER_ID` / `AFDIAN_TOKEN` / `ED25519_PRIVATE_KEY` /
+ * `ALIPAY_*` / `MBD_DEVELOPER_KEY` / `RESEND_API_KEY`（部署 checklist 见
  * docs/internal/UNLOCK_OPS.md；D1 初始化步骤见 REQUIREMENTS_ALIPAY_UNLOCK §9）。
  */
 import {
@@ -20,8 +26,8 @@ import { buildCorsHeaders, resolveCorsOrigin } from "./lib/cors";
 import type { UnlockDbLike } from "./lib/db";
 import { handleFunnelEvent } from "./lib/funnel";
 import { handleGateConfig } from "./lib/gateConfig";
-import { buildOpsMailRaw } from "./lib/opsMime";
-import { runOpsNotify, type OpsMailerLike } from "./lib/opsNotify";
+import { runOpsNotify } from "./lib/opsNotify";
+import { resendMailerOf } from "./lib/opsResend";
 import { handleRedeem } from "./lib/redeem";
 import { handleRevocations } from "./lib/revocations";
 import { runUnifiedSync } from "./lib/refundSync";
@@ -56,40 +62,21 @@ export interface UnlockWorkerEnv {
   readonly UNLOCK_MBD_URLKEY_YEAR?: string;
   readonly REFUND_LOOKBACK_DAYS?: string;
   readonly REFUND_AUTO_REVOKE?: string;
-  /** 运营通知邮件绑定（自动运营第1步，wrangler.toml `[[send_email]]`——
-   * Email Routing 免费通道：旧版 send(EmailMessage) 形态、只能发到已
-   * 验证目标地址，通道裁决与实证登记见 lib/opsMime.ts 文件头；与
-   * OPS_MAIL_FROM / OPS_MAIL_TO 任一缺失 = 通知层 not_configured
-   * 降级，对账主流程不受影响） */
-  readonly OPS_MAIL?: SendEmailBindingLike;
+  /** 运营通知邮件（自动运营第1步）：Resend HTTP API secret（2026-09-22 起替代
+   * Email Routing send_email 绑定，原因见 lib/opsResend.ts 文件头）；与
+   * OPS_MAIL_FROM / OPS_MAIL_TO 任一缺失 = 通知层 not_configured 降级，
+   * 对账主流程不受影响 */
+  readonly RESEND_API_KEY?: string;
   readonly OPS_MAIL_FROM?: string;
   readonly OPS_MAIL_TO?: string;
+  /** Pages 高级模式静态资产绑定（仅 `_worker.js` 形态存在；cron Worker 与
+   * jest 环境缺省 → 非 /api 路径返回 404） */
+  readonly ASSETS?: AssetsBindingLike;
 }
 
-/** 旧版 send_email 绑定最小面（生产 = CF SendEmail，入参 EmailMessage） */
-export interface SendEmailBindingLike {
-  send(message: unknown): Promise<unknown>;
-}
-
-/**
- * 绑定 → OpsMailerLike 适配（壳层 IO：EmailMessage 经 cloudflare:email
- * 动态 import 构造——静态 import 会使 jest 解析 index.ts 时报模块不存在，
- * 动态形态仅在生产 send 调用时执行；MIME 组装在 lib/opsMime.ts 纯函数）。
- */
-function opsMailerOf(binding: SendEmailBindingLike | undefined): OpsMailerLike | null {
-  if (binding === undefined) return null;
-  return {
-    async send(message) {
-      const { EmailMessage } = await import("cloudflare:email");
-      await binding.send(
-        new EmailMessage(
-          message.from.email,
-          message.to,
-          buildOpsMailRaw(message, Date.now()),
-        ),
-      );
-    },
-  };
+/** Pages `env.ASSETS` 最小面 */
+export interface AssetsBindingLike {
+  fetch(request: Request): Promise<Response>;
 }
 
 /** 支付宝三接口共享依赖组装（M2；纯映射，无业务分支） */
@@ -130,6 +117,15 @@ const worker = {
     }
 
     const { pathname } = new URL(request.url);
+
+    // Pages 高级模式：非 /api 路径回静态资产（无绑定 = 纯 API 形态 → 404）
+    if (!pathname.startsWith("/api/")) {
+      if (env.ASSETS) return env.ASSETS.fetch(request);
+      return new Response(
+        JSON.stringify({ ok: false, error: "not_found", message: "接口不存在。" }),
+        { status: 404, headers },
+      );
+    }
 
     // §A2：GET /api/gate-config（最小追加式分支，redeem 分支语义零变化）
     if (pathname === "/api/gate-config") {
@@ -408,7 +404,9 @@ const worker = {
       ).then(async (sync) => {
         const ops = await runOpsNotify({
           db: env.UNLOCK_DB ?? null,
-          mailer: opsMailerOf(env.OPS_MAIL),
+          mailer: resendMailerOf(env.RESEND_API_KEY, (url, init) =>
+            fetch(url, init),
+          ),
           fromEmail: env.OPS_MAIL_FROM,
           toEmail: env.OPS_MAIL_TO,
           nowMs: nowSec * 1000,
