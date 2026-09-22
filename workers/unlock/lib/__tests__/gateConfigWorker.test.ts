@@ -195,4 +195,29 @@ describe("worker 路由：/api/redeem 回归（A2 分支零影响）", () => {
     );
     expect(res.status).toBe(404);
   });
+
+  it("非 /api 路径：有 ASSETS 绑定 → 透传静态资产；无绑定 → 404", async () => {
+    const seen: string[] = [];
+    const env: UnlockWorkerEnv = {
+      ASSETS: {
+        async fetch(request) {
+          seen.push(new URL(request.url).pathname);
+          return new Response("<html>", { status: 200 });
+        },
+      },
+    };
+    const hit = await worker.fetch(
+      new Request("https://stellar.guushu.com/zh/", { method: "GET" }),
+      env,
+    );
+    expect(hit.status).toBe(200);
+    expect(await hit.text()).toBe("<html>");
+    expect(seen).toEqual(["/zh/"]);
+
+    const miss = await worker.fetch(
+      new Request("https://stellar.guushu.com/zh/", { method: "GET" }),
+      {},
+    );
+    expect(miss.status).toBe(404);
+  });
 });

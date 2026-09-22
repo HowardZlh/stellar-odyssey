@@ -3,11 +3,10 @@
  * REQ 口径：半自动运营——系统发信号，需拍板事项在邮件中标注，由
  * 运营者人工决策；jest + FakeD1 + mock mailer 直测，scheduled 壳只接线）。
  *
- * 邮件传输 = Email Routing 免费发信通道（旧版 send_email 绑定，原始
- * MIME 形态，只能发到已验证目标地址——通道裁决/实证/前置步骤登记见
- * lib/opsMime.ts 文件头；本模块只面向 OpsMailerLike 抽象，EmailMessage
- * 适配在 index.ts 壳层）；绑定/vars 未配齐 → not_configured 零副作用
- * 降级（既有纪律）。
+ * 邮件传输 = Resend HTTP API（2026-09-22 起；此前为 Email Routing 旧版
+ * send_email 绑定，迁独立账号后不可用，见 lib/opsResend.ts 文件头）；本模块
+ * 只面向 OpsMailerLike 抽象，HTTP 适配在 lib/opsResend.ts；secret/vars 未
+ * 配齐 → not_configured 零副作用降级（既有纪律）。
  *
  * 频控纪律（防刷屏 + 免费额度防御）：
  * - **每轮 cron 至多 1 封邮件**：日报到期时告警并入日报正文，否则单发
@@ -54,7 +53,7 @@ export const OPS_MAIL_SENDER_NAME = "Stellar Ops";
 export interface OpsNotifyDeps {
   readonly db: UnlockDbLike | null;
   readonly mailer: OpsMailerLike | null;
-  /** 发件地址（vars `OPS_MAIL_FROM`；域名须已接入 Email Sending） */
+  /** 发件地址（vars `OPS_MAIL_FROM`；域名须已在 Resend 验证） */
   readonly fromEmail?: string;
   /** 收件地址（vars `OPS_MAIL_TO`，运营者邮箱） */
   readonly toEmail?: string;

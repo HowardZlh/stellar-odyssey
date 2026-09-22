@@ -89,7 +89,7 @@
    - commit message 固定格式：`chore(release): vX.Y.Z——版本号升级 + CHANGELOG [Unreleased] 归档至 [X.Y.Z]`。
 3. **发布前检查**：`[Unreleased]` 已收齐本版全部已合并变更；`npm test` 与 `npm run build` 通过（版本号被构建消费，不属纯文档豁免）；**确认观察站限免期配置符合当期运营意图**（代码侧默认关闭，限免期一律由远程 `gate:config` 下发续期，勿再改代码日期——G1/D2 裁决）。
 4. **PR 与合并**：创建 release PR（经用户确认）→ **由用户合并**；Agent 不得自行合并。
-5. **打 tag = 生产部署，须用户确认**：tag `vX.Y.Z` 打在 main 上的 release PR 合并 commit 处；推送 tag 触发 `.github/workflows/deploy.yml` 部署至 GitHub Pages（stellar.guushu.com）——CI 含血统校验（commit 必须已在 main）与测试 gate，且仓库 Tag Ruleset 限定 `v*` 仅 admin 可创建，勿绕过任一环。
+5. **打 tag = 生产部署，须用户确认**：tag `vX.Y.Z` 打在 main 上的 release PR 合并 commit 处；推送 tag 触发 `.github/workflows/deploy.yml` 部署至 Cloudflare Pages（账号 D 项目 stellar-odyssey，stellar.guushu.com 经 zone A CNAME 指向）——CI 含血统校验（commit 必须已在 main）与测试 gate，且仓库 Tag Ruleset 限定 `v*` 仅 admin 可创建，勿绕过任一环。
 6. **GitHub Release notes 必配**：每个 tag 创建对应 GitHub Release，正文从 CHANGELOG 对应版本区段提炼（风格参照既有 Release：`## ✨ 本版亮点` + 按主题分节的要点列表 + 文末"完整变更明细见 CHANGELOG.md"链接与在线体验地址 https://stellar.guushu.com ）；补发历史版本 Release 时勿改动 Latest 指向（用 `--latest=false`）。
 
 ## 对外入口与文案同源纪律（强制）

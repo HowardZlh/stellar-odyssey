@@ -1,9 +1,14 @@
-# 部署到 GitHub Pages（stellar.guushu.com，经 Cloudflare 代理）
+# 部署到 Cloudflare Pages（账号 D 项目 stellar-odyssey；stellar.guushu.com 由
+# zone A 的橙云 CNAME 指向 stellar-odyssey-br7.pages.dev）。2026-09-22 起替代
+# GitHub Pages：静态导出 out/ + Pages 高级模式 out/_worker.js（/api/* 解锁 API）
+# 一起 `wrangler pages deploy` 直传，不走 Pages Git 集成。
+# 仓库 Secrets：CLOUDFLARE_API_TOKEN（账号 D，Account.Cloudflare Pages:Edit）、
+# CLOUDFLARE_ACCOUNT_ID（账号 D）。
 # 触发：仅限打 release tag（v*）或在 Actions 页面手动触发（workflow_dispatch）
-# 流程：血统校验（commit 必须在 main 上）→ 单元测试（含覆盖率 gate）→ 静态导出构建 → 部署；任一环节不通过则不会部署
+# 流程：血统校验（commit 必须在 main 上）→ 单元测试（含覆盖率 gate）→ 静态导出构建 + Worker 打包 → 部署；任一环节不通过则不会部署
 # 安全说明：血统校验防止在未合入 main 的分支 commit 上打 tag 直接发布；
 # 配合仓库 Tag Ruleset（v* 仅 admin 可创建）形成完整闭环，勿单独移除任一环。
-name: Deploy to GitHub Pages
+name: Deploy to Cloudflare Pages
 
 on:
   push:
@@ -64,8 +69,8 @@ jobs:
       - name: Unit tests with coverage gate (>=90%)
         run: npm run test:coverage
 
-  build:
-    name: build
+  deploy:
+    name: build-and-deploy
     runs-on: ubuntu-latest
     needs: test
     steps:
@@ -81,28 +86,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+      - name: Build (static export to out/ + out/_worker.js)
+        run: npm run build:pages
 
-      - name: Build (static export to out/)
-        run: npm run build
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: out
-
-  deploy:
-    name: deploy
-    runs-on: ubuntu-latest
-    needs: build
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Deploy to Cloudflare Pages (direct upload)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npm run deploy:pages
