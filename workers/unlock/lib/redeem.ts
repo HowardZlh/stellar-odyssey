@@ -122,8 +122,11 @@ export interface RedeemDeps {
   /** 档位 plan_id 映射（U6，env vars 注入） */
   readonly planTiers: PlanTierMapping;
   /**
-   * 档位 ↔ 面包多 urlkey 映射（对等 planTiers 的双态机制：三者全配置
-   * 才启用强制归档，任一为空回退纯金额判定）。缺省 = 全空（回退态）。
+   * 档位 ↔ 面包多 urlkey 映射（**唯一归档依据，无金额回退**）：三者全配置
+   * 才开放面包多渠道，任一为空整个渠道 not_configured。缺省 = 全空（未配置）。
+   * 商品隔离：同一面包多账号还售卖 stock_analysis（A股行业量化观察）的
+   * 单次 ¥5 / 包月 ¥15 商品，开发者 key 能查到对方订单，且其包月与本站
+   * 月卡同为 ¥15——金额判档会串货，故只认本站 urlkey。
    */
   readonly mbdUrlkeys?: PlanTierMapping;
 }
@@ -222,36 +225,33 @@ async function selectStoredRow(
 }
 
 /**
- * 面包多档位归档（对等 classifyOrder 的双态机制，面包多集成）：
+ * 面包多档位归档（**仅 urlkey 映射，无金额回退**——同店商品隔离）：
  *
  * **urlkey 映射全配置**：命中 → 强制归档**无视实付金额**（折扣/优惠码
- * 安全——启用映射态后才允许在面包多发优惠码，UNLOCK_OPS 部署顺序）；
- * 未命中（非解锁商品）→ null（主流程按映射态归 plan_not_eligible）。
+ * 安全）；未命中（非本站解锁商品，含同店 stock_analysis 商品与全家桶
+ * 订单）→ null（主流程归 plan_not_eligible）。
  *
- * **任一未配置** → 回退纯金额判定（上线初期形态，**商品页禁折扣**）。
- * 三档在面包多均为一次性商品（无订阅/份数概念），months 恒 1、无
- * goodsCount 叠加——比爱发电判定简单。
+ * **任一未配置** → null（主流程在验单前已按 not_configured 拒绝，此处
+ * 为纵深防御）。不做金额判档：同一面包多账号的 stock_analysis 包月
+ * 同为 ¥15，金额回退会把对方订单兑成本站月卡（2026-09-29 隔离修正）。
+ * 三档在面包多均为一次性商品（无订阅/份数概念），months 恒 1。
  */
 export function classifyMbdOrder(
   order: MbdOrder,
   urlkeys: PlanTierMapping,
 ): { tier: UnlockTier; days: number } | null {
-  if (isPlanMappingComplete(urlkeys)) {
-    const urlkey = order.urlkey;
-    const tier: UnlockTier | null =
-      urlkey !== "" && urlkey === (urlkeys.week ?? "").trim()
-        ? "week"
-        : urlkey !== "" && urlkey === (urlkeys.month ?? "").trim()
-          ? "month"
-          : urlkey !== "" && urlkey === (urlkeys.year ?? "").trim()
-            ? "year"
-            : null;
-    if (tier === null) return null;
-    return { tier, days: UNLOCK_TIERS[tier].days };
-  }
-  const resolved = resolveTierFromAmount(order.amountCny, 1);
-  if (resolved === null) return null;
-  return { tier: resolved.tier, days: resolved.days };
+  if (!isPlanMappingComplete(urlkeys)) return null;
+  const urlkey = order.urlkey;
+  const tier: UnlockTier | null =
+    urlkey !== "" && urlkey === (urlkeys.week ?? "").trim()
+      ? "week"
+      : urlkey !== "" && urlkey === (urlkeys.month ?? "").trim()
+        ? "month"
+        : urlkey !== "" && urlkey === (urlkeys.year ?? "").trim()
+          ? "year"
+          : null;
+  if (tier === null) return null;
+  return { tier, days: UNLOCK_TIERS[tier].days };
 }
 
 /** 面包多验单（GET order-detail；网络/形状异常一律归 upstream_error） */
@@ -454,7 +454,8 @@ export async function handleRedeem(
  * - 订单号 32 位 hex（小写归一后作幂等键）；
  * - 验单为 GET + x-token（无签名拼串）；
  * - 权益起算自响应 `ordertime`（支付时刻），无需解析订单号；
- * - 档位判定 urlkey 映射态 / 金额回退态（classifyMbdOrder）；
+ * - 档位判定仅 urlkey 映射（classifyMbdOrder，无金额回退——同店商品隔离；
+ *   映射未配齐整个渠道 not_configured）；
  * - 一次性商品无 months/份数概念，months 落 null、plan_id 落 urlkey）。
  */
 async function handleMbdRedeem(
@@ -474,7 +475,14 @@ async function handleMbdRedeem(
     "not_configured",
     "兑换服务尚未配置完成，请稍后重试或邮件联系作者。",
   );
-  if (!mbdDeveloperKey || !ed25519PrivateKeyHex || !deps.db) {
+  // urlkey 映射未配齐 = 渠道未配置（无金额回退，防同店商品串货）
+  const urlkeys = deps.mbdUrlkeys ?? {};
+  if (
+    !mbdDeveloperKey ||
+    !ed25519PrivateKeyHex ||
+    !deps.db ||
+    !isPlanMappingComplete(urlkeys)
+  ) {
     return notConfigured;
   }
   const privateKey = hexToBytes(ed25519PrivateKeyHex);
@@ -514,17 +522,14 @@ async function handleMbdRedeem(
     return fail("order_not_paid", "订单未完成支付。");
   }
 
-  // 5. 档位判定（urlkey 映射态未命中 → plan_not_eligible，零 DB 写）
-  const urlkeys = deps.mbdUrlkeys ?? {};
+  // 5. 档位判定（urlkey 未命中 → plan_not_eligible，零 DB 写；映射已在
+  //    步骤 2 校验全配置，此处 null 只可能是非本站商品）
   const resolved = classifyMbdOrder(result.order, urlkeys);
   if (resolved === null) {
-    if (isPlanMappingComplete(urlkeys)) {
-      return fail(
-        "plan_not_eligible",
-        "该订单对应的商品不支持解锁兑换，请购买解锁档位商品。",
-      );
-    }
-    return fail("amount_too_low", amountTooLowMessage());
+    return fail(
+      "plan_not_eligible",
+      "该订单对应的商品不支持解锁兑换，请购买解锁档位商品。",
+    );
   }
 
   // 6. exp = 支付时刻起算 + 档位天数（响应 ordertime；缺失 = 上游形状

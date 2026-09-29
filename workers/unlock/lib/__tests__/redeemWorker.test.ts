@@ -945,7 +945,7 @@ describe("常量", () => {
 
 // ---------------------------------------------------------------------------
 // 面包多兑换（面包多集成：channel:'mbd' 分流 + order-detail 验单 +
-// urlkey 映射/金额回退双态 + 幂等落账）
+// urlkey 映射强制归档（无金额回退，同店商品隔离）+ 幂等落账）
 // ---------------------------------------------------------------------------
 
 const MBD_ORDER_ID = "9d1e6ffc4e5f796ae9dcf44e1936eb8d";
@@ -965,6 +965,11 @@ const MBD_URLKEYS: PlanTierMapping = {
   year: "urlkey-year==",
 };
 
+/** 同一面包多账号下 stock_analysis 的商品 urlkey（单次 ¥5 / 包月 ¥15）——
+ * 开发者 key 能查到其订单，必须被拒（商品隔离） */
+const STOCK_URLKEY_SINGLE = "YZaVmJZrbQ==";
+const STOCK_URLKEY_MONTHLY = "YZaVmJZsbA==";
+
 function mbdResultFixture(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
@@ -975,7 +980,7 @@ function mbdResultFixture(
     orderid: MBD_ORDER_ID,
     creatorid: "a2w=",
     state: "success",
-    urlkey: "Y5ublZk=",
+    urlkey: MBD_URLKEYS.month,
     ...overrides,
   };
 }
@@ -991,7 +996,7 @@ function makeMbdDeps(overrides: Partial<RedeemDeps> = {}): RedeemDeps {
     secrets: MBD_SECRETS,
     nowSec: NOW_SEC,
     planTiers: EMPTY_PLAN_TIERS,
-    mbdUrlkeys: { week: "", month: "", year: "" },
+    mbdUrlkeys: MBD_URLKEYS,
     ...overrides,
   };
 }
@@ -1024,15 +1029,16 @@ describe("handleRedeem channel 分流", () => {
   });
 });
 
-describe("面包多兑换成功签发（金额回退态）", () => {
+describe("面包多兑换成功签发（urlkey 映射强制归档）", () => {
   it.each([
-    ["周卡 ¥6 → week 7 天", 6, "week", 7],
-    ["月卡 ¥15 → month 31 天", 15, "month", 31],
-    ["年卡 ¥88 → year 366 天", 88, "year", 366],
+    ["周卡 urlkey ¥6 → week 7 天", 6, "week", 7],
+    ["月卡 urlkey ¥15 → month 31 天", 15, "month", 31],
+    ["年卡 urlkey ¥88 → year 366 天", 88, "year", 366],
   ])("%s", async (_label, amount, tier, days) => {
     const { db, selects, writes } = makeDb();
+    const urlkey = MBD_URLKEYS[tier as "week" | "month" | "year"];
     const fetchFn = makeFetch(
-      mbdResponseFixture(mbdResultFixture({ orderamount: amount })),
+      mbdResponseFixture(mbdResultFixture({ orderamount: amount, urlkey })),
     );
     const body = await handleRedeem(
       MBD_ORDER_ID,
@@ -1069,7 +1075,7 @@ describe("面包多兑换成功签发（金额回退态）", () => {
       token: body.token,
       token_hash: unlockTokenHash(body.token),
       status: "paid",
-      plan_id: "Y5ublZk=", // urlkey 落审计字段
+      plan_id: urlkey, // urlkey 落审计字段
       paid_at: new Date(MBD_PAID_SEC * 1000).toISOString(),
       created_at: new Date(NOW_SEC * 1000).toISOString(),
     });
@@ -1246,17 +1252,27 @@ describe("面包多兑换失败分支", () => {
     expect(body).toMatchObject({ ok: false, error: "upstream_error" });
   });
 
-  it("金额不足（¥3）→ amount_too_low（价格文案来自 unlockPricing）", async () => {
-    const fetchFn = makeFetch(
-      mbdResponseFixture(mbdResultFixture({ orderamount: 3 })),
-    );
-    const body = await handleRedeem(MBD_ORDER_ID, makeMbdDeps({ fetchFn }), "mbd");
-    expect(body).toMatchObject({
-      ok: false,
-      error: "amount_too_low",
-      message: expect.stringContaining("¥6"),
-    });
-  });
+  it.each([
+    ["stock 单次 ¥5", STOCK_URLKEY_SINGLE, 5],
+    ["stock 包月 ¥15（与本站月卡同价）", STOCK_URLKEY_MONTHLY, 15],
+    ["全家桶订单（orderamount 0）", "bundle-urlkey==", 0],
+    ["urlkey 缺失", "", 15],
+  ])(
+    "商品隔离：同店非本站商品（%s）→ plan_not_eligible 零写",
+    async (_l, urlkey, amount) => {
+      const { db, writes } = makeDb();
+      const fetchFn = makeFetch(
+        mbdResponseFixture(mbdResultFixture({ urlkey, orderamount: amount })),
+      );
+      const body = await handleRedeem(
+        MBD_ORDER_ID,
+        makeMbdDeps({ db, fetchFn }),
+        "mbd",
+      );
+      expect(body).toMatchObject({ ok: false, error: "plan_not_eligible" });
+      expect(writes).not.toHaveBeenCalled();
+    },
+  );
 
   it("ordertime 缺失（state=success 但无支付时刻）→ upstream_error 零写", async () => {
     const { db, writes } = makeDb();
@@ -1311,31 +1327,37 @@ describe("面包多 urlkey 映射态（强制归档）", () => {
     expect(writes).not.toHaveBeenCalled();
   });
 
-  it("映射任一未配置 → 回退金额判定（urlkey 未命中不拒绝）", async () => {
+  it("映射任一未配置 → not_configured（无金额回退），零 DB/fetch 访问", async () => {
+    const { db, selects, writes } = makeDb();
     const fetchFn = makeFetch(
       mbdResponseFixture(
-        mbdResultFixture({ orderamount: 88, urlkey: "whatever" }),
+        mbdResultFixture({ orderamount: 15, urlkey: STOCK_URLKEY_MONTHLY }),
       ),
     );
     const body = await handleRedeem(
       MBD_ORDER_ID,
       makeMbdDeps({
+        db,
         fetchFn,
         mbdUrlkeys: { week: MBD_URLKEYS.week, month: "", year: "" },
       }),
       "mbd",
     );
-    expect(body).toMatchObject({ ok: true, tier: "year" });
+    expect(body).toMatchObject({ ok: false, error: "not_configured" });
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(selects).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
   });
 
-  it("mbdUrlkeys 缺省（deps 未注入）→ 回退金额判定", async () => {
+  it("mbdUrlkeys 缺省（deps 未注入）→ not_configured", async () => {
     const fetchFn = makeFetch(mbdResponseFixture(mbdResultFixture()));
     const body = await handleRedeem(
       MBD_ORDER_ID,
       makeMbdDeps({ fetchFn, mbdUrlkeys: undefined }),
       "mbd",
     );
-    expect(body).toMatchObject({ ok: true, tier: "month" });
+    expect(body).toMatchObject({ ok: false, error: "not_configured" });
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 });
 
@@ -1343,7 +1365,7 @@ describe("面包多 urlkey 映射态（强制归档）", () => {
 // 面包多适配层纯函数（lib/mbd.ts）
 // ---------------------------------------------------------------------------
 
-describe("classifyMbdOrder（双态归档）", () => {
+describe("classifyMbdOrder（仅 urlkey 映射归档）", () => {
   const order = (overrides: Partial<MbdOrder> = {}): MbdOrder => ({
     state: "success",
     amountCny: 15,
@@ -1352,21 +1374,17 @@ describe("classifyMbdOrder（双态归档）", () => {
     ...overrides,
   });
 
-  it("回退态按金额归档（¥6/¥15/¥88 → 7/31/366 天）", () => {
+  it("映射未配齐一律 null（不按金额归档——同店 ¥15 商品会串货）", () => {
     const empty: PlanTierMapping = { week: "", month: "", year: "" };
-    expect(classifyMbdOrder(order({ amountCny: 6 }), empty)).toEqual({
-      tier: "week",
-      days: 7,
-    });
-    expect(classifyMbdOrder(order({ amountCny: 15 }), empty)).toEqual({
-      tier: "month",
-      days: 31,
-    });
-    expect(classifyMbdOrder(order({ amountCny: 88 }), empty)).toEqual({
-      tier: "year",
-      days: 366,
-    });
-    expect(classifyMbdOrder(order({ amountCny: 3 }), empty)).toBeNull();
+    for (const amountCny of [6, 15, 88]) {
+      expect(classifyMbdOrder(order({ amountCny }), empty)).toBeNull();
+    }
+    expect(
+      classifyMbdOrder(
+        order({ amountCny: 15, urlkey: MBD_URLKEYS.month ?? "" }),
+        { ...MBD_URLKEYS, year: "" },
+      ),
+    ).toBeNull();
   });
 
   it("映射态命中强制归档（金额无视），未命中/空 urlkey 归 null", () => {
@@ -1415,7 +1433,7 @@ describe("parseMbdOrderDetailResponse（防御式解析）", () => {
         state: "success",
         amountCny: 15,
         paidAtSec: MBD_PAID_SEC,
-        urlkey: "Y5ublZk=",
+        urlkey: MBD_URLKEYS.month,
       },
     });
   });

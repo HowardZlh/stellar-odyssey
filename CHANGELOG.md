@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- 面包多兑换只认本站三档商品：面包多账号同时在售另一个产品（A股行业量化观察）的单次 ¥5 / 包月 ¥15 商品，原先 urlkey 映射任一为空时会退回按金额判档，对方 ¥15 订单可能被兑成月卡；现删去金额回退，映射未配齐时面包多兑换直接提示未配置，非本站商品订单一律「不支持解锁兑换」。线上三个 urlkey 已配置，现有用户无感
+
 ### 发布流程
 
 - 站点与解锁 API 迁至独立 Cloudflare 账号（Pages 项目 `stellar-odyssey`）：静态导出与 `/api/*` Worker 合并为 Pages 高级模式 `_worker.js` 一起直传，不再使用 GitHub Pages；统一对账 cron 拆为独立 Worker `stellar-unlock-cron`；`stellar.guushu.com` 地址不变。运营通知邮件改经 Resend 发送（此前的 Email Routing `send_email` 绑定在无域名的账号上不可用）。对用户可见变化：无
