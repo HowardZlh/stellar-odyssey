@@ -7,17 +7,17 @@
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-09-29
+
 ### 修复
 
 - 面包多兑换只认本站三档商品：面包多账号同时在售另一个产品（A股行业量化观察）的单次 ¥5 / 包月 ¥15 商品，原先 urlkey 映射任一为空时会退回按金额判档，对方 ¥15 订单可能被兑成月卡；现删去金额回退，映射未配齐时面包多兑换直接提示未配置，非本站商品订单一律「不支持解锁兑换」。线上三个 urlkey 已配置，现有用户无感
+- 运营日报不再重复发送：解锁 Worker 的 cron 通知层改为"先抢占状态再发信"（`kv_state` 单条条件写，`ops:report` / `ops:alert` 每日恰推进一次，抢不到即跳过；组装或发送失败自动回滚、下一轮重试）。此前为"读状态 → 发信 → 写状态"，在 Cloudflare 自 2026-09-17 起对同一 cron 槽重复投递（同槽两次调用相差 3 秒）时，00:00 UTC 轮次两次都读到旧日期，导致北京时间 08:00 收到两封相同日报；`scheduled` 壳同时把 `controller.scheduledTime` 打入日志便于区分同槽多次调用
 
 ### 发布流程
 
 - 站点与解锁 API 迁至独立 Cloudflare 账号（Pages 项目 `stellar-odyssey`）：静态导出与 `/api/*` Worker 合并为 Pages 高级模式 `_worker.js` 一起直传，不再使用 GitHub Pages；统一对账 cron 拆为独立 Worker `stellar-unlock-cron`；`stellar.guushu.com` 地址不变。运营通知邮件改经 Resend 发送（此前的 Email Routing `send_email` 绑定在无域名的账号上不可用）。对用户可见变化：无
-
-### 修复
-
-- 运营日报不再重复发送：解锁 Worker 的 cron 通知层改为"先抢占状态再发信"（`kv_state` 单条条件写，`ops:report` / `ops:alert` 每日恰推进一次，抢不到即跳过；组装或发送失败自动回滚、下一轮重试）。此前为"读状态 → 发信 → 写状态"，在 Cloudflare 自 2026-09-17 起对同一 cron 槽重复投递（同槽两次调用相差 3 秒）时，00:00 UTC 轮次两次都读到旧日期，导致北京时间 08:00 收到两封相同日报；`scheduled` 壳同时把 `controller.scheduledTime` 打入日志便于区分同槽多次调用
+- CI 与部署工作流的 Node 版本 20 → 22（wrangler 4.136 起要求 Node ≥22，GitHub Actions 的 Node 20 运行时亦已弃用）
 
 ## [0.1.17] - 2026-09-14
 
