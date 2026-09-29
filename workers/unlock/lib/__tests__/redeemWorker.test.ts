@@ -967,8 +967,8 @@ const MBD_URLKEYS: PlanTierMapping = {
 
 /** 同一面包多账号下 stock_analysis 的商品 urlkey（单次 ¥5 / 包月 ¥15）——
  * 开发者 key 能查到其订单，必须被拒（商品隔离） */
-const STOCK_URLKEY_SINGLE = "YZaVmJZrbQ==";
-const STOCK_URLKEY_MONTHLY = "YZaVmJZsbA==";
+const STOCK_URLKEY_SINGLE = "YZaVmJZubQ==";
+const STOCK_URLKEY_MONTHLY = "YZaVmJZvZA==";
 
 function mbdResultFixture(
   overrides: Record<string, unknown> = {},
