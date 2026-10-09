@@ -1,0 +1,42 @@
+# Copy to <your repo>/.github/workflows/readme-showcase.yml
+# Output: heatmap / snake / skyline SVGs (light + dark) on the `output` branch.
+# Nothing is committed to your default branch, so deploy workflows that listen
+# to `main` are never triggered by this one.
+name: README showcase
+
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: readme-showcase
+  cancel-in-progress: true
+
+jobs:
+  art:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # the heatmap counts commits from `git log`
+      - uses: HowardZlh/github-action-shares@v1
+        with:
+          source: repo
+          git-path: .
+          label: commits
+          out-dir: dist
+      - uses: crazy-max/ghaction-github-pages@v5
+        with:
+          target_branch: output
+          build_dir: dist
+          keep_history: false
+          commit_message: "chore: refresh README showcase art"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
