@@ -20,7 +20,7 @@
 > `?lang=en` also works on any page, and the **zh/EN toggle** at the top of the control panel switches
 > the interface, 3D body labels, and science notes instantly.
 
-**Contents**: [Demos](#-demos) · [Highlights](#-highlights) · [Quick Start](#-quick-start) · [Docs](#-documentation) · [Tech Stack](#-tech-stack) · [Scientific Integrity](#-scientific-integrity) · [Contributing](#-contributing) · [Supporter Unlock](#-supporter-unlock) · [Sponsor](#-sponsor) · [Commercial](#-commercial-partnership) · [License](#️-license)
+**Contents**: [Demos](#-demos) · [Highlights](#-highlights) · [Quick Start](#-quick-start) · [Docs](#-documentation) · [Tech Stack](#-tech-stack) · [Scientific Integrity](#-scientific-integrity) · [Activity](#-project-activity) · [Contributing](#-contributing) · [Supporter Unlock](#-supporter-unlock) · [Sponsor](#-sponsor) · [Commercial](#-commercial-partnership) · [License](#️-license)
 
 ---
 
@@ -169,6 +169,27 @@ All astrophysical parameters are based on real scientific data (NASA JPL, SIMBAD
 - Normal maps converted from NASA/USGS public-domain elevation data; dwarf-planet maps from NASA New Horizons / Dawn mosaics (public domain); satellite glTF models from NASA 3D Resources (public domain)
 
 Full per-asset details, licenses, and registration notes: [docs/attribution.md](docs/attribution.md) (Chinese).
+
+## 📈 Project Activity
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/snake-dark.svg">
+  <img alt="Snake eating the daily commit grid of Stellar Odyssey" src="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/snake.svg">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/heatmap-dark.svg">
+  <img alt="Heatmap of commits to Stellar Odyssey over the last 53 weeks" src="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/heatmap.svg">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/skyline-dark.svg">
+  <img alt="Isometric 3D skyline of daily commits to Stellar Odyssey" src="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/skyline.svg">
+</picture>
+
+[![Visitors](https://visitor-badge.laobi.icu/badge?page_id=HowardZlh.stellar-odyssey&left_text=visitors)](https://github.com/HowardZlh/stellar-odyssey) Rebuilt every night from this repo's `git log` by [github-action-shares](https://github.com/HowardZlh/github-action-shares).
+
+If Stellar Odyssey is useful to you, a ⭐ helps other people find it.
 
 ## 🤝 Contributing
 
