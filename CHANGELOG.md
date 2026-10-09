@@ -7,6 +7,14 @@
 
 ## [Unreleased]
 
+### 安全
+
+- 依赖安全补丁：`next` 与 `eslint-config-next` 16.3.4 → 16.3.8，修复 Next.js 16.3.8 之前的一组公告（含 SSG/ISR 缓存投毒、图片优化 SSRF 等，GHSA-vcvr-r3jv-pc5j 等 7 条）；`sharp` override 提到 ^0.35.5（librsvg CVE-2026-96889）；间接依赖 `source-map-js` 1.2.1 → 1.2.2。`npm audit --omit=dev` 恢复零告警。对用户可见变化：无
+
+### 文档
+
+- README 中英文新增「项目动态」节：本仓库提交记录的贪吃蛇动画、热力图与 3D 柱状图，由 `.github/workflows/readme-showcase.yml` 每晚生成并推到 `output` 分支，不向 `main` 提交、不触发部署
+
 ## [0.1.18] - 2026-09-29
 
 ### 修复
