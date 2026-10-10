@@ -14,7 +14,7 @@
   <a href="https://stellar.guushu.com/en"><strong>🚀 Try it live → stellar.guushu.com/en</strong></a>
 </p>
 
-[![live](https://img.shields.io/badge/live-stellar.guushu.com-4d9fff)](https://stellar.guushu.com/en) [![CI](https://github.com/HowardZlh/stellar-odyssey/actions/workflows/pr-gate.yml/badge.svg)](https://github.com/HowardZlh/stellar-odyssey/actions/workflows/pr-gate.yml) ![tech](https://img.shields.io/badge/Next.js-16-black) ![tech](https://img.shields.io/badge/React-19-61dafb) ![tech](https://img.shields.io/badge/Three.js-R3F-049ef4) ![tech](https://img.shields.io/badge/TypeScript-strict-3178c6) ![coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0-blue)
+[![live](https://img.shields.io/badge/live-stellar.guushu.com-4d9fff)](https://stellar.guushu.com/en) [![CI](https://github.com/HowardZlh/stellar-odyssey/actions/workflows/pr-gate.yml/badge.svg)](https://github.com/HowardZlh/stellar-odyssey/actions/workflows/pr-gate.yml) [![Release](https://img.shields.io/github/v/release/HowardZlh/stellar-odyssey)](https://github.com/HowardZlh/stellar-odyssey/releases) [![Last commit](https://img.shields.io/github/last-commit/HowardZlh/stellar-odyssey)](https://github.com/HowardZlh/stellar-odyssey/commits/main) ![license](https://img.shields.io/badge/license-AGPL--3.0-blue)
 
 > [stellar.guushu.com/en](https://stellar.guushu.com/en) is the English entry (English UI by default);
 > `?lang=en` also works on any page, and the **zh/EN toggle** at the top of the control panel switches
@@ -173,21 +173,9 @@ Full per-asset details, licenses, and registration notes: [docs/attribution.md](
 ## 📈 Project Activity
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/snake-dark.svg">
-  <img alt="Snake eating the daily commit grid of Stellar Odyssey" src="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/snake.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/activity-dark.svg">
+  <img alt="Commits to Stellar Odyssey since the first one: a snake eating the daily grid, or a one-line summary while there are fewer than 10 active days" src="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/activity.svg">
 </picture>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/heatmap-dark.svg">
-  <img alt="Heatmap of commits to Stellar Odyssey over the last 53 weeks" src="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/heatmap.svg">
-</picture>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/skyline-dark.svg">
-  <img alt="Isometric 3D skyline of daily commits to Stellar Odyssey" src="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/skyline.svg">
-</picture>
-
-[![Visitors](https://visitor-badge.laobi.icu/badge?page_id=HowardZlh.stellar-odyssey&left_text=visitors)](https://github.com/HowardZlh/stellar-odyssey) Rebuilt every night from this repo's `git log` by [github-action-shares](https://github.com/HowardZlh/github-action-shares).
 
 If Stellar Odyssey is useful to you, a ⭐ helps other people find it.
 

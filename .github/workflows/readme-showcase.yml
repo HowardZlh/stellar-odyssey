@@ -31,6 +31,7 @@ jobs:
           source: repo
           git-path: .
           label: commits
+          window: auto # start at the first commit, at least 8 weeks wide (v1.2.0)
           out-dir: dist
       - uses: crazy-max/ghaction-github-pages@v5
         with:

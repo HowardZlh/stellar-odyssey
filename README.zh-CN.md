@@ -12,7 +12,7 @@
   <a href="https://stellar.guushu.com"><strong>🚀 立即在线体验 → stellar.guushu.com</strong></a>
 </p>
 
-[![live](https://img.shields.io/badge/在线体验-stellar.guushu.com-4d9fff)](https://stellar.guushu.com) [![CI](https://github.com/HowardZlh/stellar-odyssey/actions/workflows/pr-gate.yml/badge.svg)](https://github.com/HowardZlh/stellar-odyssey/actions/workflows/pr-gate.yml) ![tech](https://img.shields.io/badge/Next.js-16-black) ![tech](https://img.shields.io/badge/React-19-61dafb) ![tech](https://img.shields.io/badge/Three.js-R3F-049ef4) ![tech](https://img.shields.io/badge/TypeScript-strict-3178c6) ![coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen) ![license](https://img.shields.io/badge/license-AGPL--3.0-blue)
+[![live](https://img.shields.io/badge/在线体验-stellar.guushu.com-4d9fff)](https://stellar.guushu.com) [![CI](https://github.com/HowardZlh/stellar-odyssey/actions/workflows/pr-gate.yml/badge.svg)](https://github.com/HowardZlh/stellar-odyssey/actions/workflows/pr-gate.yml) [![Release](https://img.shields.io/github/v/release/HowardZlh/stellar-odyssey)](https://github.com/HowardZlh/stellar-odyssey/releases) [![Last commit](https://img.shields.io/github/last-commit/HowardZlh/stellar-odyssey)](https://github.com/HowardZlh/stellar-odyssey/commits/main) ![license](https://img.shields.io/badge/license-AGPL--3.0-blue)
 
 **目录**：[效果演示](#-效果演示) · [亮点特性](#-亮点特性) · [快速开始](#-快速开始) · [文档与教程](#-文档与教程) · [技术栈](#-技术栈) · [科学性承诺](#-科学性承诺) · [项目动态](#-项目动态) · [参与贡献](#-参与贡献) · [支持者解锁](#-支持者解锁) · [赞助支持](#-赞助支持) · [商业合作](#-商业合作) · [开源协议](#️-开源协议)
 
@@ -210,23 +210,11 @@ npm run bake:data      # 重新烘焙真实数据产物（幂等；产物已提�
 ## 📈 项目动态
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/snake-dark.svg">
-  <img alt="贪吃蛇动画：一格一格吃掉 星海奥德赛 每天的提交记录" src="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/snake.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/activity-dark.svg">
+  <img alt="星海奥德赛 从第一次提交以来的提交记录：活跃满 10 天时是贪吃蛇吃掉每天的提交格子，之前是一行摘要" src="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/activity.svg">
 </picture>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/heatmap-dark.svg">
-  <img alt="星海奥德赛 近 53 周的提交热力图" src="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/heatmap.svg">
-</picture>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/skyline-dark.svg">
-  <img alt="星海奥德赛 每日提交数的 3D 等距柱状图" src="https://raw.githubusercontent.com/HowardZlh/stellar-odyssey/output/skyline.svg">
-</picture>
-
-[![Visitors](https://visitor-badge.laobi.icu/badge?page_id=HowardZlh.stellar-odyssey&left_text=visitors)](https://github.com/HowardZlh/stellar-odyssey) 每晚由 [github-action-shares](https://github.com/HowardZlh/github-action-shares) 根据本仓库的 `git log` 重新生成。
-
-觉得 星海奥德赛 有用的话，点个 ⭐，能让更多人看到它。
+觉得星海奥德赛有用的话，点个 ⭐，能让更多人看到它。
 
 ## 🤝 参与贡献
 
